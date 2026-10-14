@@ -4,7 +4,9 @@ import ThreeLyrics from './ThreeLyrics';
 import {setAudioSensitivity} from './audio/audioSignal';
 import LocalPlayer from './audio/LocalPlayer';
 import SpotifyDiscovery from './spotify/SpotifyDiscovery';
-import ManualLyrics from './lyrics/ManualLyrics';
+import ManualLyrics, {type IncomingLyrics} from './lyrics/ManualLyrics';
+import TrackFinder from './metadata/TrackFinder';
+import type {TrackInfo} from './metadata/trackInfo';
 import {AudioLines,Settings2,Expand,Pause,Play,Waves,SlidersHorizontal} from 'lucide-react';
 const choices:{value:Scene;label:string;subtitle:string;symbol:string}[]=[
  {value:'Particles',label:'Atmosphere',subtitle:'Luminous particles',symbol:'✳'},
@@ -20,7 +22,11 @@ export default function App(){
  const [localPlaying,setLocalPlaying]=useState(false);
  const [localTime,setLocalTime]=useState(0);
  const [localLoaded,setLocalLoaded]=useState(false);
- const [sensitivity,setSensitivity]=useState(35);
+ const [localTrack,setLocalTrack]=useState<TrackInfo|null>(null);
+ const [incoming,setIncoming]=useState<IncomingLyrics|null>(null);
+ const [fileEpoch,setFileEpoch]=useState(0);
+ const acceptLyrics=(lyrics:Omit<IncomingLyrics,'token'>)=>setIncoming({...lyrics,token:Date.now()});
+ const [sensitivity,setSensitivity]=useState(14);
  const [autoScenes,setAutoScenes]=useState(true);
  const [performance,setPerformance]=useState(false);
  useEffect(()=>{setAudioSensitivity(sensitivity/100)},[sensitivity]);
@@ -40,7 +46,7 @@ export default function App(){
  const togglePerformance=async()=>{if(performance){setPerformance(false);if(document.fullscreenElement)await document.exitFullscreen().catch(()=>{});return;}setPerformance(true);try{if(!document.fullscreenElement)await document.documentElement.requestFullscreen()}catch{setFullscreenError('Browser fullscreen was blocked. Cinema mode still hides the controls; tap the canvas to exit.')}};
  return <div className={"shell "+(performance?"performance-mode":"")}>
   <header className="header"><div className="logo"><span className="logo-mark"><AudioLines size={21}/></span><div><strong>lyric<span>flow</span></strong><small>VISUAL SOUNDSTAGE</small></div></div>
-   <div className="track"><i className="dot"/> Untitled session <span>/</span> {localPlaying?'Local audio':'Demo mode'}</div>
+   <div className="track"><i className="dot"/> {localTrack?.title||'Untitled session'} <span>/</span> {localPlaying?'Local audio':'Demo mode'}</div>
    <div className="header-right"><span className="demo-status"><i className="dot"/>{localPlaying?'LOCAL AUDIO':demo?'DEMO ACTIVE':'DEMO OFF'}</span><button className="icon-btn" aria-label="Settings" onClick={()=>setSettings(v=>!v)}><Settings2 size={19}/></button></div>
   </header>
   <section className="stage" onClick={performance?()=>void togglePerformance():undefined} aria-label={performance?"Tap anywhere to exit cinema mode":"Music visualizer"}>
@@ -53,13 +59,14 @@ export default function App(){
    <div className="stage-bottom"><span><i className="dot"/> CANVAS ENGINE READY</span><span>{fps} FPS</span></div>
    {settings&&<aside className="settings-panel"><div className="settings-title"><SlidersHorizontal size={16}/> VISUAL SETTINGS <button aria-label="Close settings" onClick={()=>setSettings(false)}>×</button></div><label className="check"><span><b>Reduced motion</b><small>Calmer animation</small></span><input type="checkbox" checked={reducedMotion} onChange={e=>setReducedMotion(e.target.checked)}/></label><p>RENDERING QUALITY</p><div className="quality-options">{(['High','Balanced','Performance'] as Quality[]).map(q=><button key={q} className={quality===q?'active':''} onClick={()=>setQuality(q)}>{q}</button>)}</div><p className="note">Graphics are generated locally in your browser. Stage 1 does not access your microphone.</p></aside>}
   </section>
-  <LocalPlayer onActiveChange={setLocalPlaying} onTimeChange={setLocalTime} onFileChange={setLocalLoaded}/>
+  <LocalPlayer onActiveChange={setLocalPlaying} onTimeChange={setLocalTime} onFileChange={loaded=>{setLocalLoaded(loaded);setFileEpoch(e=>e+1);setIncoming(null)}} onTrackChange={setLocalTrack} onDurationChange={duration=>setLocalTrack(p=>p?{...p,duration}:p)}/>
+  <TrackFinder track={localTrack} onMetadataChange={setLocalTrack} onLyricsFound={acceptLyrics}/>
   <section className="signal-panel" aria-label="Live audio analysis">
     <div className="signal-header"><strong>LIVE AUDIO REACTIVITY</strong><span className={'signal-mode '+(audioReadout.source==='LOCAL AUDIO'?'connected':'')}>{audioReadout.source==='LOCAL AUDIO'?'● Local audio detected':audioReadout.source==='DEMO'?'◌ Simulated energy':'○ No audio source'}</span></div>
     <div className="signal-bars">{([['LOUDNESS',audioReadout.level],['BASS',audioReadout.bass],['MID',audioReadout.mids],['TREBLE',audioReadout.treble],['BEAT',audioReadout.beat]] as const).map(([label,value])=><div className="signal-band" key={label}><span>{label}<b>{value}%</b></span><div className="signal-track"><i style={{width:value+'%'}}/></div></div>)}</div>
     <p className="signal-hint">{audioReadout.source==='LOCAL AUDIO'?'Analyzing the audio file locally. Try a bass-heavy section and watch the bars and visuals change.':'To react to real music, choose an MP3 above and press Play. Demo mode produces simulated movement, not real audio analysis.'}</p>
   </section>
-  <ManualLyrics time={localTime} trackLoaded={localLoaded}/>
+  <ManualLyrics key={fileEpoch} time={localTime} trackLoaded={localLoaded} track={localTrack} incoming={incoming}/>
   <SpotifyDiscovery/>
   <section className="control-panel">
    <div className="control-heading"><div className="heading-left"><span className="heading-icon"><Waves size={16}/></span><div><b>SCENE SELECTOR</b><small>Choose your atmosphere</small></div></div><label className="demo-toggle"><div><b>Demo mode</b><small>Simulated music energy</small></div><input type="checkbox" checked={demo} onChange={e=>setDemo(e.target.checked)}/></label></div>
