@@ -14,13 +14,6 @@ function type(c:CanvasRenderingContext2D,text:string,x:number,y:number,size:numb
  if(outline){c.strokeStyle=outline;c.lineWidth=Math.max(2,size*.09);c.lineJoin='round';c.strokeText(text,x,y,width)}
  c.fillStyle=color;c.fillText(text,x,y,width);c.restore();
 }
-function divide(text:string,n=2):string[]{
- const words=text.trim().split(/\s+/).filter(Boolean);
- if(words.length<=1)return [text];
- const index=Math.ceil(words.length/n);const pieces:string[]=[];
- for(let i=0;i<words.length;i+=index)pieces.push(words.slice(i,i+index).join(' '));
- return pieces.slice(0,n);
-}
 const upper=(s:string)=>s.toLocaleUpperCase();
 const extraNames=new Set<string>([
  'monochrome-memory','monument-titles','midnight-confession','glass-architecture',
@@ -114,7 +107,7 @@ export function drawExpandedTypography({c,scene,current,whole,width:w,height:h,t
   type(c,word,w*.5,h*.43,size*.95,'#c7ffed',w*.81,'cyber');
   c.shadowBlur=0;
   type(c,upper(all),w*.5,h*.67,size*.34,'#67edd0',w*.7,'mono');
-  for(let i=0;i<30;i++)c.fillRect(w*.2+i*w*.019,h*.77,w*.003,h*(.011+i%5*.004));
+  c.fillStyle='#3affcb';for(let i=0;i<30;i++)c.fillRect(w*.2+i*w*.019,h*.77,w*.003,h*(.011+i%5*.004));
   break;
  }
  case 'pixel-pulse':{
