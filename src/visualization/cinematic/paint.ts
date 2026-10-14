@@ -165,7 +165,7 @@ const stellar:Painter=(c,w,h,t,p,d)=>{
   if(depth>.55&&i%4===0)line(c,x,y,x-Math.cos(a)*depth*w*.04,y-Math.sin(a)*depth*h*.04,'rgba(201,181,255,.45)',1);
  }
 };
-const fragment:Painter=(c,w,h,t,_p,d)=>{
+const fragment:Painter=(c,w,h,t,p,d)=>{
  rect(c,0,0,w,h,'#111318');
  const cx=w*.52,cy=h*.47;
  for(let i=0;i<29*d;i++){
