@@ -1,5 +1,6 @@
 import type {AudioMetrics} from '../../audio/audioSignal';
 import {byId,type DirectedScene,type SceneId} from './catalog';
+import {EXTRA_PAINTERS} from './extraPaint';
 
 export type Pulse=Pick<AudioMetrics,'loudness'|'bass'|'mids'|'treble'|'beat'|'onset'|'downbeat'>;
 export const NO_AUDIO:Pulse={loudness:0,bass:0,mids:0,treble:0,beat:0,onset:0,downbeat:0};
@@ -193,7 +194,8 @@ const PAINTERS:Record<SceneId,Painter>={
  'crimson-impact':crimson,'concrete-manifesto':concrete,'rain-on-glass':rain,
  'neon-velocity':neon,'ink-rebellion':ink,'ocean-reverie':ocean,
  'color-riot':pop,'analog-breakdown':analog,'cloud-cathedral':clouds,
- 'stellar-expansion':stellar,'fragmented-thoughts':fragment,'quiet-pages':quiet
+ 'stellar-expansion':stellar,'fragmented-thoughts':fragment,'quiet-pages':quiet,
+ ...EXTRA_PAINTERS
 };
 /** All coordinate-based effects use song time, so seeking yields reproducible frames. */
 export function drawScene(c:CanvasRenderingContext2D,scene:DirectedScene,w:number,h:number,t:number,p:Pulse,quality:'High'|'Balanced'|'Performance'){
