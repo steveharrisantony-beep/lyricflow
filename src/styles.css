@@ -54,3 +54,20 @@
 .signal-track i{height:100%;display:block;background:linear-gradient(90deg,#398ba4,#9ee8ee);border-radius:10px;transition:width .10s linear}
 .signal-hint{font-size:10px;line-height:1.6;color:#8099a8;margin:14px 0 0}
 @media(max-width:620px){.signal-bars{gap:7px}.signal-panel{padding:13px 10px}.signal-band>span{font-size:8px;letter-spacing:0}.signal-band b{display:none}.signal-header{flex-wrap:wrap}}
+
+.three-lyrics{position:absolute;inset:0;pointer-events:none;z-index:2}
+.three-lyrics canvas{display:block;width:100%;height:100%}
+.auto-scenes{display:flex;align-items:center;gap:9px;color:#b4d6df;font-size:12px;margin:-3px 0 14px}
+.auto-scenes input{accent-color:#8be1e7;width:17px;height:17px}
+.auto-scenes small{color:#7e98a8;font-size:10px}
+.control-bottom{grid-template-columns:repeat(2,minmax(0,1fr)) 1fr}
+.control-bottom .transport{grid-column:1/-1;justify-content:flex-start;border-top:1px solid #243943;padding-top:14px}
+.control-bottom .transport>div{margin-right:auto}
+.cinema-button{border-color:#639daa;background:#1d3540;color:#c1f1f4}
+.performance-mode{max-width:none!important;padding:0!important;background:#02050b!important;overflow:hidden!important}
+.performance-mode .header,.performance-mode .local-player,.performance-mode .signal-panel,.performance-mode .control-panel,.performance-mode footer{display:none!important}
+.performance-mode .stage{position:fixed!important;inset:0!important;height:100dvh!important;min-height:0!important;margin:0!important;width:100vw!important;z-index:999999!important;background:#030710;cursor:pointer}
+.performance-mode .stage-title,.performance-mode .meter,.performance-mode .scene-chip,.performance-mode .stage-bottom,.performance-mode .settings-panel{display:none!important}
+.performance-mode .stage-vignette{background:radial-gradient(ellipse at center,transparent 28%,rgba(0,0,0,.38) 100%)!important}
+.performance-mode .three-lyrics{z-index:6}
+@media(max-width:620px){.control-bottom{grid-template-columns:repeat(2,minmax(0,1fr))}.control-bottom .transport{flex-wrap:wrap}.cinema-button{font-size:10px}}
