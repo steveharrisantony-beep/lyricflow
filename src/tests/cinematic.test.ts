@@ -2,6 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {TEMPLATES,AUDIO_ONLY_SCENES,buildCinematicSchedule,sceneAt,byId} from '../visualization/cinematic/catalog';
 import {buildCues} from '../lyrics/lyricTimeline';
 import {analyzeSections} from '../lyrics/sceneDirector';
+import {fontLabel,FONT_SHOWCASE,fontSpec} from '../visualization/cinematic/fonts';
 
 const sample=Array.from({length:48},(_,i)=>({
  time:i*4,
@@ -12,11 +13,19 @@ const cues=buildCues(sample,[]);
 const sections=analyzeSections(sample);
 
 describe('cinematic scene catalog',()=>{
- it('provides twelve unique original templates',()=>{
-  expect(TEMPLATES).toHaveLength(12);
-  expect(new Set(TEMPLATES.map(t=>t.id)).size).toBe(12);
-  expect(new Set(TEMPLATES.map(t=>t.family)).size).toBeGreaterThan(6);
-  expect(new Set(TEMPLATES.map(t=>t.background)).size).toBe(12);
+ it('provides thirty original cinematic templates',()=>{
+  expect(TEMPLATES).toHaveLength(30);
+  expect(new Set(TEMPLATES.map(t=>t.id)).size).toBe(30);
+  expect(new Set(TEMPLATES.map(t=>t.family)).size).toBeGreaterThanOrEqual(20);
+  expect(new Set(TEMPLATES.map(t=>t.background)).size).toBe(30);
+ });
+ it('gives every scene a valid bundled premium font pack',()=>{
+  for(const item of TEMPLATES){
+   expect(fontLabel(item.font).length).toBeGreaterThan(3);
+   expect(fontSpec(item.font,48,'PREMIUM LYRICS')).toContain(fontLabel(item.font));
+  }
+  expect(FONT_SHOWCASE.length).toBeGreaterThanOrEqual(17);
+  expect(new Set(TEMPLATES.map(t=>t.font)).size).toBeGreaterThanOrEqual(15);
  });
  it('supports deterministic scene plans for identical songs',()=>{
   const a=buildCinematicSchedule(sections,cues,'Ballad','sample');
@@ -41,7 +50,7 @@ describe('cinematic scene catalog',()=>{
   expect(sceneAt(directed,-15)).toBeNull();
  });
  it('has several distinct audio-only fallback environments',()=>{
-  expect(AUDIO_ONLY_SCENES.length).toBeGreaterThanOrEqual(5);
+  expect(AUDIO_ONLY_SCENES.length).toBeGreaterThanOrEqual(12);
   expect(new Set(AUDIO_ONLY_SCENES).size).toBe(AUDIO_ONLY_SCENES.length);
  });
 });
