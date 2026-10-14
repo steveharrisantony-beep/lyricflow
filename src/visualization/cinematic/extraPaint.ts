@@ -1,4 +1,3 @@
-import type {SceneId} from './catalog';
 import type {Pulse} from './paint';
 
 type ExtraId=
@@ -11,7 +10,7 @@ type Painter=(c:CanvasRenderingContext2D,w:number,h:number,t:number,p:Pulse,d:nu
 const TAU=Math.PI*2;
 const rnd=(n:number,k=1)=>{const z=Math.sin(n*126.23+k*67.17)*29841.179;return z-Math.floor(z)};
 const fill=(c:CanvasRenderingContext2D,color:string,x:number,y:number,w:number,h:number)=>{c.fillStyle=color;c.fillRect(x,y,w,h)};
-const circle=(c:CanvasRenderingContext2D,x:number,y:number,r:number,color:string)=>{
+const circle=(c:CanvasRenderingContext2D,x:number,y:number,r:number,color:string|CanvasGradient)=>{
  c.fillStyle=color;c.beginPath();c.arc(x,y,Math.max(.2,r),0,TAU);c.fill()
 };
 const stroke=(c:CanvasRenderingContext2D,a:number,b:number,x:number,y:number,color:string,width=1)=>{
@@ -42,7 +41,7 @@ const monochrome:Painter=(c,w,h,t,p,d)=>{
  // Silhouette of a distant cinematic light shaft.
  polygon(c,[w*.67,0,w*.73,0,w*.83,h,w*.49,h],'rgba(224,224,216,.065)');
 };
-const monument:Painter=(c,w,h,t,p,d)=>{
+const monument:Painter=(c,w,h,_t,p,d)=>{
  gradient(c,w,h,'#182035','#05070f');
  const g=c.createRadialGradient(w*.52,h*.28,1,w*.52,h*.35,w*.6);
  g.addColorStop(0,'rgba(244,217,170,.36)');g.addColorStop(1,'rgba(0,0,0,0)');
@@ -184,7 +183,7 @@ const hologram:Painter=(c,w,h,t,p,d)=>{
   fill(c,'rgba(59,255,218,.38)',x,y,2+rnd(i,61)*10,1);
  }
 };
-const pixel:Painter=(c,w,h,t,p,d)=>{
+const pixel:Painter=(c,w,h,t,_p,d)=>{
  fill(c,'#1c1845',0,0,w,h);
  const u=Math.max(5,Math.floor(Math.min(w,h)/90));
  for(let i=0;i<65*d;i++){
@@ -253,7 +252,7 @@ const playground:Painter=(c,w,h,t,p,_d)=>{
   c.restore();
  }
 };
-const sunset:Painter=(c,w,h,t,p,d)=>{
+const sunset:Painter=(c,w,h,_t,p,d)=>{
  gradient(c,w,h,'#6139a0','#ef6990');
  const sunY=h*.58,sunR=h*.27;
  circle(c,w*.56,sunY,sunR,'#ffc58a');
