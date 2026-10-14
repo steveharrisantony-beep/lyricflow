@@ -38,13 +38,13 @@ try{
  if(canvasCount!==1)throw new Error('Cinematic renderer must own exactly one canvas');
  if(await page.locator('.three-lyrics canvas, canvas.visual-canvas:not(.cinematic-canvas)').count())throw new Error('Legacy visual layer still mounted');
  console.log('PASS: one cinematic renderer replaces both old scene layers');
- const names=['Crimson Impact','Rain on Glass','Color Riot','Stellar Expansion'];
+ const names=['Crimson Impact','Concrete Manifesto','Rain on Glass','Neon Velocity','Ink Rebellion','Ocean Reverie','Color Riot','Analog Breakdown','Cloud Cathedral','Stellar Expansion','Fragmented Thoughts','Quiet Pages'];
  const signatures=[];
  for(const name of names){
   await page.locator('.cinematic-scene-card').filter({hasText:name}).click();
   const id=await page.locator('.cinematic-canvas').getAttribute('data-current-scene');
   if(!id)throw new Error('Scene '+name+' did not start');
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(950);
   const pixels=await page.evaluate(()=>{
     const canvas=document.querySelector('canvas.cinematic-canvas');
     const ctx=canvas.getContext('2d');
@@ -56,7 +56,7 @@ try{
   signatures.push(pixels);
  }
  if(new Set(signatures).size!==names.length)throw new Error('Templates returned identical frames');
- console.log('PASS: four visual templates produce distinct actual canvas frames');
+ console.log('PASS: all twelve cinematic templates produce distinct actual canvas frames');
  await page.locator('button.cinema-button').click();
  await page.locator('.performance-mode').waitFor({timeout:6000});
  console.log('PASS: Cinema Mode entered');
