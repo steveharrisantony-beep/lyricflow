@@ -20,6 +20,7 @@ const browser=await chromium.launch({channel:'chrome',headless:true,args:['--no-
 const page=await browser.newPage({viewport:{width:1280,height:800}});
 const errors=[];
 page.on('pageerror',error=>errors.push(error.message));
+page.on('response',response=>{if(response.status()>=400)console.log('HTTP '+response.status()+' '+response.url().slice(0,220))});
 page.on('console',message=>{if(message.type()==='error')console.log('Browser console: '+message.text().slice(0,200))});
 try{
  await page.goto('http://127.0.0.1:5173/',{waitUntil:'domcontentloaded'});
