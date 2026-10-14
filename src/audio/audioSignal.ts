@@ -7,6 +7,9 @@ let analyser:AnalyserNode|null=null;
 let frequency:Uint8Array<ArrayBuffer>|null=null;
 let waveform:Uint8Array<ArrayBuffer>|null=null;
 let playing=false,previousEnergy=0,averageEnergy=0,beatCooldown=0,lastSample=0;
+let mediaElement:HTMLAudioElement|null=null;
+export function setLocalMediaElement(element:HTMLAudioElement|null){mediaElement=element;}
+export function getLocalMediaTime(){return mediaElement&&!mediaElement.paused?mediaElement.currentTime:null;}
 const clamp=(v:number)=>Math.min(1,Math.max(0,v));
 export function setLocalAudioPlaying(value:boolean){
  playing=value;
