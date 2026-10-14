@@ -18,6 +18,16 @@ export default function App(){
  const [localPlaying,setLocalPlaying]=useState(false);
  const [localTime,setLocalTime]=useState(0);
  const [localLoaded,setLocalLoaded]=useState(false);
+ const [audioReadout,setAudioReadout]=useState({source:'IDLE',level:0,bass:0,mids:0,treble:0,beat:0});
+ useEffect(()=>{
+   const id=window.setInterval(()=>{
+     const canvas=document.querySelector<HTMLCanvasElement>('canvas.visual-canvas');
+     if(!canvas)return;
+     const numeric=(key:string)=>Number(canvas.dataset[key]||0);
+     setAudioReadout({source:canvas.dataset.audioSource||'IDLE',level:numeric('audioLevel'),bass:numeric('audioBass'),mids:numeric('audioMids'),treble:numeric('audioTreble'),beat:numeric('audioBeat')});
+   },140);
+   return()=>clearInterval(id);
+ },[]);
  useEffect(()=>{const id=setInterval(()=>{const v=document.querySelector<HTMLCanvasElement>('.visual-canvas')?.dataset.fps;if(v)setFps(Number(v))},1000);return()=>clearInterval(id)},[]);
  const fullscreen=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();setFullscreenError('')}catch{setFullscreenError('Fullscreen is not supported in this browser preview. Try opening the app in its own browser tab.')}};
  return <div className="shell">
@@ -35,6 +45,11 @@ export default function App(){
    {settings&&<aside className="settings-panel"><div className="settings-title"><SlidersHorizontal size={16}/> VISUAL SETTINGS <button aria-label="Close settings" onClick={()=>setSettings(false)}>×</button></div><label className="check"><span><b>Reduced motion</b><small>Calmer animation</small></span><input type="checkbox" checked={reducedMotion} onChange={e=>setReducedMotion(e.target.checked)}/></label><p>RENDERING QUALITY</p><div className="quality-options">{(['High','Balanced','Performance'] as Quality[]).map(q=><button key={q} className={quality===q?'active':''} onClick={()=>setQuality(q)}>{q}</button>)}</div><p className="note">Graphics are generated locally in your browser. Stage 1 does not access your microphone.</p></aside>}
   </section>
   <LocalPlayer onActiveChange={setLocalPlaying} onTimeChange={setLocalTime} onFileChange={setLocalLoaded}/>
+  <section className="signal-panel" aria-label="Live audio analysis">
+    <div className="signal-header"><strong>LIVE AUDIO REACTIVITY</strong><span className={'signal-mode '+(audioReadout.source==='LOCAL AUDIO'?'connected':'')}>{audioReadout.source==='LOCAL AUDIO'?'● Local audio detected':audioReadout.source==='DEMO'?'◌ Simulated energy':'○ No audio source'}</span></div>
+    <div className="signal-bars">{([['LOUDNESS',audioReadout.level],['BASS',audioReadout.bass],['MID',audioReadout.mids],['TREBLE',audioReadout.treble],['BEAT',audioReadout.beat]] as const).map(([label,value])=><div className="signal-band" key={label}><span>{label}<b>{value}%</b></span><div className="signal-track"><i style={{width:value+'%'}}/></div></div>)}</div>
+    <p className="signal-hint">{audioReadout.source==='LOCAL AUDIO'?'Analyzing the audio file locally. Try a bass-heavy section and watch the bars and visuals change.':'To react to real music, choose an MP3 above and press Play. Demo mode produces simulated movement, not real audio analysis.'}</p>
+  </section>
   <ManualLyrics time={localTime} trackLoaded={localLoaded}/>
   <SpotifyDiscovery/>
   <section className="control-panel">
