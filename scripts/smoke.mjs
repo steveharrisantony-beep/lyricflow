@@ -51,6 +51,17 @@ try{
  console.log('PASS: user-requested section order is preserved');
  if(await page.locator('.cinematic-scene-card').count()!==30)throw new Error('Expected exactly thirty templates');
  console.log('PASS: all 30 scene controls rendered on tablet-sized layout');
+ const loadedFonts=await page.evaluate(async()=>{
+  const families=['400 24px "Anton"','700 24px "Orbitron"','700 24px "Unbounded"',
+   '400 24px "Press Start 2P"','600 24px "Bodoni Moda"','700 24px "Cinzel Decorative"'];
+  for(const f of families){
+   const loaded=await document.fonts.load(f,'LYRICFLOW');
+   if(!loaded.length||!document.fonts.check(f,'LYRICFLOW'))return f;
+  }
+  return null;
+ });
+ if(loadedFonts)throw new Error('Bundled font failed to load: '+loadedFonts);
+ console.log('PASS: sampled premium display fonts are served locally and loaded in Chrome');
  const names=["Crimson Impact","Concrete Manifesto","Rain on Glass","Neon Velocity","Ink Rebellion","Ocean Reverie","Color Riot","Analog Breakdown","Cloud Cathedral","Stellar Expansion","Fragmented Thoughts","Quiet Pages","Monochrome Memory","Monument Titles","Midnight Confession","Glass Architecture","Ransom Poetry","Type Collision","Petal Memory","Submerged Words","Inferno Letterforms","Holographic Frequency","Pixel Pulse","Marker Diary","Bubble Pop","Word Playground","Sunset Frequency","Typographic Vortex","Midnight Transit","Final Ascension"];
  const signatures=[];
  for(const name of names){
