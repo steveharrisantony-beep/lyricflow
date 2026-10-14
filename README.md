@@ -45,3 +45,26 @@ When the local track is paused or removed, demo mode returns to simulated energy
 
 ## Current verification
 Eight prior Stage 1 tablet interaction tests were user-verified. The local player is newly implemented and still requires a fresh StackBlitz build plus on-tablet playback test. No claim of completed microphone, lyrics, AI, Spotify, or deployment features is made.
+
+
+## Spotify metadata discovery (optional; NO synchronization)
+The Spotify discovery panel can connect to a Spotify developer application using OAuth 2.0 PKCE (no client secret). It requests `user-read-currently-playing` and refreshes the token when needed. Track name, artist, album, and track URL are shown **only in a separate metadata panel**. Player time, Spotify audio, and Spotify metadata are **not connected to the lyrics timeline or visualizer engine**.
+
+To configure:
+1. Create a Spotify app using the official Spotify developer dashboard, subject to account and development-mode eligibility.
+2. Open LyricFlow as a standalone page. Copy the **exact redirect URI** displayed in its Spotify section into your application's Redirect URIs on the Spotify developer dashboard. Spotify applies redirect URI security restrictions; localhost may be treated differently from HTTPS remote sites.
+3. Paste **only the public Client ID** into the LyricFlow field. Never paste a Client Secret, access token, or refresh token.
+4. Choose Connect Spotify; sign in and consent. The PKCE callback returns to the same URL.
+5. If the API denies access, check eligibility, scopes, user allowlist, account tier, and approved redirect URIs.
+
+OAuth session data is held in browser **sessionStorage** and will normally disappear when the tab's session ends; the integration does not use a backend. Do not embed or transmit credentials in source code.
+
+Relevant policy: https://developer.spotify.com/policy and https://developer.spotify.com/compliance-tips. Spotify expressly prohibits synchronizing Spotify recordings with other recordings, lyrics or visual media, even for a noncommercial developer project without authorization.
+
+## Manual LRC lyrics
+In the **Local Timed Lyrics** section, click Edit Lyrics, enter user-authorized lines in `[mm:ss.xx]Text` format, and optionally supply corresponding romanized lines separately. The local MP3 playback clock selects each line. Adjust the offset manually if your timestamps need correction. A clearly original demo sample is included. No online lyrics are fetched; lyrics are kept in memory for this prototype and vanish after a refresh.
+
+LRCLIB has an official CORS-capable, freely accessible lyrics API (https://lrclib.net/docs). However, its free API access does not necessarily grant public-display, reproduction, or caching rights for every third-party copyrighted lyric. We have **not** wired it to automatic display until rights and acceptable usage are established. JioSaavn community proxies and unofficial Google GTX endpoints are similarly not wired in. Automatic Indian-language romanization has **not** been implemented; the Romanized field accepts manual corrections without altering the original lyrics.
+
+## Verification status
+The Spotify OAuth flow and local LRC editor were committed to GitHub, but have **not yet been verified** with actual Spotify credentials, Android browser testing, or a successful production build. Test in StackBlitz before relying on them.
