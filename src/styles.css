@@ -112,3 +112,15 @@
 .stage:has(.three-lyrics[data-has-lyrics="yes"])>.vignette{background:radial-gradient(ellipse at center,transparent 35%,rgba(0,3,8,.45) 100%)}
 .performance-mode .stage:has(.three-lyrics[data-has-lyrics="yes"])>.visual-canvas{opacity:.08}
 @media(max-width:620px){.scene-director-controls{align-items:flex-start}.camera-picker{width:100%;justify-content:space-between}}
+
+.music-metrics{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:16px}
+.music-metrics>span{background:#162c35;border:1px solid #2b4855;border-radius:7px;color:#8fa8b4;padding:8px 10px;font-size:10px}
+.music-metrics b{color:#b8ecf3;font-weight:600;margin-left:5px}
+.mic-panel{border-color:#355358;background:linear-gradient(115deg,#101f29,#101923)}
+.mic-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.mic-row span{font-size:11px;color:#9bb3c0;line-height:1.6}
+.mic-row .mic-on{color:#97e5c8}
+.plain-lyrics-fallback{display:grid;gap:9px;margin-top:12px}
+.plain-lyrics-fallback .upload-button{justify-self:start}
+.plain-lyrics-fallback small{font-size:10px;color:#89a4b0}
+@media(max-width:620px){.music-metrics{gap:6px}.music-metrics>span{font-size:9px;padding:6px}.mic-row .upload-button{width:100%}}
