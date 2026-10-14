@@ -8,7 +8,7 @@ export default function Visualizer(props:Props){
   const canvas=canvasRef.current;if(!canvas)return;
   const ctx=canvas.getContext('2d');if(!ctx)return;
   let raf=0,elapsed=0,last=0,frame=0,fpsAt=0,fps=60,w=1,h=1,points:{x:number;y:number;r:number;phase:number}[]=[];
-  let previousScene:Scene=config.current.scene,transition=1;
+  let previousScene:Scene=config.current.scene,transition=1; let previousQuality=config.current.quality; let lastQualityCheck=0;
   const resize=()=>{
    const dpr=Math.min(devicePixelRatio||1,config.current.quality==='High'?2:1.3);
    w=Math.max(1,canvas.clientWidth);h=Math.max(1,canvas.clientHeight);canvas.width=Math.ceil(w*dpr);canvas.height=Math.ceil(h*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);
@@ -18,7 +18,8 @@ export default function Visualizer(props:Props){
   const paint=(now:number)=>{
    raf=requestAnimationFrame(paint);
    const c=config.current;const dt=Math.min(.05,(now-last||16.7)/1000);last=now;
-   if(c.paused)return;
+   if(c.paused || document.hidden)return;
+   if(c.quality!==previousQuality && now-lastQualityCheck>100){previousQuality=c.quality;lastQualityCheck=now;resize();}
    elapsed+=dt*c.speed*(c.reducedMotion?.12:1);
    frame++;if(now-fpsAt>1000){fps=Math.round(frame*1000/(now-fpsAt));frame=0;fpsAt=now;canvas.dataset.fps=String(fps)}
    if(c.scene!==previousScene){previousScene=c.scene;transition=0}
