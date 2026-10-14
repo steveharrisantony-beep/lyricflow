@@ -135,3 +135,23 @@
  padding:10px 12px;border-radius:7px;border:1px solid #59717e;
  background:#08131cdd;color:#a8ccdb;font-size:11px;line-height:1.5;
 }
+
+/* Cinematic renderer v2: completely replaces the old overlapping 2D/Three visual layers. */
+.stage{height:clamp(460px,55vw,745px);background:#080b13}
+.cinematic-canvas{position:absolute;inset:0;width:100%;height:100%;z-index:1;display:block;object-fit:cover}
+.cinematic-chip{z-index:3;right:16px;bottom:55px;background:rgba(12,13,19,.66);border-color:rgba(242,246,255,.16);backdrop-filter:blur(10px)}
+.cinematic-chip .chip-icon{font-size:19px;color:#f8ddc8}
+.stage-bottom{z-index:3;text-shadow:0 1px 3px #000}
+.cinematic-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.cinematic-scene-card{min-height:87px;border-color:#37424b;background:#12151c}
+.cinematic-scene-card:hover{border-color:#8e939d;background:#1f2630}
+.cinematic-scene-card.selected{border-color:#e6cbac;background:#302c2c}
+.cinematic-preview{font-size:30px;font-weight:800;box-shadow:inset 0 0 0 1px #ffffff22}
+.cinematic-scene-card .scene-copy b{font-size:11px;white-space:normal;line-height:1.3}
+.cinematic-scene-card .scene-copy small{font-size:9px;color:#99a9b6}
+.cinematic-scene-card .scene-number{color:#d5bd9e}
+.performance-mode .cinematic-chip,.performance-mode .stage-bottom{display:none!important}
+.performance-mode .cinematic-canvas{height:100%!important;width:100%!important}
+.performance-mode .stage{background:#070711}
+@media(max-width:950px){.cinematic-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.cinematic-scene-card{min-height:80px}}
+@media(max-width:620px){.stage{height:clamp(360px,70vh,620px)}.cinematic-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cinematic-scene-card .scene-art{flex-basis:50px;width:50px;height:56px}.cinematic-chip{right:10px;bottom:48px}}
