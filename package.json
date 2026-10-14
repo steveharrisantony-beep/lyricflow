@@ -18,13 +18,11 @@
     "react": "latest",
     "react-dom": "latest",
     "lucide-react": "^0.468.0",
-    "three": "^0.180.0",
     "@indic-transliteration/sanscript": "^1.3.3"
   },
   "devDependencies": {
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "@types/three": "^0.180.0",
     "vitest": "^5.0.4",
     "playwright": "^1.58.0"
   }
