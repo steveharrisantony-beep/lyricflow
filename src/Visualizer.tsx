@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { readLocalAudio, isLocalAudioPlaying, getLocalMediaTime } from './audio/audioSignal';
+import { readLocalAudio, getInputSource, getLocalMediaTime } from './audio/audioSignal';
 import { getLyricState } from './lyrics/lyricTimeline';
 export type Scene = 'Particles'|'Light trails'|'Geometry'|'Kinetic type';
 type Props={scene:Scene;intensity:number;speed:number;quality:'High'|'Balanced'|'Performance';demo:boolean;paused:boolean;reducedMotion:boolean;autoScenes:boolean};
@@ -36,7 +36,7 @@ export default function Visualizer(props:Props){
    glow.addColorStop(0,'rgba(34,100,121,.32)');glow.addColorStop(1,'rgba(4,8,15,0)');
    ctx.fillStyle=glow;ctx.fillRect(0,0,w,h);
    const localAudio=readLocalAudio(now);
-   const listening=isLocalAudioPlaying();
+   const inputSource=getInputSource();
    const demoEnergy=c.demo&&mediaTime===null? .37+.22*Math.sin(elapsed*2.8)+.15*Math.sin(elapsed*5.8):0;
    const energy=localAudio?.loudness??demoEnergy;
    const bass=localAudio?.bass??demoEnergy*.75;
@@ -47,7 +47,7 @@ export default function Visualizer(props:Props){
    const onset=localAudio?.onset??0;
    const section=localAudio?.section??'unknown';
    const strength=c.intensity*(.08+energy*1.5+beat*.55+onset*.24)*(section==='energetic'?1.2:section==='quiet'?.72:1);
-   canvas.dataset.audioSource=listening?'LOCAL AUDIO':c.demo?'DEMO':'IDLE';
+   canvas.dataset.audioSource=inputSource!=='IDLE'?inputSource:c.demo?'DEMO':'IDLE';
    canvas.dataset.audioLevel=String(Math.round(energy*100));
    canvas.dataset.audioBass=String(Math.round(bass*100));
    canvas.dataset.audioMids=String(Math.round(mids*100));
