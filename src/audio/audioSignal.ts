@@ -44,7 +44,7 @@ export function readLocalAudio(now=performance.now()):AudioMetrics|null{
  let squared=0;
  for(let i=0;i<waveform.length;i++){const n=(waveform[i]-128)/128;squared+=n*n;}
  const rms=Math.sqrt(squared/waveform.length);
- const gain=.24+sensitivity*1.5;
+ const gain=1.6*Math.pow(sensitivity,1.3);
  const bass=clamp(band(35,220)*1.7*gain);
  const mids=clamp(band(220,2300)*2.0*gain);
  const treble=clamp(band(2300,11000)*2.2*gain);
