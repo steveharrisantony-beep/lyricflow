@@ -20,6 +20,15 @@ const moodDictionary:Record<Exclude<Mood,'abstract'>,readonly string[]>={
 };
 const palette:Record<Mood,number>={cosmic:0x8f91ff,water:0x57c8ea,warm:0xffc090,fire:0xff7458,solitude:0x95a6bc,celebration:0xf8b2e7,abstract:0x89dce4,memory:0xcabbd9,nature:0x9ad6aa};
 const font:Record<Mood,FontStyle>={cosmic:'grotesk',water:'editorial',warm:'editorial',fire:'expressive',solitude:'mono',celebration:'expressive',abstract:'grotesk',memory:'editorial',nature:'editorial'};
+export function fontForGenre(genre:string):FontStyle|null{
+ const name=genre.trim().toLowerCase();
+ if(!name)return null;
+ if(/classical|ballad|cinematic|acoustic|folk/.test(name))return 'editorial';
+ if(/rock|metal|punk/.test(name))return 'expressive';
+ if(/hip.?hop|rap|trap/.test(name))return 'mono';
+ if(/edm|dance|electronic|pop|synth/.test(name))return 'grotesk';
+ return null;
+}
 const motion:Record<Mood,MotionStyle>={cosmic:'orbit',water:'surge',warm:'drift',fire:'scatter',solitude:'recede',celebration:'pulse',abstract:'orbit',memory:'drift',nature:'drift'};
 const camera:Record<Mood,ScenePlan['camera']>={cosmic:'orbit',water:'side',warm:'dolly',fire:'top',solitude:'pullback',celebration:'orbit',abstract:'orbit',memory:'dolly',nature:'side'};
 function score(text:string){
@@ -68,7 +77,7 @@ export function analyzeSections(lines:TimedLine[],genre?:string):ScenePlan[]{
   const winning=scores[mood]||0,runner=scores[best[1]||'abstract']||0;
   const confidence=mood==='abstract'?.15:Math.min(.88,.35+(winning-runner)*.12+winning*.045);
   const energy=mood==='celebration'||mood==='fire'?.87:mood==='solitude'?.18:mood==='memory'?.34:.55;
-  const plan:ScenePlan={start:window.start,end:window.end,mood,font:font[mood],motion:motion[mood],camera:camera[mood],confidence,palette:palette[mood],reason:mood==='abstract'?'No clear lyric imagery':'Section-level imagery and mood',energy};
+  const plan:ScenePlan={start:window.start,end:window.end,mood,font:fontForGenre(genre||'')||font[mood],motion:motion[mood],camera:camera[mood],confidence,palette:palette[mood],reason:mood==='abstract'?'No clear lyric imagery':'Section-level imagery and mood',energy};
   results.push(plan);previous=mood;
  }
  return results;
