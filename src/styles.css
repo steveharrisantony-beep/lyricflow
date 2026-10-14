@@ -124,3 +124,14 @@
 .plain-lyrics-fallback .upload-button{justify-self:start}
 .plain-lyrics-fallback small{font-size:10px;color:#89a4b0}
 @media(max-width:620px){.music-metrics{gap:6px}.music-metrics>span{font-size:9px;padding:6px}.mic-row .upload-button{width:100%}}
+
+/* When genuine lyric cues exist, the graphics—not the landing-page slogan—take over. */
+.stage:has(.three-lyrics[data-has-lyrics="yes"]) .stage-title{opacity:0;pointer-events:none;transition:opacity .4s}
+.stage:has(.three-lyrics[data-has-lyrics="yes"]) .meter{opacity:.26}
+.performance-mode .vignette{background:radial-gradient(ellipse at center,transparent 30%,rgba(0,3,8,.39) 100%)!important}
+.three-lyrics[data-webgl="unavailable"]::after{
+ content:'3D typography requires WebGL. The Canvas 2D visualizer remains available.';
+ position:absolute;right:12px;bottom:55px;max-width:270px;
+ padding:10px 12px;border-radius:7px;border:1px solid #59717e;
+ background:#08131cdd;color:#a8ccdb;font-size:11px;line-height:1.5;
+}
