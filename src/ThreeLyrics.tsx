@@ -100,14 +100,16 @@ export default function ThreeLyrics(props:Props){
    renderer.setSize(w,h,false);
   };
   const observer=new ResizeObserver(resize);observer.observe(root);resize();
-  let raf=0,last=0,clock=0,blend=1;
+  let raf=0,last=0,clock=0,blend=1,previousQuality:Quality=props.quality,hadLyrics=false;
   const animate=(now:number)=>{
    raf=requestAnimationFrame(animate);
    const dt=Math.min(.045,(now-last||16)/1000);last=now;
    const c=cfg.current;if(c.paused||document.hidden)return;
+   if(previousQuality!==c.quality){previousQuality=c.quality;resize();}
    const musicTime=getLocalMediaTime();
    clock=musicTime??clock+dt;
    const state=getLyricState(clock),cue=state.cue;
+   if(Boolean(cue)!==hadLyrics){hadLyrics=Boolean(cue);root.dataset.hasLyrics=hadLyrics?'yes':'no';}
    const plan:ScenePlan|null=c.autoScenes?state.plan:null;
    const mood:Mood=plan?.mood||'abstract';
    const palette=plan?.palette||0x87cddd;
@@ -221,8 +223,6 @@ export default function ThreeLyrics(props:Props){
      material.opacity=(i===0?.98:i===1?.12:i===2?.65:.48)*smooth(blend);
     }
    }
-   const limit=c.quality==='Performance'?55:60;
-   renderer.setPixelRatio(Math.min(renderer.getPixelRatio(),limit===55?1:2));
    renderer.render(world,camera);
   };
   raf=requestAnimationFrame(animate);
