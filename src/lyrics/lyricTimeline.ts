@@ -6,8 +6,14 @@ let cues:LyricCue[]=[];
 let sections:ScenePlan[]=[];
 let offset=0;
 let display:'original'|'romanized'|'both'='original';
+let genrePreset='';
+let revision=0;
+/** Read-only snapshot for the cinematic scheduler; rebuilt only after lyric edits. */
+export function getLyricTimelineSnapshot(){
+ return {revision,cues,sections,genre:genrePreset};
+}
 export function setLyricTimeline(lines:LyricCue[],timingOffset=0,mode:typeof display='original',genre=''){
- cues=lines;offset=timingOffset;display=mode;
+ cues=lines;offset=timingOffset;display=mode;genrePreset=genre;revision++;
  sections=analyzeSections(lines.map(l=>({time:l.time,text:l.text})),genre);
 }
 export function getLyricState(time:number){
