@@ -6,6 +6,7 @@ export interface AudioMetrics{
 }
 const metrics:AudioMetrics={loudness:0,bass:0,mids:0,treble:0,beat:0,rms:0,onset:0,downbeat:0,bpm:0,tempoConfidence:0,section:'unknown',sectionConfidence:0};
 let analyser:AnalyserNode|null=null,frequency:Uint8Array<ArrayBuffer>|null=null,waveform:Uint8Array<ArrayBuffer>|null=null;
+let localAnalyser:AnalyserNode|null=null,microphoneAnalyser:AnalyserNode|null=null,microphonePlaying=false;
 let mediaElement:HTMLAudioElement|null=null,playing=false,sensitivity=.14;
 let lastSample=0,previousEnergy=0,averageEnergy=0,lastHit=0,lastSongTime=0;
 let beatCounter=0,sectionAt=0,historyCount=0,historyCursor=0;
@@ -15,13 +16,9 @@ const clamp=(v:number)=>Math.max(0,Math.min(1,v));
 export function setAudioSensitivity(value:number){sensitivity=clamp(value)}
 export function getAudioSensitivity(){return sensitivity}
 export function setLocalMediaElement(element:HTMLAudioElement|null){mediaElement=element}
-export function getLocalMediaTime(){return mediaElement&&mediaElement.currentSrc?mediaElement.currentTime:null}
-export function setLocalAudioPlaying(value:boolean){
- playing=value;
- if(!value){previousEnergy=0;metrics.beat=0;metrics.onset=0;metrics.downbeat=0}
-}
-export function isLocalAudioPlaying(){return playing&&analyser!==null}
-export function connectLocalAudio(node:AnalyserNode|null){
+export function getLocalMediaTime(){return mediaElement&&mediaElement.currentSrc&&(!microphonePlaying||playing)?mediaElement.currentTime:null}
+function activate(node:AnalyserNode|null){
+ if(node===analyser)return;
  analyser=node;frequency=node?new Uint8Array(new ArrayBuffer(node.frequencyBinCount)):null;
  waveform=node?new Uint8Array(new ArrayBuffer(node.fftSize)):null;
  lastSample=0;previousEnergy=0;averageEnergy=0;lastHit=0;lastSongTime=0;
@@ -29,6 +26,12 @@ export function connectLocalAudio(node:AnalyserNode|null){
  metrics.bpm=0;metrics.tempoConfidence=0;metrics.section='unknown';metrics.sectionConfidence=0;
  for(const field of ['loudness','bass','mids','treble','rms','beat','onset','downbeat'] as const)metrics[field]=0;
 }
+export function setLocalAudioPlaying(value:boolean){playing=value;activate(value?localAnalyser:microphonePlaying?microphoneAnalyser:null)}
+export function isLocalAudioPlaying(){return playing&&localAnalyser!==null}
+export function isMicrophonePlaying(){return !playing&&microphonePlaying&&microphoneAnalyser!==null}
+export function getInputSource(){return isLocalAudioPlaying()?'LOCAL AUDIO':isMicrophonePlaying()?'MICROPHONE':'IDLE'}
+export function connectLocalAudio(node:AnalyserNode|null){localAnalyser=node;if(playing||!microphonePlaying)activate(playing?node:null)}
+export function connectMicrophoneAudio(node:AnalyserNode|null){microphoneAnalyser=node;microphonePlaying=Boolean(node);if(!playing)activate(node)}
 function estimateTempo(){
  const intervals:number[]=[]; // only allocated on infrequent beat events
  for(let i=1;i<hitTimes.length;i++){
@@ -47,7 +50,7 @@ function estimateTempo(){
  metrics.tempoConfidence=clamp(consistency*Math.min(1,intervals.length/8))*.8; // never claim exact tempo
 }
 export function readLocalAudio(now=performance.now()):AudioMetrics|null{
- if(!analyser||!frequency||!waveform||!playing)return null;
+ if(!analyser||!frequency||!waveform||(!playing&&!microphonePlaying))return null;
  if(now-lastSample<8)return metrics;
  const dt=Math.min(.08,Math.max(.008,(now-(lastSample||now-16))/1000));
  lastSample=now;
