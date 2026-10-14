@@ -1,6 +1,6 @@
 import { useEffect,useRef,useState } from 'react';
 import { Upload, Play, Pause, Volume2, Music2, X } from 'lucide-react';
-import { connectLocalAudio, setLocalAudioPlaying } from './audioSignal';
+import { connectLocalAudio, setLocalAudioPlaying, setLocalMediaElement } from './audioSignal';
 
 const format=(seconds:number)=>Number.isFinite(seconds)?`${Math.floor(seconds/60)}:${String(Math.floor(seconds%60)).padStart(2,'0')}`:'0:00';
 export default function LocalPlayer({onActiveChange,onTimeChange,onFileChange}:{onActiveChange:(active:boolean)=>void;onTimeChange:(time:number)=>void;onFileChange:(loaded:boolean)=>void}){
@@ -25,8 +25,10 @@ export default function LocalPlayer({onActiveChange,onTimeChange,onFileChange}:{
    source.connect(analyser);
    analyser.connect(context.destination);
    ctxRef.current=context;
+   setLocalMediaElement(element);
    connectLocalAudio(analyser);
   }
+  setLocalMediaElement(element);
   await ctxRef.current.resume();
  };
  const play=async()=>{
@@ -48,9 +50,9 @@ export default function LocalPlayer({onActiveChange,onTimeChange,onFileChange}:{
   const player=audioRef.current;player?.pause();
   if(player){player.removeAttribute('src');player.load()}
   if(urlRef.current){URL.revokeObjectURL(urlRef.current);urlRef.current=null}
-  setLocalAudioPlaying(false);onFileChange(false);onTimeChange(0);setName('');setTime(0);setDuration(0);setActive(false);onActiveChange(false);setError('');
+  setLocalAudioPlaying(false);setLocalMediaElement(null);onFileChange(false);onTimeChange(0);setName('');setTime(0);setDuration(0);setActive(false);onActiveChange(false);setError('');
  };
- useEffect(()=>()=>{audioRef.current?.pause();setLocalAudioPlaying(false);connectLocalAudio(null);if(urlRef.current)URL.revokeObjectURL(urlRef.current);void ctxRef.current?.close()},[]);
+ useEffect(()=>()=>{audioRef.current?.pause();setLocalAudioPlaying(false);setLocalMediaElement(null);connectLocalAudio(null);if(urlRef.current)URL.revokeObjectURL(urlRef.current);void ctxRef.current?.close()},[]);
  return <section className="local-player">
    <div className="player-heading"><div className="heading-left"><span className="heading-icon"><Music2 size={17}/></span><div><b>LOCAL MUSIC PLAYER</b><small>Play your own audio · On-device analysis</small></div></div><span className="local-badge">NO UPLOADS</span></div>
    <audio ref={audioRef} preload="metadata" onTimeUpdate={e=>{setTime(e.currentTarget.currentTime);onTimeChange(e.currentTarget.currentTime)}} onLoadedMetadata={e=>setDuration(e.currentTarget.duration)} onPlay={()=>{setLocalAudioPlaying(true);setActive(true);onActiveChange(true)}} onPause={()=>{setLocalAudioPlaying(false);setActive(false);onActiveChange(false)}} onEnded={()=>{setLocalAudioPlaying(false);setActive(false);onActiveChange(false)}} onError={()=>setError('This audio format could not be decoded by the browser.')} />
