@@ -119,6 +119,12 @@ export function sceneAt(list:readonly DirectedScene[],time:number):DirectedScene
  return time<list[lo].end?list[lo]:null;
 }
 export const AUDIO_ONLY_SCENES:readonly SceneId[]=[
- 'neon-velocity','color-riot','stellar-expansion','analog-breakdown','crimson-impact','ocean-reverie',
- 'holographic-frequency','sunset-frequency','pixel-pulse','glass-architecture','inferno-letterforms','midnight-transit'
+ 'crimson-impact','cloud-cathedral','type-collision','submerged-words',
+ 'neon-velocity','monochrome-memory','color-riot','glass-architecture',
+ 'inferno-letterforms','quiet-pages','holographic-frequency','petal-memory',
+ 'midnight-transit','bubble-pop','fragmented-thoughts','sunset-frequency',
+ 'concrete-manifesto','stellar-expansion','marker-diary','monument-titles',
+ 'analog-breakdown','ocean-reverie','ransom-poetry','typographic-vortex',
+ 'rain-on-glass','pixel-pulse','ink-rebellion','word-playground',
+ 'midnight-confession','final-ascension'
 ] as const;
