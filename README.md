@@ -68,3 +68,13 @@ LRCLIB has an official CORS-capable, freely accessible lyrics API (https://lrcli
 
 ## Verification status
 The Spotify OAuth flow and local LRC editor were committed to GitHub, but have **not yet been verified** with actual Spotify credentials, Android browser testing, or a successful production build. Test in StackBlitz before relying on them.
+
+
+## 3D Lyric Cinema (incremental prototype)
+This release introduces a **Three.js WebGL overlay** with depth-layered kinetic typography, three smoothly interpolated camera paths, original/romanized timed lyric cues, estimated word emphasis, and a deterministic vocabulary of visual moods. It uses the local playback clock; manual timed lyric input is needed. Audio sensitivity is adjustable (default 35%) and affects the local frequency/RMS signal only. Enable **Auto scenes from lyrics** to map lyric mood to the existing background scene families.
+
+**Cinema Mode** enters fullscreen where supported and hides the entire interface except the rendered effects and 3D lyrics. Tap anywhere on the canvas to leave it (or use the Android Back key / Escape). If fullscreen permission is unavailable the same clean presentation is used in the tab.
+
+This is an original, reusable prototype inspired by the *architectural ideas* in https://github.com/mexicat/pdoom-video, not a copy of its song-specific scenes. It does **not** yet offer automatically sourced lyrics, verified word alignment, intelligent contextual AI interpretation, high-end shader postprocessing, exact musical downbeat detection, or 4K60 guarantees. Word timings are currently proportionally **estimated** between supplied line timestamps. WebGL is required for the true 3D overlay; existing Canvas visuals still work if it is unavailable.
+
+Recommended tablet acceptance checks: open local audio, add timestamped lyric lines, enable auto-scene selection, seek through sections, compare camera perspectives, lower Audio sensitivity to 15-30% if the visualizer overreacts, and activate Cinema Mode. Confirm the user can tap to exit.
