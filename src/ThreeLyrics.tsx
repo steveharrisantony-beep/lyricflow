@@ -4,7 +4,7 @@ import {getLyricState, type LyricMood} from './lyrics/lyricTimeline';
 import {getLocalMediaTime,readLocalAudio} from './audio/audioSignal';
 
 const tones:Record<LyricMood,number>={cosmic:0x7d91ff,water:0x5ad6e8,warm:0xffc27c,fire:0xff755e,solitude:0x8aa6c1,celebration:0xf5a1ed,abstract:0xa4e3ea};
-type Props={quality:'High'|'Balanced'|'Performance';intensity:number;speed:number;reducedMotion:boolean;demo:boolean};
+type Props={quality:'High'|'Balanced'|'Performance';intensity:number;speed:number;reducedMotion:boolean;demo:boolean;paused:boolean};
 export default function ThreeLyrics(props:Props){
  const element=useRef<HTMLDivElement>(null),config=useRef(props);
  useEffect(()=>{config.current=props},[props]);
@@ -17,6 +17,7 @@ export default function ThreeLyrics(props:Props){
   renderer.domElement.style.width='100%';renderer.domElement.style.height='100%';renderer.domElement.style.display='block';
   const scene=new THREE.Scene();
   const camera=new THREE.PerspectiveCamera(44,1,.1,150);
+  camera.position.set(0,0,10);
   const group=new THREE.Group();scene.add(group);
   const glow=new THREE.PointLight(0x83cadd,5,22);glow.position.set(0,2,5);scene.add(glow);
   const sharedGeo=new THREE.IcosahedronGeometry(.12,0);
@@ -59,10 +60,10 @@ export default function ThreeLyrics(props:Props){
   const animate=(now:number)=>{
    raf=requestAnimationFrame(animate);
    const dt=Math.min(.05,(now-last||16)/1000);last=now;
-   if(document.hidden)return;
    const c=config.current;
+   if(document.hidden||c.paused)return;
    const mediaTime=getLocalMediaTime();
-   clock=mediaTime??clock+dt*(c.reducedMotion?.15:1);
+   clock=mediaTime??clock+dt;
    const state=getLyricState(clock);
    const cue=state.cue;
    const words=cue?.words||[];
