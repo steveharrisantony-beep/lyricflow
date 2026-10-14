@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { readLocalAudio } from './audio/audioSignal';
 export type Scene = 'Particles'|'Light trails'|'Geometry'|'Kinetic type';
 type Props={scene:Scene;intensity:number;speed:number;quality:'High'|'Balanced'|'Performance';demo:boolean;paused:boolean;reducedMotion:boolean};
 export default function Visualizer(props:Props){
@@ -28,8 +29,9 @@ export default function Visualizer(props:Props){
    const glow=ctx.createRadialGradient(w*.56,h*.52,0,w*.56,h*.52,Math.max(w,h)*.65);
    glow.addColorStop(0,'rgba(34,100,121,.32)');glow.addColorStop(1,'rgba(4,8,15,0)');
    ctx.fillStyle=glow;ctx.fillRect(0,0,w,h);
-   const energy=c.demo? .58+.25*Math.sin(elapsed*2.8)+.12*Math.sin(elapsed*6.2):.32;
-   const strength=c.intensity*(.65+energy*.65);
+   const localAudio=readLocalAudio();
+   const energy=localAudio?Math.min(1,localAudio.loudness*2.5+localAudio.beat*.28):c.demo? .58+.25*Math.sin(elapsed*2.8)+.12*Math.sin(elapsed*6.2):.32;
+   const strength=c.intensity*(.35+energy*1.6);
    ctx.globalAlpha=transition;
    if(c.scene==='Particles'){
     const count=c.quality==='High'?200:c.quality==='Balanced'?125:65;
