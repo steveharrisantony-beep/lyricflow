@@ -1,6 +1,6 @@
 import { useEffect,useRef,useState } from 'react';
 import { Upload, Play, Pause, Volume2, Music2, X } from 'lucide-react';
-import { connectLocalAudio } from './audioSignal';
+import { connectLocalAudio, setLocalAudioPlaying } from './audioSignal';
 
 const format=(seconds:number)=>Number.isFinite(seconds)?`${Math.floor(seconds/60)}:${String(Math.floor(seconds%60)).padStart(2,'0')}`:'0:00';
 export default function LocalPlayer({onActiveChange}:{onActiveChange:(active:boolean)=>void}){
@@ -37,7 +37,7 @@ export default function LocalPlayer({onActiveChange}:{onActiveChange:(active:boo
   if(!file)return;
   if(!(file.type.startsWith('audio/')||/\.(mp3|m4a|wav|ogg|flac|aac)$/i.test(file.name))){setError('Please choose a supported audio file.');return}
   const player=audioRef.current;if(!player)return;
-  player.pause();onActiveChange(false);setActive(false);
+  player.pause();setLocalAudioPlaying(false);onActiveChange(false);setActive(false);
   if(urlRef.current)URL.revokeObjectURL(urlRef.current);
   urlRef.current=URL.createObjectURL(file);
   player.src=urlRef.current;player.load();
@@ -48,12 +48,12 @@ export default function LocalPlayer({onActiveChange}:{onActiveChange:(active:boo
   const player=audioRef.current;player?.pause();
   if(player){player.removeAttribute('src');player.load()}
   if(urlRef.current){URL.revokeObjectURL(urlRef.current);urlRef.current=null}
-  connectLocalAudio(null);setName('');setTime(0);setDuration(0);setActive(false);onActiveChange(false);setError('');
+  setLocalAudioPlaying(false);setName('');setTime(0);setDuration(0);setActive(false);onActiveChange(false);setError('');
  };
- useEffect(()=>()=>{audioRef.current?.pause();connectLocalAudio(null);if(urlRef.current)URL.revokeObjectURL(urlRef.current);void ctxRef.current?.close()},[]);
+ useEffect(()=>()=>{audioRef.current?.pause();setLocalAudioPlaying(false);connectLocalAudio(null);if(urlRef.current)URL.revokeObjectURL(urlRef.current);void ctxRef.current?.close()},[]);
  return <section className="local-player">
    <div className="player-heading"><div className="heading-left"><span className="heading-icon"><Music2 size={17}/></span><div><b>LOCAL MUSIC PLAYER</b><small>Play your own audio · On-device analysis</small></div></div><span className="local-badge">NO UPLOADS</span></div>
-   <audio ref={audioRef} preload="metadata" onTimeUpdate={e=>setTime(e.currentTarget.currentTime)} onLoadedMetadata={e=>setDuration(e.currentTarget.duration)} onPlay={()=>{setActive(true);onActiveChange(true)}} onPause={()=>{setActive(false);onActiveChange(false)}} onEnded={()=>{setActive(false);onActiveChange(false)}} onError={()=>setError('This audio format could not be decoded by the browser.')} />
+   <audio ref={audioRef} preload="metadata" onTimeUpdate={e=>setTime(e.currentTarget.currentTime)} onLoadedMetadata={e=>setDuration(e.currentTarget.duration)} onPlay={()=>{setLocalAudioPlaying(true);setActive(true);onActiveChange(true)}} onPause={()=>{setLocalAudioPlaying(false);setActive(false);onActiveChange(false)}} onEnded={()=>{setLocalAudioPlaying(false);setActive(false);onActiveChange(false)}} onError={()=>setError('This audio format could not be decoded by the browser.')} />
    <input className="visually-hidden" ref={fileRef} type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac,.aac" onChange={e=>{load(e.target.files?.[0]);e.target.value=''}} aria-label="Select local audio file"/>
    <div className="player-row">
     <button className="upload-button" onClick={()=>fileRef.current?.click()}><Upload size={17}/>{name?'Change audio file':'Choose MP3 / Audio'}</button>
