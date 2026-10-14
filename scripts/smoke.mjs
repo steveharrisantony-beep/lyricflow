@@ -38,13 +38,25 @@ try{
  if(canvasCount!==1)throw new Error('Cinematic renderer must own exactly one canvas');
  if(await page.locator('.three-lyrics canvas, canvas.visual-canvas:not(.cinematic-canvas)').count())throw new Error('Legacy visual layer still mounted');
  console.log('PASS: one cinematic renderer replaces both old scene layers');
- const names=['Crimson Impact','Concrete Manifesto','Rain on Glass','Neon Velocity','Ink Rebellion','Ocean Reverie','Color Riot','Analog Breakdown','Cloud Cathedral','Stellar Expansion','Fragmented Thoughts','Quiet Pages'];
+ const sensitivity=await page.getByRole('slider',{name:'Audio sensitivity'}).inputValue();
+ if(sensitivity!=='50')throw new Error('Expected default audio sensitivity to be 50%, received '+sensitivity);
+ console.log('PASS: default audio sensitivity is 50%');
+ const ordered=await page.evaluate(()=>{
+  const selectors=['.stage','.signal-panel','.lyrics-panel','.control-panel','.track-finder','.mic-panel'];
+  const elements=selectors.map(selector=>document.querySelector(selector));
+  if(elements.some(x=>!x))return false;
+  return elements.every((node,i)=>i===0||Boolean(elements[i-1].compareDocumentPosition(node)&Node.DOCUMENT_POSITION_FOLLOWING));
+ });
+ if(!ordered)throw new Error('Panel order differs from canvas / audio / lyrics / library / remaining controls');
+ console.log('PASS: user-requested section order is preserved');
+ if(await page.locator('.cinematic-scene-card').count()!==30)throw new Error('Expected exactly thirty templates');
+ console.log('PASS: all 30 scene controls rendered on tablet-sized layout');
+ const names=["Crimson Impact","Concrete Manifesto","Rain on Glass","Neon Velocity","Ink Rebellion","Ocean Reverie","Color Riot","Analog Breakdown","Cloud Cathedral","Stellar Expansion","Fragmented Thoughts","Quiet Pages","Monochrome Memory","Monument Titles","Midnight Confession","Glass Architecture","Ransom Poetry","Type Collision","Petal Memory","Submerged Words","Inferno Letterforms","Holographic Frequency","Pixel Pulse","Marker Diary","Bubble Pop","Word Playground","Sunset Frequency","Typographic Vortex","Midnight Transit","Final Ascension"];
  const signatures=[];
  for(const name of names){
   await page.locator('.cinematic-scene-card').filter({hasText:name}).click();
-  const id=await page.locator('.cinematic-canvas').getAttribute('data-current-scene');
-  if(!id)throw new Error('Scene '+name+' did not start');
-  await page.waitForTimeout(950);
+  await page.waitForFunction(expected=>document.querySelector('canvas.cinematic-canvas')?.dataset.sceneLabel===expected,name,{timeout:6000});
+  await page.waitForTimeout(600);
   const pixels=await page.evaluate(()=>{
     const canvas=document.querySelector('canvas.cinematic-canvas');
     const ctx=canvas.getContext('2d');
@@ -56,7 +68,7 @@ try{
   signatures.push(pixels);
  }
  if(new Set(signatures).size!==names.length)throw new Error('Templates returned identical frames');
- console.log('PASS: all twelve cinematic templates produce distinct actual canvas frames');
+ console.log('PASS: all thirty cinematic templates produce distinct actual canvas frames');
  await page.locator('button.cinema-button').click();
  await page.locator('.performance-mode').waitFor({timeout:6000});
  console.log('PASS: Cinema Mode entered');
