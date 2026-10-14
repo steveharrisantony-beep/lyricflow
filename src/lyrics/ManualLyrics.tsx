@@ -1,4 +1,5 @@
 import {useEffect,useMemo,useState} from 'react';
+import {buildCues,setLyricTimeline} from './lyricTimeline';
 type Line={time:number;text:string;romanized?:string};
 export function cleanTrackTitle(input:string){
  return input.replace(/\s*\(\s*From\s+["“][^"”]+["”]\s*\)/gi,'').replace(/\s*[-–]\s*(Official|Lyric|Audio|Video)\s*(Video)?\s*$/gi,'').trim();
@@ -26,6 +27,7 @@ export default function ManualLyrics({time,trackLoaded}:{time:number;trackLoaded
  const [show,setShow]=useState(false);
  const lines=useMemo(()=>parseLRC(raw),[raw]);
  const romanLines=useMemo(()=>parseLRC(roman),[roman]);
+ useEffect(()=>{setLyricTimeline(buildCues(lines,romanLines),offset,mode);return()=>setLyricTimeline([]);},[lines,romanLines,offset,mode]);
  const index=useMemo(()=>{let i=-1;for(let j=0;j<lines.length;j++){if(lines[j].time<=time+offset)i=j;else break}return i},[lines,time,offset]);
  const current=lines[index];
  const rom=romanLines[index]?.text||'Romanization not supplied';
