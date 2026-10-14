@@ -4,6 +4,7 @@ import {detectLanguage,romanizeText} from '../romanization/romanize';
 import {parseLRC} from './lrc';
 import {buildCues,setLyricTimeline} from './lyricTimeline';
 import {analyzeSections} from './sceneDirector';
+import {buildCinematicSchedule,byId} from '../visualization/cinematic/catalog';
 import {saveUserLyrics} from './userLibrary';
 export {parseLRC} from './lrc';
 export {normalizeTrack as cleanTrackTitle} from '../metadata/trackInfo';
@@ -28,6 +29,7 @@ export default function ManualLyrics({time,trackLoaded,track,incoming}:{time:num
  const romanLines=useMemo(()=>parseLRC(roman),[roman]);
  const language=useMemo(()=>detectLanguage(raw||plain),[raw,plain]);
  const sections=useMemo(()=>analyzeSections(lines,genre),[lines,genre]);
+ const storyboard=useMemo(()=>buildCinematicSchedule(sections,buildCues(lines,romanLines,genre),genre,lines.map(l=>l.text).join('|').slice(0,1500)),[sections,lines,romanLines,genre]);
  useEffect(()=>{setLyricTimeline(buildCues(lines,romanLines,genre),offset,mode,genre);return()=>setLyricTimeline([]);},[lines,romanLines,offset,mode,genre]);
  useEffect(()=>{if(!incoming)return;
    setRaw(incoming.original);setPlain(incoming.plain||'');
@@ -88,6 +90,16 @@ export default function ManualLyrics({time,trackLoaded,track,incoming}:{time:num
    <span>{selected?selected.mood.toUpperCase()+' · '+selected.motion+' · '+selected.camera+' camera · '+Math.round(selected.confidence*100)+'% confidence':'No timed lyric scene yet — audio-reactive fallback'}</span>
    <small>{sections.length} grouped section(s) · section-based transitions · not one scene per word</small>
   </div>
+  {storyboard.length>0&&<div className="storyboard">
+   <div className="storyboard-title"><strong>SONG STORYBOARD</strong><span>{storyboard.length} planned scene(s) · timeline-driven · automatic anti-repetition</span></div>
+   <div className="storyboard-track">{storyboard.map((item,i)=><div className="storyboard-item" key={item.start+'-'+i} style={{borderTopColor:byId[item.id].accent}}>
+     <span className="storyboard-time">{Math.floor(item.start/60)}:{String(Math.floor(item.start%60)).padStart(2,'0')} – {Math.floor(item.end/60)}:{String(Math.floor(item.end%60)).padStart(2,'0')}</span>
+     <strong>{byId[item.id].label}</strong>
+     <span>{byId[item.id].family} · {item.font}</span>
+     <small>{item.transition} · {item.camera} camera · variation {item.variation+1}</small>
+    </div>)}</div>
+   <p className="player-footnote">This is a planned visual treatment generated from your lyrics and selected genre. Scene timing follows supplied lyric sections; musical beat analysis adds motion but does not guarantee accurate vocal alignment.</p>
+  </div>}
   {show&&<div className="lyrics-editor">
    <label>Original lyrics / LRC<textarea rows={7} value={raw} onChange={e=>updateRaw(e.target.value)} placeholder="[00:12.50]Your permitted lyric line&#10;[00:15.20]Next line"/></label>
    <label>Romanization (editable, not translation)<textarea rows={7} value={roman} onChange={e=>{setRoman(e.target.value);setCorrected(true)}} placeholder="Auto-generated or corrected Romanized lyrics"/></label>
