@@ -47,9 +47,18 @@ export default function ManualLyrics({time,trackLoaded,track,incoming}:{time:num
  async function importLocal(){
   const file=fileRef.current?.files?.[0];if(!file)return;
   if(file.size>250000){setMessage('LRC file too large (maximum 250 KB).');return}
-  try{const text=await file.text();updateRaw(text);setSource('Local file');setMessage('Imported '+file.name+' from your device.');setShow(true)}
+  try{const text=await file.text();if(parseLRC(text).length){updateRaw(text);setSource('Local LRC file');}else{setPlain(text);setRaw('');setRoman('');setSource('Local untimed text file');}setMessage('Imported '+file.name+' from your device.');setShow(true)}
   catch{setMessage('The lyric file could not be read.')}
   if(fileRef.current)fileRef.current.value='';
+ }
+ function estimatePlain(){
+  const rows=plain.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).slice(0,300);
+  if(!rows.length){setMessage('No untimed lines available.');return}
+  const interval=track?.duration&&track.duration>0?Math.max(1,track.duration/rows.length):4;
+  const lrc=rows.map((line,i)=>{const t=i*interval;const mm=String(Math.floor(t/60)).padStart(2,'0');const ss=(t%60).toFixed(2).padStart(5,'0');return '['+mm+':'+ss+']'+line}).join('\n');
+  setRaw(lrc);if(autoRoman&&!corrected)setRoman(romanizeText(lrc).text);
+  setPlain('');setSource(source+' · estimated timing');
+  setMessage('Approximate line timestamps generated. Adjust them manually; they are not verified vocal timing.');
  }
  function save(){
   if(!track){setMessage('Choose an MP3 to establish the song title before saving.');return}
@@ -92,7 +101,7 @@ export default function ManualLyrics({time,trackLoaded,track,incoming}:{time:num
    <label className="rights-check"><input type="checkbox" checked={saveRights} onChange={e=>setSaveRights(e.target.checked)}/>I have permission to store this lyric text in my local browser library.</label>
    <div className="editor-actions"><button className="upload-button" disabled={!saveRights||!raw} onClick={save}>Save permitted lyrics to my library</button></div>
   </div>}
-  {plain&&!lines.length&&show&&<textarea rows={4} readOnly value={plain} aria-label="Untimed lyrics" className="plain-preview"/>}
+  {plain&&!lines.length&&<div className="plain-lyrics-fallback"><textarea rows={5} readOnly value={plain} aria-label="Untimed lyrics" className="plain-preview"/><button className="upload-button" onClick={estimatePlain}>Create approximate timestamps</button><small>Estimated distribution across the local track duration; not synchronized to vocals.</small></div>}
   {sourceUrl&&<p className="player-footnote">Source: <a href={sourceUrl} target="_blank" rel="noreferrer">{source} ↗</a> · not cached automatically</p>}
   {message&&<p role="status" className="player-footnote">{message}</p>}
   <p className="player-footnote">Original text is preserved. Local transliteration is approximate and editable. Without genuine word timings, highlighted word positions are estimates, not verified vocal alignment.</p>
