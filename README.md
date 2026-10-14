@@ -78,3 +78,78 @@ This release introduces a **Three.js WebGL overlay** with depth-layered kinetic 
 This is an original, reusable prototype inspired by the *architectural ideas* in https://github.com/mexicat/pdoom-video, not a copy of its song-specific scenes. It does **not** yet offer automatically sourced lyrics, verified word alignment, intelligent contextual AI interpretation, high-end shader postprocessing, exact musical downbeat detection, or 4K60 guarantees. Word timings are currently proportionally **estimated** between supplied line timestamps. WebGL is required for the true 3D overlay; existing Canvas visuals still work if it is unavailable.
 
 Recommended tablet acceptance checks: open local audio, add timestamped lyric lines, enable auto-scene selection, seek through sections, compare camera perspectives, lower Audio sensitivity to 15-30% if the visualizer overreacts, and activate Cinema Mode. Confirm the user can tap to exit.
+
+
+---
+
+# LyricFlow — Lyric Director & Local Discovery Upgrade (October 2026)
+
+This section describes the **current** implementation and supersedes older statements in this README saying microphone listening, automatic discovery, or Romanization are entirely absent.
+
+## From MP3 filename to permitted lyric scenes
+
+1. Choose a local MP3 (or supported audio) from the Xiaomi Pad 8.
+2. LyricFlow guesses the title and artist from the filename, removes common bitrate/tags, and shows the estimate as **unverified**.
+3. The **Find Lyrics** panel searches LRCLIB track *candidate metadata* using its documented browser API. It ranks matching results by normalized title, artist and recorded duration. Nothing is selected automatically.
+4. Correct the artist/title if necessary; these corrections persist locally for that filename in `localStorage`.
+5. Confirm the exact song version and provide the separate permission confirmation before retrieving a selected record's lyric text. Provider lyrics are only held in memory, not automatically saved to a library.
+6. Alternatively, import your permitted `.lrc` or `.txt`, use a saved user-owned library entry, or paste lyrics manually. If only plain lyrics are available, you may explicitly create **approximate** timestamps; this does not mean the vocals were accurately aligned.
+7. The separate **Local Timed Lyrics** editor supports native-script, Romanized, and combined display. It uses open-source Sanscript locally for rough Malayalam/Tamil/Devanagari romanization, without sending text to any AI service. It preserves original lyrics and allows corrections. The result is not a phonetic guarantee.
+8. Enhanced LRC word timing tags like `<00:12.34>` are read when provided; otherwise per-word timing is marked *estimated* from line duration.
+9. You can optionally save lyrics to the browser library **only after affirming you have permission to store them**. Library entries are searchable by matching title/artist on the device and do not synchronize across devices.
+
+Provider: https://lrclib.net/docs. LRCLIB's free API is *not a universal reproduction license*. The application does not scrape Spotify, JioSaavn, Google GTX, or other sites.
+
+## Contextual scenes and typography
+
+- Lyric analysis groups consecutive lines into sections, applies contextual theme and mood scoring, and favors continuity instead of switching for every keyword.
+- Visual families include rain/water, stars/space, flame/embers, celebrations, nature, memory, warmth, solitude and abstract music-only output.
+- Three.js renders persistent particles, lines, rings and large animated typography in 3D space, with multiple interpolated camera paths.
+- **Camera view** in the scene selector: Automatic, Front, Orbit, Side or Top.
+- **Genre presets**, when selected by the user, change typography: editorial serif (ballad/classical/cinematic), strong expressive display (rock/metal), mono (hip-hop) and clean grotesk (pop/electronic).
+- Rendering is based on the local media playback time when available. Lyric line/word timing remains approximate unless trustworthy timestamps are supplied. Auto lyric analysis happens on lyric changes, not inside animation frames.
+- The original 2D scene renderer remains available as an audio-only / WebGL fallback.
+
+This is an original, reusable real-time engine inspired by **concepts** from https://github.com/mexicat/pdoom-video. It is **not** a full port, not identical to pdoom-video, and does not contain its copyrighted song, lyrics or scene artwork.
+
+## Independent microphone mode
+
+Use **Start Listening** on the tablet to analyze nearby sounds from another device. The microphone requires HTTPS and a user gesture, and may be blocked inside an embedded StackBlitz preview; opening the preview in its own tab can help. **Stop Listening** stops microphone tracks and closes its AudioContext. There is no recording, storage, upload or connection to the speaker output.
+
+The analyser provides rough loudness, bass/mid/treble, onset, beat, grouped downbeat pulses, estimated BPM with confidence, and broad quiet/steady/building/energetic energy sections. Microphone timing is *not* accurate song-position or word-level lyric synchronization. Local MP3 audio takes priority over microphone input.
+
+**Spotify**: The account panel remains separate and metadata-only. Per Spotify's Developer Policy https://developer.spotify.com/policy, LyricFlow does not use Spotify sound recordings, progress, or metadata to synchronize visuals or lyrics without the required permission. A personal, non-commercial project is not exempt.
+
+## Settings
+
+- Default audio sensitivity: **14%**, adjustable from 0% to 100%.
+- Scene intensity and animation speed remain separate controls.
+- Quality: High/Balanced/Performance. A reduced-motion option remains available.
+- **Cinema Mode** hides all UI controls, showing motion graphics and timed lyrics; tap the visualizer to exit.
+
+## Verification
+
+GitHub Actions runs `npm run typecheck`, `npm test` (Vitest utility tests), then `npm run build`. Runtime performance, microphone permissions, font fallback and actual cinematic quality still require on-device testing on the Xiaomi Pad 8.
+
+## Known limitations
+
+- Audio onset/tempo/section identification is approximate and not offline beat-grid or stem analysis.
+- Forced alignment from recorded vocals to word timings is **not implemented**. User-provided enhanced LRC gives better precision.
+- Semantic analysis is a local deterministic heuristic, not true multilingual natural-language understanding.
+- Sanscript phonetic approximations need user correction for real Manglish, Tanglish and Hinglish.
+- Third-party lyrics are only retrieved after explicit permission confirmation, and are not automatically cached.
+- Spotify currently-playing progress is not connected to lyrics or visual scenes.
+- Browser local libraries are per-browser and may be erased by clearing site data; no account sync.
+- True cinematic quality comparable to pdoom-video will require further authored scene templates, musical analysis and real tablet performance profiling.
+
+### Testing on Android
+
+1. Open https://stackblitz.com/github/steveharrisantony-beep/lyricflow (refresh or reopen to get the latest commit).
+2. Choose an MP3. Check that its guessed title appears in **Find Lyrics**, correct the artist, and inspect the match candidates.
+3. Only select lyrics you have permission to use. Otherwise import your own LRC via **Edit / import lyrics**.
+4. Add line or enhanced word timestamps; enable automatic scenes and choose a genre preset if known.
+5. Press Play and observe the FPS/audio metrics, different themed scenes, camera view options and Cinema Mode.
+6. Lower sensitivity further if motion is excessive. To try nearby music, pause local playback, click **Start Listening**, and play audio through a separate phone's speakers.
+7. If WebGL or microphone permissions fail in StackBlitz's embedded preview, open the preview as a standalone browser tab.
+
+No paid provider, API token, credit card, database or backend is required for the locally controlled features in this upgrade.
