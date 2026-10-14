@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { readLocalAudio, isLocalAudioPlaying, getLocalMediaTime } from './audio/audioSignal';
+import { getLyricState } from './lyrics/lyricTimeline';
 export type Scene = 'Particles'|'Light trails'|'Geometry'|'Kinetic type';
-type Props={scene:Scene;intensity:number;speed:number;quality:'High'|'Balanced'|'Performance';demo:boolean;paused:boolean;reducedMotion:boolean};
+type Props={scene:Scene;intensity:number;speed:number;quality:'High'|'Balanced'|'Performance';demo:boolean;paused:boolean;reducedMotion:boolean;autoScenes:boolean};
 export default function Visualizer(props:Props){
  const canvasRef=useRef<HTMLCanvasElement>(null);const config=useRef(props);
  useEffect(()=>{config.current=props},[props]);
@@ -25,7 +26,10 @@ export default function Visualizer(props:Props){
    if(mediaTime!==null) elapsed=mediaTime*c.speed*(c.reducedMotion?.12:1);
    else elapsed+=dt*c.speed*(c.reducedMotion?.12:1);
    frame++;if(now-fpsAt>1000){fps=Math.round(frame*1000/(now-fpsAt));frame=0;fpsAt=now;canvas.dataset.fps=String(fps)}
-   if(c.scene!==previousScene){previousScene=c.scene;transition=0}
+   const cue=c.autoScenes?getLyricState(mediaTime??elapsed).cue:null;
+   const automatic=cue?({cosmic:'Particles',water:'Light trails',warm:'Light trails',fire:'Geometry',solitude:'Particles',celebration:'Geometry',abstract:c.scene} as Record<string,Scene>)[cue.mood]:c.scene;
+   const activeScene:Scene=automatic;
+   if(activeScene!==previousScene){previousScene=activeScene;transition=0}
    transition=Math.min(1,transition+dt*1.25);
    ctx.fillStyle='#090e19';ctx.fillRect(0,0,w,h);
    const glow=ctx.createRadialGradient(w*.56,h*.52,0,w*.56,h*.52,Math.max(w,h)*.65);
@@ -54,7 +58,7 @@ export default function Visualizer(props:Props){
      impact.addColorStop(1,'rgba(31,103,154,0)');
      ctx.fillStyle=impact;ctx.fillRect(0,0,w,h);
    }
-   if(c.scene==='Particles'){
+   if(activeScene==='Particles'){
     const count=c.quality==='High'?200:c.quality==='Balanced'?125:65;
     for(let i=0;i<count;i++){const p=points[i],x=(p.x+elapsed*(7+treble*70)*((i%5)+1)/5)%w,y=(p.y-elapsed*(5+mids*55)*(i%4+1)/4+h*8)%h;
       const radius=p.r*(.3+strength*2.2)*(1+.35*Math.sin(elapsed*3+p.phase)+beat*.9);
@@ -62,14 +66,14 @@ export default function Visualizer(props:Props){
       ctx.fillStyle=i%4===0?'rgba(170,238,245,'+(.3+treble*.7)+')':'rgba(107,185,223,'+(.20+energy*.75)+')';ctx.fill();
       if(i%13===0){ctx.strokeStyle='rgba(104,213,227,.15)';ctx.beginPath();ctx.moveTo(x-12,y);ctx.lineTo(x+12,y);ctx.stroke()}
     }
-   }else if(c.scene==='Light trails'){
+   }else if(activeScene==='Light trails'){
     ctx.globalCompositeOperation='screen';
     for(let j=0;j<9;j++){ctx.beginPath();
      for(let k=0;k<=100;k++){const x=k*w/100,y=h*.51+(j-4)*h*.036+Math.sin(x/w*9+elapsed*(1.2+j*.065)+j*.47)*h*(.015+bass*.19)*strength+Math.cos(x/w*13-elapsed*.7+j)*h*(.018+mids*.075);
       if(k===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)}
      ctx.lineWidth=(1+j*.18)*Math.max(.25,strength)*(1+beat*2);ctx.strokeStyle='rgba(93,206,242,'+(.11+j*.023+treble*.08)+')';ctx.shadowBlur=12;ctx.shadowColor='#4ab6e0';ctx.stroke();
     }ctx.shadowBlur=0;ctx.globalCompositeOperation='source-over';
-   }else if(c.scene==='Geometry'){
+   }else if(activeScene==='Geometry'){
     ctx.save();ctx.translate(w*.53,h*.50);ctx.rotate(elapsed*.12);
     const r=Math.min(w,h)*(.09+bass*.14+beat*.10)*(.6+strength*.5);
     for(let j=0;j<7;j++){const size=r*(.4+j*.21);ctx.beginPath();
