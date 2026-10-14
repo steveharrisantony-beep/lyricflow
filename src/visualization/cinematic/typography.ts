@@ -2,26 +2,12 @@ import type {LyricCue} from '../../lyrics/lyricTimeline';
 import type {DirectedScene,FontPack} from './catalog';
 import {sceneColors} from './paint';
 import type {Pulse} from './paint';
+import {applySceneFont} from './fonts';
+import {drawExpandedTypography} from './extraTypography';
 
 const clamp=(x:number)=>Math.max(0,Math.min(1,x));
 const ease=(x:number)=>{const v=clamp(x);return 1-(1-v)**3};
-const fontFamilies:Record<FontPack,string>={
- impact:'Impact, Anton, Arial Black, system-ui, sans-serif',
- street:'Impact, Oswald, Arial Narrow, system-ui, sans-serif',
- editorial:'Georgia, Times New Roman, Noto Serif, serif',
- tech:'Arial Black, Manrope, system-ui, sans-serif',
- grunge:'Impact, Arial Black, system-ui, sans-serif',
- rounded:'Trebuchet MS, Arial Rounded MT Bold, system-ui, sans-serif',
- mono:'Courier New, monospace',
- literary:'Georgia, Noto Serif, serif'
-};
-const fallback='Noto Sans Malayalam, Noto Sans Tamil, Noto Sans Devanagari, system-ui, sans-serif';
-function hasIndic(s:string){return /[\u0900-\u097f\u0b80-\u0bff\u0d00-\u0d7f]/u.test(s)}
-function setFont(c:CanvasRenderingContext2D,pack:FontPack,size:number,text:string,italic=false){
- const family=hasIndic(text)?fallback:fontFamilies[pack];
- const weight=pack==='editorial'||pack==='literary'?'500':'900';
- c.font=`${italic?'italic ':''}${weight} ${Math.max(9,size)}px ${family}`;
-}
+const setFont=applySceneFont;
 function readableText(c:CanvasRenderingContext2D,text:string,x:number,y:number,maxW:number,color:string,stroke?:string){
  if(stroke){c.lineWidth=Math.max(3,Math.min(12,maxW*.012));c.strokeStyle=stroke;c.lineJoin='round';c.strokeText(text,x,y,maxW)}
  c.fillStyle=color;c.fillText(text,x,y,maxW);
@@ -53,13 +39,15 @@ export function drawTypography({c,scene,cue,mode,time,width:w,height:h,pulse,int
  const base=Math.min(h*.185,w*.13);
  const fontSize=Math.max(25,Math.min(132,base*(main.length>17?.66:main.length>10?.82:1.3)));
  const text=main.toLocaleUpperCase();
- const isQuiet=scene.id==='quiet-pages'||scene.id==='rain-on-glass'||scene.id==='ocean-reverie'||scene.id==='cloud-cathedral';
+ const isQuiet=scene.id==='quiet-pages'||scene.id==='rain-on-glass'||scene.id==='ocean-reverie'||scene.id==='cloud-cathedral'||scene.id==='midnight-confession'||scene.id==='petal-memory'||scene.id==='monochrome-memory';
  c.save();
  c.textBaseline='middle';
  c.shadowBlur=0;
  c.globalAlpha=1;
  // Per-template layout direction, not a generic centered subtitle.
- if(scene.id==='crimson-impact'){
+ if(drawExpandedTypography({c,scene,current:tx.current,whole:full,width:w,height:h,time,pulse,step,force})){
+  // Remaining templates render their typography in an isolated scene module.
+ }else if(scene.id==='crimson-impact'){
   c.textAlign='center';c.translate(w*.5,h*.47);
   c.scale(1+force*.09+step*.15,1+force*.07);
   setFont(c,'impact',fontSize*1.7,text);c.shadowColor='#000';c.shadowBlur=18;
