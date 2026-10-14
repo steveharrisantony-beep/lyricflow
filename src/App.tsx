@@ -8,6 +8,7 @@ import SpotifyDiscovery from './spotify/SpotifyDiscovery';
 import ManualLyrics, {type IncomingLyrics} from './lyrics/ManualLyrics';
 import TrackFinder from './metadata/TrackFinder';
 import type {TrackInfo} from './metadata/trackInfo';
+import {saveTrackCorrection} from './metadata/metadataStore';
 import {AudioLines,Settings2,Expand,Pause,Play,Waves,SlidersHorizontal} from 'lucide-react';
 const choices:{value:Scene;label:string;subtitle:string;symbol:string}[]=[
  {value:'Particles',label:'Atmosphere',subtitle:'Luminous particles',symbol:'✳'},
@@ -62,7 +63,7 @@ export default function App(){
    {settings&&<aside className="settings-panel"><div className="settings-title"><SlidersHorizontal size={16}/> VISUAL SETTINGS <button aria-label="Close settings" onClick={()=>setSettings(false)}>×</button></div><label className="check"><span><b>Reduced motion</b><small>Calmer animation</small></span><input type="checkbox" checked={reducedMotion} onChange={e=>setReducedMotion(e.target.checked)}/></label><p>RENDERING QUALITY</p><div className="quality-options">{(['High','Balanced','Performance'] as Quality[]).map(q=><button key={q} className={quality===q?'active':''} onClick={()=>setQuality(q)}>{q}</button>)}</div><p className="note">Graphics are generated locally in your browser. Stage 1 does not access your microphone.</p></aside>}
   </section>
   <LocalPlayer onActiveChange={setLocalPlaying} onTimeChange={setLocalTime} onFileChange={loaded=>{setLocalLoaded(loaded);setFileEpoch(e=>e+1);setIncoming(null)}} onTrackChange={setLocalTrack} onDurationChange={duration=>setLocalTrack(p=>p?{...p,duration}:p)}/>
-  <TrackFinder track={localTrack} onMetadataChange={setLocalTrack} onLyricsFound={acceptLyrics}/>
+  <TrackFinder track={localTrack} onMetadataChange={value=>{setLocalTrack(value);saveTrackCorrection(value)}} onLyricsFound={acceptLyrics}/>
   <MicListener localPlaying={localPlaying}/>
   <section className="signal-panel" aria-label="Live audio analysis">
     <div className="signal-header"><strong>LIVE AUDIO REACTIVITY</strong><span className={'signal-mode '+(audioReadout.source==='LOCAL AUDIO'?'connected':'')}>{audioReadout.source==='LOCAL AUDIO'?'● Local audio detected':audioReadout.source==='MICROPHONE'?'● Microphone listening':audioReadout.source==='DEMO'?'◌ Simulated energy':'○ No audio source'}</span></div>
