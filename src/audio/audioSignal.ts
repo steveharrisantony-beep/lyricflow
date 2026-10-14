@@ -4,6 +4,9 @@ export interface AudioMetrics {
 }
 const metrics:AudioMetrics={loudness:0,bass:0,mids:0,treble:0,beat:0,rms:0};
 let analyser:AnalyserNode|null=null;
+let sensitivity=0.35;
+export function setAudioSensitivity(value:number){sensitivity=Math.max(0,Math.min(1,value));}
+export function getAudioSensitivity(){return sensitivity;}
 let frequency:Uint8Array<ArrayBuffer>|null=null;
 let waveform:Uint8Array<ArrayBuffer>|null=null;
 let playing=false,previousEnergy=0,averageEnergy=0,beatCooldown=0,lastSample=0;
@@ -41,10 +44,11 @@ export function readLocalAudio(now=performance.now()):AudioMetrics|null{
  let squared=0;
  for(let i=0;i<waveform.length;i++){const n=(waveform[i]-128)/128;squared+=n*n;}
  const rms=Math.sqrt(squared/waveform.length);
- const bass=clamp(band(35,220)*1.7);
- const mids=clamp(band(220,2300)*2.0);
- const treble=clamp(band(2300,11000)*2.2);
- const loudness=clamp(rms*5);
+ const gain=.24+sensitivity*1.5;
+ const bass=clamp(band(35,220)*1.7*gain);
+ const mids=clamp(band(220,2300)*2.0*gain);
+ const treble=clamp(band(2300,11000)*2.2*gain);
+ const loudness=clamp(rms*5*gain);
  const rawEnergy=.57*bass+.29*mids+.14*treble;
  const attack=(rawEnergy>metrics.loudness)?0.42:0.14;
  const smooth=(key:keyof AudioMetrics,target:number,k=0.28)=>{
