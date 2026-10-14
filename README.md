@@ -32,3 +32,16 @@ The GitHub files were uploaded for direct StackBlitz import. Production build an
 
 ## Cost
 All included packages are open-source and no paid services or API keys are required.
+
+
+## Local music player (new preview feature)
+Use **Choose MP3 / Audio** in the application to pick an MP3, WAV, M4A, OGG, or another browser-decodable audio file from your tablet. Tap Play; the scenes respond to analyzed playback energy. Pause, seek, adjust volume, or remove the file at any time.
+
+The player uses `URL.createObjectURL`, `HTMLAudioElement`, `AudioContext`, `MediaElementAudioSourceNode`, and `AnalyserNode`. The original file does not leave the device, and no recording or upload endpoint exists. Playback requires a user gesture. Browser codec support varies.
+
+**Spotify synchronization is deliberately not implemented.** Spotify's current Developer Policy prohibits synchronizing recordings with visual media without appropriate authorization. Do not attach the Spotify player or playback state to visuals.
+
+When the local track is paused or removed, demo mode returns to simulated energy (when enabled).
+
+## Current verification
+Eight prior Stage 1 tablet interaction tests were user-verified. The local player is newly implemented and still requires a fresh StackBlitz build plus on-tablet playback test. No claim of completed microphone, lyrics, AI, Spotify, or deployment features is made.
