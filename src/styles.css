@@ -18,3 +18,27 @@
 .player-seek{display:flex;align-items:center;gap:12px;margin-top:19px;color:#9fb8c3;font-size:11px}.player-seek>input{min-width:60px;flex:1;accent-color:#90dce4}.volume-label{display:flex;align-items:center;gap:7px;color:#9ad4e0}.volume-label input{width:90px;accent-color:#90dce4}
 .player-error{color:#ffb6ae;font-size:12px}.player-footnote{font-size:10px;color:#7e929f;line-height:1.5;margin:14px 0 0}
 @media(max-width:620px){.local-player{padding:14px;margin-top:12px}.player-row{flex-wrap:wrap;gap:10px}.upload-button{width:100%}.player-details{flex-basis:calc(100% - 100px)}.player-seek{flex-wrap:wrap}.player-seek>input{width:60%}.volume-label{width:100%;justify-content:flex-end}.volume-label input{width:115px}.player-heading .heading-left small{font-size:9px}}
+
+.spotify-discovery,.lyrics-panel{margin-top:12px}
+.spotify-label{display:block;color:#a6bbc7;font-size:11px;line-height:1.6}
+.spotify-label input{display:block;width:100%;margin-top:8px;border:1px solid #3a5361;border-radius:8px;background:#0b111b;color:#edf9fa;padding:12px}
+.spotify-discovery code{color:#a4e5ec;overflow-wrap:anywhere}
+.spotify-status{font-size:11px;color:#9bb4bf;line-height:1.5}
+.spotify-track{margin-top:18px;border-top:1px solid #324652;padding-top:15px;display:flex;flex-wrap:wrap;gap:9px;align-items:center}
+.spotify-track b{color:#eefbfc;font-size:13px}
+.spotify-track span{color:#94abb5;font-size:11px}
+.spotify-track a{color:#95e5e8;font-size:11px}
+.lyric-display{text-align:center;padding:17px 12px;background:radial-gradient(ellipse at center,#162f3c,#0d1822 80%);border:1px solid #2a424f;border-radius:10px;min-height:120px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+.lyric-display p{font-size:clamp(16px,2.6vw,27px);color:#ecf6f8;margin:0;line-height:1.5}
+.lyric-display .romanized{font-size:clamp(13px,1.6vw,18px);color:#91d4df}
+.lyric-display small{color:#8b9fad;font-size:11px}
+.lyrics-tools{display:flex;gap:18px;align-items:end;flex-wrap:wrap;margin-top:14px}
+.lyrics-tools label{display:flex;flex-direction:column;gap:6px;color:#9baeb9;font-size:11px}
+.lyrics-tools select,.lyrics-tools input,.lyrics-editor textarea{background:#0e1720;border:1px solid #344a56;border-radius:7px;color:#dceef3;padding:8px}
+.lyrics-tools input{width:110px}
+.lyrics-tools>span{font-size:10px;color:#829aa6;margin-left:auto}
+.lyrics-editor{margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.lyrics-editor label{color:#9bb2bf;font-size:11px;display:grid;gap:8px}
+.lyrics-editor textarea{width:100%;min-width:0;resize:vertical;font:12px/1.6 monospace}
+.lyrics-editor .player-row{grid-column:1/-1}
+@media(max-width:620px){.lyrics-editor{grid-template-columns:1fr}.lyrics-tools>span{width:100%;margin:0}.spotify-discovery .player-row{align-items:flex-start}}
