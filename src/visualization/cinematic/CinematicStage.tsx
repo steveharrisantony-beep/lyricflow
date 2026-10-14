@@ -62,7 +62,8 @@ export default function CinematicStage(props:CinematicProps){
    }
    const lyric=getLyricState(time);
    // A valid LRC controls the scene schedule; without one we remain a useful instrumental visualizer.
-   const lyricMode=config.autoScenes&&sequence.length>0;
+   const hasLyricTimeline=sequence.length>0;
+   const lyricMode=config.autoScenes&&hasLyricTimeline;
    const directed=lyricMode?sceneAt(sequence,lyric.position):null;
    const scene=directed??sceneForAudio(time,config.manualScene,config.autoScenes);
    const currentIndex=directed?sequence.indexOf(directed):-1;
@@ -86,23 +87,24 @@ export default function CinematicStage(props:CinematicProps){
    const transition=progress*progress*(3-2*progress);
    ctx.setTransform(element.width/w,0,0,element.height/h,0,0);
    // No old particle or sine-wave renderer is mounted under this canvas.
+   const visualTime=time*config.speed*(config.reducedMotion?.15:1);
    const paintOne=(s:DirectedScene,alpha:number)=>{
     if(alpha<=.001)return;
     ctx.save();ctx.globalAlpha=alpha;
     const motion=config.reducedMotion?.12:1;
     const path=config.cameraMode==='Automatic'?s.camera:config.cameraMode;
     let dx=0,dy=0,angle=0,zoom=1;
-    if(path==='push'||path==='Front'){zoom=1+.022*Math.sin(time*.25*motion)+p.bass*.018*factor}
-    if(path==='drift'||path==='Side'){dx=Math.sin(time*.19*motion)*w*.018;dy=Math.cos(time*.12*motion)*h*.014}
-    if(path==='orbit'||path==='Orbit'){angle=Math.sin(time*.11*motion)*.009;zoom=1.025}
-    if(path==='pullback'||path==='Top'){zoom=1.045-Math.sin(time*.14*motion)*.018;dy=-h*.013}
+    if(path==='push'||path==='Front'){zoom=1+.022*Math.sin(visualTime*.25*motion)+p.bass*.018*factor}
+    if(path==='drift'||path==='Side'){dx=Math.sin(visualTime*.19*motion)*w*.018;dy=Math.cos(visualTime*.12*motion)*h*.014}
+    if(path==='orbit'||path==='Orbit'){angle=Math.sin(visualTime*.11*motion)*.009;zoom=1.025}
+    if(path==='pullback'||path==='Top'){zoom=1.045-Math.sin(visualTime*.14*motion)*.018;dy=-h*.013}
     ctx.translate(w*.5+dx,h*.5+dy);ctx.rotate(angle);ctx.scale(zoom,zoom);ctx.translate(-w*.5,-h*.5);
-    drawScene(ctx,s,w,h,time,p,config.quality);
+    drawScene(ctx,s,w,h,visualTime,p,config.quality);
     ctx.restore();
    };
    if(previous&&transition<1){paintOne(previous,1);paintOne(scene,transition)}
    else paintOne(scene,1);
-   if(lyricMode&&lyric.cue){
+   if(hasLyricTimeline&&lyric.cue){
     ctx.save();ctx.globalAlpha=Math.max(.04,transition);
     drawTypography({c:ctx,scene,cue:lyric.cue,mode:lyric.mode,time:lyric.position,
       width:w,height:h,pulse:p,intensity:factor,reducedMotion:config.reducedMotion});
@@ -110,7 +112,7 @@ export default function CinematicStage(props:CinematicProps){
    }else if(!snapshot.cues.length){drawInstrumentalMark(ctx,scene,w,h,measured?.loudness??demo)}
    element.dataset.currentScene=scene.id;
    element.dataset.sceneLabel=byId[scene.id].label;
-   element.dataset.hasLyrics=lyricMode&&!!lyric.cue?'yes':'no';
+   element.dataset.hasLyrics=hasLyricTimeline&&!!lyric.cue?'yes':'no';
    element.dataset.sceneCount=String(sequence.length);
    element.dataset.audioSource=source!=='IDLE'?source:isDemo?'DEMO':'IDLE';
    element.dataset.audioLevel=String(Math.round(p.loudness*100));
