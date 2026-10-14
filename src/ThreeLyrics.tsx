@@ -117,7 +117,7 @@ export default function ThreeLyrics(props:Props){
    let activeIndex=-1;
    if(cue){for(let i=0;i<cue.words.length;i++)if(cue.words[i].start<=state.position)activeIndex=i;}
    const live=readLocalAudio(now);
-   const demo=c.demo?.31+.17*Math.sin(clock*2.3)+.08*Math.sin(clock*4.6):0;
+   const demo=c.demo&&musicTime===null?.31+.17*Math.sin(clock*2.3)+.08*Math.sin(clock*4.6):0;
    const bass=live?.bass??demo,mid=live?.mids??demo,treble=live?.treble??demo*.6,beat=live?.beat??0;
    // Not every track has exact words. Honor supplied per-word timestamps where available.
    const activeWord=activeIndex>=0?cue?.words[activeIndex]:null;
