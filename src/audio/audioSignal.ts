@@ -7,7 +7,7 @@ export interface AudioMetrics{
 const metrics:AudioMetrics={loudness:0,bass:0,mids:0,treble:0,beat:0,rms:0,onset:0,downbeat:0,bpm:0,tempoConfidence:0,section:'unknown',sectionConfidence:0};
 let analyser:AnalyserNode|null=null,frequency:Uint8Array<ArrayBuffer>|null=null,waveform:Uint8Array<ArrayBuffer>|null=null;
 let localAnalyser:AnalyserNode|null=null,microphoneAnalyser:AnalyserNode|null=null,microphonePlaying=false;
-let mediaElement:HTMLAudioElement|null=null,playing=false,sensitivity=.14;
+let mediaElement:HTMLAudioElement|null=null,playing=false,sensitivity=.50;
 let lastSample=0,previousEnergy=0,averageEnergy=0,lastHit=0,lastSongTime=0;
 let beatCounter=0,sectionAt=0,historyCount=0,historyCursor=0;
 const hitTimes=new Float64Array(24);
@@ -74,7 +74,7 @@ export function readLocalAudio(now=performance.now()):AudioMetrics|null{
  let sum=0;
  for(let i=0;i<waveform.length;i++){const v=(waveform[i]-128)/128;sum+=v*v}
  const amplitude=Math.sqrt(sum/waveform.length);
- // User sensitivity: 0 means no reaction, default 14% for the tablet.
+ // User sensitivity: 0 means no reaction, default 50% for the tablet.
  const gain=1.6*Math.pow(sensitivity,1.3);
  const bass=clamp(band(35,220)*1.7*gain),mids=clamp(band(220,2300)*2*gain);
  const treble=clamp(band(2300,11000)*2.2*gain);
