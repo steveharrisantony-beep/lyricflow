@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc -b",
-    "test": "vitest run"
+    "test": "vitest run",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
@@ -24,6 +25,7 @@
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@types/three": "^0.180.0",
-    "vitest": "^5.0.4"
+    "vitest": "^5.0.4",
+    "playwright": "^1.58.0"
   }
 }
