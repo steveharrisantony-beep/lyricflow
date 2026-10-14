@@ -1,6 +1,7 @@
 import { useEffect,useState } from 'react';
 import CinematicStage from './visualization/cinematic/CinematicStage';
 import {TEMPLATES,type SceneId} from './visualization/cinematic/catalog';
+import {fontLabel} from './visualization/cinematic/fonts';
 import {setAudioSensitivity} from './audio/audioSignal';
 import LocalPlayer from './audio/LocalPlayer';
 import MicListener from './audio/MicListener';
@@ -25,7 +26,7 @@ export default function App(){
  const [incoming,setIncoming]=useState<IncomingLyrics|null>(null);
  const [fileEpoch,setFileEpoch]=useState(0);
  const acceptLyrics=(lyrics:Omit<IncomingLyrics,'token'>)=>setIncoming({...lyrics,token:Date.now()});
- const [sensitivity,setSensitivity]=useState(14);
+ const [sensitivity,setSensitivity]=useState(50);
  const [autoScenes,setAutoScenes]=useState(true);
  const [cameraMode,setCameraMode]=useState<'Automatic'|'Front'|'Orbit'|'Side'|'Top'>('Automatic');
  const [performance,setPerformance]=useState(false);
@@ -53,13 +54,10 @@ export default function App(){
   <section className="stage" onClick={performance?()=>void togglePerformance():undefined} aria-label={performance?"Tap anywhere to exit cinema mode":"Music visualizer"}>
    <CinematicStage manualScene={scene} intensity={intensity/100} speed={speed/50} quality={quality} demo={demo} paused={paused} reducedMotion={reducedMotion} autoScenes={autoScenes} cameraMode={cameraMode}/>
 
-   <div className="scene-chip cinematic-chip"><span className="chip-icon">✦</span><div><b>{liveScene}</b><small>Cinematic scene director</small></div><span>12 FILM LOOKS</span></div>
+   <div className="scene-chip cinematic-chip"><span className="chip-icon">✦</span><div><b>{liveScene}</b><small>Cinematic scene director</small></div><span>30 FILM LOOKS</span></div>
    <div className="stage-bottom"><span><i className="dot"/> CANVAS ENGINE READY</span><span>{fps} FPS</span></div>
    {settings&&<aside className="settings-panel"><div className="settings-title"><SlidersHorizontal size={16}/> VISUAL SETTINGS <button aria-label="Close settings" onClick={()=>setSettings(false)}>×</button></div><label className="check"><span><b>Reduced motion</b><small>Calmer animation</small></span><input type="checkbox" checked={reducedMotion} onChange={e=>setReducedMotion(e.target.checked)}/></label><p>RENDERING QUALITY</p><div className="quality-options">{(['High','Balanced','Performance'] as Quality[]).map(q=><button key={q} className={quality===q?'active':''} onClick={()=>setQuality(q)}>{q}</button>)}</div><p className="note">Local music and optional microphone audio are analyzed on this device; no recording or uploading.</p></aside>}
   </section>
-  <LocalPlayer onActiveChange={setLocalPlaying} onTimeChange={setLocalTime} onFileChange={loaded=>{setLocalLoaded(loaded);setFileEpoch(e=>e+1);setIncoming(null)}} onTrackChange={setLocalTrack} onDurationChange={duration=>setLocalTrack(p=>p?{...p,duration}:p)}/>
-  <TrackFinder track={localTrack} onMetadataChange={value=>{setLocalTrack(value);saveTrackCorrection(value)}} onLyricsFound={acceptLyrics}/>
-  <MicListener localPlaying={localPlaying}/>
   <section className="signal-panel" aria-label="Live audio analysis">
     <div className="signal-header"><strong>LIVE AUDIO REACTIVITY</strong><span className={'signal-mode '+(audioReadout.source==='LOCAL AUDIO'?'connected':'')}>{audioReadout.source==='LOCAL AUDIO'?'● Local audio detected':audioReadout.source==='MICROPHONE'?'● Microphone listening':audioReadout.source==='DEMO'?'◌ Simulated energy':'○ No audio source'}</span></div>
     <div className="signal-bars">{([['LOUDNESS',audioReadout.level],['BASS',audioReadout.bass],['MID',audioReadout.mids],['TREBLE',audioReadout.treble],['BEAT',audioReadout.beat]] as const).map(([label,value])=><div className="signal-band" key={label}><span>{label}<b>{value}%</b></span><div className="signal-track"><i style={{width:value+'%'}}/></div></div>)}</div>
@@ -67,14 +65,17 @@ export default function App(){
     <p className="signal-hint">{audioReadout.source==='LOCAL AUDIO'?'Analyzing the audio file locally. Try a bass-heavy section and watch the bars and visuals change.':audioReadout.source==='MICROPHONE'?'Analyzing nearby sound locally. Exact track timing is unavailable from microphone input.':'To react to real music, choose an MP3 above and press Play. Demo mode produces simulated movement, not real audio analysis.'}</p>
   </section>
   <ManualLyrics key={fileEpoch} time={localTime} trackLoaded={localLoaded} track={localTrack} incoming={incoming}/>
-  <SpotifyDiscovery/>
   <section className="control-panel">
-   <div className="control-heading"><div className="heading-left"><span className="heading-icon"><Waves size={16}/></span><div><b>CINEMATIC SCENE LIBRARY</b><small>12 original motion graphic templates · touch to select manually</small></div></div><label className="demo-toggle"><div><b>Demo mode</b><small>Simulated music energy</small></div><input type="checkbox" checked={demo} onChange={e=>setDemo(e.target.checked)}/></label></div>
+   <div className="control-heading"><div className="heading-left"><span className="heading-icon"><Waves size={16}/></span><div><b>CINEMATIC SCENE LIBRARY</b><small>30 original motion graphic templates · touch to select manually</small></div></div><label className="demo-toggle"><div><b>Demo mode</b><small>Simulated music energy</small></div><input type="checkbox" checked={demo} onChange={e=>setDemo(e.target.checked)}/></label></div>
    <div className="scene-director-controls"><label className="auto-scenes"><input type="checkbox" checked={autoScenes} onChange={e=>setAutoScenes(e.target.checked)}/> Auto-direct cinematic scenes <small>(lyric timeline when available; varied music visuals otherwise)</small></label><label className="camera-picker">Camera view <select value={cameraMode} onChange={e=>setCameraMode(e.target.value as typeof cameraMode)}>{(['Automatic','Front','Orbit','Side','Top'] as const).map(v=><option key={v}>{v}</option>)}</select></label></div>
-   <div className="scene-grid cinematic-grid">{choices.map((item,i)=><button className={'scene-card cinematic-scene-card '+(scene===item.id&&!autoScenes?'selected':'')} key={item.id} onClick={()=>{setScene(item.id);setAutoScenes(false)}}><span className="scene-art cinematic-preview" style={{background:`linear-gradient(135deg, ${item.accent}, ${item.background} 75%)`,color:item.foreground}}>{i%4===0?'✦':i%4===1?'▨':i%4===2?'◈':'◉'}</span><span className="scene-copy"><b>{item.label}</b><small>{item.family} · {item.font}</small></span><small className="scene-number">{String(i+1).padStart(2,'0')}</small></button>)}</div>
+   <div className="scene-grid cinematic-grid">{choices.map((item,i)=><button className={'scene-card cinematic-scene-card '+(scene===item.id&&!autoScenes?'selected':'')} key={item.id} onClick={()=>{setScene(item.id);setAutoScenes(false)}}><span className="scene-art cinematic-preview" style={{background:`linear-gradient(135deg, ${item.accent}, ${item.background} 75%)`,color:item.foreground,fontFamily:fontLabel(item.font)}}>{item.label.slice(0,2).toUpperCase()}</span><span className="scene-copy"><b>{item.label}</b><small>{item.family} · {fontLabel(item.font)}</small></span><small className="scene-number">{String(i+1).padStart(2,'0')}</small></button>)}</div>
    <div className="control-bottom"><label className="slider"><span><span>◉ &nbsp; Audio sensitivity</span><b>{sensitivity}%</b></span><input aria-label="Audio sensitivity" type="range" min="0" max="100" value={sensitivity} onChange={e=>setSensitivity(Number(e.target.value))}/></label><label className="slider"><span><span>✧ &nbsp; Visual intensity</span><b>{intensity}%</b></span><input type="range" min="0" max="100" value={intensity} onChange={e=>setIntensity(Number(e.target.value))}/></label><label className="slider"><span><span>ϟ &nbsp; Animation speed</span><b>{speed}%</b></span><input type="range" min="10" max="100" value={speed} onChange={e=>setSpeed(Number(e.target.value))}/></label><div className="transport"><button aria-label={paused?'Resume':'Pause'} className="play" onClick={()=>setPaused(p=>!p)}>{paused?<Play size={17} fill="currentColor"/>:<Pause size={17} fill="currentColor"/>}</button><div><b>{paused?'Resume visuals':'Pause visuals'}</b><small>{paused?'Animation is paused':'Canvas in motion'}</small></div><button onClick={fullscreen} className="fullscreen"><Expand size={16}/> Fullscreen</button><button onClick={()=>void togglePerformance()} className="fullscreen cinema-button">◈ Cinema Mode</button></div></div>
    {fullscreenError&&<p className="error" role="alert">{fullscreenError}</p>}
   </section>
-  <footer>LYRICFLOW <span>·</span> CINEMATIC ENGINE <span>·</span> 12 SCENE PREVIEW <aside>SONG-DRIVEN MOTION GRAPHICS</aside></footer>
+  <LocalPlayer onActiveChange={setLocalPlaying} onTimeChange={setLocalTime} onFileChange={loaded=>{setLocalLoaded(loaded);setFileEpoch(e=>e+1);setIncoming(null)}} onTrackChange={setLocalTrack} onDurationChange={duration=>setLocalTrack(p=>p?{...p,duration}:p)}/>
+  <TrackFinder track={localTrack} onMetadataChange={value=>{setLocalTrack(value);saveTrackCorrection(value)}} onLyricsFound={acceptLyrics}/>
+  <MicListener localPlaying={localPlaying}/>
+  <SpotifyDiscovery/>
+  <footer>LYRICFLOW <span>·</span> CINEMATIC ENGINE <span>·</span> 30 SCENE COLLECTION <aside>SONG-DRIVEN MOTION GRAPHICS</aside></footer>
  </div>
 }
