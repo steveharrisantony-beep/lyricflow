@@ -42,3 +42,15 @@
 .lyrics-editor textarea{width:100%;min-width:0;resize:vertical;font:12px/1.6 monospace}
 .lyrics-editor .player-row{grid-column:1/-1}
 @media(max-width:620px){.lyrics-editor{grid-template-columns:1fr}.lyrics-tools>span{width:100%;margin:0}.spotify-discovery .player-row{align-items:flex-start}}
+
+.signal-panel{border:1px solid #334751;background:#101923;border-radius:13px;padding:15px 18px;margin-top:12px}
+.signal-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:15px}
+.signal-header strong{font-size:11px;letter-spacing:1.2px;color:#d1e9ed}
+.signal-mode{font:10px monospace;color:#849aa9}.signal-mode.connected{color:#85e2bf}
+.signal-bars{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}
+.signal-band>span{display:flex;justify-content:space-between;gap:5px;color:#8da4b3;font-size:9px;letter-spacing:1px}
+.signal-band b{color:#a8e5ec;font-weight:500}
+.signal-track{height:6px;background:#22323d;border-radius:10px;overflow:hidden;margin-top:9px}
+.signal-track i{height:100%;display:block;background:linear-gradient(90deg,#398ba4,#9ee8ee);border-radius:10px;transition:width .10s linear}
+.signal-hint{font-size:10px;line-height:1.6;color:#8099a8;margin:14px 0 0}
+@media(max-width:620px){.signal-bars{gap:7px}.signal-panel{padding:13px 10px}.signal-band>span{font-size:8px;letter-spacing:0}.signal-band b{display:none}.signal-header{flex-wrap:wrap}}
