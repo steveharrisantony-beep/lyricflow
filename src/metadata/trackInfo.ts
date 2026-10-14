@@ -1,6 +1,6 @@
 /** Pure, replaceable track matching. Never treats a filename as verified metadata. */
 export interface TrackInfo {
-  title:string; artist:string; album:string; duration:number;
+  title:string; artist:string; album:string; duration:number; fileName?:string;
   source:'filename'|'manual'; confidence:number;
 }
 const stripTags=(text:string)=>text
