@@ -7,7 +7,6 @@ type Painter=(c:CanvasRenderingContext2D,w:number,h:number,t:number,p:Pulse,dens
 const PI=Math.PI,TAU=PI*2;
 const fract=(v:number)=>v-Math.floor(v);
 const rand=(i:number,seed=0)=>fract(Math.sin(i*127.1+seed*83.77)*43758.5453);
-const clamp=(x:number,a=0,b=1)=>Math.min(b,Math.max(a,x));
 const rect=(c:CanvasRenderingContext2D,x:number,y:number,w:number,h:number,color:string)=>{c.fillStyle=color;c.fillRect(x,y,w,h)};
 function gradient(c:CanvasRenderingContext2D,w:number,h:number,a:string,b:string){
  const g=c.createLinearGradient(0,0,w*.82,h);g.addColorStop(0,a);g.addColorStop(1,b);c.fillStyle=g;c.fillRect(0,0,w,h);
@@ -21,7 +20,7 @@ function circle(c:CanvasRenderingContext2D,x:number,y:number,r:number,color:stri
 function poly(c:CanvasRenderingContext2D,coords:readonly number[],color:string){
  c.beginPath();c.moveTo(coords[0],coords[1]);for(let i=2;i<coords.length;i+=2)c.lineTo(coords[i],coords[i+1]);c.closePath();c.fillStyle=color;c.fill();
 }
-const crimson:Painter=(c,w,h,t,p,d)=>{
+const crimson:Painter=(c,w,h,_t,p,d)=>{
  gradient(c,w,h,'#530007','#120306');
  const pulse=1+p.beat*.14+p.bass*.08;
  c.save();c.translate(w*.51,h*.51);c.rotate(-.075);
@@ -36,7 +35,7 @@ const crimson:Painter=(c,w,h,t,p,d)=>{
   line(c,x,y,x+w*(.04+rand(i,22)*.09),y-h*.05,'rgba(255,110,82,.14)',1+p.onset*2);
  }
 };
-const concrete:Painter=(c,w,h,t,p,d)=>{
+const concrete:Painter=(c,w,h,t,_p,_d)=>{
  gradient(c,w,h,'#292b29','#121718');
  const brick=w/10;
  c.lineWidth=1;c.strokeStyle='rgba(215,207,189,.14)';
@@ -69,7 +68,7 @@ const rain:Painter=(c,w,h,t,p,d)=>{
   circle(c,x-2,y-3,1.2,'rgba(236,255,255,.45)');
  }
 };
-const neon:Painter=(c,w,h,t,p,d)=>{
+const neon:Painter=(c,w,h,t,p,_d)=>{
  gradient(c,w,h,'#1b0934','#070718');
  const cx=w*.53,cy=h*.5;
  c.lineJoin='miter';
@@ -86,7 +85,7 @@ const neon:Painter=(c,w,h,t,p,d)=>{
  }
  rect(c,0,h*.82,w,h*.18,'rgba(7,1,30,.5)');
 };
-const ink:Painter=(c,w,h,t,p,d)=>{
+const ink:Painter=(c,w,h,_t,p,d)=>{
  rect(c,0,0,w,h,'#eeeae0');
  for(let i=0;i<55*d;i++){
   const x=rand(i,60)*w,y=rand(i,61)*h,r=(2+rand(i,62)*16)*(1+p.onset*.4);
@@ -102,7 +101,7 @@ const ink:Painter=(c,w,h,t,p,d)=>{
  }
  rect(c,0,h*.1,w*.1,h*.8,'#d62b2a');
 };
-const ocean:Painter=(c,w,h,t,p,d)=>{
+const ocean:Painter=(c,w,h,t,_p,d)=>{
  const g=c.createLinearGradient(0,0,0,h);
  g.addColorStop(0,'#1a3a66');g.addColorStop(.49,'#c78985');g.addColorStop(.53,'#ffbb83');g.addColorStop(.56,'#1a6484');g.addColorStop(1,'#061928');
  c.fillStyle=g;c.fillRect(0,0,w,h);
@@ -114,7 +113,7 @@ const ocean:Painter=(c,w,h,t,p,d)=>{
   line(c,w*.69-length*.5+offset,y,w*.69+length*.5+offset,y,i%3?'rgba(255,217,180,.16)':'rgba(255,232,190,.38)',Math.max(1,h*.003));
  }
 };
-const pop:Painter=(c,w,h,t,p,d)=>{
+const pop:Painter=(c,w,h,t,_p,_d)=>{
  rect(c,0,0,w,h,'#ffdb44');
  for(let i=0;i<11;i++){
   c.save();const x=rand(i,77)*w,y=rand(i,78)*h;const rot=(rand(i,79)-.5)*.4+Math.sin(t*.1+i)*.06;
@@ -125,7 +124,7 @@ const pop:Painter=(c,w,h,t,p,d)=>{
  }
  rect(c,w*.07,h*.13,w*.12,h*.024,'#1b1839');
 };
-const analog:Painter=(c,w,h,t,p,d)=>{
+const analog:Painter=(c,w,h,t,_p,d)=>{
  gradient(c,w,h,'#18222b','#060909');
  rect(c,w*.07,h*.09,w*.86,h*.82,'#0e1a20');
  c.strokeStyle='rgba(138,255,221,.21)';c.lineWidth=2;c.strokeRect(w*.07,h*.09,w*.86,h*.82);
@@ -136,7 +135,7 @@ const analog:Painter=(c,w,h,t,p,d)=>{
  }
  c.fillStyle='#a0d9b5';c.font='12px monospace';c.textAlign='left';c.fillText('PLAY   ▸     00:'+Math.floor(t%60).toString().padStart(2,'0'),w*.1,h*.17);
 };
-const clouds:Painter=(c,w,h,t,p,d)=>{
+const clouds:Painter=(c,w,h,t,_p,d)=>{
  gradient(c,w,h,'#646fa7','#e1b4b3');
  const light=c.createRadialGradient(w*.7,h*.27,5,w*.7,h*.27,w*.65);
  light.addColorStop(0,'rgba(255,250,221,.8)');light.addColorStop(1,'rgba(255,250,221,0)');
@@ -166,7 +165,7 @@ const stellar:Painter=(c,w,h,t,p,d)=>{
   if(depth>.55&&i%4===0)line(c,x,y,x-Math.cos(a)*depth*w*.04,y-Math.sin(a)*depth*h*.04,'rgba(201,181,255,.45)',1);
  }
 };
-const fragment:Painter=(c,w,h,t,p,d)=>{
+const fragment:Painter=(c,w,h,t,_p,d)=>{
  rect(c,0,0,w,h,'#111318');
  const cx=w*.52,cy=h*.47;
  for(let i=0;i<29*d;i++){
@@ -180,7 +179,7 @@ const fragment:Painter=(c,w,h,t,p,d)=>{
  }
  line(c,w*.18,h*.1,w*.85,h*.85,'rgba(248,87,76,.3)',1+p.onset*3);
 };
-const quiet:Painter=(c,w,h,t,p,d)=>{
+const quiet:Painter=(c,w,h,_t,_p,d)=>{
  rect(c,0,0,w,h,'#ede9df');
  for(let i=0;i<68*d;i++){
   const x=rand(i,129)*w,y=rand(i,130)*h;
