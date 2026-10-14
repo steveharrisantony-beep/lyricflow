@@ -18,12 +18,11 @@ export default function SpotifyDiscovery(){
   const token=result as {access_token:string;refresh_token?:string;expires_in?:number};
   return {access_token:token.access_token,refresh_token:token.refresh_token,expires_at:Date.now()+(token.expires_in||3600)*1000};
  }
- useEffect(()=>{const url=new URL(location.href);const code=url.searchParams.get('code'),error=url.searchParams.get('error');
+ useEffect(()=>{const url=new URL(location.href);const code=url.searchParams.get('code'),error=url.searchParams.get('error'),actualState=url.searchParams.get('state');
   if(!code&&!error)return;
   url.searchParams.delete('code');url.searchParams.delete('state');url.searchParams.delete('error');history.replaceState(null,'',url);
   if(error){setStatus('Spotify authorization: '+error);return}
   const state=sessionStorage.getItem('lyricflow.spotify.state'),verifier=sessionStorage.getItem('lyricflow.spotify.verifier'),storedId=sessionStorage.getItem(KEY);
-  const actualState=new URL(location.href).searchParams.get('state');
 
   if(!verifier||!storedId||!state||actualState!==state){setStatus('Authorization state mismatch. Please reconnect.');return}
   setBusy(true);
