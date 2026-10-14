@@ -37,19 +37,27 @@ export default function Visualizer(props:Props){
    ctx.fillStyle=glow;ctx.fillRect(0,0,w,h);
    const localAudio=readLocalAudio(now);
    const listening=isLocalAudioPlaying();
-   const demoEnergy=c.demo? .37+.22*Math.sin(elapsed*2.8)+.15*Math.sin(elapsed*5.8):0;
+   const demoEnergy=c.demo&&mediaTime===null? .37+.22*Math.sin(elapsed*2.8)+.15*Math.sin(elapsed*5.8):0;
    const energy=localAudio?.loudness??demoEnergy;
    const bass=localAudio?.bass??demoEnergy*.75;
    const mids=localAudio?.mids??demoEnergy*.6;
    const treble=localAudio?.treble??demoEnergy*.48;
-   const beat=localAudio?.beat??(c.demo?Math.pow(Math.max(0,Math.sin(elapsed*3.2)),12):0);
-   const strength=c.intensity*(.12+energy*1.85+beat*.65);
+   const beat=localAudio?.beat??(c.demo&&mediaTime===null?Math.pow(Math.max(0,Math.sin(elapsed*3.2)),12):0);
+   const downbeat=localAudio?.downbeat??0;
+   const onset=localAudio?.onset??0;
+   const section=localAudio?.section??'unknown';
+   const strength=c.intensity*(.08+energy*1.5+beat*.55+onset*.24)*(section==='energetic'?1.2:section==='quiet'?.72:1);
    canvas.dataset.audioSource=listening?'LOCAL AUDIO':c.demo?'DEMO':'IDLE';
    canvas.dataset.audioLevel=String(Math.round(energy*100));
    canvas.dataset.audioBass=String(Math.round(bass*100));
    canvas.dataset.audioMids=String(Math.round(mids*100));
    canvas.dataset.audioTreble=String(Math.round(treble*100));
    canvas.dataset.audioBeat=String(Math.round(beat*100));
+   canvas.dataset.audioBpm=String(localAudio?.bpm||0);
+   canvas.dataset.audioTempoConfidence=String(Math.round((localAudio?.tempoConfidence||0)*100));
+   canvas.dataset.audioDownbeat=String(Math.round(downbeat*100));
+   canvas.dataset.audioOnset=String(Math.round(onset*100));
+   canvas.dataset.audioSection=section;
    ctx.globalAlpha=transition;
    // Audio flash: low-frequency hits create large short-lived luminous pulses.
    if(beat>.04){
@@ -59,7 +67,8 @@ export default function Visualizer(props:Props){
      ctx.fillStyle=impact;ctx.fillRect(0,0,w,h);
    }
    if(activeScene==='Particles'){
-    const count=c.quality==='High'?200:c.quality==='Balanced'?125:65;
+    const baseCount=c.quality==='High'?200:c.quality==='Balanced'?125:65;
+    const count=Math.max(15,Math.round(baseCount*(section==='quiet'?.38:section==='energetic'?1:.73)));
     for(let i=0;i<count;i++){const p=points[i],x=(p.x+elapsed*(7+treble*70)*((i%5)+1)/5)%w,y=(p.y-elapsed*(5+mids*55)*(i%4+1)/4+h*8)%h;
       const radius=p.r*(.3+strength*2.2)*(1+.35*Math.sin(elapsed*3+p.phase)+beat*.9);
       ctx.beginPath();ctx.arc(x,y,Math.max(.1,radius),0,Math.PI*2);
@@ -71,11 +80,11 @@ export default function Visualizer(props:Props){
     for(let j=0;j<9;j++){ctx.beginPath();
      for(let k=0;k<=100;k++){const x=k*w/100,y=h*.51+(j-4)*h*.036+Math.sin(x/w*9+elapsed*(1.2+j*.065)+j*.47)*h*(.015+bass*.19)*strength+Math.cos(x/w*13-elapsed*.7+j)*h*(.018+mids*.075);
       if(k===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)}
-     ctx.lineWidth=(1+j*.18)*Math.max(.25,strength)*(1+beat*2);ctx.strokeStyle='rgba(93,206,242,'+(.11+j*.023+treble*.08)+')';ctx.shadowBlur=12;ctx.shadowColor='#4ab6e0';ctx.stroke();
+     ctx.lineWidth=(1+j*.18)*Math.max(.25,strength)*(1+beat*2+downbeat*.65);ctx.strokeStyle='rgba(93,206,242,'+(.11+j*.023+treble*.08)+')';ctx.shadowBlur=12;ctx.shadowColor='#4ab6e0';ctx.stroke();
     }ctx.shadowBlur=0;ctx.globalCompositeOperation='source-over';
    }else if(activeScene==='Geometry'){
     ctx.save();ctx.translate(w*.53,h*.50);ctx.rotate(elapsed*.12);
-    const r=Math.min(w,h)*(.09+bass*.14+beat*.10)*(.6+strength*.5);
+    const r=Math.min(w,h)*(.09+bass*.14+beat*.10+downbeat*.09)*(.6+strength*.5);
     for(let j=0;j<7;j++){const size=r*(.4+j*.21);ctx.beginPath();
      for(let k=0;k<=6;k++){const angle=k*Math.PI/3+elapsed*.04*j,xx=Math.cos(angle)*size,yy=Math.sin(angle)*size;
       if(k===0)ctx.moveTo(xx,yy);else ctx.lineTo(xx,yy)}
