@@ -1,43 +1,100 @@
-import {useEffect,useMemo,useState} from 'react';
+import {useEffect,useMemo,useRef,useState} from 'react';
+import type {TrackInfo} from '../metadata/trackInfo';
+import {detectLanguage,romanizeText} from '../romanization/romanize';
+import {parseLRC} from './lrc';
 import {buildCues,setLyricTimeline} from './lyricTimeline';
-type Line={time:number;text:string;romanized?:string};
-export function cleanTrackTitle(input:string){
- return input.replace(/\s*\(\s*From\s+["“][^"”]+["”]\s*\)/gi,'').replace(/\s*[-–]\s*(Official|Lyric|Audio|Video)\s*(Video)?\s*$/gi,'').trim();
-}
-export function parseLRC(source:string):Line[]{
- const entries:Line[]=[];
- for(const raw of source.split(/\r?\n/)){
-  const times=[...raw.matchAll(/\[(\d{1,3}):(\d{2})(?:\.(\d{1,3}))?\]/g)];
-  if(!times.length)continue;
-  const text=raw.replace(/\[\d{1,3}:\d{2}(?:\.\d{1,3})?\]/g,'').trim();
-  for(const match of times){
-   const fraction=match[3]||'0';
-   const time=Number(match[1])*60+Number(match[2])+Number(fraction.padEnd(3,'0'))/1000;
-   if(Number.isFinite(time))entries.push({time,text});
-  }
- }
- return entries.sort((a,b)=>a.time-b.time);
-}
+import {analyzeSections} from './sceneDirector';
+import {saveUserLyrics} from './userLibrary';
+export {parseLRC} from './lrc';
+export {normalizeTrack as cleanTrackTitle} from '../metadata/trackInfo';
+export interface IncomingLyrics{original:string;romanized:string;plain?:string;source:string;sourceUrl?:string;token:number}
 const SAMPLE='[00:00.00]This is an original sample lyric\n[00:03.50]Watch the lights begin to glow\n[00:07.00]Moving gently with the music';
-export default function ManualLyrics({time,trackLoaded}:{time:number;trackLoaded:boolean}){
+export default function ManualLyrics({time,trackLoaded,track,incoming}:{time:number;trackLoaded:boolean;track:TrackInfo|null;incoming:IncomingLyrics|null}){
  const [raw,setRaw]=useState('');
  const [roman,setRoman]=useState('');
- const [mode,setMode]=useState<'original'|'romanized'|'both'>('original');
+ const [plain,setPlain]=useState('');
+ const [mode,setMode]=useState<'original'|'romanized'|'both'>('both');
  const [offset,setOffset]=useState(0);
  const [show,setShow]=useState(false);
+ const [genre,setGenre]=useState('');
+ const [source,setSource]=useState('Manual');
+ const [sourceUrl,setSourceUrl]=useState('');
+ const [corrected,setCorrected]=useState(false);
+ const [saveRights,setSaveRights]=useState(false);
+ const [message,setMessage]=useState('');
+ const [autoRoman,setAutoRoman]=useState(true);
+ const fileRef=useRef<HTMLInputElement>(null);
  const lines=useMemo(()=>parseLRC(raw),[raw]);
  const romanLines=useMemo(()=>parseLRC(roman),[roman]);
- useEffect(()=>{setLyricTimeline(buildCues(lines,romanLines),offset,mode);return()=>setLyricTimeline([]);},[lines,romanLines,offset,mode]);
- const index=useMemo(()=>{let i=-1;for(let j=0;j<lines.length;j++){if(lines[j].time<=time+offset)i=j;else break}return i},[lines,time,offset]);
- const current=lines[index];
- const rom=romanLines[index]?.text||'Romanization not supplied';
- const next=lines[index+1]?.text||'';
+ const language=useMemo(()=>detectLanguage(raw||plain),[raw,plain]);
+ const sections=useMemo(()=>analyzeSections(lines,genre),[lines,genre]);
+ useEffect(()=>{setLyricTimeline(buildCues(lines,romanLines,genre),offset,mode,genre);return()=>setLyricTimeline([]);},[lines,romanLines,offset,mode,genre]);
+ useEffect(()=>{if(!incoming)return;
+   setRaw(incoming.original);setPlain(incoming.plain||'');
+   setRoman(incoming.romanized||(!incoming.romanized&&autoRoman?romanizeText(incoming.original).text:''));
+   setSource(incoming.source);setSourceUrl(incoming.sourceUrl||'');
+   setSaveRights(false);setCorrected(false);setMessage('Lyrics loaded. Verify text and timestamps before saving.');
+ },[incoming?.token]);
  useEffect(()=>{if(!trackLoaded)setOffset(0)},[trackLoaded]);
+ function updateRaw(value:string){
+  setRaw(value);setPlain('');setSource('Manual / edited');
+  if(autoRoman&&!corrected)setRoman(romanizeText(value).text);
+ }
+ function autoGenerate(){
+  if(!raw){setMessage('Add original lyrics before romanization.');return}
+  setRoman(romanizeText(raw).text);setCorrected(false);setMessage('Romanization generated locally. It is an estimate; please correct names and pronunciation.');
+ }
+ async function importLocal(){
+  const file=fileRef.current?.files?.[0];if(!file)return;
+  if(file.size>250000){setMessage('LRC file too large (maximum 250 KB).');return}
+  try{const text=await file.text();updateRaw(text);setSource('Local file');setMessage('Imported '+file.name+' from your device.');setShow(true)}
+  catch{setMessage('The lyric file could not be read.')}
+  if(fileRef.current)fileRef.current.value='';
+ }
+ function save(){
+  if(!track){setMessage('Choose an MP3 to establish the song title before saving.');return}
+  try{saveUserLyrics({title:track.title,artist:track.artist,album:track.album,duration:track.duration,
+   original:raw,romanized:roman,language,rightsConfirmed:saveRights,source});
+   setMessage('Saved in your browser library. It will not sync across devices.')}
+  catch(e){setMessage(e instanceof Error?e.message:'Unable to save lyrics.')}
+ }
+ let idx=-1;for(let i=0;i<lines.length;i++){if(lines[i].time<=time+offset)idx=i;else break}
+ const current=lines[idx],next=lines[idx+1];
+ const rom=romanLines[idx]?.text||'Romanized text unavailable';
+ const selected=sections.filter(s=>s.start<=time+offset).at(-1)||null;
  return <section className="local-player lyrics-panel">
-   <div className="player-heading"><div className="heading-left"><span className="heading-icon">文</span><div><b>LOCAL TIMED LYRICS</b><small>Manual LRC · Original script · Romanization</small></div></div><button className="upload-button" onClick={()=>setShow(v=>!v)}>{show?'Hide editor':'Edit lyrics'}</button></div>
-   <div className="lyric-display" aria-live="off">{current?<><p>{mode!=='romanized'?current.text:null}</p>{mode!=='original'&&<p className="romanized">{rom}</p>}</>:<p>{lines.length?'Waiting for the first timestamp…':'Paste your permitted lyrics in LRC format to begin.'}</p>}{next&&<small>UP NEXT · {next}</small>}</div>
-   <div className="lyrics-tools"><label>Text mode <select value={mode} onChange={e=>setMode(e.target.value as typeof mode)}><option value="original">Original</option><option value="romanized">Romanized</option><option value="both">Both</option></select></label><label>Timing offset (seconds) <input type="number" step=".1" min="-30" max="30" value={offset} onChange={e=>setOffset(Number(e.target.value)||0)}/></label><span>{lines.length} lines · {trackLoaded?'Local player clock':'Load a local track to synchronize'}</span></div>
-   {show&&<div className="lyrics-editor"><label>Original lyrics with timestamps<textarea rows={5} value={raw} onChange={e=>setRaw(e.target.value)} placeholder="[00:12.50]Your permitted lyric line"/></label><label>Romanized lyrics with matching timestamps<textarea rows={5} value={roman} onChange={e=>setRoman(e.target.value)} placeholder="[00:12.50]Romanized line"/></label><div className="player-row"><button className="upload-button" onClick={()=>{setRaw(SAMPLE);setRoman('');}}>Load original sample</button><button className="player-remove" onClick={()=>{setRaw('');setRoman('')}}>Clear</button></div></div>}
-   <p className="player-footnote">Manual content only. We do not upload, permanently store, or automatically translate lyrics. Timestamps synchronize exclusively with your local audio player's playback clock, not Spotify.</p>
+  <div className="player-heading"><div className="heading-left"><span className="heading-icon">文</span><div><b>LYRICS & SCENE DIRECTOR</b><small>Original / Romanized · contextual cinematic sections</small></div></div><button className="upload-button" onClick={()=>setShow(v=>!v)}>{show?'Hide editor':'Edit / import lyrics'}</button></div>
+  <div className="lyric-display">
+   {current?<>{mode!=='romanized'&&<p>{current.text}</p>}{mode!=='original'&&<p className="romanized">{rom}</p>}</>:
+    <p>{plain?'Untimed lyrics loaded — add LRC timestamps for synchronization.':lines.length?'Waiting for the first lyric timestamp…':'No lyrics yet. Search by filename or import a permitted LRC file.'}</p>}
+   {next&&<small>UP NEXT · {next.text}</small>}
+  </div>
+  <div className="lyrics-tools">
+   <label>Lyrics display<select value={mode} onChange={e=>setMode(e.target.value as typeof mode)}><option value="original">Original</option><option value="romanized">Romanized</option><option value="both">Both</option></select></label>
+   <label>Visual genre preset<select value={genre} onChange={e=>setGenre(e.target.value)}><option value="">Auto / unknown</option>{['Ambient','Cinematic','Pop','EDM','Rock','Hip-hop','Ballad','Classical'].map(g=><option key={g}>{g}</option>)}</select></label>
+   <label>Lyric offset (sec)<input type="number" step=".1" min="-30" max="30" value={offset} onChange={e=>setOffset(Number(e.target.value)||0)}/></label>
+   <span>{lines.length} timed lines · {language} · {trackLoaded?'Local playback clock':'Load a local audio file'}</span>
+  </div>
+  <div className="scene-summary"><strong>SCENE ANALYSIS</strong>
+   <span>{selected?selected.mood.toUpperCase()+' · '+selected.motion+' · '+selected.camera+' camera · '+Math.round(selected.confidence*100)+'% confidence':'No timed lyric scene yet — audio-reactive fallback'}</span>
+   <small>{sections.length} grouped section(s) · section-based transitions · not one scene per word</small>
+  </div>
+  {show&&<div className="lyrics-editor">
+   <label>Original lyrics / LRC<textarea rows={7} value={raw} onChange={e=>updateRaw(e.target.value)} placeholder="[00:12.50]Your permitted lyric line&#10;[00:15.20]Next line"/></label>
+   <label>Romanization (editable, not translation)<textarea rows={7} value={roman} onChange={e=>{setRoman(e.target.value);setCorrected(true)}} placeholder="Auto-generated or corrected Romanized lyrics"/></label>
+   <div className="editor-actions"><input className="visually-hidden" ref={fileRef} type="file" accept=".lrc,.txt,text/plain" aria-label="Import LRC file" onChange={()=>void importLocal()}/>
+    <button className="upload-button" onClick={()=>fileRef.current?.click()}>Import LRC</button>
+    <button className="upload-button" onClick={()=>{updateRaw(SAMPLE);setSource('Original sample')}}>Load original sample</button>
+    <button className="upload-button" onClick={autoGenerate}>Romanize locally</button>
+    <button className="player-remove" onClick={()=>{setRaw('');setRoman('');setPlain('');setSource('Manual')}}>Clear</button>
+   </div>
+   <label className="rights-check"><input type="checkbox" checked={autoRoman} onChange={e=>setAutoRoman(e.target.checked)}/>Automatically Romanize new input (results are approximate)</label>
+   <label className="rights-check"><input type="checkbox" checked={saveRights} onChange={e=>setSaveRights(e.target.checked)}/>I have permission to store this lyric text in my local browser library.</label>
+   <div className="editor-actions"><button className="upload-button" disabled={!saveRights||!raw} onClick={save}>Save permitted lyrics to my library</button></div>
+  </div>}
+  {plain&&!lines.length&&show&&<textarea rows={4} readOnly value={plain} aria-label="Untimed lyrics" className="plain-preview"/>}
+  {sourceUrl&&<p className="player-footnote">Source: <a href={sourceUrl} target="_blank" rel="noreferrer">{source} ↗</a> · not cached automatically</p>}
+  {message&&<p role="status" className="player-footnote">{message}</p>}
+  <p className="player-footnote">Original text is preserved. Local transliteration is approximate and editable. Without genuine word timings, highlighted word positions are estimates, not verified vocal alignment.</p>
  </section>;
 }
