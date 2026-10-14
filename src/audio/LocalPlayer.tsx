@@ -1,7 +1,8 @@
 import { useEffect,useRef,useState } from 'react';
 import { Upload, Play, Pause, Volume2, Music2, X } from 'lucide-react';
 import { connectLocalAudio, setLocalAudioPlaying, setLocalMediaElement } from './audioSignal';
-import {parseTrackFilename,type TrackInfo} from '../metadata/trackInfo';
+import type {TrackInfo} from '../metadata/trackInfo';
+import {resolveTrackFilename} from '../metadata/metadataStore';
 
 const format=(seconds:number)=>Number.isFinite(seconds)?`${Math.floor(seconds/60)}:${String(Math.floor(seconds%60)).padStart(2,'0')}`:'0:00';
 export default function LocalPlayer({onActiveChange,onTimeChange,onFileChange,onTrackChange,onDurationChange}:{onActiveChange:(active:boolean)=>void;onTimeChange:(time:number)=>void;onFileChange:(loaded:boolean)=>void;onTrackChange:(track:TrackInfo|null)=>void;onDurationChange:(duration:number)=>void}){
@@ -44,7 +45,7 @@ export default function LocalPlayer({onActiveChange,onTimeChange,onFileChange,on
   if(urlRef.current)URL.revokeObjectURL(urlRef.current);
   urlRef.current=URL.createObjectURL(file);
   player.src=urlRef.current;player.load();
-  setName(file.name.replace(/\.[^.]+$/,''));onTrackChange(parseTrackFilename(file.name));onFileChange(true);onTimeChange(0);
+  setName(file.name.replace(/\.[^.]+$/,''));onTrackChange(resolveTrackFilename(file.name));onFileChange(true);onTimeChange(0);
   setTime(0);setDuration(0);setError('');
  };
  const stop=()=>{
