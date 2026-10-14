@@ -1,0 +1,32 @@
+name: Browser smoke test
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  chromium:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Start LyricFlow
+        run: |
+          npm run dev -- --host 127.0.0.1 > vite-server.log 2>&1 &
+          echo $! > vite-server.pid
+      - name: Browser test
+        run: |
+          sleep 5
+          npm run smoke
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: smoke-diagnostics
+          path: |
+            lyricflow-smoke-failure.png
+            vite-server.log
+          if-no-files-found: ignore
