@@ -22,18 +22,6 @@ function setFont(c:CanvasRenderingContext2D,pack:FontPack,size:number,text:strin
  const weight=pack==='editorial'||pack==='literary'?'500':'900';
  c.font=`${italic?'italic ':''}${weight} ${Math.max(9,size)}px ${family}`;
 }
-function fitLines(c:CanvasRenderingContext2D,text:string,maxWidth:number,maxRows:number):string[]{
- const raw=text.trim().split(/\s+/).filter(Boolean);
- if(!raw.length)return [];
- const lines:string[]=[];let current='';
- for(const word of raw){
-  const next=current?current+' '+word:word;
-  if(current&&c.measureText(next).width>maxWidth&&lines.length<maxRows-1){lines.push(current);current=word}
-  else current=next;
- }
- if(current)lines.push(current);
- return lines;
-}
 function readableText(c:CanvasRenderingContext2D,text:string,x:number,y:number,maxW:number,color:string,stroke?:string){
  if(stroke){c.lineWidth=Math.max(3,Math.min(12,maxW*.012));c.strokeStyle=stroke;c.lineJoin='round';c.strokeText(text,x,y,maxW)}
  c.fillStyle=color;c.fillText(text,x,y,maxW);
@@ -61,9 +49,7 @@ export function drawTypography({c,scene,cue,mode,time,width:w,height:h,pulse,int
  const force=reducedMotion?0:Math.min(1,pulse.beat*.75+pulse.bass*.5)*intensity;
  const step=(1-progress)*(reducedMotion?0:1);
  const full=tx.whole;
- const pack=scene.font;
  const main=tx.current.length>30?full:tx.current;
- const maxW=w*.84;
  const base=Math.min(h*.185,w*.13);
  const fontSize=Math.max(25,Math.min(132,base*(main.length>17?.66:main.length>10?.82:1.3)));
  const text=main.toLocaleUpperCase();
@@ -149,7 +135,7 @@ export function drawTypography({c,scene,cue,mode,time,width:w,height:h,pulse,int
   c.restore();c.save();
   c.textBaseline='middle';c.textAlign='center';
   const subtle=template.background==='#e9e4d9'||template.background==='#ede9df';
-  setFont(c,'grotesk',Math.min(27,h*.049),tx.secondary);
+  setFont(c,'tech',Math.min(27,h*.049),tx.secondary);
   readableText(c,tx.secondary,w*.5,h*.80,w*.83,subtle?'#38383c':'#e0e2ee',subtle?undefined:'#0b0b13');
  }
  // Faint progress rail allows smooth word changes without imposing another text block.
