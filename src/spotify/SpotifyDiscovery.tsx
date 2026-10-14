@@ -26,7 +26,7 @@ export default function SpotifyDiscovery(){
 
   if(!verifier||!storedId||!state||actualState!==state){setStatus('Authorization state mismatch. Please reconnect.');return}
   setBusy(true);
-  const body=new URLSearchParams({client_id:storedId,grant_type:'authorization_code',code,redirect_uri:redirect(),code_verifier:verifier});
+  const body=new URLSearchParams({client_id:storedId,grant_type:'authorization_code',code:code||'',redirect_uri:redirect(),code_verifier:verifier});
   void exchange(body).then(value=>{sessionStorage.setItem(SESSION,JSON.stringify(value));setSession(value);setStatus('Connected — metadata only')}).catch(e=>setStatus(String(e))).finally(()=>{setBusy(false);sessionStorage.removeItem('lyricflow.spotify.state');sessionStorage.removeItem('lyricflow.spotify.verifier')});
  },[]);
  async function connect(){
