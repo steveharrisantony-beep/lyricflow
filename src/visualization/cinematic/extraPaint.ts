@@ -22,7 +22,7 @@ const gradient=(c:CanvasRenderingContext2D,w:number,h:number,a:string,b:string)=
 const polygon=(c:CanvasRenderingContext2D,pts:number[],color:string)=>{
  c.beginPath();c.moveTo(pts[0],pts[1]);for(let k=2;k<pts.length;k+=2)c.lineTo(pts[k],pts[k+1]);c.closePath();c.fillStyle=color;c.fill()
 };
-const monochrome:Painter=(c,w,h,t,p,d)=>{
+const monochrome:Painter=(c,w,h,t,_p,d)=>{
  gradient(c,w,h,'#323032','#070709');
  const g=c.createRadialGradient(w*.67,h*.33,5,w*.67,h*.33,w*.65);
  g.addColorStop(0,'rgba(242,244,237,.36)');g.addColorStop(1,'rgba(25,25,25,0)');
@@ -190,7 +190,7 @@ const pixel:Painter=(c,w,h,t,_p,d)=>{
   const x=Math.floor(rnd(i,65)*w/u)*u,y=Math.floor(rnd(i,66)*h*.66/u)*u;
   fill(c,i%4?'#d9bdf5':'#f5db73',x,y,u,u);
  }
- const cx=w*.52,cy=h*.61;
+ const cy=h*.61;
  for(let layer=4;layer>=0;layer--){
   const y=cy+layer*u*5;
   c.fillStyle=['#271b61','#46308b','#7945a4','#a94fb3','#ea69b6'][layer];
