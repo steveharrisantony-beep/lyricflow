@@ -1,5 +1,5 @@
 import type {LyricCue} from '../../lyrics/lyricTimeline';
-import type {DirectedScene,FontPack} from './catalog';
+import type {DirectedScene} from './catalog';
 import {sceneColors} from './paint';
 import type {Pulse} from './paint';
 import {applySceneFont} from './fonts';
