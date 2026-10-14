@@ -34,9 +34,29 @@ try{
  await page.locator('.lyrics-editor textarea').first().fill('[00:00.00]Rain falls on my river\n[00:02.00]The ocean flows\n[00:04.00]Water, waves and rain');
  await page.waitForFunction(()=>document.querySelector('.scene-summary')?.textContent?.includes('WATER'),{timeout:6000});
  console.log('PASS: lyrics produce context-driven scene selection');
- const count=await page.locator('.three-lyrics canvas').count();
- if(count)console.log('PASS: WebGL lyric renderer initialized');
- else console.log('WARNING: headless Chrome WebGL unavailable; Canvas 2D fallback visible');
+ const canvasCount=await page.locator('canvas.cinematic-canvas').count();
+ if(canvasCount!==1)throw new Error('Cinematic renderer must own exactly one canvas');
+ if(await page.locator('.three-lyrics canvas, canvas.visual-canvas:not(.cinematic-canvas)').count())throw new Error('Legacy visual layer still mounted');
+ console.log('PASS: one cinematic renderer replaces both old scene layers');
+ const names=['Crimson Impact','Rain on Glass','Color Riot','Stellar Expansion'];
+ const signatures=[];
+ for(const name of names){
+  await page.locator('.cinematic-scene-card').filter({hasText:name}).click();
+  const id=await page.locator('.cinematic-canvas').getAttribute('data-current-scene');
+  if(!id)throw new Error('Scene '+name+' did not start');
+  await page.waitForTimeout(1000);
+  const pixels=await page.evaluate(()=>{
+    const canvas=document.querySelector('canvas.cinematic-canvas');
+    const ctx=canvas.getContext('2d');
+    const sample=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    let v=0;
+    for(let i=0;i<sample.length;i+=Math.max(4,Math.floor(sample.length/3000/4)*4))v=(Math.imul(v,33)+sample[i]+sample[i+1]+sample[i+2])|0;
+    return v;
+  });
+  signatures.push(pixels);
+ }
+ if(new Set(signatures).size!==names.length)throw new Error('Templates returned identical frames');
+ console.log('PASS: four visual templates produce distinct actual canvas frames');
  await page.locator('button.cinema-button').click();
  await page.locator('.performance-mode').waitFor({timeout:6000});
  console.log('PASS: Cinema Mode entered');
