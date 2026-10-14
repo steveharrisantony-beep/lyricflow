@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { readLocalAudio, isLocalAudioPlaying } from './audio/audioSignal';
+import { readLocalAudio, isLocalAudioPlaying, getLocalMediaTime } from './audio/audioSignal';
 export type Scene = 'Particles'|'Light trails'|'Geometry'|'Kinetic type';
 type Props={scene:Scene;intensity:number;speed:number;quality:'High'|'Balanced'|'Performance';demo:boolean;paused:boolean;reducedMotion:boolean};
 export default function Visualizer(props:Props){
@@ -21,7 +21,9 @@ export default function Visualizer(props:Props){
    const c=config.current;const dt=Math.min(.05,(now-last||16.7)/1000);last=now;
    if(c.paused || document.hidden)return;
    if(c.quality!==previousQuality && now-lastQualityCheck>100){previousQuality=c.quality;lastQualityCheck=now;resize();}
-   elapsed+=dt*c.speed*(c.reducedMotion?.12:1);
+   const mediaTime=getLocalMediaTime();
+   if(mediaTime!==null) elapsed=mediaTime*c.speed*(c.reducedMotion?.12:1);
+   else elapsed+=dt*c.speed*(c.reducedMotion?.12:1);
    frame++;if(now-fpsAt>1000){fps=Math.round(frame*1000/(now-fpsAt));frame=0;fpsAt=now;canvas.dataset.fps=String(fps)}
    if(c.scene!==previousScene){previousScene=c.scene;transition=0}
    transition=Math.min(1,transition+dt*1.25);
