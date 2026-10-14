@@ -32,13 +32,13 @@ export default function App(){
  const [performance,setPerformance]=useState(false);
  useEffect(()=>{setAudioSensitivity(sensitivity/100)},[sensitivity]);
  useEffect(()=>{const onFullscreen=()=>{if(!document.fullscreenElement)setPerformance(false)};document.addEventListener('fullscreenchange',onFullscreen);return()=>document.removeEventListener('fullscreenchange',onFullscreen)},[]);
- const [audioReadout,setAudioReadout]=useState({source:'IDLE',level:0,bass:0,mids:0,treble:0,beat:0});
+ const [audioReadout,setAudioReadout]=useState({source:'IDLE',level:0,bass:0,mids:0,treble:0,beat:0,bpm:0,tempoConfidence:0,onset:0,downbeat:0,section:'unknown'});
  useEffect(()=>{
    const id=window.setInterval(()=>{
      const canvas=document.querySelector<HTMLCanvasElement>('canvas.visual-canvas');
      if(!canvas)return;
      const numeric=(key:string)=>Number(canvas.dataset[key]||0);
-     setAudioReadout({source:canvas.dataset.audioSource||'IDLE',level:numeric('audioLevel'),bass:numeric('audioBass'),mids:numeric('audioMids'),treble:numeric('audioTreble'),beat:numeric('audioBeat')});
+     setAudioReadout({source:canvas.dataset.audioSource||'IDLE',level:numeric('audioLevel'),bass:numeric('audioBass'),mids:numeric('audioMids'),treble:numeric('audioTreble'),beat:numeric('audioBeat'),bpm:numeric('audioBpm'),tempoConfidence:numeric('audioTempoConfidence'),onset:numeric('audioOnset'),downbeat:numeric('audioDownbeat'),section:canvas.dataset.audioSection||'unknown'});
    },140);
    return()=>clearInterval(id);
  },[]);
@@ -65,6 +65,7 @@ export default function App(){
   <section className="signal-panel" aria-label="Live audio analysis">
     <div className="signal-header"><strong>LIVE AUDIO REACTIVITY</strong><span className={'signal-mode '+(audioReadout.source==='LOCAL AUDIO'?'connected':'')}>{audioReadout.source==='LOCAL AUDIO'?'● Local audio detected':audioReadout.source==='DEMO'?'◌ Simulated energy':'○ No audio source'}</span></div>
     <div className="signal-bars">{([['LOUDNESS',audioReadout.level],['BASS',audioReadout.bass],['MID',audioReadout.mids],['TREBLE',audioReadout.treble],['BEAT',audioReadout.beat]] as const).map(([label,value])=><div className="signal-band" key={label}><span>{label}<b>{value}%</b></span><div className="signal-track"><i style={{width:value+'%'}}/></div></div>)}</div>
+    <div className="music-metrics"><span>Tempo <b>{audioReadout.bpm?audioReadout.bpm+' BPM':'Estimating…'}</b></span><span>Tempo confidence <b>{audioReadout.tempoConfidence}%</b></span><span>Section <b>{audioReadout.section}</b></span><span>Onset <b>{audioReadout.onset}%</b></span><span>Downbeat <b>{audioReadout.downbeat}%</b></span></div>
     <p className="signal-hint">{audioReadout.source==='LOCAL AUDIO'?'Analyzing the audio file locally. Try a bass-heavy section and watch the bars and visuals change.':'To react to real music, choose an MP3 above and press Play. Demo mode produces simulated movement, not real audio analysis.'}</p>
   </section>
   <ManualLyrics key={fileEpoch} time={localTime} trackLoaded={localLoaded} track={localTrack} incoming={incoming}/>
