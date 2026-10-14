@@ -1,6 +1,8 @@
 export interface AudioMetrics { loudness:number; bass:number; mids:number; treble:number; beat:number }
 const zero:AudioMetrics={loudness:0,bass:0,mids:0,treble:0,beat:0};
 let analyser:AnalyserNode|null=null;
+let playing=false;
+export function setLocalAudioPlaying(value:boolean){playing=value;}
 let data:Uint8Array<ArrayBuffer>|null=null;
 let last=0,peak=0;
 let values:AudioMetrics={...zero};
@@ -9,7 +11,7 @@ export function connectLocalAudio(node:AnalyserNode|null){
  last=0;peak=0;values={...zero};
 }
 export function readLocalAudio():AudioMetrics|null {
- if(!analyser || !data)return null;
+ if(!analyser || !data || !playing)return null;
  analyser.getByteFrequencyData(data);
  const nyquist=analyser.context.sampleRate/2;
  const band=(low:number,high:number)=>{
