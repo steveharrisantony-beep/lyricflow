@@ -45,7 +45,7 @@ export default function App(){
   </header>
   <section className="stage" onClick={performance?()=>void togglePerformance():undefined} aria-label={performance?"Tap anywhere to exit cinema mode":"Music visualizer"}>
    <Visualizer scene={scene} intensity={intensity/100} speed={speed/50} quality={quality} demo={demo} paused={paused} reducedMotion={reducedMotion} autoScenes={autoScenes}/>
-   <ThreeLyrics quality={quality} intensity={intensity/100} speed={speed/50} reducedMotion={reducedMotion} demo={demo}/>
+   <ThreeLyrics quality={quality} intensity={intensity/100} speed={speed/50} reducedMotion={reducedMotion} demo={demo} paused={paused}/>
    <div className="vignette"/>
    <div className="stage-title"><p className="eyebrow">— YOUR SOUND, REIMAGINED</p><h1>Let the music<br/><em>become visible.</em></h1><p className="summary">A living canvas for every frequency, feeling and fleeting moment.</p></div>
    <div className="meter"><small>VISUAL OUTPUT</small><div><i style={{width:intensity+'%'}}/></div><span>{intensity}%</span></div>
