@@ -13,7 +13,8 @@ export type SceneId =
 export type Layout='hero'|'editorial'|'left'|'stack'|'poster'|'scattered';
 export type Transition='flash'|'wipe'|'dissolve'|'glitch'|'ripple'|'ink'|'zoom';
 export type FontPack='impact'|'street'|'editorial'|'tech'|'grunge'|'rounded'|'mono'|'literary'
- | 'monument'|'noir'|'glass'|'collage'|'pixel'|'handwritten'|'retro'|'cyber'|'industrial'|'ultra';
+ | 'monument'|'noir'|'glass'|'collage'|'pixel'|'handwritten'|'retro'|'cyber'|'industrial'|'ultra'
+ | 'couture'|'vogue'|'engraved'|'techno'|'manuscript'|'typewriter'|'retrograde';
 export type CameraPath='push'|'drift'|'side'|'orbit'|'pullback';
 export interface Template {
  id:SceneId; label:string; family:string; moods:readonly Mood[]; genres:readonly string[];
