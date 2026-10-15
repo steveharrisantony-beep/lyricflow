@@ -70,27 +70,24 @@ Lyrics are analyzed **when loaded or edited**, not on every rendered frame. The 
 The design is inspired by the **architectural concepts** of https://github.com/mexicat/pdoom-video and reference images of Videobolt lyric videos. No proprietary templates, music recordings or other creators' graphical assets are embedded in the project.
 
 
-## Premium image-based backgrounds — new scene pack
+## Procedural 3D backgrounds and independent motion blur
 
-A new `artwork.ts` layer composites original, generated scene imagery below the existing animated narrative elements and kinetic lyrics. The **premium artwork is not coupled to the beat**: it uses subtle independent camera drift and a restrained vignette. Overlaid objects may continue to react to bass and treble. **Lyric scale, glow and word movement now follow the lyric timeline only** — no audio beat/bass pulse is applied to text.
+**No PNG, WebP or downloadable image backgrounds are used.** All 26 old scene images, artwork imports and legacy 2D scene painters were removed. The thirty existing scene IDs are rendered as real-time 3D environments using Three.js, perspective meshes, atmospheric GLSL shaders, procedurally generated depth particles, geometry, and radial sprite illumination.
 
-The same bundled art is also available as **LyricFlow_26_Premium_Scene_Backgrounds.zip** in the ChatGPT project conversation. It contains 26 optimized, 1280px-wide WebP images, each **named exactly after an existing scene ID** (for example, `ocean-reverie.webp`, `rain-on-glass.webp` and `midnight-transit.webp`), and a source/assignment manifest. The pack is about 1.6 MB.
+- `src/visualization/cinematic/procedural/ThreeEngine.ts` contains the scene renderer, material/geometry pools, different procedural scene families (underwater, oceans, glass, crystals, cities, clouds, petals, neon tunnels, monumental architecture, sci-fi HUD rings, and more), shader backgrounds and GPU afterimage compositor.
+- Every scene is built from code and an explicit, stable scene-ID-to-look mapping. No third-party models or textures are fetched; even glow textures are generated in memory.
+- Bass changes object sizes, wave amplitude, camera movement and light intensity. Treble modifies highlights and particles. Beat accents affect the visual environment, never the lyric text.
+- **Motion blur** is an adjustable 0–80% temporal feedback/afterimage pass (30% by default). Its history is reset when scenes switch to avoid ghosting between songs. The lyric canvas layer is composited *after* the feedback pass, so letters remain sharp even with strong blur.
+- The **Performance** quality preset uses fewer meshes, stars and pixels; **Balanced** is the recommended starting point for the Xiaomi Pad 8. **Reduced motion** disables temporal blur and strongly reduces background movement.
+- If WebGL cannot be initialized, LyricFlow displays a simple procedural Canvas 2D fallback and keeps lyrics, input, and controls working. Actual rendered FPS depends on device and browser.
 
-### Built into GitHub — no import required
+### Try it on your tablet
 
-**All 26 generated WebP files are now committed in `public/scene-art/`**, named after their scene IDs. Open LyricFlow through StackBlitz or your deployment; backgrounds download automatically from the same origin when a scene needs them. Files are optimized to about **1.6 MB total**, with a small decode cache for mobile browsers. Images and lyrics are composited independently.
-
-**Optional custom artwork:** Under **CINEMATIC SCENE LIBRARY → PREMIUM BACKGROUND ARTWORK**, tap **Import or replace scene artwork** and select a ZIP of scene-named WebPs. This locally overrides bundled images or adds an image for one of the four missing scenes. Overrides are kept in IndexedDB on the current browser; there is no server upload, GitHub token or subscription required. Other devices continue using the 26 included images until you add overrides.
-
-The separate downloadable ZIP remains available as a backup and as a reference of the exact scene file names. It is not required for normal use.
-
-**Remaining four scene backgrounds:** `analog-breakdown`, `monochrome-memory`, `ransom-poetry` and `pixel-pulse`. These currently retain their original procedural visuals instead of reusing an unrelated generated image.
-
-Images are matched by scene ID, not index or arbitrary filename. There are no hardcoded remote image URLs or embedded music recordings.
+Open the StackBlitz GitHub project, wait for the dependencies to install and the preview to start, then choose one of the thirty scenes. **Motion blur** is under **CINEMATIC SCENE LIBRARY** alongside sensitivity and visual intensity. Set it to **0%** for a crisp comparison, and to **20–40%** for subtle trails. Touch **Cinema Mode** for fullscreen graphics without controls. The canvas status reads **WEBGL 3D** when the Three.js engine is active or **CANVAS FALLBACK** when WebGL is unavailable.
 
 ## Premium typography (self-hosted)
 
-The legacy DM Sans, Manrope and generic system-font presets were replaced in the cinematic lyrics engine. LyricFlow bundles **19 free and open-source Fontsource families** locally, including Anton, Bebas Neue, Cormorant Garamond, Orbitron, Rubik Dirt, Unbounded, Space Mono, Bodoni Moda, Cinzel Decorative, Fraunces, Syne, Abril Fatface, Press Start 2P, Caveat, Righteous, Chakra Petch, Black Ops One, Bricolage Grotesque, and Space Grotesk for the interface. The user pays nothing for these fonts and no runtime Google Fonts request is needed.
+The legacy DM Sans, Manrope and generic system-font presets were replaced in the lyric engine. LyricFlow bundles **19 free and open-source Fontsource families** locally, including Anton, Bebas Neue, Cormorant Garamond, Orbitron, Rubik Dirt, Unbounded, Space Mono, Bodoni Moda, Cinzel Decorative, Fraunces, Syne, Abril Fatface, Press Start 2P, Caveat, Righteous, Chakra Petch, Black Ops One, Bricolage Grotesque, and Space Grotesk for the interface. The user pays nothing for these fonts and no runtime Google Fonts request is needed.
 
 The font registry chooses distinct packs per scene; the scene-selection engine also uses the manual genre preset. Malayalam, Tamil and Devanagari rely on a native-script font fallback when a Latin display font does not cover those scripts. The original lyrics are never replaced by Romanization.
 
