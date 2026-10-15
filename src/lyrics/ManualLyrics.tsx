@@ -6,11 +6,12 @@ import {buildCues,setLyricTimeline} from './lyricTimeline';
 import {analyzeSections} from './sceneDirector';
 import {buildCinematicSchedule,byId} from '../visualization/cinematic/catalog';
 import {saveUserLyrics} from './userLibrary';
+import {clampLyricDelay,effectiveLyricTime,formatLyricDelay} from './lyricTiming';
 export {parseLRC} from './lrc';
 export {normalizeTrack as cleanTrackTitle} from '../metadata/trackInfo';
 export interface IncomingLyrics{original:string;romanized:string;plain?:string;source:string;sourceUrl?:string;token:number}
 const SAMPLE='[00:00.00]This is an original sample lyric\n[00:03.50]Watch the lights begin to glow\n[00:07.00]Moving gently with the music';
-export default function ManualLyrics({time,trackLoaded,track,incoming}:{time:number;trackLoaded:boolean;track:TrackInfo|null;incoming:IncomingLyrics|null}){
+export default function ManualLyrics({time,trackLoaded,track,incoming,delay,onDelayChange}:{time:number;trackLoaded:boolean;track:TrackInfo|null;incoming:IncomingLyrics|null;delay:number;onDelayChange:(value:number)=>void}){
  const [raw,setRaw]=useState('');
  const [roman,setRoman]=useState('');
  const [plain,setPlain]=useState('');
@@ -30,7 +31,7 @@ export default function ManualLyrics({time,trackLoaded,track,incoming}:{time:num
  const language=useMemo(()=>detectLanguage(raw||plain),[raw,plain]);
  const sections=useMemo(()=>analyzeSections(lines,genre),[lines,genre]);
  const storyboard=useMemo(()=>buildCinematicSchedule(sections,buildCues(lines,romanLines,genre),genre,lines.map(l=>l.text).join('|').slice(0,1500)),[sections,lines,romanLines,genre]);
- useEffect(()=>{setLyricTimeline(buildCues(lines,romanLines,genre),offset,mode,genre);return()=>setLyricTimeline([]);},[lines,romanLines,offset,mode,genre]);
+ useEffect(()=>{setLyricTimeline(buildCues(lines,romanLines,genre),offset-delay,mode,genre);return()=>setLyricTimeline([]);},[lines,romanLines,offset,delay,mode,genre]);
  useEffect(()=>{if(!incoming)return;
    setRaw(incoming.original);setPlain(incoming.plain||'');
    setRoman(incoming.romanized||(!incoming.romanized&&autoRoman?romanizeText(incoming.original).text:''));
@@ -69,10 +70,11 @@ export default function ManualLyrics({time,trackLoaded,track,incoming}:{time:num
    setMessage('Saved in your browser library. It will not sync across devices.')}
   catch(e){setMessage(e instanceof Error?e.message:'Unable to save lyrics.')}
  }
- let idx=-1;for(let i=0;i<lines.length;i++){if(lines[i].time<=time+offset)idx=i;else break}
+ const lyricTime=effectiveLyricTime(time,offset,delay);
+ let idx=-1;for(let i=0;i<lines.length;i++){if(lines[i].time<=lyricTime)idx=i;else break}
  const current=lines[idx],next=lines[idx+1];
  const rom=romanLines[idx]?.text||'Romanized text unavailable';
- const selected=sections.filter(s=>s.start<=time+offset).at(-1)||null;
+ const selected=sections.filter(s=>s.start<=lyricTime).at(-1)||null;
  return <section className="local-player lyrics-panel">
   <div className="player-heading"><div className="heading-left"><span className="heading-icon">文</span><div><b>LYRICS & SCENE DIRECTOR</b><small>Original / Romanized · contextual cinematic sections</small></div></div><button className="upload-button" onClick={()=>setShow(v=>!v)}>{show?'Hide editor':'Edit / import lyrics'}</button></div>
   <div className="lyric-display">
@@ -83,7 +85,17 @@ export default function ManualLyrics({time,trackLoaded,track,incoming}:{time:num
   <div className="lyrics-tools">
    <label>Lyrics display<select value={mode} onChange={e=>setMode(e.target.value as typeof mode)}><option value="original">Original</option><option value="romanized">Romanized</option><option value="both">Both</option></select></label>
    <label>Visual genre preset<select value={genre} onChange={e=>setGenre(e.target.value)}><option value="">Auto / unknown</option>{['Ambient','Cinematic','Pop','EDM','Rock','Hip-hop','Ballad','Classical'].map(g=><option key={g}>{g}</option>)}</select></label>
-   <label>Lyric offset (sec)<input type="number" step=".1" min="-30" max="30" value={offset} onChange={e=>setOffset(Number(e.target.value)||0)}/></label>
+   <label>File timestamp offset (sec)<input type="number" step=".1" min="-30" max="30" value={offset} onChange={e=>setOffset(Number(e.target.value)||0)}/></label>
+   <div className="lyric-delay-tool">
+    <div><strong>LYRICS DELAY</strong><small>Positive = show words later · independent of LRC offset</small></div>
+    <div className="lyric-delay-actions">
+     <button type="button" aria-label="Advance lyrics 0.25 seconds" onClick={()=>onDelayChange(clampLyricDelay(delay-.25))}>−</button>
+     <label><span>Delay (seconds)</span><input aria-label="Lyrics delay seconds" type="number" step=".05" min="-30" max="30" value={delay} onChange={e=>onDelayChange(clampLyricDelay(Number(e.target.value)))}/></label>
+     <button type="button" aria-label="Delay lyrics 0.25 seconds" onClick={()=>onDelayChange(clampLyricDelay(delay+.25))}>+</button>
+     <button type="button" className="lyric-delay-reset" onClick={()=>onDelayChange(0)}>Reset</button>
+    </div>
+    <small className="lyric-delay-feedback">Current delay: {formatLyricDelay(delay)}. {delay>0?'Lyrics display later.':delay<0?'Lyrics display earlier.':'Original display timing.'} File offset: {offset.toFixed(2)}s.</small>
+   </div>
    <span>{lines.length} timed lines · {language} · {trackLoaded?'Local playback clock':'Load a local audio file'}</span>
   </div>
   <div className="scene-summary"><strong>SCENE ANALYSIS</strong>
