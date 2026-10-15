@@ -6,7 +6,7 @@ import {drawScene,NO_AUDIO,type Pulse} from './paint';
 import {drawInstrumentalMark,drawTypography} from './typography';
 import {drawNarrativeObjects} from './narrative';
 import {drawSpatialTypography,spatialLayoutFor} from './spatialTypography';
-import {drawPremiumBackground} from './artwork';
+import {artworkStatus,drawPremiumBackground,hasArtwork} from './artwork';
 export type Quality='High'|'Balanced'|'Performance';
 export type CameraMode='Automatic'|'Front'|'Orbit'|'Side'|'Top';
 export interface CinematicProps {
@@ -107,7 +107,16 @@ export default function CinematicStage(props:CinematicProps){
     // Premium artwork takes precedence; original graphics remain a safe fallback.
     const imageReady=drawPremiumBackground(ctx,s.id,w,h,visualTime,p,factor,config.reducedMotion);
     if(imageReady)premiumImageActive=true;
-    if(!imageReady)drawScene(ctx,s,w,h,visualTime,p,config.quality);
+    if(!imageReady&&hasArtwork(s.id)){
+     // Never show outdated procedural waves behind a scene with a bundled image.
+     // A quiet editorial gradient stays in place only until the image finishes decoding.
+     const palette=byId[s.id];
+     ctx.fillStyle=palette.background;ctx.fillRect(-w*.10,-h*.10,w*1.20,h*1.20);
+     const waiting=ctx.createRadialGradient(w*.51,h*.39,0,w*.52,h*.46,Math.max(w,h)*.82);
+     waiting.addColorStop(0,palette.accent+'55');
+     waiting.addColorStop(1,palette.background);
+     ctx.fillStyle=waiting;ctx.fillRect(-w*.10,-h*.10,w*1.20,h*1.20);
+    }else if(!imageReady)drawScene(ctx,s,w,h,visualTime,p,config.quality);
     if(config.narrativeObjects)drawNarrativeObjects(ctx,s,lyric.cue,w,h,visualTime,p,factor,config.reducedMotion);
     ctx.restore();
    };
@@ -126,6 +135,7 @@ export default function CinematicStage(props:CinematicProps){
    }else if(!snapshot.cues.length){drawInstrumentalMark(ctx,scene,w,h,measured?.loudness??demo)}
    element.dataset.currentScene=scene.id;
    element.dataset.premiumArtwork=premiumImageActive?'active':'fallback';
+   element.dataset.artworkStatus=artworkStatus(scene.id);
    element.dataset.motif=config.narrativeObjects?String(lyric.cue?.mood||'audio'):'disabled';
    element.dataset.lyricLayout=lyric.cue?(config.spatialTypography?spatialLayoutFor(scene,lyric.cue.text):'classic'):'none';
    element.dataset.sceneLabel=byId[scene.id].label;
