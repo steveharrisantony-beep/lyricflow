@@ -61,6 +61,26 @@ try{
  const sensitivity=await page.getByRole('slider',{name:'Audio sensitivity'}).inputValue();
  if(sensitivity!=='50')throw new Error('Expected default audio sensitivity to be 50%, received '+sensitivity);
  console.log('PASS: default audio sensitivity is 50%');
+ // Lyrics delay must be separate from LRC offset, adjustable in both directions.
+ const delayField=page.getByRole('spinbutton',{name:'Lyrics delay seconds'});
+ if(await delayField.inputValue()!=='0')throw new Error('Lyrics delay must default to zero');
+ await page.getByRole('button',{name:'Delay lyrics 0.25 seconds'}).click();
+ if(await delayField.inputValue()!=='0.25')throw new Error('Positive delay did not increase');
+ await page.getByRole('button',{name:'Advance lyrics 0.25 seconds'}).click();
+ await page.getByRole('button',{name:'Advance lyrics 0.25 seconds'}).click();
+ if(await delayField.inputValue()!=='-0.25')throw new Error('Negative advance did not work');
+ await page.getByRole('button',{name:'Reset',exact:true}).click();
+ console.log('PASS: independent signed lyric delay can be advanced, delayed and reset');
+ // Audio source sheet must expose honest supported and experimental options.
+ await page.locator('.stage-source-button').click();
+ await page.getByRole('dialog',{name:'Select audio source'}).waitFor();
+ if(await page.locator('.audio-source-choice').count()!==6)throw new Error('Expected six source options');
+ await page.getByRole('button',{name:/Internet radio \/ direct stream/}).click();
+ await page.getByRole('textbox',{name:/Direct radio\/audio stream URL/}).waitFor();
+ await page.getByRole('button',{name:/SoundCloud/}).click();
+ if(!await page.getByText(/SoundCloud embeds do not provide unrestricted access/).isVisible())throw new Error('SoundCloud disclosure missing');
+ await page.getByRole('button',{name:'Close audio sources'}).click();
+ console.log('PASS: six browser-aware audio-source options available without faking provider sync');
  const ordered=await page.evaluate(()=>{
   const selectors=['.stage','.signal-panel','.lyrics-panel','.control-panel','.track-finder','.mic-panel'];
   const elements=selectors.map(selector=>document.querySelector(selector));
@@ -165,7 +185,16 @@ try{
  await page.locator('button.cinema-button').click();
  await page.locator('.performance-mode').waitFor({timeout:6000});
  console.log('PASS: Cinema Mode entered');
- await page.locator('.stage').click({position:{x:30,y:25}});
+ // Tapping the stage in cinema mode now reveals controls, rather than exiting.
+ await page.getByRole('button',{name:'Show cinema controls'}).click();
+ await page.getByRole('complementary',{name:'Cinema live controls'}).waitFor();
+ await page.getByRole('button',{name:'Cinema delay lyrics'}).click();
+ await page.waitForFunction(()=>document.querySelector('.cinema-delay b')?.textContent==='+0.25s');
+ console.log('PASS: signed lyric delay and source controls are available in Cinema Mode');
+ await page.getByRole('button',{name:'Choose audio source'}).click();
+ await page.getByRole('dialog',{name:'Select audio source'}).waitFor();
+ await page.getByRole('button',{name:'Close audio sources'}).click();
+ await page.getByRole('button',{name:'Exit cinema mode'}).click();
  await page.waitForFunction(()=>!document.querySelector('.performance-mode'),{timeout:6000});
  console.log('PASS: Cinema Mode exited');
  if(errors.length)throw new Error('Browser runtime exceptions:\n'+errors.join('\n'));
