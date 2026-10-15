@@ -30,7 +30,7 @@ const smooth=(n:number)=>Math.max(0,Math.min(1,n));
 const seedNumber=(s:string)=>{let h=2166136261;for(let i=0;i<s.length;i++)h=Math.imul(h^s.charCodeAt(i),16777619);return h>>>0};
 const random=(seed:number)=>{let v=seed>>>0;return ()=>{v=(Math.imul(v,1664525)+1013904223)>>>0;return v/4294967296}};
 const makeColor=(hex:string)=>new THREE.Color(hex);
-type Animated={mesh:THREE.Object3D;base:THREE.Vector3;size:number;offset:number;kind:number;material?:THREE.MeshPhongMaterial};
+type Animated={mesh:THREE.Object3D;base:THREE.Vector3;baseScale:THREE.Vector3;size:number;offset:number;kind:number;material?:THREE.MeshPhongMaterial};
 const vertexShader=`
  varying vec2 vUv;
  void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}
@@ -121,6 +121,7 @@ export class ProceduralCinema {
  private animated:Animated[]=[];
  private owned:THREE.Object3D[]=[];
  private ownedGeometry:THREE.BufferGeometry[]=[];
+ private backgroundGeometry:THREE.PlaneGeometry|null=null;
  private ownedMaterials:THREE.Material[]=[];
  private shared:Record<string,THREE.BufferGeometry>={};
  private glowMap:THREE.DataTexture|null=null;
@@ -186,9 +187,9 @@ export class ProceduralCinema {
    depthWrite:false,side:THREE.DoubleSide
   });
   this.atmosphere=bg;
-  const background=new THREE.Mesh(new THREE.PlaneGeometry(96,62),bg);
+  this.backgroundGeometry=new THREE.PlaneGeometry(96,62);
+  const background=new THREE.Mesh(this.backgroundGeometry,bg);
   background.position.z=-25;this.scene.add(background);
-  this.ownedGeometry.push(background.geometry);
   this.temporalMaterial=new THREE.ShaderMaterial({
    vertexShader:postVertex,fragmentShader:temporalFragment,
    uniforms:{uCurrent:{value:null},uHistory:{value:null},uRetention:{value:0}},
@@ -228,7 +229,7 @@ export class ProceduralCinema {
   mesh.position.copy(position);mesh.scale.setScalar(size);
   mesh.rotation.set(offset*.17,offset*.28,offset*.11);
   this.world.add(mesh);this.owned.push(mesh);
-  this.animated.push({mesh,base:position.clone(),size,offset,kind,
+  this.animated.push({mesh,base:position.clone(),baseScale:mesh.scale.clone(),size,offset,kind,
    material:material instanceof THREE.MeshPhongMaterial?material:undefined});
   return mesh;
  }
@@ -388,7 +389,7 @@ export class ProceduralCinema {
     sprite.position.copy(pos);
     const size=2.2+rand()*4.1;sprite.scale.set(size,size,1);
     this.world.add(sprite);this.owned.push(sprite);
-    this.animated.push({mesh:sprite,base:pos,size,offset:rand()*TAU,kind:4});
+    this.animated.push({mesh:sprite,base:pos,baseScale:sprite.scale.clone(),size,offset:rand()*TAU,kind:4});
    }
   }
   this.hasHistory=false;
@@ -422,11 +423,9 @@ export class ProceduralCinema {
    if(a.kind===4){
     const scale=a.size*(1+audioKick*.7+treble*energy*.25);
     a.mesh.scale.set(scale,scale,1);
-   }else if(a.kind===2){
-    a.mesh.scale.y=Math.max(.05,a.size*(1+.12*bass*energy));
    }else{
-    const scale=a.size*(1+audioKick*(a.kind===3?.6:1.2)+treble*energy*.12);
-    if(a.kind!==2)a.mesh.scale.setScalar(scale);
+    const scale=1+audioKick*(a.kind===3?.6:1.2)+treble*energy*.12;
+    a.mesh.scale.copy(a.baseScale).multiplyScalar(scale);
    }
    a.mesh.rotation.y+=delta*(.12+treble*.5)*motion;
    a.mesh.rotation.z+=delta*(.06+p.mids*.17)*motion;
@@ -471,7 +470,7 @@ export class ProceduralCinema {
   this.disposed=true;
   this.clearWorld();
   Object.values(this.shared).forEach(g=>g.dispose());
-  this.glowMap?.dispose();
+  this.glowMap?.dispose();this.backgroundGeometry?.dispose();
   this.source?.dispose();this.history?.forEach(x=>x.dispose());
   this.atmosphere?.dispose();this.temporalMaterial?.dispose();this.copyMaterial?.dispose();
   this.stage.traverse(x=>{if(x instanceof THREE.Mesh)x.geometry.dispose()});
