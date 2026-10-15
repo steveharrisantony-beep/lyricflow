@@ -13,11 +13,11 @@ const cues=buildCues(sample,[]);
 const sections=analyzeSections(sample);
 
 describe('cinematic scene catalog',()=>{
- it('provides thirty original cinematic templates',()=>{
-  expect(TEMPLATES).toHaveLength(30);
-  expect(new Set(TEMPLATES.map(t=>t.id)).size).toBe(30);
+ it('provides forty original cinematic templates',()=>{
+  expect(TEMPLATES).toHaveLength(40);
+  expect(new Set(TEMPLATES.map(t=>t.id)).size).toBe(40);
   expect(new Set(TEMPLATES.map(t=>t.family)).size).toBeGreaterThanOrEqual(20);
-  expect(new Set(TEMPLATES.map(t=>t.background)).size).toBe(30);
+  expect(new Set(TEMPLATES.map(t=>t.background)).size).toBe(40);
  });
  it('gives every scene a valid bundled premium font pack',()=>{
   for(const item of TEMPLATES){

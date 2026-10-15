@@ -1,3 +1,4 @@
+import {paintLyric} from './contrast';
 import type {LyricCue} from '../../lyrics/lyricTimeline';
 import type {DirectedScene} from './catalog';
 import {sceneColors} from './paint';
@@ -10,7 +11,7 @@ const ease=(x:number)=>{const v=clamp(x);return 1-(1-v)**3};
 const setFont=applySceneFont;
 function readableText(c:CanvasRenderingContext2D,text:string,x:number,y:number,maxW:number,color:string,stroke?:string){
  if(stroke){c.lineWidth=Math.max(3,Math.min(12,maxW*.012));c.strokeStyle=stroke;c.lineJoin='round';c.strokeText(text,x,y,maxW)}
- c.fillStyle=color;c.fillText(text,x,y,maxW);
+ paintLyric(c,text,x,y,maxW,color);
 }
 function chooseTexts(cue:LyricCue,mode:'original'|'romanized'|'both',now:number){
  const index=cue.words.findIndex(word=>now>=word.start&&now<word.end);
@@ -140,6 +141,6 @@ export function drawInstrumentalMark(c:CanvasRenderingContext2D,scene:DirectedSc
  const template=sceneColors(scene.id);
  c.save();c.textAlign='center';c.textBaseline='middle';c.globalAlpha=.35+energy*.3;
  setFont(c,scene.font,Math.min(35,h*.06),'LYRICFLOW');
- c.fillStyle=template.foreground;c.fillText('LYRICFLOW',w*.5,h*.52,w*.7);
+ paintLyric(c,'LYRICFLOW',w*.5,h*.52,w*.7,template.foreground);
  c.restore();
 }

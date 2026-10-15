@@ -1,5 +1,6 @@
 import type {LyricCue} from '../../lyrics/lyricTimeline';
 import type {DirectedScene,FontPack} from './catalog';
+import {readableInk,paintLyric} from './contrast';
 import {sceneColors} from './paint';
 import type {Pulse} from './paint';
 import {applySceneFont,usesNativeScript} from './fonts';
@@ -23,13 +24,13 @@ export function spatialFontFor(scene:DirectedScene,text:string):FontPack {
  if(scene.font==='editorial'||scene.font==='literary')return (['couture','vogue','engraved','manuscript'] as const)[idx%4];
  return featured[idx];
 }
-function write(c:CanvasRenderingContext2D,text:string,x:number,y:number,size:number,color:string,width:number,font:FontPack,angle=0,outline=false){
+function write(c:CanvasRenderingContext2D,text:string,x:number,y:number,size:number,color:string,width:number,font:FontPack,angle=0,outline=false,surface?:string){
  c.save();c.translate(x,y);c.rotate(angle);c.textBaseline='middle';
  c.textAlign='center';applySceneFont(c,font,Math.max(10,size),text);
  if(outline){
   c.strokeStyle=color;c.lineWidth=Math.max(1,size*.024);c.strokeText(text,0,0,width);
  }else{
-  c.fillStyle=color;c.fillText(text,0,0,width);
+  paintLyric(c,text,0,0,width,color,surface);
  }c.restore();
 }
 function visualWord(cue:LyricCue,time:number,mode:'original'|'romanized'|'both'){
@@ -67,7 +68,7 @@ export function drawSpatialTypography({c,scene,cue,time,mode,w,h,p:_p,intensity,
  const large=unit*(title.length>18?.095:title.length>10?.13:.20);
  const small=unit*(full.length>85?.045:full.length>45?.062:.085);
  c.save();
- c.shadowBlur=0;c.lineJoin='round';
+ c.shadowColor=design.background;c.shadowBlur=Math.min(12,w*.012);c.lineJoin='round';
  const alpha=.14;
  switch(layout){
  case 'asymmetric':
@@ -119,7 +120,7 @@ export function drawSpatialTypography({c,scene,cue,time,mode,w,h,p:_p,intensity,
   c.save();c.translate(w*.5,h*.48);c.rotate(-.055);
   c.globalAlpha=.83;c.fillStyle=accent;c.fillRect(-w*.39,-h*.19,w*.78,h*.36);
   c.globalAlpha=1;
-  write(c,title,0,-h*.025,large*1.23*punch,design.background,w*.73,'techno');
+  write(c,title,0,-h*.025,large*1.23*punch,readableInk(accent),w*.73,'techno',0,false,accent);
   write(c,full,0,h*.25,small*.88,ink,w*.73,scene.font);
   c.restore();
   break;

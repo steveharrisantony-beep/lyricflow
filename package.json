@@ -11,7 +11,9 @@
     "test": "vitest run",
     "smoke": "node scripts/smoke.mjs",
     "dev:full": "node scripts/dev-full.mjs",
-    "smoke:music": "node scripts/music-smoke.mjs"
+    "smoke:music": "node scripts/music-smoke.mjs",
+    "smoke:motion": "node scripts/motion-smoke.mjs",
+    "smoke:hls": "node scripts/hls-smoke.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
@@ -47,7 +49,8 @@
     "@fontsource/poiret-one": "^5.2.0",
     "@fontsource/special-elite": "^5.2.0",
     "@fontsource/bungee-shade": "^5.2.0",
-    "three": "^0.180.0"
+    "three": "^0.180.0",
+    "hls.js": "^1.7.3"
   },
   "devDependencies": {
     "@types/react": "latest",

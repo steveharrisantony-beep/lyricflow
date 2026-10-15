@@ -21,7 +21,7 @@ export function normalizeTrack(text:string){
   .replace(/\b(feat|ft|featuring|remastered|official|version|from)\b.*$/g,'')
   .replace(/[^\p{L}\p{N}]+/gu,' ').trim().replace(/\s+/g,' ');
 }
-export interface TrackCandidate { id:number;title:string;artist:string;album:string;duration:number;instrumental:boolean;hasSynced:boolean;hasWordSync:boolean;url:string;confidence:number }
+export interface TrackCandidate { syncedLyrics?:string;id:number;title:string;artist:string;album:string;duration:number;instrumental:boolean;hasSynced:boolean;hasWordSync:boolean;url:string;confidence:number }
 export interface SearchRecord {id:number;trackName:string;artistName:string;albumName:string;duration:number;instrumental:boolean;syncedLyrics:string|null;hasWordSync?:boolean }
 export function rankCandidate(track:TrackInfo, candidate:SearchRecord):TrackCandidate{
  const t=normalizeTrack(track.title),c=normalizeTrack(candidate.trackName);
@@ -37,7 +37,7 @@ export function rankCandidate(track:TrackInfo, candidate:SearchRecord):TrackCand
   confidence+=delta<3?.08:delta<12?.04:delta>35?-.13:0;
  }
  if(candidate.instrumental)confidence-=.05;
- return {id:candidate.id,title:candidate.trackName,artist:candidate.artistName,
+ return {syncedLyrics:candidate.syncedLyrics||undefined,id:candidate.id,title:candidate.trackName,artist:candidate.artistName,
   album:candidate.albumName,duration:candidate.duration,hasSynced:Boolean(candidate.syncedLyrics),
   hasWordSync:Boolean(candidate.hasWordSync),instrumental:candidate.instrumental,
   url:'https://lrclib.net/api/get/'+candidate.id,

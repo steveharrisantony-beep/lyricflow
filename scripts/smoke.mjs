@@ -22,6 +22,7 @@ const errors=[];
 page.on('pageerror',error=>errors.push(error.message));
 page.on('response',response=>{if(response.status()>=400)console.log('HTTP '+response.status()+' '+response.url().slice(0,220))});
 page.on('console',message=>{if(message.type()==='error')console.log('Browser console: '+message.text().slice(0,200))});
+await page.route('https://lrclib.net/api/**',route=>route.fulfill({json:[]}));
 try{
  await page.goto('http://127.0.0.1:5173/',{waitUntil:'domcontentloaded'});
  await page.locator('canvas.visual-canvas').waitFor({timeout:12000});
@@ -74,13 +75,13 @@ try{
  // Audio source sheet must expose honest supported and experimental options.
  await page.locator('.stage-source-button').click();
  await page.getByRole('dialog',{name:'Select audio source'}).waitFor();
- if(await page.locator('.audio-source-choice').count()!==6)throw new Error('Expected six source options');
+ if(await page.locator('.audio-source-choice').count()!==5)throw new Error('Expected five direct input options');
  await page.getByRole('button',{name:/Internet radio \/ direct stream/}).click();
  await page.getByRole('textbox',{name:/Direct radio\/audio stream URL/}).waitFor();
- await page.getByRole('button',{name:/SoundCloud/}).click();
- if(!await page.getByText(/SoundCloud embeds do not provide unrestricted access/).isVisible())throw new Error('SoundCloud disclosure missing');
+ await page.getByRole('button',{name:'SoundCloud',exact:true}).click();
+ if(await page.getByRole('button',{name:'SoundCloud',exact:true}).getAttribute('aria-pressed')!=='true')throw new Error('SoundCloud catalog did not select');
  await page.getByRole('button',{name:'Close audio sources'}).click();
- console.log('PASS: six browser-aware audio-source options available without faking provider sync');
+ console.log('PASS: five direct inputs and selectable music catalogs available');
  const ordered=await page.evaluate(()=>{
   const selectors=['.stage','.signal-panel','.local-player','.track-finder','.lyrics-panel','.control-panel','.mic-panel'];
   const elements=selectors.map(selector=>document.querySelector(selector));
@@ -89,8 +90,8 @@ try{
  });
  if(!ordered)throw new Error('Panel order differs from canvas / audio / playback / matching / lyrics / scene library');
  console.log('PASS: playback and matching controls precede the scene library');
- if(await page.locator('.cinematic-scene-card').count()!==30)throw new Error('Expected exactly thirty templates');
- console.log('PASS: all 30 scene controls rendered on tablet-sized layout');
+ if(await page.locator('.cinematic-scene-card').count()!==40)throw new Error('Expected exactly forty templates');
+ console.log('PASS: all 40 scene controls rendered on tablet-sized layout');
  const loadedFonts=await page.evaluate(async()=>{
   const families=['400 24px "Anton"','700 24px "Orbitron"','700 24px "Unbounded"',
    '400 24px "Italiana"','400 24px "Gloock"','400 24px "Michroma"',
@@ -103,7 +104,7 @@ try{
  });
  if(loadedFonts)throw new Error('Bundled font failed to load: '+loadedFonts);
  console.log('PASS: sampled premium display fonts are served locally and loaded in Chrome');
- const names=["Crimson Impact","Concrete Manifesto","Rain on Glass","Neon Velocity","Ink Rebellion","Ocean Reverie","Color Riot","Analog Breakdown","Cloud Cathedral","Stellar Expansion","Fragmented Thoughts","Quiet Pages","Monochrome Memory","Monument Titles","Midnight Confession","Glass Architecture","Ransom Poetry","Type Collision","Petal Memory","Submerged Words","Inferno Letterforms","Holographic Frequency","Pixel Pulse","Marker Diary","Bubble Pop","Word Playground","Sunset Frequency","Typographic Vortex","Midnight Transit","Final Ascension"];
+ const names=["Crimson Impact","Concrete Manifesto","Rain on Glass","Neon Velocity","Ink Rebellion","Ocean Reverie","Color Riot","Analog Breakdown","Cloud Cathedral","Stellar Expansion","Fragmented Thoughts","Quiet Pages","Monochrome Memory","Monument Titles","Midnight Confession","Glass Architecture","Ransom Poetry","Type Collision","Petal Memory","Submerged Words","Inferno Letterforms","Holographic Frequency","Pixel Pulse","Marker Diary","Bubble Pop","Word Playground","Sunset Frequency","Typographic Vortex","Midnight Transit","Final Ascension","Paper Cut","Orbital Score","Silk Waves","Bauhaus Beat","Star Map","Halftone Club","Ribbon Dance","Vinyl Groove","Pixel Garden","Contour Flow"];
  const signatures=[];
  for(const name of names){
   await page.locator('.cinematic-scene-card').filter({hasText:name}).click();
@@ -162,7 +163,7 @@ try{
  if(await page.locator('.spectrum-diagnostic canvas').count()!==1)throw new Error('Missing 64-band live diagnostic');
  console.log('PASS: precision spectrum, generative poster and crystalline 3D have distinct final outputs');
 
- console.log('PASS: all thirty cinematic templates produce distinct actual canvas frames');
+ console.log('PASS: all forty cinematic templates produce distinct actual canvas frames');
 
  // All visuals are code-driven: WebGL scene, shader atmosphere and 3D overlay objects.
  await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.renderer==='WEBGL 3D',{timeout:12000});
@@ -180,7 +181,7 @@ try{
  for(let i=0;i<6;i++)await blur.press('ArrowRight');
  console.log('PASS: adjustable temporal motion blur from 0 to 80');
  await page.getByLabel('Spatial kinetic lyrics').check();
- if(await page.locator('.cinematic-scene-card').count()!==30)throw new Error('Must preserve all thirty scenes');
+ if(await page.locator('.cinematic-scene-card').count()!==40)throw new Error('Must preserve all forty scenes');
  console.log('PASS: motion blur layer is independent of lyric timeline');
  await page.locator('button.cinema-button').click();
  await page.locator('.performance-mode').waitFor({timeout:6000});

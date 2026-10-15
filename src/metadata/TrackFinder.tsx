@@ -18,7 +18,7 @@ export default function TrackFinder({track,onMetadataChange,onLyricsFound}:{
  const pending=useRef<AbortController|null>(null);
  const automaticRequest=useRef<AbortController|null>(null);
  useEffect(()=>()=>pending.current?.abort(),[]);
- const key=track?[track.title,track.artist,track.duration].join('|'):'';
+ const key=track?[track.title,track.artist,Math.round(track.duration)].join('|'):'';
  useEffect(()=>{
   if(!track||!automatic||!rights)return;
   const controller=new AbortController();automaticRequest.current=controller;
@@ -29,7 +29,7 @@ export default function TrackFinder({track,onMetadataChange,onLyricsFound}:{
    void resolveAutomaticLyrics(track,controller.signal).then(lyrics=>{
     if(controller.signal.aborted)return;
     if(lyrics){latestLyrics.current(lyrics);setMessage('Timed lyrics matched automatically · following playback.');}
-    else setMessage('No unique timed match. Choose a version below or import LRC; audio visuals continue.');
+    else setMessage('No unique timed match. Use Search lyrics to choose a version, or import LRC; audio visuals continue.');
    }).catch(error=>{if(!controller.signal.aborted)setMessage(error instanceof Error?error.message:'Automatic lyrics unavailable.')});
   },500);
   return()=>{clearTimeout(timer);controller.abort()};
@@ -38,7 +38,7 @@ export default function TrackFinder({track,onMetadataChange,onLyricsFound}:{
  useEffect(()=>{pending.current?.abort();setBusy(false);setCandidates([]);setMatches(track?findUserLyrics(track):[]);setMessage('')},[key]);
  async function search(){
   if(!track||!canSearch)return;
-  setBusy(true);setMessage('Searching track candidates…');setCandidates([]);
+  setBusy(true);setMessage('Searching track candidates…');setCandidates([]);automaticRequest.current?.abort();
   pending.current?.abort();const controller=new AbortController();pending.current=controller;
   try{
    const found=await lrclibProvider.search(track,controller.signal);
@@ -65,7 +65,7 @@ export default function TrackFinder({track,onMetadataChange,onLyricsFound}:{
    if(controller.signal.aborted)return;
    if(!lyric.synced&&!lyric.plain){setMessage('The candidate has no lyric text.');return}
    onLyricsFound({original:lyric.synced,romanized:'',plain:lyric.plain,source:lyric.source,sourceUrl:lyric.sourceUrl});
-   setMessage(lyric.synced?'Timed lyrics loaded (temporary; not cached).':'Only plain lyrics available. Add timestamps manually to synchronize.');
+   setMessage(lyric.synced?'Timed lyrics loaded for this session.':'Only plain lyrics available. Add timestamps manually to synchronize.');
   }catch(e){if(!controller.signal.aborted)setMessage(e instanceof Error?e.message:'Unable to load lyrics.')}
   finally{if(pending.current===controller)setBusy(false)}
  }
@@ -78,7 +78,7 @@ export default function TrackFinder({track,onMetadataChange,onLyricsFound}:{
     <label>Album / version<input value={track.album} placeholder="Optional" onChange={e=>onMetadataChange({...track,album:e.target.value,source:'manual',confidence:1})}/></label>
    </div>
    <div className="track-search-row"><span>Metadata: {track.source==='filename'?'filename guess':track.source==='provider'?'selected music source':'manually corrected'} · {Math.round(track.confidence*100)}% initial confidence · {track.duration?Math.round(track.duration)+'s':''}</span><button className="upload-button" disabled={busy||!canSearch} onClick={()=>void search()}>{busy?'Searching…':'Search lyrics'}</button></div>
-   {matches.length>0&&<div className="library-match"><strong>Saved in your library</strong>{matches.map(e=><button key={e.id} onClick={()=>{onLyricsFound({original:e.original,romanized:e.romanized,source:'My library'});setMessage('Loaded saved permitted lyrics.')}}>{e.title} — {e.artist||'Unknown artist'} · Open saved entry</button>)}</div>}
+   {matches.length>0&&<div className="library-match"><strong>Saved in your library</strong>{matches.map(e=><button key={e.id} onClick={()=>{automaticRequest.current?.abort();pending.current?.abort();onLyricsFound({original:e.original,romanized:e.romanized,source:'My library'});setMessage('Loaded saved permitted lyrics.')}}>{e.title} — {e.artist||'Unknown artist'} · Open saved entry</button>)}</div>}
    {candidates.length>0&&<div className="track-candidates">
     <div className="candidate-heading">Possible matches — choose the exact recording <small>Best match: {Math.round((selected?.confidence||0)*100)}%</small></div>
     {candidates.map(c=><div className="candidate" key={c.id}>
@@ -89,7 +89,7 @@ export default function TrackFinder({track,onMetadataChange,onLyricsFound}:{
    <label className="rights-check"><input type="checkbox" checked={rights} onChange={e=>setRights(e.target.checked)}/><span>I confirm I have the necessary permission to retrieve and display the selected lyrics. Lyrics will not be automatically cached.</span></label>
    <label className="rights-check"><input type="checkbox" checked={automatic} disabled={!rights} onChange={e=>setAutomatic(e.target.checked)}/><span>Automatically load matching timed lyrics for songs I have permission to display (this session). Ambiguous recordings require selection.</span></label>
    {message&&<p className="player-footnote" role="status">{message}</p>}
-   <p className="player-footnote">LRCLIB is an independent, public API. Search results are suggestions, not verified identities or proof of lyric rights. Automatic retrieval requires session permission and an exact title/artist with duration within two seconds. Lyrics are not automatically saved.</p>
+   <p className="player-footnote">LRCLIB is an independent, public API. Search results are suggestions, not verified identities or proof of lyric rights. Automatic retrieval requires session permission and an exact title/artist with duration within five seconds. Lyrics are not automatically saved.</p>
   </>}
  </section>;
 }

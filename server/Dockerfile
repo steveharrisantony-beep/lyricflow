@@ -4,7 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 ca-c
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py .
+COPY app.py sources.py ./
 RUN useradd --create-home appuser
 USER appuser
 CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"]

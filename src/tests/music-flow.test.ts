@@ -21,7 +21,7 @@ describe('music source boundaries',()=>{
   const signal=new AbortController().signal;
   const mock=vi.fn().mockResolvedValue({ok:true,json:async()=>({data:[]})});vi.stubGlobal('fetch',mock);
   await searchSongs('Rain & moon','resolver','https://resolver.example',signal);
-  expect(mock.mock.calls[0][0]).toContain('q=Rain+%26+moon');expect(mock.mock.calls[0][1].signal).toBe(signal);
+  expect(mock.mock.calls[0][0]).toContain('q=Rain+%26+moon');expect(mock.mock.calls[0][1].signal.aborted).toBe(false);
  });
  it('requires a resolver connection before contacting a server',async()=>{
   await expect(searchSongs('Rain','resolver','')).rejects.toThrow('Connect');

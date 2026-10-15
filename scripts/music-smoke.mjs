@@ -30,9 +30,9 @@ try{
  if(await page.getByRole('slider',{name:'Audio sensitivity',exact:true}).inputValue()!=='50')throw Error('Spectrum control changed overall sensitivity');
  console.log('PASS spectrum gain is separate from overall sensitivity');
  await page.locator('.stage-source-button').click();
- await page.getByRole('button',{name:'Connected resolver',exact:true}).click();
+ await page.getByRole('button',{name:'YouTube Music',exact:true}).click();
  // Vite without dev:full can still exercise the configured resolver contract.
- await page.getByRole('button',{name:'Search settings',exact:true}).click();
+ if(!await page.getByRole('textbox',{name:'Music resolver URL'}).isVisible())await page.getByRole('button',{name:'Search settings',exact:true}).click();
  const base=page.getByRole('textbox',{name:'Music resolver URL'});
  if(await base.count()){await base.fill('http://127.0.0.1:5173/music');await page.getByRole('button',{name:'Save connection'}).click()}
  await page.getByRole('textbox',{name:'Search songs',exact:true}).fill('Original rain');
@@ -41,12 +41,13 @@ try{
  await page.getByRole('dialog',{name:'Select audio source'}).waitFor({state:'hidden'});
  await page.waitForFunction(()=>document.querySelector('.cinematic-canvas')?.dataset.audioSource==='LOCAL AUDIO',null,{timeout:20000});
  console.log('PASS searched recording loads through shared audio analyzer');
+ await page.getByRole('button',{name:'Pause track',exact:true}).click();
+ await page.getByRole('slider',{name:'Song position',exact:true}).press('Home');
  await page.getByRole('checkbox',{name:/I confirm I have the necessary permission/}).check();
  await page.getByRole('checkbox',{name:/Automatically load matching timed lyrics/}).check();
  await page.waitForFunction(()=>document.querySelector('.lyric-display')?.textContent?.includes('Original test line'),null,{timeout:15000});
  if(!lyricCalls)throw Error('Automatic lyric provider was not called');
  console.log('PASS exact recording metadata automatically loads timestamped lyrics');
- await page.getByRole('button',{name:'Pause track',exact:true}).click();
  const seek=page.getByRole('slider',{name:'Song position',exact:true});const seekBox=await seek.boundingBox();
  await seek.click({position:{x:seekBox.width*.55,y:seekBox.height*.5}});
  

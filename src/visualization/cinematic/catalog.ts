@@ -9,7 +9,9 @@ export type SceneId =
  | 'ransom-poetry'|'type-collision'|'petal-memory'|'submerged-words'
  | 'inferno-letterforms'|'holographic-frequency'|'pixel-pulse'|'marker-diary'
  | 'bubble-pop'|'word-playground'|'sunset-frequency'|'typographic-vortex'
- | 'midnight-transit'|'final-ascension';
+ | 'midnight-transit'|'final-ascension'
+ | 'paper-cut'|'orbital-score'|'silk-waves'|'bauhaus-beat'|'star-map'
+ | 'halftone-club'|'ribbon-dance'|'vinyl-groove'|'pixel-garden'|'contour-flow';
 export type Layout='hero'|'editorial'|'left'|'stack'|'poster'|'scattered';
 export type Transition='flash'|'wipe'|'dissolve'|'glitch'|'ripple'|'ink'|'zoom';
 export type FontPack='impact'|'street'|'editorial'|'tech'|'grunge'|'rounded'|'mono'|'literary'
@@ -53,6 +55,16 @@ export const TEMPLATES:readonly Template[]=[
  {id:'typographic-vortex',label:'Typographic Vortex',family:'vortex',moods:['cosmic','fire','solitude'],genres:['experimental','electronic','cinematic','techno'],background:'#0d0713',foreground:'#faf2ff',accent:'#ec71fc',font:'tech',layout:'hero',transition:'zoom',camera:'orbit',baseEnergy:.87},
  {id:'midnight-transit',label:'Midnight Transit',family:'transit',moods:['solitude','memory','fire'],genres:['trap','urban','synth','pop'],background:'#030a16',foreground:'#f0f5f6',accent:'#f39f59',font:'street',layout:'left',transition:'zoom',camera:'push',baseEnergy:.60},
  {id:'final-ascension',label:'Final Ascension',family:'ascension',moods:['celebration','cosmic','warm'],genres:['anthem','cinematic','orchestral','rock'],background:'#07070c',foreground:'#fff4da',accent:'#e5c291',font:'monument',layout:'hero',transition:'flash',camera:'pullback',baseEnergy:.99},
+ {id:'paper-cut',label:'Paper Cut',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#f1eadc',foreground:'#222536',accent:'#d65e3c',font:'editorial',layout:'hero',transition:'wipe',camera:'drift',baseEnergy:.55},
+ {id:'orbital-score',label:'Orbital Score',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#080d24',foreground:'#eff7ff',accent:'#64d6de',font:'tech',layout:'hero',transition:'zoom',camera:'drift',baseEnergy:.55},
+ {id:'silk-waves',label:'Silk Waves',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#f4dfe7',foreground:'#332442',accent:'#9b4584',font:'editorial',layout:'hero',transition:'dissolve',camera:'drift',baseEnergy:.55},
+ {id:'bauhaus-beat',label:'Bauhaus Beat',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#f3ebd4',foreground:'#222728',accent:'#d94c2e',font:'impact',layout:'hero',transition:'wipe',camera:'drift',baseEnergy:.55},
+ {id:'star-map',label:'Star Map',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#091821',foreground:'#eff8df',accent:'#9edab4',font:'mono',layout:'hero',transition:'dissolve',camera:'drift',baseEnergy:.55},
+ {id:'halftone-club',label:'Halftone Club',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#23102d',foreground:'#fff1dc',accent:'#ed80b2',font:'grunge',layout:'hero',transition:'ink',camera:'drift',baseEnergy:.55},
+ {id:'ribbon-dance',label:'Ribbon Dance',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#11122c',foreground:'#f2f1ff',accent:'#9c93ff',font:'rounded',layout:'hero',transition:'ripple',camera:'drift',baseEnergy:.55},
+ {id:'vinyl-groove',label:'Vinyl Groove',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#e8bc78',foreground:'#302419',accent:'#9c3c32',font:'retro',layout:'hero',transition:'zoom',camera:'drift',baseEnergy:.55},
+ {id:'pixel-garden',label:'Pixel Garden',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#102b29',foreground:'#e7ffc5',accent:'#9ed36f',font:'pixel',layout:'hero',transition:'wipe',camera:'drift',baseEnergy:.55},
+ {id:'contour-flow',label:'Contour Flow',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#eef0e8',foreground:'#173837',accent:'#36887a',font:'literary',layout:'hero',transition:'dissolve',camera:'drift',baseEnergy:.55},
 ] as const;
 export const byId=Object.fromEntries(TEMPLATES.map(t=>[t.id,t])) as Record<SceneId,Template>;
 export interface DirectedScene {
@@ -127,5 +139,7 @@ export const AUDIO_ONLY_SCENES:readonly SceneId[]=[
  'concrete-manifesto','stellar-expansion','marker-diary','monument-titles',
  'analog-breakdown','ocean-reverie','ransom-poetry','typographic-vortex',
  'rain-on-glass','pixel-pulse','ink-rebellion','word-playground',
- 'midnight-confession','final-ascension'
+ 'midnight-confession','final-ascension',
+ 'paper-cut','orbital-score','silk-waves','bauhaus-beat','star-map',
+ 'halftone-club','ribbon-dance','vinyl-groove','pixel-garden','contour-flow'
 ] as const;

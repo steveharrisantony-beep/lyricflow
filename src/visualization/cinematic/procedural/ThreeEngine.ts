@@ -17,7 +17,7 @@ export type RenderQuality='High'|'Balanced'|'Performance';
 export type ProceduralCamera='Automatic'|'Front'|'Orbit'|'Side'|'Top';
 type Look='ocean'|'clouds'|'glass'|'city'|'flames'|'nebula'|'petals'|'tunnel'|'monuments'
  |'paper'|'crystals'|'rings'|'metal'|'underwater'|'prisms';
-export const PROCEDURAL_LOOKS:Record<SceneId,Look>={
+export const PROCEDURAL_LOOKS:Partial<Record<SceneId,Look>>={
  'crimson-impact':'metal','concrete-manifesto':'monuments','rain-on-glass':'underwater',
  'neon-velocity':'tunnel','ink-rebellion':'prisms','ocean-reverie':'ocean',
  'color-riot':'rings','analog-breakdown':'city','cloud-cathedral':'clouds',
@@ -77,7 +77,8 @@ const atmosphericShader=`
   vec3 color=mix(uBase,uAccent,clamp(amount+uBass*.035,0.,.63));
   color+=uAccent*(glow*.15+aurora*.12)*uLight;
   float vignette=1.0-smoothstep(.35,.92,length(center*vec2(1.2,1.05)));
-  color*=mix(.64,1.12,vignette);
+  float lightBase=step(.45,dot(uBase,vec3(.2126,.7152,.0722)));
+  color=mix(color*mix(.64,1.12,vignette),mix(uBase,uAccent,amount*.12),lightBase);
   color+=uAccent*pow(max(0.,noise(uv*90.0+uStyle)-.83),4.0)*.18;
   gl_FragColor=vec4(color,1.);
  }
@@ -129,6 +130,7 @@ export class ProceduralCinema {
  private backgroundGeometry:THREE.PlaneGeometry|null=null;
  private ownedMaterials:THREE.Material[]=[];
  private shared:Record<string,THREE.BufferGeometry>={};
+ private surfaceMap:THREE.DataTexture|null=null;
  private glowMap:THREE.DataTexture|null=null;
  private particle:THREE.Points|null=null;
  private wave:THREE.Mesh<THREE.PlaneGeometry,THREE.MeshPhysicalMaterial>|null=null;
@@ -168,7 +170,7 @@ export class ProceduralCinema {
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   const pmrem=new THREE.PMREMGenerator(renderer);
   const room=new RoomEnvironment();
-  this.environment=pmrem.fromScene(room,.045);
+  this.environment=pmrem.fromScene(room,.035);
   this.scene.environment=this.environment.texture;
   room.dispose();pmrem.dispose();
   renderer.setPixelRatio(1);
@@ -198,6 +200,14 @@ export class ProceduralCinema {
    plane:new THREE.PlaneGeometry(1,1),
   };
   this.glowMap=glowTexture();
+  const side=128,grain=new Uint8Array(side*side*4),noise=random(431);
+  for(let y=0;y<side;y++)for(let x=0;x<side;x++){
+   const v=Math.round(180+45*y/side+12*Math.sin(x*.24+y*.05)+noise()*18),i=(y*side+x)*4;
+   grain[i]=v;grain[i+1]=Math.min(255,v+5);grain[i+2]=Math.min(255,v+12);grain[i+3]=255;
+  }
+  this.surfaceMap=new THREE.DataTexture(grain,side,side,THREE.RGBAFormat);
+  this.surfaceMap.wrapS=this.surfaceMap.wrapT=THREE.RepeatWrapping;
+  this.surfaceMap.colorSpace=THREE.SRGBColorSpace;this.surfaceMap.needsUpdate=true;
   const bg=new THREE.ShaderMaterial({
    vertexShader,fragmentShader:atmosphericShader,
    uniforms:{uTime:{value:0},uBass:{value:0},uTreble:{value:0},uStyle:{value:0},
@@ -239,7 +249,8 @@ export class ProceduralCinema {
  }
  private material(hex:string,transparent=false){
   const m=new THREE.MeshPhysicalMaterial({color:hex,metalness:transparent?.12:.48,roughness:transparent?.16:.3,
-   clearcoat:1,clearcoatRoughness:.15,envMapIntensity:transparent?1.05:.8,
+   map:transparent?null:this.surfaceMap,bumpMap:transparent?null:this.surfaceMap,bumpScale:.035,
+   clearcoat:1,clearcoatRoughness:.24,envMapIntensity:transparent?1.05:.8,
    emissive:this.colorAccent,emissiveIntensity:.035,
    transparent,opacity:transparent?.5:1,side:THREE.FrontSide,depthWrite:!transparent});
   this.ownedMaterials.push(m);return m;
@@ -283,7 +294,7 @@ export class ProceduralCinema {
    const size=quality==='High'?1024:512;
    if(this.keyLight.shadow.mapSize.x!==size){this.keyLight.shadow.map?.dispose();this.keyLight.shadow.map=null;this.keyLight.shadow.mapSize.set(size,size)}
   }
-  this.currentId=id;this.builtQuality=quality;this.look=PROCEDURAL_LOOKS[id];
+  this.currentId=id;this.builtQuality=quality;this.look=PROCEDURAL_LOOKS[id]??'rings';
   const palette=byId[id];
   this.colorAccent=makeColor(palette.accent);
   const bg=makeColor(palette.background);
@@ -303,7 +314,12 @@ export class ProceduralCinema {
   const gold=this.material(palette.foreground);
   const glass=this.material(palette.accent,true);
   const density=quality==='High'?1:quality==='Balanced'?.72:.43;
-  const count=Math.floor((18+rand()*15)*density);
+  const count=Math.floor(22*density);
+  // A central lyric-safe opening, with objects arranged on depth-layered arcs.
+  const arranged=(i:number,n:number)=>{
+   const a=TAU*i/Math.max(1,n),r=5.2+(i%3)*.65;
+   return new THREE.Vector3(Math.cos(a)*r,Math.sin(a)*r*.72,-5-(i%3)*2);
+  };
   const pick=(shapes:string[])=>this.shared[shapes[Math.floor(rand()*shapes.length)]];
   const addCloud=(x:number,y:number,z:number,r:number,k:number)=>{
    for(let j=0;j<5;j++){
@@ -342,7 +358,7 @@ export class ProceduralCinema {
    }
   }else if(this.look==='clouds'||this.look==='petals'){
    for(let i=0;i<Math.round(count*.65);i++)
-    addCloud((rand()-.5)*20,(rand()-.5)*11,-9+rand()*11,1+rand()*1.7,i);
+    {const pos=arranged(i,Math.round(count*.65));addCloud(pos.x,pos.y,pos.z,.8+rand()*.8,i)}
    if(this.look==='petals'){
     for(let i=0;i<count;i++)
      this.add(this.shared.tetra,i%3===0?gold:glass,
@@ -395,20 +411,21 @@ export class ProceduralCinema {
    for(let i=0;i<count;i++){
     const geometry=this.look==='glass'?pick(['cube','ico']):
       this.look==='crystals'?pick(['octa','cone','tetra']):pick(['tetra','cube','cone']);
-    const pos=new THREE.Vector3((rand()-.5)*17,(rand()-.5)*11,-9+rand()*13);
+    const pos=arranged(i,count);
     const obj=this.add(geometry,i%3===0?hero:i%2===0?glass:ice,
-     pos,.44+rand()*1.8,rand()*TAU,1);
+     pos,.5+(i%4)*.24,rand()*TAU,1);
     obj.rotation.y=rand()*TAU;obj.rotation.x=rand()*TAU;
    }
   }else if(this.look==='monuments'||this.look==='city'||this.look==='metal'){
    for(let i=0;i<count;i++){
     const height=.5+rand()*5.3;
-    const x=(rand()-.5)*20,z=-10+rand()*15;
-    const y=(rand()-.5)*4;
+    const side=i%2?1:-1,row=Math.floor(i/2);
+    const x=side*(3.8+(row%3)*1.5),z=-1-Math.floor(row/3)*3;
+    const y=-6.1+height*.5;
     const ob=this.add(i%6===0?this.shared.cylinder:this.shared.cube,
       i%3===0?gold:i%2===0?dark:hero,new THREE.Vector3(x,y,z),
       .7+rand()*.65,rand()*TAU,2);
-    ob.scale.set(.30+rand()*.8,height,.4+rand()*1.3);
+    ob.scale.set(.7,height,1.1);ob.rotation.set(0,0,0);
     this.animated[this.animated.length-1].baseScale.copy(ob.scale);
    }
    for(let i=0;i<5;i++)
@@ -422,7 +439,7 @@ export class ProceduralCinema {
    }
   }else if(this.look==='paper'){
    for(let i=0;i<count;i++){
-    const position=new THREE.Vector3((rand()-.5)*19,(rand()-.5)*12,-8+rand()*10);
+    const position=arranged(i,count);
     const ob=this.add(this.shared.plane,i%3===0?hero:i%2===0?glass:gold,
      position,.5+rand()*2,rand()*TAU,0);
     ob.scale.set(.7+rand()*1.5,.55+rand()*.85,1);
@@ -433,7 +450,7 @@ export class ProceduralCinema {
    this.addRings(9,glass,-9);
    for(let i=0;i<count;i++){
     this.add(pick(['ico','octa','torus']),i%2?ice:hero,
-      new THREE.Vector3((rand()-.5)*18,(rand()-.5)*11,-8+rand()*14),
+      arranged(i,count),
       .15+rand()*.9,rand()*TAU,1);
    }
   }
@@ -441,8 +458,13 @@ export class ProceduralCinema {
    const floorMaterial=new THREE.MeshPhysicalMaterial({color:bg.clone().lerp(this.colorAccent,.12),metalness:.3,roughness:.42,envMapIntensity:.5});
    this.ownedMaterials.push(floorMaterial);
    const floor=new THREE.Mesh(this.shared.plane,floorMaterial);
-   floor.rotation.x=-PI/2;floor.position.set(0,-6.1,-4);floor.scale.set(70,70,1);floor.receiveShadow=true;
+   floor.rotation.x=-PI/2;floor.position.set(0,-6.1,-4);floor.scale.set(180,180,1);floor.receiveShadow=true;
    this.world.add(floor);this.owned.push(floor);
+  }
+  // Beat-driven orbit accents occupy the edge of the composition.
+  for(let i=0;i<2;i++){
+   const ring=this.add(this.shared.torus,hero,new THREE.Vector3(i===0?-5.8:5.8,i===0?2.7:-2.7,-5-i*2),.7+i*.2,i,5);
+   ring.rotation.set(.2+i*.25,.15,0);
   }
   // Stable depth-space stars/embers: one draw call, no per-frame allocations.
   const amount=quality==='High'?440:quality==='Balanced'?260:130;
@@ -508,8 +530,8 @@ export class ProceduralCinema {
    const channel=motionChannel(a.kind,a.size);
    const target=objectDrive(channel,bass,p.mids,treble,beat)*energy*motion;
    // Critically damped spring: crisp attacks settle without frame-rate jitter.
-   const dt=Math.min(delta,.033);
-   const rate=channel==='treble'?21:14;
+   const dt=delta;
+   const rate=channel==='beat'?38:channel==='treble'?30:22;
    const drive=a.drive??0,velocity=a.velocity??0;
    const decay=Math.exp(-rate*dt),distance=drive-target;
    const k=velocity+rate*distance;
@@ -518,20 +540,20 @@ export class ProceduralCinema {
    const response=smooth(a.drive);
    const spin=time*(.065+.018*(a.kind%4))*motion+a.offset;
    const anchored=a.kind===2;
-   a.mesh.position.y=a.base.y+Math.sin(spin)*.065*motion+(anchored?response*.2:response*(channel==='treble'?.12:.32));
-   a.mesh.position.x=a.base.x+(anchored?0:Math.cos(spin*.7)*.07*motion);
+   a.mesh.position.y=a.base.y+Math.sin(spin)*.065*motion+(anchored?a.baseScale.y*response*.19:response*(channel==='treble'?.65:channel==='beat'?0:1.15));
+   a.mesh.position.x=a.base.x+(anchored?0:Math.cos(a.offset)*response*(channel==='mids'?.8:.35)+Math.cos(spin*.7)*.07*motion);
    if(a.kind===4){
-    const scale=a.size*(1+response*.22);
+    const scale=a.size*(1+response*.8);
     a.mesh.scale.set(scale,scale,1);
    }else if(anchored){
     // Architecture breathes vertically; bass never stretches every dimension.
-    a.mesh.scale.copy(a.baseScale);a.mesh.scale.y*=1+response*.09;
+    a.mesh.scale.copy(a.baseScale);a.mesh.scale.y*=1+response*.38;
    }else{
-    a.mesh.scale.copy(a.baseScale).multiplyScalar(1+response*(channel==='bass'?.16:.055));
+    a.mesh.scale.copy(a.baseScale).multiplyScalar(1+response*(channel==='beat'?.23:channel==='bass'?.42:channel==='mids'?.3:.16));
    }
    if(!anchored){
-    a.mesh.rotation.y+=delta*(.045+response*(channel==='treble'?.65:.17))*motion;
-    a.mesh.rotation.z+=delta*(.025+(channel==='mids'?response*.3:0))*motion;
+    a.mesh.rotation.y+=delta*(.045+response*(channel==='treble'?2.8:.7))*motion;
+    a.mesh.rotation.z+=delta*(.025+(channel==='mids'?response*1.3:0))*motion;
    }
   }
   if(this.wave&&this.waveBase){
@@ -549,7 +571,9 @@ export class ProceduralCinema {
   if(this.particle){
    this.particle.rotation.z=time*.011*motion;
    const m=this.particle.material as THREE.PointsMaterial;
-   m.opacity=.43+.18*treble*energy+.12*beat*energy;
+   m.opacity=.22+.65*treble*energy;
+   m.size=.055+treble*energy*.18;
+   this.particle.scale.setScalar(1+treble*energy*.15);
   }
   const blurMix=reduced?0:Math.max(0,Math.min(.82,motionBlur/100*.81));
   // FPS-independent trails, so adjusting refresh rate doesn't change tail length wildly.
@@ -576,7 +600,7 @@ export class ProceduralCinema {
   this.clearWorld();
   Object.values(this.shared).forEach(g=>g.dispose());
   this.environment?.dispose();this.keyLight?.shadow.map?.dispose();
-  this.glowMap?.dispose();this.backgroundGeometry?.dispose();
+  this.surfaceMap?.dispose();this.glowMap?.dispose();this.backgroundGeometry?.dispose();
   this.source?.dispose();this.history?.forEach(x=>x.dispose());
   this.atmosphere?.dispose();this.temporalMaterial?.dispose();this.copyMaterial?.dispose();
   this.stage.traverse(x=>{if(x instanceof THREE.Mesh)x.geometry.dispose()});

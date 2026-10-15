@@ -4,7 +4,7 @@ import {TEMPLATES,AUDIO_ONLY_SCENES,byId} from '../visualization/cinematic/catal
 
 describe('procedural 3D scene registry',()=>{
  it('maps all thirty existing scenes, without missing or extraneous IDs',()=>{
-  expect(Object.keys(PROCEDURAL_LOOKS).sort()).toEqual(TEMPLATES.map(x=>x.id).sort());
+  expect(Object.keys(PROCEDURAL_LOOKS).sort()).toEqual(TEMPLATES.filter(x=>x.family!=='2d').map(x=>x.id).sort());
   expect(Object.keys(PROCEDURAL_LOOKS)).toHaveLength(30);
  });
  it('uses a broad family of different 3D environmental architectures',()=>{
@@ -15,10 +15,10 @@ describe('procedural 3D scene registry',()=>{
   expect(PROCEDURAL_LOOKS['cloud-cathedral']).toBe('clouds');
   expect(PROCEDURAL_LOOKS['crimson-impact']).toBe('metal');
  });
- it('retains thirty audio-only slots and scene-specific color themes',()=>{
-  expect(AUDIO_ONLY_SCENES).toHaveLength(30);
+ it('offers forty audio-only slots and scene-specific color themes',()=>{
+  expect(AUDIO_ONLY_SCENES).toHaveLength(40);
   for(const id of AUDIO_ONLY_SCENES){
-   expect(PROCEDURAL_LOOKS[id]).toBeTruthy();
+   expect(PROCEDURAL_LOOKS[id]||byId[id].family==='2d').toBeTruthy();
    expect(byId[id].accent).toMatch(/^#[0-9a-f]{6}$/i);
   }
  });

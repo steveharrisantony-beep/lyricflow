@@ -1,4 +1,5 @@
 /** Shared on-device Web Audio signal pipeline. Never records or uploads audio. */
+import {BandEnvelope} from './bandEnvelope';
 import {BeatDetector} from './beatDetector';
 
 export interface AudioMetrics {
@@ -23,6 +24,7 @@ let microphonePlaying=false;
 let mediaElement:HTMLAudioElement|null=null,playing=false,sensitivity=.5;
 let lastSample=0,sectionAt=0,historyCursor=0,historyCount=0,lastSongTime=0;
 const detector=new BeatDetector();
+const envelopes=[new BandEnvelope(),new BandEnvelope(),new BandEnvelope()];
 const history=new Float32Array(48);
 // Beat analysis must not rely on render FPS. The background can be GPU-bound
 // while a lightweight 25ms Web Audio sampler continues to track onsets.
@@ -59,7 +61,7 @@ function activate(node:AnalyserNode|null){
  frequency=node?new Uint8Array(new ArrayBuffer(node.frequencyBinCount)):null;
  waveform=node?new Uint8Array(new ArrayBuffer(node.fftSize)):null;
  lastSample=0;sectionAt=0;historyCursor=0;historyCount=0;lastSongTime=0;
- history.fill(0);metrics.bands.fill(0);detector.reset();
+ history.fill(0);metrics.bands.fill(0);detector.reset();envelopes.forEach(e=>e.reset());
  for(const field of ['loudness','bass','mids','treble','beat','rms','onset','downbeat',
  'bpm','tempoConfidence','flux','threshold','beatCount'] as const)metrics[field]=0;
  metrics.section='unknown';metrics.sectionConfidence=0;
@@ -87,10 +89,11 @@ export function connectExternalAudio(node:AnalyserNode|null,source:'SYSTEM AUDIO
 export function readLocalAudio(now=performance.now()):AudioMetrics|null{
  if(!analyser||!frequency||!waveform||(!playing&&!microphonePlaying&&!externalKind))return null;
  if(now-lastSample<11)return metrics;
+ const sampleDelta=lastSample?(now-lastSample)/1000:.025;
  lastSample=now;
  const songTime=playing?getLocalMediaTime():null;
  if(songTime!==null){
-  if(lastSongTime&&Math.abs(songTime-lastSongTime)>1.2)detector.reset();
+  if(lastSongTime&&Math.abs(songTime-lastSongTime)>1.2){detector.reset();envelopes.forEach(e=>e.reset())}
   lastSongTime=songTime;
  }
  analyser.getByteFrequencyData(frequency);
@@ -126,9 +129,9 @@ export function readLocalAudio(now=performance.now()):AudioMetrics|null{
   const target=spectrumResponse(raw);
   bands[j]+=(target-bands[j])*(target>bands[j]?rise:fall);
  }
- const bass=clamp(band(35,230)*1.7*gain);
- const mids=clamp(band(230,2400)*2*gain);
- const treble=clamp(band(2400,11500)*2.25*gain);
+ const bass=envelopes[0].update(band(35,230),sampleDelta,gain);
+ const mids=envelopes[1].update(band(230,2400),sampleDelta,gain);
+ const treble=envelopes[2].update(band(2400,11500),sampleDelta,gain*1.25);
  const loudness=clamp(amplitude*4.4*gain);
  const attack=0.58,release=.19;
  for(const [field,value] of [['bass',bass],['mids',mids],['treble',treble],

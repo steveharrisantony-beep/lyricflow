@@ -1,0 +1,41 @@
+import {chromium} from 'playwright';
+import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {execFileSync} from 'node:child_process';
+const directory=await mkdtemp(join(tmpdir(),'lyricflow-hls-'));
+execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','sine=frequency=440:duration=12','-c:a','aac','-b:a','96k','-hls_time','2','-hls_playlist_type','vod','-hls_segment_type','fmp4',join(directory,'test.m3u8')]);
+const browser=await chromium.launch({...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{channel:'chrome'}),headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--use-angle=swiftshader','--use-gl=angle','--in-process-gpu','--no-zygote','--single-process']});
+const page=await browser.newPage({viewport:{width:1100,height:800}}),errors=[];
+page.on('pageerror',e=>errors.push(e.message));
+const song={id:'soundcloud_test',provider:'soundcloud',title:'Original HLS tone',artist:'Test Generator',duration:12,sourceUrl:'https://soundcloud.com/test/tone'};
+await page.route('**/music/search?**',route=>route.fulfill({json:{data:[song]}}));
+await page.route('**/music/resolve/**',route=>route.fulfill({json:{streamPath:'/audio/test_playlist',format:'hls',track:song}}));
+await page.route('**/music/audio/**',async route=>{
+ const id=new URL(route.request().url()).pathname.split('/').pop();
+ const name=id==='test_playlist'?'test.m3u8':id;
+ if(!/^(test\.m3u8|init\.mp4|test\d\.m4s)$/.test(name))return route.fulfill({status:404});
+ await route.fulfill({body:await readFile(join(directory,name)),contentType:name.endsWith('m3u8')?'application/vnd.apple.mpegurl':'audio/mp4',headers:{'Access-Control-Allow-Origin':'*'}});
+});
+await page.route('https://lrclib.net/api/**',route=>route.fulfill({json:[]}));
+try{
+ await page.goto('http://127.0.0.1:5173/',{waitUntil:'domcontentloaded'});
+ await page.locator('.stage-source-button').click();
+ await page.getByRole('button',{name:'SoundCloud',exact:true}).click();
+ const settings=page.getByRole('textbox',{name:'Music resolver URL'});
+ if(!await settings.isVisible())await page.getByRole('button',{name:'Search settings',exact:true}).click();
+ await settings.fill('http://127.0.0.1:5173/music');await page.getByRole('button',{name:'Save connection'}).click();
+ await page.getByRole('textbox',{name:'Search songs',exact:true}).fill('Original tone');
+ await page.getByRole('button',{name:'Search',exact:true}).click();
+ await page.getByRole('button',{name:'Play Original HLS tone',exact:true}).click();
+ await page.getByRole('dialog',{name:'Select audio source'}).waitFor({state:'hidden',timeout:25000});
+ await page.waitForFunction(()=>document.querySelector('audio').currentTime>.5,null,{timeout:12000});
+ await page.waitForFunction(()=>Number(document.querySelector('.cinematic-canvas').dataset.audioMids)>0,null,{timeout:12000});
+ const slider=page.getByRole('slider',{name:'Song position',exact:true});await slider.press('End');await slider.press('ArrowLeft');
+ await page.getByRole('button',{name:'Pause track',exact:true}).click();
+ if(await page.evaluate(()=>!document.querySelector('audio').paused))throw Error('HLS pause failed');
+ await page.getByRole('button',{name:'Remove audio file',exact:true}).click();
+ if(await page.evaluate(()=>!!document.querySelector('audio').getAttribute('src')))throw Error('HLS cleanup failed');
+ if(errors.length)throw Error(errors.join('\n'));
+ console.log('PASS SoundCloud-style HLS loads through shared player, produces WebAudio metrics, seeks, pauses and cleans up');
+}finally{await browser.close();await rm(directory,{recursive:true,force:true})}

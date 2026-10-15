@@ -24,14 +24,14 @@ provider adapters.
 
 LyricFlow now separates search metadata, playback resolution and timed lyric
 lookup. Public Audius search is available without the optional resolver; broader
-public-source search uses the included Python service. The browser never runs
+YouTube Music, SoundCloud and JioSaavn search uses the included Python service. The browser never runs
 native extraction code. An exact LRCLIB lookup and unambiguous search fallback
 feed the existing line/word timestamp renderer. Permission-confirmed local
 library entries are preferred. Playback, seek, pause and lyric delay use the same
 media clock. Uncertain lyric matches require selection.
 
 LyricFlow does not implement Stash account-cookie login, Spotify playback
-extraction, Qobuz/JioSaavn unofficial downloads, Apple lyric proxy endpoints,
+extraction, Qobuz downloads, Apple lyric proxy endpoints,
 KuGou access or YouTube private lyric APIs. No claim is made that a public API or
 search result grants permission to synchronize a recording or reproduce lyrics.
 Use sources/recordings for which you have the necessary permissions.

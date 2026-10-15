@@ -1,3 +1,4 @@
+import {paintLyric} from './contrast';
 import type {DirectedScene,FontPack} from './catalog';
 import {applySceneFont} from './fonts';
 import type {Pulse} from './paint';
@@ -8,11 +9,11 @@ export interface ExpandedTypeArgs {
 }
 const max=(v:number,a:number,b:number)=>Math.min(b,Math.max(a,v));
 function type(c:CanvasRenderingContext2D,text:string,x:number,y:number,size:number,color:string,width:number,
- pack:FontPack,align:CanvasTextAlign='center',italic=false,outline?:string){
+ pack:FontPack,align:CanvasTextAlign='center',italic=false,outline?:string,surface?:string){
  c.save();c.textBaseline='middle';c.textAlign=align;
  applySceneFont(c,pack,size,text,italic);
  if(outline){c.strokeStyle=outline;c.lineWidth=Math.max(2,size*.09);c.lineJoin='round';c.strokeText(text,x,y,width)}
- c.fillStyle=color;c.fillText(text,x,y,width);c.restore();
+ paintLyric(c,text,x,y,width,color,surface);c.restore();
 }
 const upper=(s:string)=>s.toLocaleUpperCase();
 const extraNames=new Set<string>([
@@ -68,7 +69,7 @@ export function drawExpandedTypography({c,scene,current,whole,width:w,height:h,t
    c.save();c.translate(x,y);c.rotate((i%2?1:-1)*.04);
    c.fillStyle=i%3===0?'#181618':i%3===1?'#eee9db':'#f2c744';
    c.fillRect(-8,-size2*.55,each*.95,size2*1.15);
-   type(c,parts[i],0,0,size2,i%3===0?'#f9f1e5':'#161313',each*.87,pack,'left');
+   type(c,parts[i],0,0,size2,i%3===0?'#f9f1e5':'#161313',each*.87,pack,'left',false,undefined,i%3===0?'#181618':i%3===1?'#eee9db':'#f2c744');
    c.restore();
   }
   break;

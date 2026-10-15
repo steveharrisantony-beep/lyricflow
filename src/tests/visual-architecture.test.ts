@@ -11,7 +11,7 @@ describe('visual architecture',()=>{
   expect(visualSystemFor('glass-architecture')).toBe('cinematic');
  });
  it('leaves all other scene IDs available through WebGL',()=>{
-  const remaining=TEMPLATES.filter(t=>!['crimson-impact','color-riot'].includes(t.id));
+  const remaining=TEMPLATES.filter(t=>t.family!=='2d'&&!['crimson-impact','color-riot'].includes(t.id));
   expect(remaining).toHaveLength(28);
   expect(remaining.every(t=>visualSystemFor(t.id)==='cinematic')).toBe(true);
  });

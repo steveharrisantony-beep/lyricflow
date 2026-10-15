@@ -1,3 +1,6 @@
+import {setLyricBackdrop} from './contrast';
+import {drawMotionGraphics,MOTION_SCENES} from './procedural/MotionGraphics';
+import {drawSceneTransition} from './transitions';
 import {getSpectrumSensitivity} from '../../audio/audioSignal';
 import {useEffect,useRef} from 'react';
 import {getLyricState,getLyricTimelineSnapshot} from '../../lyrics/lyricTimeline';
@@ -19,7 +22,8 @@ export interface CinematicProps{
 }
 const clamp=(n:number,a=0,b=1)=>Math.max(a,Math.min(b,n));
 /** The first three hand-directed showcases have separate rendering grammars. */
-export function visualSystemFor(id:SceneId):GraphicSystem|'cinematic'{
+export function visualSystemFor(id:SceneId):GraphicSystem|'cinematic'|'motion2d'{
+ if(MOTION_SCENES.includes(id))return 'motion2d';
  if(id==='crimson-impact')return 'spectrum';
  if(id==='color-riot')return 'geometry';
  return 'cinematic';
@@ -67,6 +71,11 @@ function useCinematicRenderer(props:CinematicProps){
   let raf=0,last=0,elapsed=0,frames=0,fpsTime=0,quality=props.quality,revision=-1;
   let sequence:DirectedScene[]=[];
   let w=1,h=1,adaptiveScale=1,slowSeconds=0,fastSeconds=0,modeLast='';
+  const sample=document.createElement('canvas');sample.width=48;sample.height=30;
+  const sampleCtx=sample.getContext('2d',{willReadFrequently:true});let sampleAt=-1;
+  const outgoing=document.createElement('canvas');
+  const outgoingCtx=outgoing.getContext('2d');
+  let previousId:SceneId|null=null,transitionAge=1;
   let demoBands=new Float32Array(64);
   const resize=()=>{
    w=Math.max(1,element.clientWidth);h=Math.max(1,element.clientHeight);
@@ -75,8 +84,9 @@ function useCinematicRenderer(props:CinematicProps){
    const limit=q==='Performance'?950_000:q==='Balanced'?1_600_000:2_400_000;
    const dpr=Math.max(.48,Math.min(ratio,Math.sqrt(limit/(w*h)))*adaptiveScale);
    for(const c of [element,fx]){
-    c.width=Math.max(1,Math.floor(w*dpr));
-    c.height=Math.max(1,Math.floor(h*dpr));
+    const pixelRatio=c===element?Math.min(window.devicePixelRatio||1,2):dpr;
+    c.width=Math.max(1,Math.floor(w*pixelRatio));
+    c.height=Math.max(1,Math.floor(h*pixelRatio));
    }
    textCtx.setTransform(element.width/w,0,0,element.height/h,0,0);
    paintCtx.setTransform(fx.width/w,0,0,fx.height/h,0,0);
@@ -85,7 +95,7 @@ function useCinematicRenderer(props:CinematicProps){
   };
   const observer=new ResizeObserver(resize);observer.observe(element);resize();
   const pulse:Pulse={...NO_AUDIO};
-  let visualMode:GraphicSystem|'cinematic'='cinematic';
+  let visualMode:GraphicSystem|'cinematic'|'motion2d'='cinematic';
   const frame=(now:number)=>{
    raf=requestAnimationFrame(frame);
    const config=currentProps.current;
@@ -133,6 +143,15 @@ function useCinematicRenderer(props:CinematicProps){
    pulse.onset=measured?.onset??0;pulse.downbeat=measured?.downbeat??0;
    const factor=config.intensity;
    const visualTime=time*config.speed*(config.reducedMotion?.15:1);
+   if(scene.id!==previousId){
+    if(previousId&&outgoingCtx&&!config.reducedMotion){
+     outgoing.width=fx.width;outgoing.height=fx.height;
+     outgoingCtx.drawImage(visualMode==='cinematic'&&graphics.available?glCanvas:fx,0,0,outgoing.width,outgoing.height);
+     transitionAge=0;
+    }
+    previousId=scene.id;
+   }
+   transitionAge+=dt;
    visualMode=visualSystemFor(scene.id);
    if(visualMode!==modeLast){
     modeLast=visualMode;
@@ -149,6 +168,8 @@ function useCinematicRenderer(props:CinematicProps){
       config.reducedMotion,config.quality,config.narrativeObjects,config.cameraMode);
    }else if(visualMode==='cinematic'){
     drawSafeFallback(paintCtx,scene.id,w,h,visualTime,pulse);
+   }else if(visualMode==='motion2d'){
+    drawMotionGraphics(paintCtx,w,h,visualTime,pulse,scene.id,factor,config.reducedMotion);
    }else{
     const spectrum=measured?.bands;
     if(isDemo){
@@ -160,14 +181,15 @@ function useCinematicRenderer(props:CinematicProps){
     graphicArt.render(paintCtx,w,h,visualTime,{...pulse,bands:spectrum??(isDemo?demoBands:undefined)},
       visualMode,config.motionBlur,factor,Boolean(isDemo),config.reducedMotion);
    }
+   if(sampleCtx&&(elapsed-sampleAt>.2||transitionAge<dt*2)){
+    sampleCtx.drawImage(visualMode==='cinematic'&&graphics.available?glCanvas:fx,0,0,48,30);
+    setLyricBackdrop(textCtx,sampleCtx.getImageData(0,0,48,30));sampleAt=elapsed;
+   }
    // Dedicated top canvas: text is never copied through the motion-blur framebuffer.
    textCtx.setTransform(element.width/w,0,0,element.height/h,0,0);
    textCtx.clearRect(0,0,w,h);
-   const transition=clamp((time-scene.start)/.7);
-   if(transition<1&&!config.reducedMotion){
-    textCtx.save();textCtx.globalAlpha=(1-transition)*.12;
-    textCtx.fillStyle=byId[scene.id].background;textCtx.fillRect(0,0,w,h);textCtx.restore();
-   }
+   if(transitionAge<.85&&!config.reducedMotion&&outgoing.width>0)drawSceneTransition(textCtx,outgoing,w,h,transitionAge/.85,scene.transition);
+   element.dataset.transition=transitionAge<.85?scene.transition:'none';
    if(sequence.length&&lyric.cue){
     textCtx.save();
     if(config.spatialTypography){
@@ -179,7 +201,7 @@ function useCinematicRenderer(props:CinematicProps){
     }
     textCtx.restore();
    }else if(!snapshot.cues.length)drawInstrumentalMark(textCtx,scene,w,h,measured?.loudness??fake);
-   const engine=visualMode==='spectrum'?'SPECTRUM 64B':visualMode==='geometry'?'GENERATIVE GEOMETRY':
+   const engine=visualMode==='motion2d'?'2D MOTION GRAPHICS':visualMode==='spectrum'?'SPECTRUM 64B':visualMode==='geometry'?'GENERATIVE GEOMETRY':
     graphics.available?'WEBGL 3D':'CANVAS FALLBACK';
    element.dataset.renderer=engine;
    element.dataset.visualSystem=visualMode;
