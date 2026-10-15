@@ -23,7 +23,7 @@ export default function LocalPlayer({onActiveChange,onTimeChange,onFileChange,on
    const source=context.createMediaElementSource(element);
    const analyser=context.createAnalyser();
    analyser.fftSize=2048;
-   analyser.smoothingTimeConstant=.7;
+   analyser.smoothingTimeConstant=.42;
    source.connect(analyser);
    analyser.connect(context.destination);
    ctxRef.current=context;
