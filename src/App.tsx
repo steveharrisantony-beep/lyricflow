@@ -1,7 +1,5 @@
 import { useEffect,useState } from 'react';
 import CinematicStage from './visualization/cinematic/CinematicStage';
-import ArtworkPanel from './visualization/cinematic/ArtworkPanel';
-import {artworkUrl,BUNDLED_SCENES,type ArtworkStatus} from './visualization/cinematic/artwork';
 import {TEMPLATES,type SceneId} from './visualization/cinematic/catalog';
 import {fontLabel} from './visualization/cinematic/fonts';
 import {setAudioSensitivity} from './audio/audioSignal';
@@ -18,7 +16,7 @@ type Quality='High'|'Balanced'|'Performance';
 export default function App(){
  const [scene,setScene]=useState<SceneId>('crimson-impact'),[intensity,setIntensity]=useState(65),[speed,setSpeed]=useState(55);
  const [liveScene,setLiveScene]=useState('Crimson Impact');
- const [artworkDisplay,setArtworkDisplay]=useState<ArtworkStatus>('loading');
+ const [renderStatus,setRenderStatus]=useState('INITIALIZING 3D');
  const [quality,setQuality]=useState<Quality>('Balanced'),[demo,setDemo]=useState(true),[paused,setPaused]=useState(false);
  const [reducedMotion,setReducedMotion]=useState(false),[settings,setSettings]=useState(false),[fps,setFps]=useState(0);
  const [fullscreenError,setFullscreenError]=useState('');
@@ -31,6 +29,7 @@ export default function App(){
  const acceptLyrics=(lyrics:Omit<IncomingLyrics,'token'>)=>setIncoming({...lyrics,token:Date.now()});
  const [sensitivity,setSensitivity]=useState(50);
  const [autoScenes,setAutoScenes]=useState(true);
+ const [motionBlur,setMotionBlur]=useState(30);
  const [spatialTypography,setSpatialTypography]=useState(true);
  const [narrativeObjects,setNarrativeObjects]=useState(true);
  const [cameraMode,setCameraMode]=useState<'Automatic'|'Front'|'Orbit'|'Side'|'Top'>('Automatic');
@@ -44,7 +43,7 @@ export default function App(){
      if(!canvas)return;
      const numeric=(key:string)=>Number(canvas.dataset[key]||0);
      if(canvas.dataset.sceneLabel)setLiveScene(previous=>previous===canvas.dataset.sceneLabel?previous:canvas.dataset.sceneLabel||previous);
-     if(canvas.dataset.artworkStatus)setArtworkDisplay(previous=>previous===canvas.dataset.artworkStatus?previous:canvas.dataset.artworkStatus as ArtworkStatus);
+     if(canvas.dataset.renderer)setRenderStatus(previous=>previous===canvas.dataset.renderer?previous:canvas.dataset.renderer||previous);
      setAudioReadout({source:canvas.dataset.audioSource||'IDLE',level:numeric('audioLevel'),bass:numeric('audioBass'),mids:numeric('audioMids'),treble:numeric('audioTreble'),beat:numeric('audioBeat'),bpm:numeric('audioBpm'),tempoConfidence:numeric('audioTempoConfidence'),onset:numeric('audioOnset'),downbeat:numeric('audioDownbeat'),section:canvas.dataset.audioSection||'unknown',beatCount:numeric('audioBeatCount'),flux:numeric('audioFlux'),threshold:numeric('audioThreshold')});
    },90);
    return()=>clearInterval(id);
@@ -58,10 +57,10 @@ export default function App(){
    <div className="header-right"><span className="demo-status"><i className="dot"/>{localPlaying?'LOCAL AUDIO':audioReadout.source==='MICROPHONE'?'MIC ACTIVE':demo?'DEMO ACTIVE':'DEMO OFF'}</span><button className="icon-btn" aria-label="Settings" onClick={()=>setSettings(v=>!v)}><Settings2 size={19}/></button></div>
   </header>
   <section className="stage" onClick={performance?()=>void togglePerformance():undefined} aria-label={performance?"Tap anywhere to exit cinema mode":"Music visualizer"}>
-   <CinematicStage manualScene={scene} intensity={intensity/100} speed={speed/50} quality={quality} demo={demo} paused={paused} reducedMotion={reducedMotion} autoScenes={autoScenes} cameraMode={cameraMode} spatialTypography={spatialTypography} narrativeObjects={narrativeObjects}/>
+   <CinematicStage manualScene={scene} intensity={intensity/100} speed={speed/50} quality={quality} demo={demo} paused={paused} reducedMotion={reducedMotion} autoScenes={autoScenes} cameraMode={cameraMode} spatialTypography={spatialTypography} narrativeObjects={narrativeObjects} motionBlur={motionBlur}/>
 
    <div className="scene-chip cinematic-chip"><span className="chip-icon">✦</span><div><b>{liveScene}</b><small>Cinematic scene director</small></div><span>30 FILM LOOKS</span></div>
-   <div className="stage-bottom"><span><i className="dot"/> {artworkDisplay==='ready'?'PREMIUM IMAGE ACTIVE':artworkDisplay==='missing'?'SCENE IMAGE PENDING':artworkDisplay==='error'?'SCENE IMAGE ERROR — RETRYING':'LOADING PREMIUM IMAGE'}</span><span>{fps} FPS</span></div>
+   <div className="stage-bottom"><span><i className="dot"/> {renderStatus} · PROCEDURAL CINEMA</span><span>{fps} FPS</span></div>
    {settings&&<aside className="settings-panel"><div className="settings-title"><SlidersHorizontal size={16}/> VISUAL SETTINGS <button aria-label="Close settings" onClick={()=>setSettings(false)}>×</button></div><label className="check"><span><b>Reduced motion</b><small>Calmer animation</small></span><input type="checkbox" checked={reducedMotion} onChange={e=>setReducedMotion(e.target.checked)}/></label><p>RENDERING QUALITY</p><div className="quality-options">{(['High','Balanced','Performance'] as Quality[]).map(q=><button key={q} className={quality===q?'active':''} onClick={()=>setQuality(q)}>{q}</button>)}</div><p className="note">Local music and optional microphone audio are analyzed on this device; no recording or uploading.</p></aside>}
   </section>
   <section className="signal-panel" aria-label="Live audio analysis">
@@ -73,17 +72,16 @@ export default function App(){
   </section>
   <ManualLyrics key={fileEpoch} time={localTime} trackLoaded={localLoaded} track={localTrack} incoming={incoming}/>
   <section className="control-panel">
-   <div className="control-heading"><div className="heading-left"><span className="heading-icon"><Waves size={16}/></span><div><b>CINEMATIC SCENE LIBRARY</b><small>30 original motion graphic templates · touch to select manually</small></div></div><label className="demo-toggle"><div><b>Demo mode</b><small>Simulated music energy</small></div><input type="checkbox" checked={demo} onChange={e=>setDemo(e.target.checked)}/></label></div>
+   <div className="control-heading"><div className="heading-left"><span className="heading-icon"><Waves size={16}/></span><div><b>CINEMATIC SCENE LIBRARY</b><small>30 real-time procedural 3D environments · no background images</small></div></div><label className="demo-toggle"><div><b>Demo mode</b><small>Simulated music energy</small></div><input type="checkbox" checked={demo} onChange={e=>setDemo(e.target.checked)}/></label></div>
    <div className="scene-director-controls"><label className="auto-scenes"><input type="checkbox" checked={autoScenes} onChange={e=>setAutoScenes(e.target.checked)}/> Auto-direct cinematic scenes <small>(lyric timeline when available; varied music visuals otherwise)</small></label><label className="auto-scenes"><input type="checkbox" checked={spatialTypography} onChange={e=>setSpatialTypography(e.target.checked)}/> Spatial kinetic lyrics <small>(Cotodama-inspired layout choreography)</small></label><label className="auto-scenes"><input type="checkbox" checked={narrativeObjects} onChange={e=>setNarrativeObjects(e.target.checked)}/> Narrative objects <small>(bass scale · treble shimmer)</small></label><label className="camera-picker">Camera view <select value={cameraMode} onChange={e=>setCameraMode(e.target.value as typeof cameraMode)}>{(['Automatic','Front','Orbit','Side','Top'] as const).map(v=><option key={v}>{v}</option>)}</select></label></div>
-   <ArtworkPanel/>
-   <div className="scene-grid cinematic-grid">{choices.map((item,i)=><button className={'scene-card cinematic-scene-card '+(scene===item.id&&!autoScenes?'selected':'')} key={item.id} onClick={()=>{setScene(item.id);setAutoScenes(false)}}><span className="scene-art cinematic-preview" style={{background:`linear-gradient(135deg, ${item.accent}, ${item.background} 75%)`,color:item.foreground,fontFamily:fontLabel(item.font)}}>{BUNDLED_SCENES.includes(item.id)&&<img className="scene-preview-image" src={artworkUrl(item.id)??undefined} loading="lazy" decoding="async" alt=""/>}<span className="scene-preview-initials">{item.label.slice(0,2).toUpperCase()}</span></span><span className="scene-copy"><b>{item.label}</b><small>{item.family} · {fontLabel(item.font)}</small></span><small className="scene-number">{String(i+1).padStart(2,'0')}</small></button>)}</div>
-   <div className="control-bottom"><label className="slider"><span><span>◉ &nbsp; Audio sensitivity</span><b>{sensitivity}%</b></span><input aria-label="Audio sensitivity" type="range" min="0" max="100" value={sensitivity} onChange={e=>setSensitivity(Number(e.target.value))}/></label><label className="slider"><span><span>✧ &nbsp; Visual intensity</span><b>{intensity}%</b></span><input type="range" min="0" max="100" value={intensity} onChange={e=>setIntensity(Number(e.target.value))}/></label><label className="slider"><span><span>ϟ &nbsp; Animation speed</span><b>{speed}%</b></span><input type="range" min="10" max="100" value={speed} onChange={e=>setSpeed(Number(e.target.value))}/></label><div className="transport"><button aria-label={paused?'Resume':'Pause'} className="play" onClick={()=>setPaused(p=>!p)}>{paused?<Play size={17} fill="currentColor"/>:<Pause size={17} fill="currentColor"/>}</button><div><b>{paused?'Resume visuals':'Pause visuals'}</b><small>{paused?'Animation is paused':'Canvas in motion'}</small></div><button onClick={fullscreen} className="fullscreen"><Expand size={16}/> Fullscreen</button><button onClick={()=>void togglePerformance()} className="fullscreen cinema-button">◈ Cinema Mode</button></div></div>
+   <div className="scene-grid cinematic-grid">{choices.map((item,i)=><button className={'scene-card cinematic-scene-card '+(scene===item.id&&!autoScenes?'selected':'')} key={item.id} onClick={()=>{setScene(item.id);setAutoScenes(false)}}><span className="scene-art cinematic-preview" style={{background:`linear-gradient(135deg, ${item.accent}, ${item.background} 75%)`,color:item.foreground,fontFamily:fontLabel(item.font)}}><span className="scene-preview-initials">{item.label.slice(0,2).toUpperCase()}</span></span><span className="scene-copy"><b>{item.label}</b><small>{item.family} · {fontLabel(item.font)}</small></span><small className="scene-number">{String(i+1).padStart(2,'0')}</small></button>)}</div>
+   <div className="control-bottom"><label className="slider"><span><span>◎ &nbsp; Motion blur</span><b>{reducedMotion?0:motionBlur}%</b></span><input aria-label="Motion blur" type="range" min="0" max="80" step="5" value={motionBlur} disabled={reducedMotion} onChange={e=>setMotionBlur(Number(e.target.value))}/></label><label className="slider"><span><span>◉ &nbsp; Audio sensitivity</span><b>{sensitivity}%</b></span><input aria-label="Audio sensitivity" type="range" min="0" max="100" value={sensitivity} onChange={e=>setSensitivity(Number(e.target.value))}/></label><label className="slider"><span><span>✧ &nbsp; Visual intensity</span><b>{intensity}%</b></span><input type="range" min="0" max="100" value={intensity} onChange={e=>setIntensity(Number(e.target.value))}/></label><label className="slider"><span><span>ϟ &nbsp; Animation speed</span><b>{speed}%</b></span><input type="range" min="10" max="100" value={speed} onChange={e=>setSpeed(Number(e.target.value))}/></label><div className="transport"><button aria-label={paused?'Resume':'Pause'} className="play" onClick={()=>setPaused(p=>!p)}>{paused?<Play size={17} fill="currentColor"/>:<Pause size={17} fill="currentColor"/>}</button><div><b>{paused?'Resume visuals':'Pause visuals'}</b><small>{paused?'Animation is paused':'Canvas in motion'}</small></div><button onClick={fullscreen} className="fullscreen"><Expand size={16}/> Fullscreen</button><button onClick={()=>void togglePerformance()} className="fullscreen cinema-button">◈ Cinema Mode</button></div></div>
    {fullscreenError&&<p className="error" role="alert">{fullscreenError}</p>}
   </section>
   <LocalPlayer onActiveChange={setLocalPlaying} onTimeChange={setLocalTime} onFileChange={loaded=>{setLocalLoaded(loaded);setFileEpoch(e=>e+1);setIncoming(null)}} onTrackChange={setLocalTrack} onDurationChange={duration=>setLocalTrack(p=>p?{...p,duration}:p)}/>
   <TrackFinder track={localTrack} onMetadataChange={value=>{setLocalTrack(value);saveTrackCorrection(value)}} onLyricsFound={acceptLyrics}/>
   <MicListener localPlaying={localPlaying}/>
   <SpotifyDiscovery/>
-  <footer>LYRICFLOW <span>·</span> CINEMATIC ENGINE <span>·</span> 30 SCENE COLLECTION <aside>SONG-DRIVEN MOTION GRAPHICS</aside></footer>
+  <footer>LYRICFLOW <span>·</span> PROCEDURAL 3D ENGINE <span>·</span> 30 SCENE COLLECTION <aside>SONG-DRIVEN MOTION GRAPHICS</aside></footer>
  </div>
 }
