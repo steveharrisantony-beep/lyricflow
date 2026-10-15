@@ -55,7 +55,6 @@ export function connectMicrophoneAudio(node:AnalyserNode|null){
 export function readLocalAudio(now=performance.now()):AudioMetrics|null{
  if(!analyser||!frequency||!waveform||(!playing&&!microphonePlaying))return null;
  if(now-lastSample<11)return metrics;
- const dt=Math.min(.08,Math.max(.008,(now-(lastSample||now-16))/1000));
  lastSample=now;
  const songTime=playing?getLocalMediaTime():null;
  if(songTime!==null){
