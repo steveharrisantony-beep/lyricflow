@@ -183,3 +183,12 @@
 .cinematic-stack>.cinematic-canvas{z-index:2;pointer-events:none}
 .scene-card.premiere-scene{border-color:#7ad2d355;box-shadow:inset 0 0 0 1px #7ad2d32a}
 .premiere-tag{position:absolute;top:6px;left:6px;border:1px solid rgba(255,255,255,.45);border-radius:5px;background:#08111dbd;color:#fff;letter-spacing:1.2px;font:700 8px 'Space Grotesk',sans-serif;padding:4px 6px}
+
+/* Lightweight 64-band diagnostic: screen readers get a description, and
+   the chart paints directly without 64 React re-renders per audio tick. */
+.spectrum-diagnostic{margin:15px 0 9px;padding:12px 14px;background:#0b121c;border:1px solid #263544;border-radius:11px}
+.spectrum-diagnostic>span{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:10px;letter-spacing:1.4px;color:#c8d7df;font-weight:700;margin-bottom:10px}
+.spectrum-diagnostic>span small{font-size:9px;letter-spacing:.3px;color:#7796a7;font-weight:400}
+.spectrum-diagnostic canvas{width:100%;height:58px;display:block}
+.cinematic-scene-card.premiere-scene .cinematic-preview{box-shadow:inset 0 0 36px rgba(255,255,255,.12)}
+@media(max-width:650px){.spectrum-diagnostic>span{flex-direction:column;align-items:flex-start}}
