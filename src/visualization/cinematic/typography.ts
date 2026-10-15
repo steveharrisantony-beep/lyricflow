@@ -29,10 +29,11 @@ interface DrawTextArgs{
  mode:'original'|'romanized'|'both';time:number;width:number;height:number;pulse:Pulse;
  intensity:number;reducedMotion:boolean;
 }
-export function drawTypography({c,scene,cue,mode,time,width:w,height:h,pulse,intensity,reducedMotion}:DrawTextArgs){
+export function drawTypography({c,scene,cue,mode,time,width:w,height:h,pulse:_pulse,intensity,reducedMotion}:DrawTextArgs){
  const template=sceneColors(scene.id),tx=chooseTexts(cue,mode,time);
  const progress=ease(tx.progress);
- const force=reducedMotion?0:Math.min(1,pulse.beat*.75+pulse.bass*.5)*intensity;
+ // Independent of beat/bass: motion is keyed to the lyric word's own timestamp.
+ const force=reducedMotion?0:Math.sin(Math.PI*tx.progress)*.22*intensity;
  const step=(1-progress)*(reducedMotion?0:1);
  const full=tx.whole;
  const main=tx.current.length>30?full:tx.current;
@@ -45,7 +46,7 @@ export function drawTypography({c,scene,cue,mode,time,width:w,height:h,pulse,int
  c.shadowBlur=0;
  c.globalAlpha=1;
  // Per-template layout direction, not a generic centered subtitle.
- if(drawExpandedTypography({c,scene,current:tx.current,whole:full,width:w,height:h,time,pulse,step,force})){
+ if(drawExpandedTypography({c,scene,current:tx.current,whole:full,width:w,height:h,time,pulse:_pulse,step,force})){
   // Remaining templates render their typography in an isolated scene module.
  }else if(scene.id==='crimson-impact'){
   c.textAlign='center';c.translate(w*.5,h*.47);
