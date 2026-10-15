@@ -100,6 +100,48 @@ try{
   signatures.push(pixels);
  }
  if(new Set(signatures).size!==names.length)throw new Error('Templates returned identical frames');
+ // Verify the three hand-directed engines actually paint separate scene canvases.
+ const liveModes=[
+  ['Crimson Impact','spectrum'],
+  ['Color Riot','geometry'],
+  ['Glass Architecture','cinematic']
+ ];
+ const liveHashes=[];
+ for(const [name,mode] of liveModes){
+  await page.locator('.cinematic-scene-card').filter({hasText:name}).click();
+  await page.waitForFunction(m=>document.querySelector('.cinematic-canvas')?.dataset.visualSystem===m,mode,{timeout:8000});
+  await page.waitForTimeout(250);
+  const snapshot=await page.evaluate(()=>{
+   const frame=document.querySelector('.cinematic-stack');
+   const webgl=frame?.querySelector('.cinematic-webgl-canvas');
+   const fx=frame?.querySelector('.cinematic-effects');
+   const lyric=frame?.querySelector('.cinematic-canvas');
+   if(!webgl||!fx||!lyric)throw new Error('Scene needs distinct WebGL/effects/lyrics canvases');
+   const src=webgl.style.display==='none'?fx:webgl;
+   const sampled=document.createElement('canvas');
+   sampled.width=128;sampled.height=80;
+   const c=sampled.getContext('2d',{willReadFrequently:true});
+   c.drawImage(src,0,0,128,80);
+   const bytes=c.getImageData(0,0,128,80).data;
+   let hash=7,min=255,max=0;
+   for(let i=0;i<bytes.length;i+=4){
+    const v=bytes[i]+bytes[i+1]+bytes[i+2];
+    hash=(Math.imul(hash,31)+v)|0;
+    min=Math.min(min,v/3);max=Math.max(max,v/3);
+   }
+   return {hash,contrast:max-min,canvasCount:frame.querySelectorAll('canvas').length,
+    mode:lyric.dataset.visualSystem,renderer:lyric.dataset.renderer,bands:lyric.dataset.audioBandCount};
+  });
+  if(snapshot.contrast<12)throw new Error(name+' produced a visually flat frame');
+  if(snapshot.canvasCount!==3)throw new Error('Expected independent WebGL, effects, and lyric layers');
+  if(snapshot.bands!=='64')throw new Error('Audio feed must expose 64 log-spaced frequency bands');
+  liveHashes.push(snapshot.hash);
+  console.log('PASS: '+name+' uses '+mode+' on independent visual/lyric canvas layers');
+ }
+ if(new Set(liveHashes).size!==3)throw new Error('All three flagship engines produced indistinguishable artwork');
+ if(await page.locator('.spectrum-diagnostic canvas').count()!==1)throw new Error('Missing 64-band live diagnostic');
+ console.log('PASS: precision spectrum, generative poster and crystalline 3D have distinct final outputs');
+
  console.log('PASS: all thirty cinematic templates produce distinct actual canvas frames');
 
  // All visuals are code-driven: WebGL scene, shader atmosphere and 3D overlay objects.
