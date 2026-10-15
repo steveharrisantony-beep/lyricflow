@@ -6,6 +6,7 @@ import {drawScene,NO_AUDIO,type Pulse} from './paint';
 import {drawInstrumentalMark,drawTypography} from './typography';
 import {drawNarrativeObjects} from './narrative';
 import {drawSpatialTypography,spatialLayoutFor} from './spatialTypography';
+import {drawPremiumBackground} from './artwork';
 export type Quality='High'|'Balanced'|'Performance';
 export type CameraMode='Automatic'|'Front'|'Orbit'|'Side'|'Top';
 export interface CinematicProps {
@@ -102,7 +103,9 @@ export default function CinematicStage(props:CinematicProps){
     if(path==='orbit'||path==='Orbit'){angle=Math.sin(visualTime*.11*motion)*.009;zoom=1.025}
     if(path==='pullback'||path==='Top'){zoom=1.045-Math.sin(visualTime*.14*motion)*.018;dy=-h*.013}
     ctx.translate(w*.5+dx,h*.5+dy);ctx.rotate(angle);ctx.scale(zoom,zoom);ctx.translate(-w*.5,-h*.5);
-    drawScene(ctx,s,w,h,visualTime,p,config.quality);
+    // Premium artwork takes precedence; original graphics remain a safe fallback.
+    const imageReady=drawPremiumBackground(ctx,s.id,w,h,visualTime,p,factor,config.reducedMotion);
+    if(!imageReady)drawScene(ctx,s,w,h,visualTime,p,config.quality);
     if(config.narrativeObjects)drawNarrativeObjects(ctx,s,lyric.cue,w,h,visualTime,p,factor,config.reducedMotion);
     ctx.restore();
    };
