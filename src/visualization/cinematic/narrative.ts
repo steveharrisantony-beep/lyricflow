@@ -42,7 +42,7 @@ export function objectMotion(p:Pulse,intensity:number,reduce=false):ObjectMotion
  const motion=reduce?.14:1;
  const weight=Math.max(0,Math.min(1,intensity));
  return {
-  scale:1+weight*motion*(.55*p.bass+.16*p.beat),
+  scale:1+weight*motion*(.52*p.bass+.15*p.beat+.12*p.treble),
   glow:.18+weight*(.62*p.treble+.12*p.onset),
   drift:motion*(.4+p.mids*.85),
   rotation:motion*(.02+p.treble*.05),
