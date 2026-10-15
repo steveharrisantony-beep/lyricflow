@@ -70,20 +70,30 @@ Lyrics are analyzed **when loaded or edited**, not on every rendered frame. The 
 The design is inspired by the **architectural concepts** of https://github.com/mexicat/pdoom-video and reference images of Videobolt lyric videos. No proprietary templates, music recordings or other creators' graphical assets are embedded in the project.
 
 
-## Procedural 3D backgrounds and independent motion blur
+## Three independent visual engines — first quality milestone
 
-**No PNG, WebP or downloadable image backgrounds are used.** All 26 old scene images, artwork imports and legacy 2D scene painters were removed. The thirty existing scene IDs are rendered as real-time 3D environments using Three.js, perspective meshes, atmospheric GLSL shaders, procedurally generated depth particles, geometry, and radial sprite illumination.
+LyricFlow has thirty selectable scenes. **Three of these have been rebuilt as individually art-directed showcase engines** and the remaining twenty-seven still use the earlier procedural Three.js scene families. These initial showcases are deliberately different approaches, not color variations of a shared background.
 
-- `src/visualization/cinematic/procedural/ThreeEngine.ts` contains the scene renderer, material/geometry pools, different procedural scene families (underwater, oceans, glass, crystals, cities, clouds, petals, neon tunnels, monumental architecture, sci-fi HUD rings, and more), shader backgrounds and GPU afterimage compositor.
-- Every scene is built from code and an explicit, stable scene-ID-to-look mapping. No third-party models or textures are fetched; even glow textures are generated in memory.
-- Bass changes object sizes, wave amplitude, camera movement and light intensity. Treble modifies highlights and particles. Beat accents affect the visual environment, never the lyric text.
-- **Motion blur** is an adjustable 0–80% temporal feedback/afterimage pass (30% by default). Its history is reset when scenes switch to avoid ghosting between songs. The lyric canvas layer is composited *after* the feedback pass, so letters remain sharp even with strong blur.
-- The **Performance** quality preset uses fewer meshes, stars and pixels; **Balanced** is the recommended starting point for the Xiaomi Pad 8. **Reduced motion** disables temporal blur and strongly reduces background movement.
-- If WebGL cannot be initialized, LyricFlow displays a simple procedural Canvas 2D fallback and keeps lyrics, input, and controls working. Actual rendered FPS depends on device and browser.
+1. **Crimson Impact — Precision Spectrum:** original 64-band, logarithmically spaced frequency-response sculpture. Each thin luminous frequency blade responds to its own analyzer bin, with reflections, architectural lighting, a carefully controlled dark palette, and a stable lyric area. Inspired by the design discipline of the MIT-licensed Monstercat Rainmeter visualizer, but independently implemented.
+2. **Color Riot — Generative Geometry:** bold geometric graphic design with independently frequency-driven hexagonal elements, polygon fields, concentric arcs and a kinetic central structure. Inspired by the idea of multiple audio-to-geometry mappings in the original Party Mode project. It does not copy Party Mode's CC BY-NC source code.
+3. **Glass Architecture — Cinematic 3D:** a hand-composed structure of edge-lit crystalline towers, orbiting rings, reflective-looking glass and controlled camera motion. Built in Three.js and GLSL.
 
-### Try it on your tablet
+`src/visualization/cinematic/procedural/GraphicCompositions.ts` contains the two original Canvas scene designs.
+`src/visualization/cinematic/procedural/ThreeEngine.ts` contains the perspective 3D renderer. Other 3D scene families remain available for comparison.
 
-Open the StackBlitz GitHub project, wait for the dependencies to install and the preview to start, then choose one of the thirty scenes. **Motion blur** is under **CINEMATIC SCENE LIBRARY** alongside sensitivity and visual intensity. Set it to **0%** for a crisp comparison, and to **20–40%** for subtle trails. Touch **Cinema Mode** for fullscreen graphics without controls. The canvas status reads **WEBGL 3D** when the Three.js engine is active or **CANVAS FALLBACK** when WebGL is unavailable.
+**Rendering architecture:** two separate browser display passes. One canvas paints the 3D or 2D background directly; another transparent canvas paints sharply focused lyrics independently. No GPU-to-2D canvas image copy is performed every frame. Temporal afterimage blur applies only to background movement, not lyric typography.
+
+**Audio:** the existing on-device Web Audio analyzer now exposes **64 smoothed logarithmic frequency bands** covering approximately 32Hz–14kHz (limited by the sample rate), in addition to loudness, bass/mids/treble, onset, beat and estimated BPM. A live 64-band display under LIVE AUDIO REACTIVITY makes analysis visible. Audio sensitivity remains **50% by default**. The 25ms audio sampling loop and beat detector run independently of the WebGL render loop.
+
+**Controls:** motion blur (0–80%, default 30%), scene selection, adjustable sensitivity, quality, fullscreen Cinema Mode, manual scene control, and reduced-motion preference remain available. FPS is measured; the Balanced/Performance presets adapt rendering resolution after sustained low FPS. No specific FPS is guaranteed on Android tablets.
+
+**Availability and licensing:** artwork is generated from code—no external scene images or image downloads. The audio stays on device. The Monstercat and Party Mode sources were analyzed as technical/design references, not vendored or redistributed.
+
+### Compare the three showcase scenes
+
+Open [LyricFlow in StackBlitz](https://stackblitz.com/github/steveharrisantony-beep/lyricflow). Upload an audio file you have permission to use, then choose **Crimson Impact**, **Color Riot**, and **Glass Architecture** from the scene library. Each card has a **SIGNATURE ENGINE** badge. Turn off **Auto-direct cinematic scenes** when comparing manually. Set motion blur to **0%** first, then try **20–35%**. The stage status reports **SPECTRUM 64B**, **GENERATIVE GEOMETRY**, **WEBGL 3D**, or **CANVAS FALLBACK**.
+
+The other scene designs remain functional but have not yet received the same level of custom art direction. They should be evaluated against the new three before expanding the collection.
 
 ## Premium typography (self-hosted)
 
