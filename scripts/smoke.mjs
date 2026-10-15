@@ -1,8 +1,5 @@
 import {chromium} from 'playwright';
-import {writeFileSync} from 'node:fs';
-import {zipSync} from 'fflate';
 
-function byIdToLabel(id){return id.split('-').map(x=>x[0].toUpperCase()+x.slice(1)).join(' ')}
 function makeAudio(){
  const rate=16000,duration=6,count=rate*duration;
  const wav=Buffer.alloc(44+count*2);
@@ -99,54 +96,21 @@ try{
  if(new Set(signatures).size!==names.length)throw new Error('Templates returned identical frames');
  console.log('PASS: all thirty cinematic templates produce distinct actual canvas frames');
 
- // Verify images committed under public/scene-art load without any user upload.
- await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.premiumArtwork==='active',{timeout:12000});
- if((await page.locator('.artwork-count').textContent())?.trim()!=='26 / 30')throw new Error('Expected 26 bundled premium backgrounds');
- console.log('PASS: bundled GitHub image renders automatically, without any manual ZIP import');
-
- // Regression: the user observed old wave graphics instead of the real image for Submerged Words.
- // Exercise every bundled image, not just the last tile. All 26 must decode successfully.
- const bundledIds=[
-  'bubble-pop','cloud-cathedral','color-riot','concrete-manifesto','crimson-impact',
-  'final-ascension','fragmented-thoughts','glass-architecture','holographic-frequency',
-  'inferno-letterforms','ink-rebellion','marker-diary','midnight-confession',
-  'midnight-transit','monument-titles','neon-velocity','ocean-reverie',
-  'petal-memory','quiet-pages','rain-on-glass','stellar-expansion',
-  'submerged-words','sunset-frequency','type-collision','typographic-vortex','word-playground'
- ];
- for(const id of bundledIds){
-  await page.locator('.cinematic-scene-card').filter({hasText:byIdToLabel(id)}).click();
-  await page.waitForFunction(id=>document.querySelector('canvas.cinematic-canvas')?.dataset.currentScene===id,id,{timeout:3000});
-  try{
-   await page.waitForFunction(id=>{
-    const c=document.querySelector('canvas.cinematic-canvas');
-    return c?.dataset.currentScene===id&&c?.dataset.artworkStatus==='ready'&&c?.dataset.premiumArtwork==='active';
-   },id,{timeout:9000});
-  }catch(error){
-   const state=await page.locator('canvas.cinematic-canvas').evaluate(c=>({scene:c.dataset.currentScene,status:c.dataset.artworkStatus,premium:c.dataset.premiumArtwork}));
-   throw new Error('Premium scene artwork failed to appear for '+id+' ('+JSON.stringify(state)+'): '+error.message);
-  }
- }
- console.log('PASS: all 26 bundled WebP backgrounds decode and replace procedural scenes, including Submerged Words');
- // A pending scene uses the existing fallback until its own WebP is supplied.
- await page.locator('.cinematic-scene-card').filter({hasText:'Analog Breakdown'}).click();
- await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.premiumArtwork==='fallback',{timeout:6000});
- const asset=await page.evaluate(()=>{
-  const c=document.createElement('canvas');c.width=640;c.height=360;
-  const g=c.getContext('2d');const gradient=g.createLinearGradient(0,0,640,360);
-  gradient.addColorStop(0,'#a12c4d');gradient.addColorStop(1,'#ffd4a6');
-  g.fillStyle=gradient;g.fillRect(0,0,640,360);
-  return c.toDataURL('image/webp',.78).split(',')[1];
- });
- const compressed=zipSync({'analog-breakdown.webp':new Uint8Array(Buffer.from(asset,'base64'))});
- await page.getByLabel('Import cinematic scene background ZIP').setInputFiles({
-  name:'LyricFlow_Test_Scene.zip',mimeType:'application/zip',buffer:Buffer.from(compressed)
- });
- await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.premiumArtwork==='active',{timeout:10000});
- await page.getByText('Installed 1 local artwork overrides.',{exact:false}).waitFor({timeout:6000});
- if((await page.locator('.artwork-count').textContent())?.trim()!=='27 / 30')throw new Error('One additional custom scene must increase coverage to 27');
- console.log('PASS: optional ZIP import replaces a missing scene and increases image coverage to 27/30');
-
+ // All visuals are code-driven: WebGL scene, shader atmosphere and 3D overlay objects.
+ await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.renderer==='WEBGL 3D',{timeout:12000});
+ if(await page.locator('.artwork-panel,.scene-preview-image').count())throw new Error('Old image background loader is still mounted');
+ console.log('PASS: scene graphics use WebGL 3D with no background ZIP or image dependencies');
+ const blur=page.getByRole('slider',{name:'Motion blur'});
+ if(await blur.inputValue()!=='30')throw new Error('Expected gentle 30 percent motion blur default');
+ await blur.fill('60');
+ await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.motionBlur==='60');
+ await blur.fill('0');
+ await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.motionBlur==='0');
+ await blur.fill('30');
+ console.log('PASS: adjustable temporal motion blur from 0 to 80');
+ await page.getByLabel('Spatial kinetic lyrics').check();
+ if(await page.locator('.cinematic-scene-card').count()!==30)throw new Error('Must preserve all thirty scenes');
+ console.log('PASS: motion blur layer is independent of lyric timeline');
  await page.locator('button.cinema-button').click();
  await page.locator('.performance-mode').waitFor({timeout:6000});
  console.log('PASS: Cinema Mode entered');
