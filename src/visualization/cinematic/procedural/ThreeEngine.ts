@@ -326,6 +326,46 @@ export class ProceduralCinema {
        new THREE.Vector3((rand()-.5)*16,(rand()-.5)*10,-5+rand()*9),
        .16+rand()*.33,rand()*TAU,1);
    }
+  }else if(id==='glass-architecture'){
+   // Hand-directed third showcase: recognizable crystalline architecture,
+   // not random cubes. Layered glass towers with precise luminous edges.
+   const material=new THREE.MeshPhysicalMaterial({
+    color:'#9edbef',metalness:.38,roughness:.14,clearcoat:1,clearcoatRoughness:.08,
+    transparent:true,opacity:.42,side:THREE.DoubleSide,depthWrite:false
+   });
+   const edgeMaterial=new THREE.LineBasicMaterial({color:'#b8f5ff',transparent:true,opacity:.56,depthWrite:false});
+   this.ownedMaterials.push(material,edgeMaterial);
+   const edges=new THREE.EdgesGeometry(this.shared.cube);
+   this.ownedGeometry.push(edges);
+   const towers=quality==='Performance'?9:quality==='Balanced'?15:21;
+   for(let i=0;i<towers;i++){
+    const ring=i%3,angle=i*2.39996;
+    const radius=.6+ring*2.4+rand()*.55;
+    const x=Math.cos(angle)*radius,z=Math.sin(angle)*2.6-3;
+    const h=1.4+rand()*4.0+(ring===0?3.5:0);
+    const y=(rand()-.5)*2;
+    const part=this.add(this.shared.cube,i%4===0?hero:material,
+      new THREE.Vector3(x,y,z),1,rand()*TAU,2);
+    part.scale.set(.35+rand()*.75,h,.4+rand()*.75);
+    this.animated[this.animated.length-1].baseScale.copy(part.scale);
+    const edge=new THREE.LineSegments(edges,edgeMaterial);
+    part.add(edge);
+    if(i%3===0){
+     const crystal=this.add(this.shared.octa,ice,
+      new THREE.Vector3(x,y+h*.52,z),.45+rand()*.56,rand()*TAU,1);
+     crystal.rotation.y=angle;
+    }
+   }
+   const halos=quality==='Performance'?3:6;
+   for(let i=0;i<halos;i++){
+    const ring=this.add(this.shared.torus,i%2?gold:glass,
+      new THREE.Vector3(0,0,-5-i*.65),3.1+i*.7,i*.8,3);
+    ring.rotation.set(PI*.24+i*.12,PI*.13,-PI*.06);
+   }
+   // The foreground silhouette stays legible through the luminous core.
+   const pedestal=this.add(this.shared.cylinder,dark,new THREE.Vector3(0,-5.7,-3),3.8,1,2);
+   pedestal.scale.set(1.45,.055,.8);
+   this.animated[this.animated.length-1].baseScale.copy(pedestal.scale);
   }else if(this.look==='glass'||this.look==='crystals'||this.look==='prisms'){
    for(let i=0;i<count;i++){
     const geometry=this.look==='glass'?pick(['cube','ico']):
