@@ -172,3 +172,14 @@
 .scene-preview-initials{position:relative;z-index:1;display:block;text-shadow:0 2px 8px #000f,0 0 12px #000b}
 .cinematic-preview:has(.scene-preview-image) .scene-preview-initials{font-size:17px;color:#f6f9fa;background:#0008;padding:3px 6px;border-radius:4px}
 .stage-bottom span:first-child{max-width:75%;text-wrap:balance}
+
+
+/* Three independent rendering passes: 3D or generative art is drawn directly;
+   typography occupies its own transparent canvas and never enters the blur pass. */
+.cinematic-stack{position:absolute;inset:0;width:100%;height:100%;overflow:hidden;background:#080a10}
+.cinematic-stack>canvas{position:absolute;inset:0;display:block;width:100%;height:100%}
+.cinematic-stack>.cinematic-webgl-canvas{z-index:0}
+.cinematic-stack>.cinematic-effects{z-index:1;pointer-events:none}
+.cinematic-stack>.cinematic-canvas{z-index:2;pointer-events:none}
+.scene-card.premiere-scene{border-color:#7ad2d355;box-shadow:inset 0 0 0 1px #7ad2d32a}
+.premiere-tag{position:absolute;top:6px;left:6px;border:1px solid rgba(255,255,255,.45);border-radius:5px;background:#08111dbd;color:#fff;letter-spacing:1.2px;font:700 8px 'Space Grotesk',sans-serif;padding:4px 6px}
