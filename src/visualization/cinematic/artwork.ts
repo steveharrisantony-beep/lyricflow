@@ -16,7 +16,8 @@ export const BUNDLED_SCENES:readonly SceneId[]=[
  'word-playground'
 ] as const;
 const bundled=new Set<SceneId>(BUNDLED_SCENES);
-type Layer={image:HTMLImageElement;url:string;ready:boolean;failed:boolean;revoke:boolean};
+export type ArtworkStatus='ready'|'loading'|'retrying'|'error'|'missing';
+type Layer={image:HTMLImageElement;url:string;ready:boolean;failed:boolean;revoke:boolean;attempts:number;failedAt:number};
 const stored=new Map<SceneId,Blob>();
 const decoded=new Map<SceneId,Layer>();
 let initialized=false;
@@ -84,20 +85,34 @@ export async function installArtworks(images:ReadonlyMap<SceneId,Blob>){
  }
  return availableArtworkCount();
 }
+/**
+ * StackBlitz's WebContainer can serve public files a moment after the preview starts.
+ * Retry temporary image failures instead of caching a failed HTMLImageElement forever.
+ */
 function sceneLayer(id:SceneId):Layer|null{
- const old=decoded.get(id);
- if(old){
-  // A frequently displayed scene stays in the small decode cache.
-  decoded.delete(id);decoded.set(id,old);
-  return old;
+ const previous=decoded.get(id);
+ if(previous){
+  decoded.delete(id);decoded.set(id,previous);
+  if(previous.failed&&Date.now()-previous.failedAt>=2400&&previous.attempts<4){
+   previous.failed=false;
+   previous.ready=false;
+   previous.attempts++;
+   const refresh=new Image();
+   previous.image=refresh;
+   refresh.onload=()=>{if(previous.image===refresh){previous.ready=true;previous.failed=false}};
+   refresh.onerror=()=>{if(previous.image===refresh){previous.failed=true;previous.failedAt=Date.now()}};
+   // Cache-busting is only needed when a WebContainer initially returns 404 for new assets.
+   refresh.src=previous.revoke?previous.url:previous.url+(previous.url.includes('?')?'&':'?')+'retry='+previous.attempts;
+  }
+  return previous;
  }
  const blob=stored.get(id);
  if(!blob&&!bundled.has(id))return null;
- const url=blob?URL.createObjectURL(blob):`${import.meta.env.BASE_URL}scene-art/${id}.webp`;
+ const url=blob?URL.createObjectURL(blob):new URL(`${import.meta.env.BASE_URL}scene-art/${id}.webp`,window.location.origin).href;
  const image=new Image();
- const layer:Layer={image,url,ready:false,failed:false,revoke:Boolean(blob)};
- image.onload=()=>{layer.ready=true};
- image.onerror=()=>{layer.failed=true};
+ const layer:Layer={image,url,ready:false,failed:false,revoke:Boolean(blob),attempts:1,failedAt:0};
+ image.onload=()=>{if(layer.image===image)layer.ready=true};
+ image.onerror=()=>{if(layer.image===image){layer.failed=true;layer.failedAt=Date.now()}};
  image.src=url;
  decoded.set(id,layer);
  while(decoded.size>MAX_IN_MEMORY){
@@ -107,6 +122,17 @@ function sceneLayer(id:SceneId):Layer|null{
   if(stale.revoke)URL.revokeObjectURL(stale.url);
  }
  return layer;
+}
+export function artworkStatus(id:SceneId):ArtworkStatus{
+ const layer=sceneLayer(id);
+ if(!layer)return 'missing';
+ if(layer.ready)return 'ready';
+ if(layer.failed)return 'error';
+ return layer.attempts>1?'retrying':'loading';
+}
+export function artworkUrl(id:SceneId):string|null{
+ if(!bundled.has(id))return null;
+ return new URL(`${import.meta.env.BASE_URL}scene-art/${id}.webp`,window.location.origin).href;
 }
 /**
  * Draw a cover-cropped premium image on the existing canvas.
