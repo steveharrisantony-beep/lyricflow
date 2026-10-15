@@ -179,3 +179,10 @@
 .artwork-hint{font-size:11px;color:#94abba;line-height:1.5}
 .artwork-panel .player-footnote{margin:10px 0 0;font-size:11px;line-height:1.6}
 @media(max-width:720px){.artwork-options{align-items:stretch;flex-direction:column}.artwork-options button{width:100%}}
+
+/* Imported artwork is the actual scene-card thumbnail, not the old gradient initials. */
+.cinematic-preview{position:relative;overflow:hidden;isolation:isolate}
+.scene-preview-image{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+.scene-preview-initials{position:relative;z-index:1;display:block;text-shadow:0 2px 8px #000f,0 0 12px #000b}
+.cinematic-preview:has(.scene-preview-image) .scene-preview-initials{font-size:17px;color:#f6f9fa;background:#0008;padding:3px 6px;border-radius:4px}
+.stage-bottom span:first-child{max-width:75%;text-wrap:balance}
