@@ -23,7 +23,7 @@ export default function MicListener({localPlaying}:{localPlaying:boolean}){
    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false});
    context=new AudioContext();
    const input=context.createMediaStreamSource(stream);
-   const analyser=context.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=.55;
+   const analyser=context.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=.38;
    input.connect(analyser); // intentionally NOT connected to speakers (feedback prevention)
    await context.resume();
    streamRef.current=stream;contextRef.current=context;
