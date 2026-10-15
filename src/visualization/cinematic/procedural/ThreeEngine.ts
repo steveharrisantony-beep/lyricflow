@@ -127,7 +127,6 @@ export class ProceduralCinema {
  private shared:Record<string,THREE.BufferGeometry>={};
  private glowMap:THREE.DataTexture|null=null;
  private particle:THREE.Points|null=null;
- private particleBase:Float32Array|null=null;
  private wave:THREE.Mesh<THREE.PlaneGeometry,THREE.MeshPhongMaterial>|null=null;
  private waveBase:Float32Array|null=null;
  private currentId:SceneId|null=null;
@@ -235,7 +234,7 @@ export class ProceduralCinema {
    material:material instanceof THREE.MeshPhongMaterial?material:undefined});
   return mesh;
  }
- private addRings(rand:()=>number,count:number,material:THREE.Material,depth=-6){
+ private addRings(count:number,material:THREE.Material,depth=-6){
   for(let i=0;i<count;i++){
    const z=depth+i*1.18;
    const scale=3.3+Math.abs(z)*.18;
@@ -251,7 +250,7 @@ export class ProceduralCinema {
   this.ownedMaterials=[];
   this.owned=[];
   this.animated=[];
-  this.particle=null;this.particleBase=null;
+  this.particle=null;
   this.wave=null;this.waveBase=null;
   this.hasHistory=false;this.renderCount=0;
  }
@@ -286,7 +285,7 @@ export class ProceduralCinema {
    }
   };
   if(this.look==='tunnel'||this.look==='rings'){
-   this.addRings(rand,quality==='Performance'?8:13,this.look==='tunnel'?hero:glass);
+   this.addRings(quality==='Performance'?8:13,this.look==='tunnel'?hero:glass);
    for(let i=0;i<count;i++){
     const angle=rand()*TAU,r=3+rand()*6;
     this.add(pick(['octa','ico','cube']),i%4?ice:hero,
@@ -359,7 +358,7 @@ export class ProceduralCinema {
     ob.rotation.z=(rand()-.5)*1.1;
    }
   }else{ // nebula: floating star temples + orbital geometry
-   this.addRings(rand,9,glass,-9);
+   this.addRings(9,glass,-9);
    for(let i=0;i<count;i++){
     this.add(pick(['ico','octa','torus']),i%2?ice:hero,
       new THREE.Vector3((rand()-.5)*18,(rand()-.5)*11,-8+rand()*14),
@@ -379,7 +378,6 @@ export class ProceduralCinema {
    sizeAttenuation:true,transparent:true,opacity:.60,blending:THREE.AdditiveBlending,depthWrite:false});
   this.ownedMaterials.push(mat);
   this.particle=new THREE.Points(geometry,mat);this.reactive.add(this.particle);this.owned.push(this.particle);
-  this.particleBase=points;
   // Additive sprite lights add dimension, bloom-like falloff, without external textures.
   if(this.glowMap){
    const m=new THREE.SpriteMaterial({map:this.glowMap,color:palette.accent,
