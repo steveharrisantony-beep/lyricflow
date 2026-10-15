@@ -14,7 +14,6 @@ const TAU=Math.PI*2;
 const clamp=(x:number,lo=0,hi=1)=>Math.min(hi,Math.max(lo,x));
 const fract=(x:number)=>x-Math.floor(x);
 const hash=(n:number)=>fract(Math.sin(n*127.1+13.27)*43758.5453);
-const ease=(x:number)=>x*x*(3-2*x);
 export type GraphicAudio=Pulse & {bands?:Float32Array};
 function fillRound(c:CanvasRenderingContext2D,x:number,y:number,w:number,h:number,r:number,color:string){
  c.fillStyle=color;c.beginPath();c.roundRect(x,y,w,h,Math.min(r,Math.abs(w)/2,Math.abs(h)/2));c.fill();
@@ -49,7 +48,7 @@ export class GraphicCompositions {
      (.3+.24*Math.max(0,Math.sin(time*3.6+i*.17)))+
      (p.bass+p.treble)*.16;
    const target=bands?.[i]??(demo?simulated:0);
-   const speed=target>this.smoothed[i]?.36:.115;
+   const speed=target>this.smoothed[i]?0.36:0.115;
    const step=1-Math.pow(1-speed,Math.max(.1,dt*60));
    this.smoothed[i]+=(clamp(target)-this.smoothed[i])*step;
   }
