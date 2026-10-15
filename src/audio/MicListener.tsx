@@ -1,7 +1,8 @@
-import {useEffect,useRef,useState} from 'react';
+import {forwardRef,useEffect,useImperativeHandle,useRef,useState} from 'react';
 import {Mic,MicOff} from 'lucide-react';
 import {connectMicrophoneAudio} from './audioSignal';
-export default function MicListener({localPlaying}:{localPlaying:boolean}){
+export interface MicListenerHandle{start:()=>Promise<void>;stop:()=>void;isListening:()=>boolean}
+function MicListener({localPlaying}:{localPlaying:boolean},ref:React.Ref<MicListenerHandle>){
  const streamRef=useRef<MediaStream|null>(null),contextRef=useRef<AudioContext|null>(null);
  const [status,setStatus]=useState<'idle'|'requesting'|'listening'|'denied'|'error'>('idle');
  const [message,setMessage]=useState('Microphone input is off.');
@@ -36,6 +37,7 @@ export default function MicListener({localPlaying}:{localPlaying:boolean}){
    setMessage(denied?'Microphone permission denied. Use the browser site settings to allow it.':e instanceof Error?e.message:'Unable to access the microphone.');
   }
  };
+ useImperativeHandle(ref,()=>({start,stop,isListening:()=>status==='listening'}));
  const stopRef=useRef(stop);stopRef.current=stop;
  useEffect(()=>{if(localPlaying)stopRef.current()},[localPlaying]);
  useEffect(()=>{
@@ -49,3 +51,4 @@ export default function MicListener({localPlaying}:{localPlaying:boolean}){
   <p className="player-footnote">Play music through another device near your Xiaomi Pad. The tablet hears the room; beat and tempo estimates may vary. Microphone listening is independent of Spotify metadata and cannot provide exact Spotify lyric playback timing. Stop Listening closes the audio stream.</p>
  </section>;
 }
+export default forwardRef(MicListener);
