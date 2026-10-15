@@ -72,7 +72,7 @@ function useOneCinematicRenderer(props:CinematicProps){
    const config=currentProps.current;
    const dt=clamp((now-last||16.7)/1000,0,.06);last=now;
    if(document.hidden||config.paused)return;
-   if(config.quality!==quality){quality=config.quality;resize()}
+   if(config.quality!==quality){quality=config.quality;if(quality==='High')adaptiveScale=1;slowSeconds=0;fastSeconds=0;resize()}
    elapsed+=dt;
    frames++;if(now-fpsTime>=1000){
     const fps=frames*1000/(now-fpsTime);
