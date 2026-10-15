@@ -39,7 +39,7 @@ export default function ArtworkPanel(){
  useEffect(()=>{
   let live=true;
   initializeArtwork().then(()=>{
-   if(live){const amount=availableArtworkCount();setCount(amount);setMessage(amount?'Your premium backgrounds are stored on this device.':'Import the generated scene pack to enable premium image-based backgrounds.')}
+   if(live){const amount=availableArtworkCount();setCount(amount);setMessage(amount?'26 premium scene images are built into LyricFlow. You can optionally import a ZIP to replace an image or complete the remaining scenes.':'No bundled artwork found. Import a scene ZIP to enable premium backgrounds.')}
   }).catch(e=>{if(live)setMessage('Local artwork storage unavailable: '+String(e))});
   return()=>{live=false};
  },[]);
@@ -52,7 +52,7 @@ export default function ArtworkPanel(){
    const list=parseSceneArchive(new Uint8Array(await file.arrayBuffer()));
    const total=await installArtworks(list);
    setCount(total);
-   setMessage('Installed '+list.size+' premium backgrounds. They are cached only in this browser, with no upload. Four original scenes may still need artwork.');
+   setMessage('Installed '+list.size+' local artwork overrides. Bundled GitHub backgrounds remain available for other scenes; nothing was uploaded.');
   }catch(e){
    setMessage(e instanceof Error?e.message:'The scene pack could not be imported.');
   }finally{
@@ -61,18 +61,18 @@ export default function ArtworkPanel(){
  }
  return <div className="artwork-panel">
   <div className="artwork-summary">
-   <div><b>PREMIUM BACKGROUND ARTWORK</b><small>Image scene plates · slow cinematic camera drift · lyrics remain independent</small></div>
+   <div><b>PREMIUM BACKGROUND ARTWORK</b><small>26 included with LyricFlow · cinematic camera drift · lyrics remain independent</small></div>
    <strong className="artwork-count">{count} / {TEMPLATES.length}</strong>
   </div>
   <div className="artwork-options">
    <input ref={input} type="file" accept=".zip,application/zip" aria-label="Import cinematic scene background ZIP" className="visually-hidden" onChange={()=>void importPack()}/>
    <button type="button" className="upload-button" disabled={busy} onClick={()=>input.current?.click()}>
-    {busy?'Installing artwork…':'Import scene background ZIP'}
+    {busy?'Installing artwork…':'Import or replace scene artwork (optional)'}
    </button>
-   <span className="artwork-hint">WebP assets are matched automatically by scene ID and saved in IndexedDB on this tablet.</span>
+   <span className="artwork-hint">Your optional ZIP overrides bundled WebP images by scene ID and is saved in IndexedDB on this tablet.</span>
   </div>
   <p className="player-footnote" role="status">{message}</p>
-  {count===0&&<p className="player-footnote">Until you import the pack, the existing animated backgrounds remain available as a fallback. This is intentional: no blank scenes or dependency on a remote image host.</p>}
-  {count>0&&count<TEMPLATES.length&&<p className="player-footnote">{TEMPLATES.length-count} scene(s) currently use their existing fallback. Install additional artwork later using the same importer.</p>}
+  {count===0&&<p className="player-footnote">No images currently available. The existing scenes still work without any image files.</p>}
+  {count>0&&count<TEMPLATES.length&&<p className="player-footnote">{TEMPLATES.length-count} scene(s) are waiting for distinct premium artwork and use their original procedural fallback in the meantime.</p>}
  </div>;
 }
