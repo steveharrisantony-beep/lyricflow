@@ -16,6 +16,7 @@ function AudioSourceHub({open,onClose,onPickLocal,onPickMic,onExternalActivated}
  const [busy,setBusy]=useState(false);
  const [message,setMessage]=useState('');
  const [help,setHelp]=useState<'soundcloud'|'virtual'|null>(null);
+ const streamInput=useRef<HTMLInputElement>(null);
  const systemStream=useRef<MediaStream|null>(null);
  const systemContext=useRef<AudioContext|null>(null);
  const radioContext=useRef<AudioContext|null>(null);
@@ -111,13 +112,13 @@ function AudioSourceHub({open,onClose,onPickLocal,onPickMic,onExternalActivated}
      {sourceRow('Local music file','MP3, WAV, M4A and browser-supported formats',Music2,selectLocal,'RECOMMENDED')}
      {sourceRow('Microphone','Listen to a phone, speaker or nearby music',Mic,selectMic,'ANDROID')}
      {sourceRow('System / tab audio','Share tab sound where browser support exists',Computer,()=>{setHelp(null);void startSystem()},'DESKTOP',source==='system')}
-     {sourceRow('Internet radio / direct stream','Play a station with a compatible audio stream URL',Radio,()=>setHelp(v=>v==='virtual'?null:'virtual'),source==='radio'?'ACTIVE':undefined,source==='radio')}
+     {sourceRow('Internet radio / direct stream','Play a station with a compatible audio stream URL',Radio,()=>{setHelp(null);streamInput.current?.focus()},source==='radio'?'ACTIVE':undefined,source==='radio')}
      {sourceRow('SoundCloud','Use its own player; microphone can listen nearby',Headphones,()=>setHelp(v=>v==='soundcloud'?null:'soundcloud'),'GUIDED')}
      {sourceRow('Virtual audio routing','External desktop setup; not installed by a webpage',MonitorSpeaker,()=>setHelp('virtual'),'ADVANCED')}
     </div>
     <div className="source-extra">
      <label htmlFor="stream-url">Direct radio/audio stream URL (HTTPS, CORS-enabled)</label>
-     <div className="source-stream-row"><input id="stream-url" type="url" value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://example.com/live.mp3" autoComplete="off"/>
+     <div className="source-stream-row"><input ref={streamInput} id="stream-url" type="url" value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://example.com/live.mp3" autoComplete="off"/>
       <button type="button" className="source-primary" disabled={busy||!url.trim()} onClick={()=>void startRadio()}>Play stream</button></div>
      {help==='soundcloud'&&<p>SoundCloud embeds do not provide unrestricted access to their audio samples. Open your music legally on SoundCloud and use the microphone for reactive visuals; no automatic lyrics sync is implied. <a href="https://soundcloud.com/" target="_blank" rel="noreferrer">Open SoundCloud <ExternalLink size={12}/></a></p>}
      {help==='virtual'&&<p>Advanced desktop setups can route approved system output to a virtual microphone, then select <b>Microphone</b> here. A browser cannot install virtual sound devices. Android support varies.</p>}
