@@ -2,20 +2,20 @@ import {useEffect,useRef} from 'react';
 import {getLyricState,getLyricTimelineSnapshot} from '../../lyrics/lyricTimeline';
 import {getInputSource,getLocalMediaTime,readLocalAudio} from '../../audio/audioSignal';
 import {AUDIO_ONLY_SCENES,buildCinematicSchedule,byId,sceneAt,type DirectedScene,type SceneId} from './catalog';
-import {drawScene,NO_AUDIO,type Pulse} from './paint';
+import {NO_AUDIO,type Pulse} from './paint';
 import {drawInstrumentalMark,drawTypography} from './typography';
-import {drawNarrativeObjects} from './narrative';
 import {drawSpatialTypography,spatialLayoutFor} from './spatialTypography';
-import {artworkStatus,drawPremiumBackground,hasArtwork} from './artwork';
+import {selectMotif} from './narrative';
+import {ProceduralCinema} from './procedural/ThreeEngine';
+
 export type Quality='High'|'Balanced'|'Performance';
 export type CameraMode='Automatic'|'Front'|'Orbit'|'Side'|'Top';
-export interface CinematicProps {
+export interface CinematicProps{
  quality:Quality;intensity:number;speed:number;reducedMotion:boolean;
  demo:boolean;paused:boolean;autoScenes:boolean;cameraMode:CameraMode;manualScene:SceneId;
- spatialTypography:boolean;narrativeObjects:boolean;
+ spatialTypography:boolean;narrativeObjects:boolean;motionBlur:number;
 }
 const clamp=(n:number,a=0,b=1)=>Math.max(a,Math.min(b,n));
-const EMPTY_PULSE:Pulse={...NO_AUDIO};
 const sceneForAudio=(time:number,manual:SceneId,auto:boolean):DirectedScene=>{
  const index=Math.max(0,Math.floor(time/13));
  const id=auto?AUDIO_ONLY_SCENES[index%AUDIO_ONLY_SCENES.length]:manual;
@@ -23,123 +23,115 @@ const sceneForAudio=(time:number,manual:SceneId,auto:boolean):DirectedScene=>{
  return {id,start:index*13,end:(index+1)*13,font:template.font,layout:template.layout,camera:template.camera,
  transition:template.transition,variation:index%5,section:index,reason:'audio-only visualizer'};
 };
-const previousAudioScene=(scene:DirectedScene,manual:SceneId,auto:boolean)=>{
- const index=Math.max(0,scene.section-1);
- return sceneForAudio(index*13+.01,manual,auto);
-};
-/** One requestAnimationFrame loop owns the whole visual presentation; React controls do not restart it. */
-export default function CinematicStage(props:CinematicProps){
+function drawSafeFallback(c:CanvasRenderingContext2D,id:SceneId,w:number,h:number,t:number,p:Pulse){
+ const color=byId[id];
+ const bg=c.createLinearGradient(0,0,w,h);
+ bg.addColorStop(0,color.background);bg.addColorStop(1,'#040611');
+ c.fillStyle=bg;c.fillRect(0,0,w,h);
+ const r=Math.max(w,h)*.72;
+ const glow=c.createRadialGradient(w*.56,h*.43,0,w*.5,h*.45,r);
+ glow.addColorStop(0,color.accent+'50');glow.addColorStop(.52,color.accent+'15');glow.addColorStop(1,'transparent');
+ c.fillStyle=glow;c.fillRect(0,0,w,h);
+ // Graceful Canvas-only geometry, never any image or old static animation.
+ c.save();c.translate(w*.5,h*.5);c.rotate(t*.025);
+ c.strokeStyle=color.accent;c.lineWidth=1.3+p.bass*2;
+ for(let i=0;i<12;i++){
+  c.save();c.rotate(i*Math.PI/6);
+  c.beginPath();c.ellipse(0,0,w*(.10+i*.018),h*(.10+i*.010),0,Math.PI*.25,Math.PI*1.6);c.stroke();
+  c.restore();
+ }
+ c.restore();
+}
+function useOneCinematicRenderer(props:CinematicProps){
  const canvas=useRef<HTMLCanvasElement>(null),currentProps=useRef(props);
  useEffect(()=>{currentProps.current=props},[props]);
  useEffect(()=>{
   const element=canvas.current;if(!element)return;
   const ctx=element.getContext('2d',{alpha:false});
   if(!ctx){element.dataset.rendererError='Canvas 2D unavailable';return}
-  let raf=0,last=0,elapsed=0,frames=0,fpsTime=0,quality=props.quality,version=-1,trackKey='';
+  const graphics=new ProceduralCinema();
+  element.dataset.renderer=graphics.available?'WEBGL 3D':'CANVAS FALLBACK';
+  if(!graphics.available)element.dataset.rendererError='WebGL not available. Using procedural Canvas 2D fallback.';
+  let raf=0,last=0,elapsed=0,frames=0,fpsTime=0,quality=props.quality,revision=-1;
   let sequence:DirectedScene[]=[];
-  let w=0,h=0;
+  let w=1,h=1;
   const resize=()=>{
    w=Math.max(1,element.clientWidth);h=Math.max(1,element.clientHeight);
    const q=currentProps.current.quality;
    const ratio=Math.min(window.devicePixelRatio||1,q==='High'?2:q==='Balanced'?1.5:1);
-   const limit=q==='Performance'?1_000_000:q==='Balanced'?2_200_000:3_400_000;
-   const dpr=Math.min(ratio,Math.sqrt(limit/(w*h)));
+   const limit=q==='Performance'?950_000:q==='Balanced'?1_600_000:2_400_000;
+   const dpr=Math.max(.65,Math.min(ratio,Math.sqrt(limit/(w*h))));
    element.width=Math.max(1,Math.floor(w*dpr));element.height=Math.max(1,Math.floor(h*dpr));
-   ctx.setTransform(dpr,0,0,dpr,0,0);
+   ctx.setTransform(element.width/w,0,0,element.height/h,0,0);
+   graphics.resize(element.width,element.height,q);
   };
   const observer=new ResizeObserver(resize);observer.observe(element);resize();
-  const cinematicFrame=(now:number)=>{
-   raf=requestAnimationFrame(cinematicFrame);
+  const pulse:Pulse={...NO_AUDIO};
+  const frame=(now:number)=>{
+   raf=requestAnimationFrame(frame);
    const config=currentProps.current;
    const dt=clamp((now-last||16.7)/1000,0,.06);last=now;
    if(document.hidden||config.paused)return;
    if(config.quality!==quality){quality=config.quality;resize()}
    elapsed+=dt;
-   frames++;if(now-fpsTime>1000){element.dataset.fps=String(Math.round(frames*1000/(now-fpsTime)));frames=0;fpsTime=now}
+   frames++;if(now-fpsTime>=1000){element.dataset.fps=String(Math.round(frames*1000/(now-fpsTime)));frames=0;fpsTime=now}
    const mediaTime=getLocalMediaTime();
    const time=mediaTime??elapsed;
    const snapshot=getLyricTimelineSnapshot();
-   if(snapshot.revision!==version){
-    version=snapshot.revision;
-    trackKey=snapshot.cues.map(c=>c.text).join('|').slice(0,1500);
-    sequence=buildCinematicSchedule(snapshot.sections,snapshot.cues,snapshot.genre,trackKey);
+   if(snapshot.revision!==revision){
+    revision=snapshot.revision;
+    const key=snapshot.cues.map(c=>c.text).join('|').slice(0,1500);
+    sequence=buildCinematicSchedule(snapshot.sections,snapshot.cues,snapshot.genre,key);
    }
    const lyric=getLyricState(time);
-   // A valid LRC controls the scene schedule; without one we remain a useful instrumental visualizer.
-   const hasLyricTimeline=sequence.length>0;
-   const lyricMode=config.autoScenes&&hasLyricTimeline;
+   const lyricMode=config.autoScenes&&sequence.length>0;
    const directed=lyricMode?sceneAt(sequence,lyric.position):null;
    const scene=directed??sceneForAudio(time,config.manualScene,config.autoScenes);
-   const currentIndex=directed?sequence.indexOf(directed):-1;
-   const previous=directed
-     ?(currentIndex>0?sequence[currentIndex-1]:null)
-     :previousAudioScene(scene,config.manualScene,config.autoScenes);
    const measured=readLocalAudio(now);
    const source=getInputSource();
    const isDemo=source==='IDLE'&&config.demo&&mediaTime===null;
-   const demo=isDemo?.20+.13*Math.sin(time*2.2)+.12*Math.pow(Math.max(0,Math.sin(time*3.4)),12):0;
-   EMPTY_PULSE.loudness=measured?.loudness??demo;
-   EMPTY_PULSE.bass=measured?.bass??demo*.85;
-   EMPTY_PULSE.mids=measured?.mids??demo*.7;
-   EMPTY_PULSE.treble=measured?.treble??demo*.55;
-   EMPTY_PULSE.beat=measured?.beat??(isDemo?Math.pow(Math.max(0,Math.sin(time*3.4)),15):0);
-   EMPTY_PULSE.onset=measured?.onset??0;
-   EMPTY_PULSE.downbeat=measured?.downbeat??0;
-   const p=EMPTY_PULSE;
+   const fake=isDemo?.20+.13*Math.sin(time*2.2)+.12*Math.pow(Math.max(0,Math.sin(time*3.4)),12):0;
+   pulse.loudness=measured?.loudness??fake;
+   pulse.bass=measured?.bass??fake*.85;
+   pulse.mids=measured?.mids??fake*.7;
+   pulse.treble=measured?.treble??fake*.55;
+   pulse.beat=measured?.beat??(isDemo?Math.pow(Math.max(0,Math.sin(time*3.4)),15):0);
+   pulse.onset=measured?.onset??0;
+   pulse.downbeat=measured?.downbeat??0;
+   const p=pulse;
    const factor=config.intensity;
-   const progress=clamp((time-scene.start)/Math.max(.0001,.85/(config.reducedMotion?3:1)));
-   const transition=progress*progress*(3-2*progress);
-   ctx.setTransform(element.width/w,0,0,element.height/h,0,0);
-   // No old particle or sine-wave renderer is mounted under this canvas.
    const visualTime=time*config.speed*(config.reducedMotion?.15:1);
-   let premiumImageActive=false;
-   const paintOne=(s:DirectedScene,alpha:number)=>{
-    if(alpha<=.001)return;
-    ctx.save();ctx.globalAlpha=alpha;
-    const motion=config.reducedMotion?.12:1;
-    const path=config.cameraMode==='Automatic'?s.camera:config.cameraMode;
-    let dx=0,dy=0,angle=0,zoom=1;
-    if(path==='push'||path==='Front'){zoom=1+.022*Math.sin(visualTime*.25*motion)+p.bass*.018*factor}
-    if(path==='drift'||path==='Side'){dx=Math.sin(visualTime*.19*motion)*w*.018;dy=Math.cos(visualTime*.12*motion)*h*.014}
-    if(path==='orbit'||path==='Orbit'){angle=Math.sin(visualTime*.11*motion)*.009;zoom=1.025}
-    if(path==='pullback'||path==='Top'){zoom=1.045-Math.sin(visualTime*.14*motion)*.018;dy=-h*.013}
-    ctx.translate(w*.5+dx,h*.5+dy);ctx.rotate(angle);ctx.scale(zoom,zoom);ctx.translate(-w*.5,-h*.5);
-    // Premium artwork takes precedence; original graphics remain a safe fallback.
-    const imageReady=drawPremiumBackground(ctx,s.id,w,h,visualTime,p,factor,config.reducedMotion);
-    if(imageReady)premiumImageActive=true;
-    if(!imageReady&&hasArtwork(s.id)){
-     // Never show outdated procedural waves behind a scene with a bundled image.
-     // A quiet editorial gradient stays in place only until the image finishes decoding.
-     const palette=byId[s.id];
-     ctx.fillStyle=palette.background;ctx.fillRect(-w*.10,-h*.10,w*1.20,h*1.20);
-     const waiting=ctx.createRadialGradient(w*.51,h*.39,0,w*.52,h*.46,Math.max(w,h)*.82);
-     waiting.addColorStop(0,palette.accent+'55');
-     waiting.addColorStop(1,palette.background);
-     ctx.fillStyle=waiting;ctx.fillRect(-w*.10,-h*.10,w*1.20,h*1.20);
-    }else if(!imageReady)drawScene(ctx,s,w,h,visualTime,p,config.quality);
-    if(config.narrativeObjects)drawNarrativeObjects(ctx,s,lyric.cue,w,h,visualTime,p,factor,config.reducedMotion);
-    ctx.restore();
-   };
-   if(previous&&transition<1){paintOne(previous,1);paintOne(scene,transition)}
-   else paintOne(scene,1);
-   if(hasLyricTimeline&&lyric.cue){
-    ctx.save();ctx.globalAlpha=Math.max(.04,transition);
+   ctx.setTransform(element.width/w,0,0,element.height/h,0,0);
+   ctx.globalAlpha=1;
+   ctx.globalCompositeOperation='source-over';
+   const rendered=graphics.render(scene.id,p,visualTime,factor,config.motionBlur,config.reducedMotion,config.quality,config.narrativeObjects);
+   if(rendered)ctx.drawImage(graphics.canvas,0,0,w,h);
+   else drawSafeFallback(ctx,scene.id,w,h,visualTime,p);
+   const transition=clamp((time-scene.start)/.7);
+   // Section color fades apply to the environment only, not word timing or beat scale.
+   if(transition<1&&!config.reducedMotion){
+    ctx.save();ctx.globalAlpha=(1-transition)*.17;
+    ctx.fillStyle=byId[scene.id].background;ctx.fillRect(0,0,w,h);ctx.restore();
+   }
+   // Lyrics are composited LAST: sharp, clean and completely outside the GPU feedback trail.
+   if(sequence.length&&lyric.cue){
+    ctx.save();
     if(config.spatialTypography){
-      drawSpatialTypography({c:ctx,scene,cue:lyric.cue,time:lyric.position,
-       mode:lyric.mode,w,h,p,intensity:factor,reduced:config.reducedMotion});
+     drawSpatialTypography({c:ctx,scene,cue:lyric.cue,time:lyric.position,
+      mode:lyric.mode,w,h,p,intensity:factor,reduced:config.reducedMotion});
     }else{
-      drawTypography({c:ctx,scene,cue:lyric.cue,mode:lyric.mode,time:lyric.position,
-       width:w,height:h,pulse:p,intensity:factor,reducedMotion:config.reducedMotion});
+     drawTypography({c:ctx,scene,cue:lyric.cue,mode:lyric.mode,time:lyric.position,
+      width:w,height:h,pulse:p,intensity:factor,reducedMotion:config.reducedMotion});
     }
     ctx.restore();
-   }else if(!snapshot.cues.length){drawInstrumentalMark(ctx,scene,w,h,measured?.loudness??demo)}
+   }else if(!snapshot.cues.length)drawInstrumentalMark(ctx,scene,w,h,measured?.loudness??fake);
    element.dataset.currentScene=scene.id;
-   element.dataset.premiumArtwork=premiumImageActive?'active':'fallback';
-   element.dataset.artworkStatus=artworkStatus(scene.id);
-   element.dataset.motif=config.narrativeObjects?String(lyric.cue?.mood||'audio'):'disabled';
+   element.dataset.renderer=rendered?'WEBGL 3D':'CANVAS FALLBACK';
+   element.dataset.motionBlur=String(config.reducedMotion?0:config.motionBlur);
+   element.dataset.motif=config.narrativeObjects?selectMotif(lyric.cue?.text||'',lyric.cue?.mood||'abstract',scene.id):'disabled';
    element.dataset.lyricLayout=lyric.cue?(config.spatialTypography?spatialLayoutFor(scene,lyric.cue.text):'classic'):'none';
    element.dataset.sceneLabel=byId[scene.id].label;
-   element.dataset.hasLyrics=hasLyricTimeline&&!!lyric.cue?'yes':'no';
+   element.dataset.hasLyrics=sequence.length>0&&!!lyric.cue?'yes':'no';
    element.dataset.sceneCount=String(sequence.length);
    element.dataset.audioSource=source!=='IDLE'?source:isDemo?'DEMO':'IDLE';
    element.dataset.audioLevel=String(Math.round(p.loudness*100));
@@ -156,8 +148,12 @@ export default function CinematicStage(props:CinematicProps){
    element.dataset.audioThreshold=String(Math.round((measured?.threshold||0)*10000));
    element.dataset.audioBeatCount=String(measured?.beatCount||0);
   };
-  raf=requestAnimationFrame(cinematicFrame);
-  return()=>{cancelAnimationFrame(raf);observer.disconnect()};
+  raf=requestAnimationFrame(frame);
+  return()=>{cancelAnimationFrame(raf);observer.disconnect();graphics.dispose()};
  },[]);
- return <canvas className="visual-canvas cinematic-canvas" ref={canvas} aria-label="LyricFlow cinematic lyrics and audio reactive motion graphics"/>;
+ return canvas;
+}
+export default function CinematicStage(props:CinematicProps){
+ const canvas=useOneCinematicRenderer(props);
+ return <canvas className="visual-canvas cinematic-canvas" ref={canvas} aria-label="LyricFlow procedural three-dimensional cinematic lyrics and sound-reactive visual elements"/>;
 }
