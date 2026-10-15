@@ -20,6 +20,20 @@ let mediaElement:HTMLAudioElement|null=null,playing=false,sensitivity=.5;
 let lastSample=0,sectionAt=0,historyCursor=0,historyCount=0,lastSongTime=0;
 const detector=new BeatDetector();
 const history=new Float32Array(48);
+// Beat analysis must not rely on render FPS. The background can be GPU-bound
+// while a lightweight 25ms Web Audio sampler continues to track onsets.
+let audioPump:number|null=null;
+function syncAudioPump(){
+ if(typeof window==='undefined')return;
+ const active=Boolean(analyser&&(playing||microphonePlaying));
+ if(active&&audioPump===null){
+  audioPump=window.setInterval(()=>{
+   if(!document.hidden)readLocalAudio(performance.now());
+  },25);
+ }else if(!active&&audioPump!==null){
+  window.clearInterval(audioPump);audioPump=null;
+ }
+}
 const clamp=(v:number)=>Math.max(0,Math.min(1,v));
 export function setAudioSensitivity(value:number){sensitivity=clamp(value)}
 export function getAudioSensitivity(){return sensitivity}
@@ -37,6 +51,7 @@ function activate(node:AnalyserNode|null){
  for(const field of ['loudness','bass','mids','treble','beat','rms','onset','downbeat',
  'bpm','tempoConfidence','flux','threshold','beatCount'] as const)metrics[field]=0;
  metrics.section='unknown';metrics.sectionConfidence=0;
+ syncAudioPump();
 }
 export function setLocalAudioPlaying(value:boolean){
  playing=value;activate(value?localAnalyser:microphonePlaying?microphoneAnalyser:null);
