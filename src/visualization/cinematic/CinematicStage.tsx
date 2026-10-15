@@ -1,3 +1,4 @@
+import {getSpectrumSensitivity} from '../../audio/audioSignal';
 import {useEffect,useRef} from 'react';
 import {getLyricState,getLyricTimelineSnapshot} from '../../lyrics/lyricTimeline';
 import {getInputSource,getLocalMediaTime,readLocalAudio} from '../../audio/audioSignal';
@@ -153,7 +154,7 @@ function useCinematicRenderer(props:CinematicProps){
     if(isDemo){
      for(let i=0;i<64;i++){
       const oscillation=Math.abs(Math.sin(time*2.2+i*.38)*Math.cos(time*.66+i*.25));
-      demoBands[i]=Math.max(.035,oscillation*(.25+.2*Math.max(0,Math.sin(time*3.9-i*.22))));
+      demoBands[i]=getSpectrumSensitivity()*Math.max(.035,oscillation*(.5+.4*Math.max(0,Math.sin(time*3.9-i*.22))));
      }
     }
     graphicArt.render(paintCtx,w,h,visualTime,{...pulse,bands:spectrum??(isDemo?demoBands:undefined)},

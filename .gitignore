@@ -3,3 +3,7 @@ dist/
 *.tsbuildinfo
 .env
 .env.*
+
+__pycache__/
+*.pyc
+lyricflow-smoke-failure.png

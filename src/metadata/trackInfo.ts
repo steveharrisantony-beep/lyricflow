@@ -1,7 +1,7 @@
 /** Pure, replaceable track matching. Never treats a filename as verified metadata. */
 export interface TrackInfo {
   title:string; artist:string; album:string; duration:number; fileName?:string;
-  source:'filename'|'manual'; confidence:number;
+  source:'filename'|'manual'|'provider'; confidence:number;
 }
 const stripTags=(text:string)=>text
  .replace(/\.(mp3|m4a|aac|wav|flac|ogg)$/i,'')

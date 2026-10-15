@@ -1,5 +1,7 @@
 import {forwardRef,useEffect,useImperativeHandle,useRef,useState} from 'react';
 import {Computer,Mic,Music2,Radio,MonitorSpeaker,ExternalLink,Volume2,X,Square,ChevronRight,Headphones} from 'lucide-react';
+import SongSearch from '../music/SongSearch';
+import type {PlayableSong} from '../music/providers';
 import {connectExternalAudio} from './audioSignal';
 
 export interface AudioSourceHubHandle{stop:()=>void}
@@ -7,15 +9,16 @@ type Source='system'|'radio'|null;
 type Props={
  open:boolean;onClose:()=>void;
  onPickLocal:()=>void;onPickMic:()=>void;
- onExternalActivated:()=>void;
+ onExternalActivated:()=>void;onPlaySong:(song:PlayableSong)=>Promise<void>;
 };
 const messageFor=(e:unknown)=>e instanceof Error?e.message:'The browser cannot start this source.';
-function AudioSourceHub({open,onClose,onPickLocal,onPickMic,onExternalActivated}:Props,ref:React.Ref<AudioSourceHubHandle>){
+function AudioSourceHub({open,onClose,onPickLocal,onPickMic,onExternalActivated,onPlaySong}:Props,ref:React.Ref<AudioSourceHubHandle>){
  const [source,setSource]=useState<Source>(null);
  const [url,setUrl]=useState('');
  const [busy,setBusy]=useState(false);
  const [message,setMessage]=useState('');
  const [help,setHelp]=useState<'soundcloud'|'virtual'|null>(null);
+ const modalRef=useRef<HTMLDivElement>(null);
  const streamInput=useRef<HTMLInputElement>(null);
  const systemStream=useRef<MediaStream|null>(null);
  const systemContext=useRef<AudioContext|null>(null);
@@ -41,10 +44,20 @@ function AudioSourceHub({open,onClose,onPickLocal,onPickMic,onExternalActivated}
  useEffect(()=>()=>{stopRef.current()},[]);
  useEffect(()=>{
   if(!open)return;
-  const escape=(event:KeyboardEvent)=>{if(event.key==='Escape')onClose()};
+  const previous=document.activeElement instanceof HTMLElement?document.activeElement:null;
+  const focusTimer=setTimeout(()=>modalRef.current?.querySelector<HTMLInputElement>('[aria-label="Search songs"]')?.focus(),0);
+  const escape=(event:KeyboardEvent)=>{
+   if(event.key==='Escape')onClose();
+   if(event.key==='Tab'){
+    const items=Array.from(modalRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),a[href],select:not(:disabled)')||[]).filter(el=>el.getClientRects().length>0);
+    const first=items[0],last=items[items.length-1];
+    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus()}
+    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus()}
+   }
+  };
   document.addEventListener('keydown',escape);
-  return()=>document.removeEventListener('keydown',escape);
- },[open,onClose]);
+  return()=>{clearTimeout(focusTimer);document.removeEventListener('keydown',escape);previous?.focus()};
+ },[open]);
  const startSystem=async()=>{
   if(!window.isSecureContext||!navigator.mediaDevices?.getDisplayMedia){
    setMessage('System/tab audio capture is unsupported in this browser. Android browsers generally cannot capture another app’s audio. Use the microphone instead.');return;
@@ -80,12 +93,12 @@ function AudioSourceHub({open,onClose,onPickLocal,onPickMic,onExternalActivated}
    if(address.protocol!=='https:'&&address.protocol!=='http:')throw Error('Use an HTTP(S) audio stream URL.');
    if(location.protocol==='https:'&&address.protocol!=='https:')throw Error('HTTPS pages require an HTTPS radio stream.');
   }catch(e){setMessage(e instanceof Error?e.message:'Enter a valid direct station stream URL.');return}
+  stop();
   const audio=new Audio();radioRef.current=audio;
  audio.addEventListener('ended',()=>{if(radioRef.current===audio){stopRef.current();setMessage('Radio stream ended.')}});
  audio.addEventListener('error',()=>{if(radioRef.current===audio){stopRef.current();setMessage('Radio playback failed. Check the stream URL and CORS.')}});
   setBusy(true);setMessage('Connecting to station… The station must allow cross-origin audio analysis.');
   try{
-   stop();
    radioRef.current=audio;
    const context=new AudioContext();
    const input=context.createMediaElementSource(audio);
@@ -113,8 +126,9 @@ function AudioSourceHub({open,onClose,onPickLocal,onPickMic,onExternalActivated}
   </button>;
  return <>
   {open&&<div className="source-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
-   <div className="source-modal" role="dialog" aria-modal="true" aria-label="Select audio source">
+   <div ref={modalRef} className="source-modal" role="dialog" aria-modal="true" aria-label="Select audio source">
     <div className="source-modal-head"><div><span>LYRICFLOW INPUTS</span><h2>Select an audio source</h2><small>All permitted audio analysis stays on this device</small></div><button type="button" aria-label="Close audio sources" className="source-close" onClick={onClose}><X size={21}/></button></div>
+    <SongSearch onPlay={async song=>{stop();await onPlaySong(song);onClose()}}/>
     <div className="audio-source-list">
      {sourceRow('Local music file','MP3, WAV, M4A and browser-supported formats',Music2,selectLocal,'RECOMMENDED')}
      {sourceRow('Microphone','Listen to a phone, speaker or nearby music',Mic,selectMic,'ANDROID')}

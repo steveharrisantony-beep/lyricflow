@@ -1,6 +1,6 @@
 # LyricFlow — Cinematic Lyric Visualizer
 
-A browser-based, locally reactive music visualizer for Android tablets. Built with **React, TypeScript, Vite, Canvas 2D and the Web Audio API**, without a paid graphics or AI service.
+A browser-based, locally reactive music visualizer for Android tablets. Built with **React, TypeScript, Vite, Three.js/WebGL, Canvas 2D and the Web Audio API**, without a paid graphics or AI service.
 
 ## Open on Xiaomi Pad 8
 
@@ -15,6 +15,61 @@ A browser-based, locally reactive music visualizer for Android tablets. Built wi
 7. Check the **Song Storyboard** beneath the lyric panel for planned scene names, transitions, typography and timings.
 
 The music player, microphone, visualizer and manual lyric entry all continue to work without a backend.
+
+## Search, play and automatically synchronize
+
+**Audio Source → Search songs** opens the search-first input sheet. Search by song
+or artist, choose the exact recording, and play it through the shared player.
+
+- **Audius** searches Audius's public catalog through its documented API; gated
+  tracks are excluded. Availability and CORS depend on the provider. This is not
+  a catalog of every commercially released song.
+- **Connected resolver** uses the optional FastAPI/yt-dlp service in [`server`](server/README.md).
+  It searches public YouTube recording metadata and resolves finite, unrestricted
+  audio without cookies or Spotify extraction. It is **not hosted by default**.
+  A frontend-only StackBlitz/Vercel build cannot execute the Python resolver.
+- **Browser workspace with both services:** [Open GitHub Codespaces](https://codespaces.new/steveharrisantony-beep/lyricflow).
+  The included devcontainer installs dependencies and starts both services; open
+  port **5173** after setup. Vite forwards `/music` to the private resolver on
+  port 8000. GitHub's account access, Codespaces quota and current service pricing
+  apply. No local terminal installation is required. Third-party playback may
+  still be blocked by the source or cloud IP address.
+- To use a separately hosted resolver, save its HTTPS base URL in **Search settings**.
+  On a tablet, `localhost` refers to the tablet, not another computer or server.
+- Local files, microphone input and direct radio streams remain available.
+
+In **Find Lyrics**, confirm permission to display the lyrics and enable
+**Automatically load matching timed lyrics**. These choices last for the tab's
+session. For each recording the app checks the permitted local library, then
+LRCLIB exact lookup, then a bounded search fallback. Automatic selection requires
+matching title and artist, duration within two seconds, timed lyrics, and an
+unambiguous recording. Missing, instrumental, plain-only or uncertain results
+continue with audio visuals and manual selection/import. Requests are cancelled
+on track changes; network failures remain retryable. Automatic retrieval never
+silently saves lyric text.
+
+Line timing follows `HTMLAudioElement.currentTime` for streamed and local tracks,
+including seeking and pauses; LRC offset and signed display delay are independent.
+Real word timestamps are used when supplied. Estimated word positions remain
+labelled estimated; this is not forced vocal alignment or live microphone song ID.
+Spotify metadata does not drive synchronization. Stash's Apple/KuGou/private
+YouTube lyric endpoints are not copied into this implementation.
+
+**Spectrum gain** below the 64-band meter is independent of overall audio
+sensitivity and beat detection. Its default is a calmer **35%**; zero suppresses
+frequency bars and higher settings increase height. The preference is saved
+locally and the same slider is available in Cinema Mode. Cinema controls also
+include song play/pause and seeking.
+
+**3D appearance and motion:** bevelled geometry, physically based materials,
+procedural environment reflections, a warmer key light, restrained fill and soft
+shadow reception on structural floors. High uses 1024px shadows, Balanced 512px,
+and Performance disables them. Heavy forms follow bass; fine details and glows
+follow treble; rings follow mids. Damped motion reduces jumps, and architectural
+forms remain steadier. The two Canvas showcase scenes keep their distinct engines.
+
+See [Stash architecture notes](STASH_RESEARCH.md) for inspected source paths,
+implementation boundaries and live-service verification limits.
 
 ## Thirty original cinematic templates
 
@@ -51,9 +106,9 @@ The music player, microphone, visualizer and manual lyric entry all continue to 
 | 29 | Midnight Transit | Urban vanishing-point camera and speed-line structures |
 | 30 | Final Ascension | Golden spotlight, rising architecture and heroic type |
 
-These are **implemented, procedural motion-graphic templates**, not licensed Videobolt templates or pre-rendered videos. The effects draw using native Canvas 2D to stay lightweight on Android; some are stylized 2.5D perspective effects, not full 3D meshes or volumetric ray tracing. This is an iterative foundation rather than a promise of production-quality video rendering.
+These are **implemented, procedural motion-graphic templates**, not licensed Videobolt templates or pre-rendered videos. Two showcase engines use Canvas 2D; the remaining scenes use Three.js geometry and procedural WebGL backgrounds, with a Canvas fallback when WebGL is unavailable. These do not implement volumetric ray tracing. This is an iterative foundation rather than a promise of production-quality video rendering.
 
-The old Atmosphere / Light Trails / Geometry / Kinetic Type scenes and former Three.js overlay were removed. The current stage uses **one requestAnimationFrame renderer** instead of overlapping animation engines. The audio player, lyrics provider adapters, local library, Romanization, microphone, and Spotify metadata panel were preserved.
+The old Atmosphere / Light Trails / Geometry / Kinetic Type scenes were replaced. The current stage uses **one requestAnimationFrame scheduler**, selecting either a WebGL scene or a Canvas composition, with a separate sharp lyric canvas. The audio player, lyrics provider adapters, local library, Romanization, microphone, and Spotify metadata panel were preserved.
 
 ## Scene direction, timing and anti-repetition
 
@@ -64,7 +119,7 @@ Lyrics are analyzed **when loaded or edited**, not on every rendered frame. The 
 - Long lyrical sections can contain multiple visual templates rather than one endless repeating effect.
 - Native lyric text is preserved, with separate editable approximate Romanization. Actual enhanced-LRC word timestamps are used when provided; otherwise word positions are labeled **estimated** and are not precise vocal alignment.
 - Font **packs** vary by template and genre: industrial condensed, editorial serif, rounded pop, techno display, distressed, mono and literary.
-- Camera options change the movement and perspective illusion. The current renderer is 2D/2.5D, so these are **camera-like transforms**, not freely movable 3D cameras.
+- Camera options change the movement and perspective illusion. The Three.js scenes use a perspective camera; the two Canvas compositions use camera-like 2D transforms.
 - No lyrics? The audio-only visualizer cycles through all 30 distinctive scenes, with different variations across a track.
 
 The design is inspired by the **architectural concepts** of https://github.com/mexicat/pdoom-video and reference images of Videobolt lyric videos. No proprietary templates, music recordings or other creators' graphical assets are embedded in the project.
@@ -127,10 +182,11 @@ The font registry chooses distinct packs per scene; the scene-selection engine a
 ## Main-screen order
 
 1. Cinematic animation canvas
-2. **LIVE AUDIO REACTIVITY**
-3. **LYRICS & SCENE DIRECTOR**
-4. **CINEMATIC SCENE LIBRARY** (all 30)
-5. Local Music Player, Find Lyrics, Live Microphone, optional Spotify metadata section, and footer
+2. **LIVE AUDIO REACTIVITY** and independent Spectrum gain
+3. **MUSIC PLAYER** and **FIND LYRICS**
+4. **LYRICS & SCENE DIRECTOR**
+5. **CINEMATIC SCENE LIBRARY** (all 30)
+6. Live Microphone, optional Spotify metadata section, and footer
 
 The default 50% sensitivity remains user-adjustable. On a loud phone speaker, lower sensitivity or increase the distance from the tablet to avoid noisy input.
 
@@ -186,7 +242,7 @@ Automated tests use a synthetic 120 BPM pulse train and check silence, sensitivi
 1. Sophisticated pdoom-style choreographed typography and production-ready video-quality shaders remain future work.
 2. Current lyric emotion/theme analysis is a deterministic heuristic and cannot fully understand Malayalam/Tamil/Hindi lyrical context.
 3. True forced vocal alignment, verified downbeat grids, and music phrase/chorus detection are not yet implemented.
-4. The new renderer is Canvas 2D, not a fully 3D camera scene. Complex assets, textures and advanced postprocessing would need additional work and performance measurement.
+4. Most scenes use procedural Three.js geometry; two showcase compositions and the WebGL fallback use Canvas 2D. Cinematic quality and performance require actual tablet evaluation. Soft shadow maps are disabled in Performance quality.
 5. Third-party provider availability, lyrics rights, Android microphone permissions and local storage persistence depend on browser and source restrictions.
 
 This README describes the **current cinematic rebuild**; earlier prototype documentation should not be used to infer features that are no longer present.

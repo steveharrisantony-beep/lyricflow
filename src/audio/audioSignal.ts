@@ -41,6 +41,12 @@ function syncAudioPump(){
 const clamp=(v:number)=>Math.max(0,Math.min(1,v));
 export function setAudioSensitivity(value:number){sensitivity=clamp(value)}
 export function getAudioSensitivity(){return sensitivity}
+let spectrumSensitivity=.35;
+export function setSpectrumSensitivity(value:number){spectrumSensitivity=Number.isFinite(value)?clamp(value):.35}
+export function getSpectrumSensitivity(){return spectrumSensitivity}
+export function spectrumResponse(raw:number,gain=spectrumSensitivity){
+ return clamp(Math.pow(Math.max(0,raw-.055),1.35)*2.2*clamp(gain));
+}
 /** Read-only by convention: stable, freshly smoothed 64-band spectrum from the active source. */
 export function getAudioFrequencyBands():Float32Array{return metrics.bands}
 export function setLocalMediaElement(element:HTMLAudioElement|null){mediaElement=element}
@@ -117,7 +123,7 @@ export function readLocalAudio(now=performance.now()):AudioMetrics|null{
   let sum=0,peak=0;
   for(let i=a;i<b;i++){const v=frequency[i]/255;sum+=v;peak=Math.max(peak,v)}
   const raw=(sum/(b-a))*.72+peak*.28;
-  const target=clamp(Math.max(0,raw-.045)*(1.7+gain*.48));
+  const target=spectrumResponse(raw);
   bands[j]+=(target-bands[j])*(target>bands[j]?rise:fall);
  }
  const bass=clamp(band(35,230)*1.7*gain);

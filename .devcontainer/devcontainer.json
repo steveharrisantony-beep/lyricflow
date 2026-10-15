@@ -1,0 +1,8 @@
+{
+  "name": "LyricFlow full-stack browser workspace",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "forwardPorts": [5173],
+  "portsAttributes": {"5173": {"label": "LyricFlow", "onAutoForward": "openPreview"}},
+  "postCreateCommand": "npm ci && python -m pip install -r server/requirements.txt",
+  "postStartCommand": "npm run dev:full > /tmp/lyricflow-dev.log 2>&1 &"
+}

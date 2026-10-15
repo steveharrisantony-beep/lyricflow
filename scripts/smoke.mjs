@@ -16,7 +16,7 @@ function makeAudio(){
  }
  return wav;
 }
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader']});
+const browser=await chromium.launch({...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{channel:'chrome'}),headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--use-angle=swiftshader','--use-gl=angle','--in-process-gpu','--no-zygote','--single-process']});
 const page=await browser.newPage({viewport:{width:1280,height:800}});
 const errors=[];
 page.on('pageerror',error=>errors.push(error.message));
@@ -82,13 +82,13 @@ try{
  await page.getByRole('button',{name:'Close audio sources'}).click();
  console.log('PASS: six browser-aware audio-source options available without faking provider sync');
  const ordered=await page.evaluate(()=>{
-  const selectors=['.stage','.signal-panel','.lyrics-panel','.control-panel','.track-finder','.mic-panel'];
+  const selectors=['.stage','.signal-panel','.local-player','.track-finder','.lyrics-panel','.control-panel','.mic-panel'];
   const elements=selectors.map(selector=>document.querySelector(selector));
   if(elements.some(x=>!x))return false;
   return elements.every((node,i)=>i===0||Boolean(elements[i-1].compareDocumentPosition(node)&Node.DOCUMENT_POSITION_FOLLOWING));
  });
- if(!ordered)throw new Error('Panel order differs from canvas / audio / lyrics / library / remaining controls');
- console.log('PASS: user-requested section order is preserved');
+ if(!ordered)throw new Error('Panel order differs from canvas / audio / playback / matching / lyrics / scene library');
+ console.log('PASS: playback and matching controls precede the scene library');
  if(await page.locator('.cinematic-scene-card').count()!==30)throw new Error('Expected exactly thirty templates');
  console.log('PASS: all 30 scene controls rendered on tablet-sized layout');
  const loadedFonts=await page.evaluate(async()=>{
@@ -173,11 +173,11 @@ try{
  console.log('PASS: adaptive rendering scale is reported for tablet performance');
  const blur=page.getByRole('slider',{name:'Motion blur'});
  if(await blur.inputValue()!=='30')throw new Error('Expected gentle 30 percent motion blur default');
- await blur.fill('60');
- await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.motionBlur==='60');
- await blur.fill('0');
+ await blur.press('End');
+ await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.motionBlur==='80');
+ await blur.press('Home');
  await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.motionBlur==='0');
- await blur.fill('30');
+ for(let i=0;i<6;i++)await blur.press('ArrowRight');
  console.log('PASS: adjustable temporal motion blur from 0 to 80');
  await page.getByLabel('Spatial kinetic lyrics').check();
  if(await page.locator('.cinematic-scene-card').count()!==30)throw new Error('Must preserve all thirty scenes');

@@ -9,7 +9,9 @@
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "dev:full": "node scripts/dev-full.mjs",
+    "smoke:music": "node scripts/music-smoke.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",

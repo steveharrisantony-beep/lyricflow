@@ -7,6 +7,9 @@
  * Scene resources are reused while a song plays and disposed on scene switch.
  */
 import * as THREE from 'three';
+import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
+import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
+import {motionChannel,objectDrive} from './audioMotion';
 import {TEMPLATES,byId,type SceneId} from '../catalog';
 import type {Pulse} from '../paint';
 
@@ -31,7 +34,7 @@ const smooth=(n:number)=>Math.max(0,Math.min(1,n));
 const seedNumber=(s:string)=>{let h=2166136261;for(let i=0;i<s.length;i++)h=Math.imul(h^s.charCodeAt(i),16777619);return h>>>0};
 const random=(seed:number)=>{let v=seed>>>0;return ()=>{v=(Math.imul(v,1664525)+1013904223)>>>0;return v/4294967296}};
 const makeColor=(hex:string)=>new THREE.Color(hex);
-type Animated={mesh:THREE.Object3D;base:THREE.Vector3;baseScale:THREE.Vector3;size:number;offset:number;kind:number;material?:THREE.MeshPhongMaterial};
+type Animated={mesh:THREE.Object3D;base:THREE.Vector3;baseScale:THREE.Vector3;size:number;offset:number;kind:number;drive?:number;velocity?:number;material?:THREE.MeshPhysicalMaterial};
 const vertexShader=`
  varying vec2 vUv;
  void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}
@@ -128,7 +131,7 @@ export class ProceduralCinema {
  private shared:Record<string,THREE.BufferGeometry>={};
  private glowMap:THREE.DataTexture|null=null;
  private particle:THREE.Points|null=null;
- private wave:THREE.Mesh<THREE.PlaneGeometry,THREE.MeshPhongMaterial>|null=null;
+ private wave:THREE.Mesh<THREE.PlaneGeometry,THREE.MeshPhysicalMaterial>|null=null;
  private waveBase:Float32Array|null=null;
  private currentId:SceneId|null=null;
  private look:Look='nebula';
@@ -148,6 +151,8 @@ export class ProceduralCinema {
  private disposed=false;
  private quality:RenderQuality='Balanced';
  private builtQuality:RenderQuality|null=null;
+ private keyLight:THREE.DirectionalLight|null=null;
+ private environment:THREE.WebGLRenderTarget|null=null;
  constructor(){
   this.canvas=document.createElement('canvas');
   let renderer:THREE.WebGLRenderer;
@@ -159,21 +164,31 @@ export class ProceduralCinema {
   this.renderer=renderer;
   renderer.outputColorSpace=THREE.SRGBColorSpace;
   renderer.toneMapping=THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure=1.25;
+  renderer.toneMappingExposure=1.05;
+  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  const pmrem=new THREE.PMREMGenerator(renderer);
+  const room=new RoomEnvironment();
+  this.environment=pmrem.fromScene(room,.045);
+  this.scene.environment=this.environment.texture;
+  room.dispose();pmrem.dispose();
   renderer.setPixelRatio(1);
   this.camera.position.set(0,0,17);
   this.camera.lookAt(0,0,0);
   this.scene.add(this.world);
   this.world.add(this.reactive);
-  this.scene.add(new THREE.AmbientLight('#ddeaff',1.25));
-  const key=new THREE.DirectionalLight('#ffffff',3.1);
+  this.scene.add(new THREE.HemisphereLight('#c6deff','#19101d',.55));
+  const key=new THREE.DirectionalLight('#fff0db',3.2);
+  this.keyLight=key;key.castShadow=true;
+  key.shadow.mapSize.set(512,512);key.shadow.camera.left=-14;key.shadow.camera.right=14;
+  key.shadow.camera.top=12;key.shadow.camera.bottom=-12;key.shadow.camera.near=.5;key.shadow.camera.far=60;
+  key.shadow.bias=-.0006;key.shadow.normalBias=.035;key.shadow.radius=3;
   key.position.set(-7,8,12);this.scene.add(key);
   const rim=new THREE.PointLight('#93d5ff',70,38,2);rim.position.set(5,-3,6);this.scene.add(rim);
   this.shared={
-   sphere:new THREE.SphereGeometry(1,18,14),
+   sphere:new THREE.SphereGeometry(1,32,24),
    softSphere:new THREE.SphereGeometry(1,12,9),
    ico:new THREE.IcosahedronGeometry(1,1),
-   cube:new THREE.BoxGeometry(1,1,1),
+   cube:new RoundedBoxGeometry(1,1,1,2,.045),
    torus:new THREE.TorusGeometry(1,.08,7,48),
    thickTorus:new THREE.TorusGeometry(1,.23,10,54),
    cone:new THREE.ConeGeometry(1,2,6),
@@ -223,19 +238,21 @@ export class ProceduralCinema {
   this.hasHistory=false;this.writeIndex=0;
  }
  private material(hex:string,transparent=false){
-  const m=new THREE.MeshPhongMaterial({color:hex,shininess:110,
-   emissive:this.colorAccent,emissiveIntensity:.11,
-   specular:'#f2fbff',transparent,opacity:transparent?.46:1,side:THREE.DoubleSide,
-   depthWrite:!transparent});
+  const m=new THREE.MeshPhysicalMaterial({color:hex,metalness:transparent?.12:.48,roughness:transparent?.16:.3,
+   clearcoat:1,clearcoatRoughness:.15,envMapIntensity:transparent?1.05:.8,
+   emissive:this.colorAccent,emissiveIntensity:.035,
+   transparent,opacity:transparent?.5:1,side:THREE.FrontSide,depthWrite:!transparent});
   this.ownedMaterials.push(m);return m;
  }
  private add(geometry:THREE.BufferGeometry,material:THREE.Material,position:THREE.Vector3,size:number,offset:number,kind:number){
   const mesh=new THREE.Mesh(geometry,material);
   mesh.position.copy(position);mesh.scale.setScalar(size);
+  mesh.castShadow=material instanceof THREE.MeshStandardMaterial&&!material.transparent;
+  mesh.receiveShadow=mesh.castShadow;
   mesh.rotation.set(offset*.17,offset*.28,offset*.11);
   this.world.add(mesh);this.owned.push(mesh);
   this.animated.push({mesh,base:position.clone(),baseScale:mesh.scale.clone(),size,offset,kind,
-   material:material instanceof THREE.MeshPhongMaterial?material:undefined});
+   material:material instanceof THREE.MeshPhysicalMaterial?material:undefined});
   return mesh;
  }
  private addRings(count:number,material:THREE.Material,depth=-6){
@@ -260,7 +277,13 @@ export class ProceduralCinema {
  }
  private setupScene(id:SceneId,quality:RenderQuality){
   if(this.currentId===id&&quality===this.builtQuality)return;
-  this.clearWorld();this.currentId=id;this.builtQuality=quality;this.look=PROCEDURAL_LOOKS[id];
+  this.clearWorld();
+  if(this.renderer)this.renderer.shadowMap.enabled=quality!=='Performance';
+  if(this.keyLight){
+   const size=quality==='High'?1024:512;
+   if(this.keyLight.shadow.mapSize.x!==size){this.keyLight.shadow.map?.dispose();this.keyLight.shadow.map=null;this.keyLight.shadow.mapSize.set(size,size)}
+  }
+  this.currentId=id;this.builtQuality=quality;this.look=PROCEDURAL_LOOKS[id];
   const palette=byId[id];
   this.colorAccent=makeColor(palette.accent);
   const bg=makeColor(palette.background);
@@ -335,7 +358,8 @@ export class ProceduralCinema {
    });
    const edgeMaterial=new THREE.LineBasicMaterial({color:'#b8f5ff',transparent:true,opacity:.56,depthWrite:false});
    this.ownedMaterials.push(material,edgeMaterial);
-   const edges=new THREE.EdgesGeometry(this.shared.cube);
+   const edgeBox=new THREE.BoxGeometry(1,1,1);
+   const edges=new THREE.EdgesGeometry(edgeBox);edgeBox.dispose();
    this.ownedGeometry.push(edges);
    const towers=quality==='Performance'?9:quality==='Balanced'?15:21;
    for(let i=0;i<towers;i++){
@@ -343,10 +367,11 @@ export class ProceduralCinema {
     const radius=.6+ring*2.4+rand()*.55;
     const x=Math.cos(angle)*radius,z=Math.sin(angle)*2.6-3;
     const h=1.4+rand()*4.0+(ring===0?3.5:0);
-    const y=(rand()-.5)*2;
+    const y=-5.6+h*.5;
     const part=this.add(this.shared.cube,i%4===0?hero:material,
       new THREE.Vector3(x,y,z),1,rand()*TAU,2);
     part.scale.set(.35+rand()*.75,h,.4+rand()*.75);
+    part.rotation.set(0,angle*.15,0);
     this.animated[this.animated.length-1].baseScale.copy(part.scale);
     const edge=new THREE.LineSegments(edges,edgeMaterial);
     part.add(edge);
@@ -412,6 +437,13 @@ export class ProceduralCinema {
       .15+rand()*.9,rand()*TAU,1);
    }
   }
+  if(['glass','city','metal','monuments','crystals','prisms'].includes(this.look)){
+   const floorMaterial=new THREE.MeshPhysicalMaterial({color:bg.clone().lerp(this.colorAccent,.12),metalness:.3,roughness:.42,envMapIntensity:.5});
+   this.ownedMaterials.push(floorMaterial);
+   const floor=new THREE.Mesh(this.shared.plane,floorMaterial);
+   floor.rotation.x=-PI/2;floor.position.set(0,-6.1,-4);floor.scale.set(70,70,1);floor.receiveShadow=true;
+   this.world.add(floor);this.owned.push(floor);
+  }
   // Stable depth-space stars/embers: one draw call, no per-frame allocations.
   const amount=quality==='High'?440:quality==='Balanced'?260:130;
   const points=new Float32Array(amount*3);
@@ -452,7 +484,7 @@ export class ProceduralCinema {
   this.reactive.visible=narrativeObjects;
   const energy=smooth(intensity);
   const bass=smooth(p.bass),treble=smooth(p.treble),beat=smooth(p.beat);
-  const audioKick=energy*motion*(bass*.32+beat*.22);
+
   if(this.atmosphere){
    this.atmosphere.uniforms.uTime.value=time;
    this.atmosphere.uniforms.uBass.value=bass*energy;
@@ -473,18 +505,34 @@ export class ProceduralCinema {
    path==='Top'?17.2:17-bass*.45*motion;
   this.camera.lookAt(0,0,0);
   for(const a of this.animated){
-   const spin=time*(.1+.025*(a.kind%4))*motion+a.offset;
-   a.mesh.position.y=a.base.y+Math.sin(spin)*.13*(1+a.kind)*motion;
-   a.mesh.position.x=a.base.x+Math.cos(spin*.7)*.11*motion;
+   const channel=motionChannel(a.kind,a.size);
+   const target=objectDrive(channel,bass,p.mids,treble,beat)*energy*motion;
+   // Critically damped spring: crisp attacks settle without frame-rate jitter.
+   const dt=Math.min(delta,.033);
+   const rate=channel==='treble'?21:14;
+   const drive=a.drive??0,velocity=a.velocity??0;
+   const decay=Math.exp(-rate*dt),distance=drive-target;
+   const k=velocity+rate*distance;
+   a.drive=target+(distance+k*dt)*decay;
+   a.velocity=(velocity-rate*k*dt)*decay;
+   const response=smooth(a.drive);
+   const spin=time*(.065+.018*(a.kind%4))*motion+a.offset;
+   const anchored=a.kind===2;
+   a.mesh.position.y=a.base.y+Math.sin(spin)*.065*motion+(anchored?response*.2:response*(channel==='treble'?.12:.32));
+   a.mesh.position.x=a.base.x+(anchored?0:Math.cos(spin*.7)*.07*motion);
    if(a.kind===4){
-    const scale=a.size*(1+audioKick*.7+treble*energy*motion*.25);
+    const scale=a.size*(1+response*.22);
     a.mesh.scale.set(scale,scale,1);
+   }else if(anchored){
+    // Architecture breathes vertically; bass never stretches every dimension.
+    a.mesh.scale.copy(a.baseScale);a.mesh.scale.y*=1+response*.09;
    }else{
-    const scale=1+audioKick*(a.kind===3?.6:1.2)+treble*energy*motion*.12;
-    a.mesh.scale.copy(a.baseScale).multiplyScalar(scale);
+    a.mesh.scale.copy(a.baseScale).multiplyScalar(1+response*(channel==='bass'?.16:.055));
    }
-   a.mesh.rotation.y+=delta*(.12+treble*.5)*motion;
-   a.mesh.rotation.z+=delta*(.06+p.mids*.17)*motion;
+   if(!anchored){
+    a.mesh.rotation.y+=delta*(.045+response*(channel==='treble'?.65:.17))*motion;
+    a.mesh.rotation.z+=delta*(.025+(channel==='mids'?response*.3:0))*motion;
+   }
   }
   if(this.wave&&this.waveBase){
    const pos=this.wave.geometry.attributes.position;
@@ -527,6 +575,7 @@ export class ProceduralCinema {
   this.disposed=true;
   this.clearWorld();
   Object.values(this.shared).forEach(g=>g.dispose());
+  this.environment?.dispose();this.keyLight?.shadow.map?.dispose();
   this.glowMap?.dispose();this.backgroundGeometry?.dispose();
   this.source?.dispose();this.history?.forEach(x=>x.dispose());
   this.atmosphere?.dispose();this.temporalMaterial?.dispose();this.copyMaterial?.dispose();

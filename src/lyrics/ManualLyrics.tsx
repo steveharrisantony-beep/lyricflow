@@ -96,7 +96,7 @@ export default function ManualLyrics({time,trackLoaded,track,incoming,delay,onDe
     </div>
     <small className="lyric-delay-feedback">Current delay: {formatLyricDelay(delay)}. {delay>0?'Lyrics display later.':delay<0?'Lyrics display earlier.':'Original display timing.'} File offset: {offset.toFixed(2)}s.</small>
    </div>
-   <span>{lines.length} timed lines · {language} · {trackLoaded?'Local playback clock':'Load a local audio file'}</span>
+   <span>{lines.length} timed lines · {language} · {trackLoaded?'Playback clock synchronized':'Choose a song or audio file'}</span>
   </div>
   <div className="scene-summary"><strong>SCENE ANALYSIS</strong>
    <span>{selected?selected.mood.toUpperCase()+' · '+selected.motion+' · '+selected.camera+' camera · '+Math.round(selected.confidence*100)+'% confidence':'No timed lyric scene yet — audio-reactive fallback'}</span>
