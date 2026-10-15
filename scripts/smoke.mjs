@@ -31,6 +31,8 @@ try{
  await page.waitForFunction(()=>document.querySelector('canvas.visual-canvas')?.dataset.audioSource==='LOCAL AUDIO',{timeout:9000});
  await page.waitForFunction(()=>Number(document.querySelector('canvas.visual-canvas')?.dataset.audioLevel||0)>0,{timeout:9000});
  console.log('PASS: local audio generates nonzero analyzer data');
+ await page.waitForFunction(()=>Number(document.querySelector('canvas.cinematic-canvas')?.dataset.audioBeatCount||0)>=3,{timeout:5200});
+ console.log('PASS: real Web Audio analyzer detects multiple synthetic rhythmic beats');
  await page.getByRole('button',{name:'Edit / import lyrics'}).click();
  await page.locator('.lyrics-editor textarea').first().fill('[00:00.00]Rain falls on my river\n[00:02.00]The ocean flows\n[00:04.00]Water, waves and rain');
  await page.waitForFunction(()=>document.querySelector('.scene-summary')?.textContent?.includes('WATER'),{timeout:6000});
