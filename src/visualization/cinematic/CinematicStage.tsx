@@ -54,13 +54,13 @@ function useOneCinematicRenderer(props:CinematicProps){
   if(!graphics.available)element.dataset.rendererError='WebGL not available. Using procedural Canvas 2D fallback.';
   let raf=0,last=0,elapsed=0,frames=0,fpsTime=0,quality=props.quality,revision=-1;
   let sequence:DirectedScene[]=[];
-  let w=1,h=1;
+  let w=1,h=1,adaptiveScale=1,slowSeconds=0,fastSeconds=0;
   const resize=()=>{
    w=Math.max(1,element.clientWidth);h=Math.max(1,element.clientHeight);
    const q=currentProps.current.quality;
    const ratio=Math.min(window.devicePixelRatio||1,q==='High'?2:q==='Balanced'?1.5:1);
    const limit=q==='Performance'?950_000:q==='Balanced'?1_600_000:2_400_000;
-   const dpr=Math.max(.65,Math.min(ratio,Math.sqrt(limit/(w*h))));
+   const dpr=Math.max(.45,Math.min(ratio,Math.sqrt(limit/(w*h)))*adaptiveScale);
    element.width=Math.max(1,Math.floor(w*dpr));element.height=Math.max(1,Math.floor(h*dpr));
    ctx.setTransform(element.width/w,0,0,element.height/h,0,0);
    graphics.resize(element.width,element.height,q);
@@ -74,7 +74,25 @@ function useOneCinematicRenderer(props:CinematicProps){
    if(document.hidden||config.paused)return;
    if(config.quality!==quality){quality=config.quality;resize()}
    elapsed+=dt;
-   frames++;if(now-fpsTime>=1000){element.dataset.fps=String(Math.round(frames*1000/(now-fpsTime)));frames=0;fpsTime=now}
+   frames++;if(now-fpsTime>=1000){
+    const fps=frames*1000/(now-fpsTime);
+    element.dataset.fps=String(Math.round(fps));
+    // Automatic render-scale fallback prevents large tablets / software WebGL
+    // from blocking animation and audio analysis with expensive GPU frames.
+    if(config.quality!=='High'){
+     slowSeconds=fps<26?slowSeconds+1:0;
+     fastSeconds=fps>51?fastSeconds+1:0;
+     if(slowSeconds>=2&&adaptiveScale>.53){
+      adaptiveScale=Math.max(.53,adaptiveScale-.16);
+      slowSeconds=0;fastSeconds=0;resize();
+     }else if(fastSeconds>=9&&adaptiveScale<.98){
+      adaptiveScale=Math.min(1,adaptiveScale+.11);
+      slowSeconds=0;fastSeconds=0;resize();
+     }
+    }
+    element.dataset.renderScale=String(Math.round(adaptiveScale*100));
+    frames=0;fpsTime=now;
+   }
    const mediaTime=getLocalMediaTime();
    const time=mediaTime??elapsed;
    const snapshot=getLyricTimelineSnapshot();
