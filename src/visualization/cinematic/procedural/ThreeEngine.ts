@@ -146,6 +146,7 @@ export class ProceduralCinema {
  private hasHistory=false;
  private disposed=false;
  private quality:RenderQuality='Balanced';
+ private builtQuality:RenderQuality|null=null;
  constructor(){
   this.canvas=document.createElement('canvas');
   let renderer:THREE.WebGLRenderer;
@@ -255,8 +256,8 @@ export class ProceduralCinema {
   this.hasHistory=false;this.renderCount=0;
  }
  private setupScene(id:SceneId,quality:RenderQuality){
-  if(this.currentId===id)return;
-  this.clearWorld();this.currentId=id;this.look=PROCEDURAL_LOOKS[id];
+  if(this.currentId===id&&quality===this.builtQuality)return;
+  this.clearWorld();this.currentId=id;this.builtQuality=quality;this.look=PROCEDURAL_LOOKS[id];
   const palette=byId[id];
   this.colorAccent=makeColor(palette.accent);
   const bg=makeColor(palette.background);
@@ -397,9 +398,9 @@ export class ProceduralCinema {
  render(id:SceneId,p:Pulse,time:number,intensity:number,motionBlur:number,
   reduced:boolean,quality:RenderQuality,narrativeObjects=true){
   if(!this.renderer||this.disposed||!this.source||!this.history)return false;
+  if(time<this.lastVisualTime-.30||time-this.lastVisualTime>1.2)this.hasHistory=false;
   const delta=Math.max(0,Math.min(.06,time-this.lastVisualTime));
-  const sceneChanged=this.currentId!==id;
-  if(sceneChanged)this.setupScene(id,quality);
+  if(this.currentId!==id||this.builtQuality!==quality)this.setupScene(id,quality);
   this.lastVisualTime=time;
   const motion=reduced?.16:1;
   this.reactive.visible=narrativeObjects;
@@ -435,9 +436,10 @@ export class ProceduralCinema {
    const pos=this.wave.geometry.attributes.position;
    const vals=pos.array as Float32Array;
    for(let i=0;i<vals.length;i+=3){
-    const x=this.waveBase[i],y=this.waveBase[i+1];
-    vals[i+2]=Math.sin(x*.56+time*.64)*.18+
-       Math.cos(y*.65+time*.39)*.15+Math.sin((x+y)*.8+time*.7)*(.11+bass*.35*energy);
+    const x=this.waveBase[i],z=this.waveBase[i+2];
+    // Raise the wave in world Y while preserving the surface's full Z depth.
+    vals[i+1]=this.waveBase[i+1]+Math.sin(x*.56+time*.64)*.18+
+       Math.cos(z*.65+time*.39)*.15+Math.sin((x+z)*.8+time*.7)*(.11+bass*.35*energy);
    }
    pos.needsUpdate=true;
    this.wave.geometry.computeVertexNormals();
