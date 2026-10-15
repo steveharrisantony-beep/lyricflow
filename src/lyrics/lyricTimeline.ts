@@ -1,3 +1,4 @@
+import {analyzeLyricWords} from './wordEmphasis';
 import {analyzeSections,planAt,type Mood,type ScenePlan} from './sceneDirector';
 import {makeEstimatedWords,type TimedLine,type TimedWord} from './lrc';
 export type LyricMood=Mood;
@@ -8,11 +9,14 @@ let offset=0;
 let display:'original'|'romanized'|'both'='original';
 let genrePreset='';
 let revision=0;
+let analyzedKey='';let emphasis=analyzeLyricWords([]);
 /** Read-only snapshot for the cinematic scheduler; rebuilt only after lyric edits. */
 export function getLyricTimelineSnapshot(){
- return {revision,cues,sections,genre:genrePreset};
+ return {revision,cues,sections,genre:genrePreset,emphasis};
 }
 export function setLyricTimeline(lines:LyricCue[],timingOffset=0,mode:typeof display='original',genre=''){
+ const key=lines.map(l=>l.text+'\t'+l.romanized).join('\n');
+ if(key!==analyzedKey){emphasis=analyzeLyricWords(lines);analyzedKey=key}
  cues=lines;offset=timingOffset;display=mode;genrePreset=genre;revision++;
  sections=analyzeSections(lines.map(l=>({time:l.time,text:l.text})),genre);
 }

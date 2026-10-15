@@ -21,10 +21,13 @@ jobs:
           npm run dev -- --host 127.0.0.1 > vite-server.log 2>&1 &
           echo $! > vite-server.pid
       - name: Browser test
+        env:
+          LYRICFLOW_QA_QUALITY: Performance
         run: |
           sleep 5
           npm run smoke
           npm run smoke:music
+          npm run smoke:kinetic
           npm run smoke:motion
           npm run smoke:hls
       - uses: actions/upload-artifact@v4

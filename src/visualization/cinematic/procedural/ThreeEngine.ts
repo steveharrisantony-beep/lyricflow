@@ -9,6 +9,7 @@
 import * as THREE from 'three';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
+import type {CameraFrame} from '../cameraRig';
 import {motionChannel,objectDrive} from './audioMotion';
 import {TEMPLATES,byId,type SceneId} from '../catalog';
 import type {Pulse} from '../paint';
@@ -35,6 +36,12 @@ const seedNumber=(s:string)=>{let h=2166136261;for(let i=0;i<s.length;i++)h=Math
 const random=(seed:number)=>{let v=seed>>>0;return ()=>{v=(Math.imul(v,1664525)+1013904223)>>>0;return v/4294967296}};
 const makeColor=(hex:string)=>new THREE.Color(hex);
 type Animated={mesh:THREE.Object3D;base:THREE.Vector3;baseScale:THREE.Vector3;size:number;offset:number;kind:number;drive?:number;velocity?:number;material?:THREE.MeshPhysicalMaterial};
+interface WorldBundle {
+ world:THREE.Group;reactive:THREE.Group;animated:Animated[];owned:THREE.Object3D[];
+ ownedGeometry:THREE.BufferGeometry[];ownedMaterials:THREE.Material[];
+ particle:THREE.Points|null;wave:THREE.Mesh<THREE.PlaneGeometry,THREE.MeshPhysicalMaterial>|null;
+ waveBase:Float32Array|null;look:Look;
+}
 const vertexShader=`
  varying vec2 vUv;
  void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}
@@ -122,6 +129,9 @@ export class ProceduralCinema {
  private camera=new THREE.PerspectiveCamera(48,16/9,.1,90);
  private scene=new THREE.Scene();
  private world=new THREE.Group();
+ private cachedWorlds=new Map<string,WorldBundle>();
+ private sceneTimes=new Map<SceneId,number>();
+ private projectionVector=new THREE.Vector3();
  private reactive=new THREE.Group();
  private atmosphere:THREE.ShaderMaterial|null=null;
  private animated:Animated[]=[];
@@ -286,9 +296,39 @@ export class ProceduralCinema {
   this.wave=null;this.waveBase=null;
   this.hasHistory=false;this.renderCount=0;
  }
+ private saveWorld():WorldBundle{
+  return {world:this.world,reactive:this.reactive,animated:this.animated,owned:this.owned,
+   ownedGeometry:this.ownedGeometry,ownedMaterials:this.ownedMaterials,particle:this.particle,
+   wave:this.wave,waveBase:this.waveBase,look:this.look};
+ }
+ private restoreWorld(bundle:WorldBundle){
+  Object.assign(this,bundle);this.scene.add(this.world);this.hasHistory=false;
+ }
+ private releaseWorld(bundle:WorldBundle){
+  for(const object of bundle.owned)object.parent?.remove(object);
+  bundle.ownedGeometry.forEach(g=>g.dispose());bundle.ownedMaterials.forEach(m=>m.dispose());
+ }
+ /** Prepare the next geometry/programs before the cut; keep only two inactive worlds. */
+ prepareScene(id:SceneId,quality:RenderQuality){
+  if(!this.renderer||this.disposed||this.currentId===id||this.cachedWorlds.has(id+quality))return;
+  const current=this.currentId,previousQuality=this.builtQuality;
+  this.setupScene(id,quality);this.renderer.compile(this.scene,this.camera);
+  if(current&&previousQuality)this.setupScene(current,previousQuality);
+ }
+ projectPoint(x:number,y:number,z:number,w:number,h:number){
+  this.projectionVector.set(x,y,z).project(this.camera);
+  return {x:(this.projectionVector.x*.5+.5)*w,y:(.5-this.projectionVector.y*.5)*h,visible:this.projectionVector.z<1&&this.projectionVector.z>-1};
+ }
  private setupScene(id:SceneId,quality:RenderQuality){
   if(this.currentId===id&&quality===this.builtQuality)return;
-  this.clearWorld();
+  this.scene.remove(this.world);
+  if(this.currentId&&this.builtQuality)this.cachedWorlds.set(this.currentId+this.builtQuality,this.saveWorld());
+  const cached=this.cachedWorlds.get(id+quality);this.cachedWorlds.delete(id+quality);
+  while(this.cachedWorlds.size>2){const key=this.cachedWorlds.keys().next().value!;this.releaseWorld(this.cachedWorlds.get(key)!);this.cachedWorlds.delete(key)}
+  if(!cached){
+   this.world=new THREE.Group();this.reactive=new THREE.Group();this.world.add(this.reactive);this.scene.add(this.world);
+   this.owned=[];this.animated=[];this.ownedGeometry=[];this.ownedMaterials=[];this.particle=null;this.wave=null;this.waveBase=null;
+  }else this.restoreWorld(cached);
   if(this.renderer)this.renderer.shadowMap.enabled=quality!=='Performance';
   if(this.keyLight){
    const size=quality==='High'?1024:512;
@@ -307,6 +347,7 @@ export class ProceduralCinema {
    shader.uniforms.uStyle.value=TEMPLATES.findIndex(x=>x.id===id)*.73+.5;
    shader.uniforms.uLight.value=['quiet-pages','ransom-poetry','color-riot','marker-diary','word-playground'].includes(id)?1.2:.65;
   }
+  if(cached)return;
   const rand=random(seedNumber(id));
   const hero=this.material(palette.accent);
   const ice=this.material(palette.foreground,true);
@@ -496,10 +537,11 @@ export class ProceduralCinema {
   this.hasHistory=false;
  }
  render(id:SceneId,p:Pulse,time:number,intensity:number,motionBlur:number,
-  reduced:boolean,quality:RenderQuality,narrativeObjects=true,cameraMode:ProceduralCamera='Automatic'){
+  reduced:boolean,quality:RenderQuality,narrativeObjects=true,cameraMode:ProceduralCamera='Automatic',cameraFrame?:CameraFrame){
   if(!this.renderer||this.disposed||!this.source||!this.history)return false;
   if(time<this.lastVisualTime-.30||time-this.lastVisualTime>1.2)this.hasHistory=false;
-  const delta=Math.max(0,Math.min(.06,time-this.lastVisualTime));
+  const delta=Math.max(0,Math.min(.1,time-(this.sceneTimes.get(id)??time-.016)));
+  this.sceneTimes.set(id,time);
   if(this.currentId!==id||this.builtQuality!==quality)this.setupScene(id,quality);
   this.lastVisualTime=time;
   const motion=reduced?.16:1;
@@ -525,7 +567,13 @@ export class ProceduralCinema {
   this.camera.position.z=path==='push'?16.2-Math.sin(time*.13)*.35*motion:
    path==='pullback'?18.3+Math.sin(time*.12)*.4*motion:
    path==='Top'?17.2:17-bass*.45*motion;
-  this.camera.lookAt(0,0,0);
+  if(cameraFrame){
+   this.camera.position.x+=cameraFrame.x*18+cameraFrame.yaw*22;this.camera.position.y+=cameraFrame.pitch*18-cameraFrame.y*18;
+   this.camera.position.z/=cameraFrame.zoom;
+  }
+  this.camera.lookAt(cameraFrame?.yaw??0,cameraFrame?.pitch??0,0);
+  if(cameraFrame)this.camera.rotateZ(cameraFrame.roll);
+  this.camera.updateMatrixWorld();
   for(const a of this.animated){
    const channel=motionChannel(a.kind,a.size);
    const target=objectDrive(channel,bass,p.mids,treble,beat)*energy*motion;
@@ -598,6 +646,7 @@ export class ProceduralCinema {
   if(this.disposed)return;
   this.disposed=true;
   this.clearWorld();
+  for(const bundle of this.cachedWorlds.values())this.releaseWorld(bundle);this.cachedWorlds.clear();this.sceneTimes.clear();
   Object.values(this.shared).forEach(g=>g.dispose());
   this.environment?.dispose();this.keyLight?.shadow.map?.dispose();
   this.surfaceMap?.dispose();this.glowMap?.dispose();this.backgroundGeometry?.dispose();

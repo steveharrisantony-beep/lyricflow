@@ -13,7 +13,8 @@
     "dev:full": "node scripts/dev-full.mjs",
     "smoke:music": "node scripts/music-smoke.mjs",
     "smoke:motion": "node scripts/motion-smoke.mjs",
-    "smoke:hls": "node scripts/hls-smoke.mjs"
+    "smoke:hls": "node scripts/hls-smoke.mjs",
+    "smoke:kinetic": "node scripts/kinetic-smoke.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
@@ -50,7 +51,10 @@
     "@fontsource/special-elite": "^5.2.0",
     "@fontsource/bungee-shade": "^5.2.0",
     "three": "^0.180.0",
-    "hls.js": "^1.7.3"
+    "hls.js": "^1.7.3",
+    "@fontsource/noto-sans-devanagari": "^5.3.0",
+    "@fontsource/noto-sans-malayalam": "^5.3.0",
+    "@fontsource/noto-sans-tamil": "^5.3.0"
   },
   "devDependencies": {
     "@types/react": "latest",

@@ -12,7 +12,7 @@ export function readableInk(background:string,preferred?:string){
 
 const backdrops=new WeakMap<CanvasRenderingContext2D,{data:Uint8ClampedArray;width:number;height:number}>();
 export function setLyricBackdrop(c:CanvasRenderingContext2D,pixels:ImageData){backdrops.set(c,{data:pixels.data,width:pixels.width,height:pixels.height})}
-/** Sample the rendered surface beneath the text anchor; an opposite halo covers mixed-color edges. */
+/** Sample the scene beneath the text. Keep solid typography free of stroked outlines. */
 export function paintLyric(c:CanvasRenderingContext2D,text:string,x:number,y:number,maxWidth:number,preferred:string,surface?:string){
  const backdrop=backdrops.get(c),m=c.getTransform();
  if(!surface&&backdrop){
@@ -30,7 +30,7 @@ export function paintLyric(c:CanvasRenderingContext2D,text:string,x:number,y:num
   surface='#'+samples[3].rgb.map(v=>v.toString(16).padStart(2,'0')).join('');
  }
  const ink=readableInk(surface||'#101521',preferred);
- c.save();c.lineJoin='round';c.lineWidth=Math.max(1.3,Math.min(3,c.measureText('M').width*.045));
- c.strokeStyle=luminance(ink)<.25?'rgba(255,250,242,.72)':'rgba(10,14,22,.72)';
- c.strokeText(text,x,y,maxWidth);c.fillStyle=ink;c.fillText(text,x,y,maxWidth);c.restore();
+ c.save();c.shadowColor=luminance(ink)<.25?'rgba(255,250,242,.15)':'rgba(0,0,0,.42)';
+ c.shadowBlur=Math.min(9,c.measureText('M').width*.12);c.shadowOffsetY=2;
+ c.fillStyle=ink;c.fillText(text,x,y,maxWidth);c.restore();
 }

@@ -78,7 +78,7 @@ export default function ManualLyrics({time,trackLoaded,track,incoming,delay,onDe
  return <section className="local-player lyrics-panel">
   <div className="player-heading"><div className="heading-left"><span className="heading-icon">文</span><div><b>LYRICS & SCENE DIRECTOR</b><small>Original / Romanized · contextual cinematic sections</small></div></div><button className="upload-button" onClick={()=>setShow(v=>!v)}>{show?'Hide editor':'Edit / import lyrics'}</button></div>
   <div className="lyric-display">
-   {current?<>{mode!=='romanized'&&<p>{current.text}</p>}{mode!=='original'&&<p className="romanized">{rom}</p>}</>:
+   {current?<>{mode!=='romanized'&&<p>{current.text}</p>}{mode!=='original'&&(mode==='romanized'||rom.trim()!==current.text.trim())&&<p className="romanized">{rom}</p>}</>:
     <p>{plain?'Untimed lyrics loaded — add LRC timestamps for synchronization.':lines.length?'Waiting for the first lyric timestamp…':'No lyrics yet. Search by filename or import a permitted LRC file.'}</p>}
    {next&&<small>UP NEXT · {next.text}</small>}
   </div>

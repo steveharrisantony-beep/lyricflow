@@ -82,12 +82,28 @@ permitted lyric entries can be stored in the local browser library.
   bump detail, bevels, environment reflections and physical shading.
 - Structural floors receive soft shadows: High uses 1024px maps, Balanced 512px,
   and Performance disables shadow maps. Quality also limits pixel count and detail.
-- Scene changes composite the outgoing background with wipes, dissolves, ink/glitch
-  strips, radial reveals or zooms. Lyrics stay on their own sharp canvas. Reduced
-  Motion removes these transitions and reduces scene movement.
-- Lyric colors sample the rendered background beneath each text anchor and choose
-  readable light/dark ink. A fine opposite-color outline helps over mixed surfaces.
-  Text on poster panels uses the panel's own color for contrast.
+- Scene changes use live outgoing/incoming worlds with short whip/push, zoom,
+  staggered slice and radial handoffs. Progress uses real elapsed time, so a slow
+  render does not stretch a cut. Up to two inactive 3D worlds are retained, and
+  the next scheduled world is built/compiled before the cut. Lyrics sample the
+  playback clock again after rendering so scene work cannot replay an old phrase.
+- A music camera rig adds bounded, decaying shake/roll and focal punches on detected
+  hits, plus slow 3D dolly/orbit movement. Lyric planes project through the same
+  Three.js camera in 3D scenes; Canvas scenes use a pinhole projection. Reduced
+  Motion disables camera impulses and transitions.
+- **One phrase at a time:** every word is drawn once. There is no enlarged duplicate
+  word, echo stack or repeated full-line caption. Eight motion treatments vary
+  depth, approach, rise, tilt, elastic entry and ribbon movement within that phrase.
+- Whole-song word frequency identifies repeated content/hook words, filters common
+  filler words, and gives those words larger type, a contrasting color and stronger
+  motion. This is a deterministic local frequency heuristic, not semantic AI.
+- Thin display fonts and generic stroke outlines have been removed. Lyrics use
+  heavy faces and a restrained shadow; bold Malayalam, Tamil and Devanagari fonts
+  are bundled. Original or Romanized mode selects one stage phrase. In Both mode
+  the stage stays original; distinct Romanization remains in the lyric reader.
+  An identical Romanized line is not repeated.
+- Lyric ink continues to adapt to the rendered background. Word timing follows
+  the audio clock and supplied timestamps, with estimated timing labelled.
 
 ### Ten new 2D themes
 
@@ -111,7 +127,7 @@ when WebGL is unavailable. The lyric director generates stable section-based
 schedules and avoids recent scene repetition. Mood/imagery analysis is a local
 heuristic; no lyric text is sent to an AI service.
 
-See [reference analysis](REFERENCE_REVIEW.md) for pdoom-video, party-mode, vizz.fm
+See [Baseline analysis](BASELINE_REVIEW.md) and [earlier reference analysis](REFERENCE_REVIEW.md) for pdoom-video, party-mode, vizz.fm
 and Stash code paths, adapted concepts and differences.
 
 ## Development and verification
@@ -132,6 +148,7 @@ With the dev server running and Chrome available:
 ```bash
 npm run smoke          # local audio, forty themes, lyrics, controls
 npm run smoke:music    # search -> playback -> analyzer -> lyrics -> seek/delay
+npm run smoke:kinetic  # single phrase, word emphasis, camera hits and cut-time clock checks
 npm run smoke:motion   # ten 2D outputs, transitions, 3D rendering, tablet layout
 npm run smoke:hls      # generated AAC/HLS playback and cleanup; requires ffmpeg
 ```

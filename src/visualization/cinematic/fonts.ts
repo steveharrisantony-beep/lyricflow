@@ -2,41 +2,27 @@ import type {FontPack} from './catalog';
 
 /** Fontsource packages embed locally served, open-source Google Fonts. No runtime font API. */
 const fontFamilies:Record<FontPack,string>={
- impact:'"Anton"',
- street:'"Bebas Neue"',
- editorial:'"Cormorant Garamond"',
- tech:'"Orbitron"',
- grunge:'"Rubik Dirt"',
- rounded:'"Unbounded"',
- mono:'"Space Mono"',
- literary:'"Bodoni Moda"',
- monument:'"Cinzel Decorative"',
- noir:'"Fraunces"',
- glass:'"Syne"',
- collage:'"Abril Fatface"',
- pixel:'"Press Start 2P"',
- handwritten:'"Caveat"',
- retro:'"Righteous"',
- cyber:'"Chakra Petch"',
- industrial:'"Black Ops One"',
- ultra:'"Bricolage Grotesque"',
- couture:'"Italiana"',vogue:'"Gloock"',engraved:'"Marcellus"',
- techno:'"Michroma"',manuscript:'"Poiret One"',typewriter:'"Special Elite"',retrograde:'"Bungee Shade"',
+ impact:'"Anton"',street:'"Anton"',editorial:'"Bricolage Grotesque"',tech:'"Orbitron"',
+ grunge:'"Black Ops One"',rounded:'"Unbounded"',mono:'"Space Mono"',literary:'"Fraunces"',
+ monument:'"Anton"',noir:'"Fraunces"',glass:'"Syne"',collage:'"Bricolage Grotesque"',
+ pixel:'"Press Start 2P"',handwritten:'"Bricolage Grotesque"',retro:'"Righteous"',
+ cyber:'"Chakra Petch"',industrial:'"Black Ops One"',ultra:'"Bricolage Grotesque"',
+ couture:'"Unbounded"',vogue:'"Fraunces"',engraved:'"Syne"',techno:'"Orbitron"',
+ manuscript:'"Bricolage Grotesque"',typewriter:'"Space Mono"',retrograde:'"Righteous"'
 };
 const fontWeights:Record<FontPack,number>={
- impact:400,street:400,editorial:600,tech:700,grunge:400,rounded:700,
- mono:700,literary:600,monument:700,noir:700,glass:800,collage:400,
- pixel:400,handwritten:700,retro:400,cyber:700,industrial:400,ultra:800,
- couture:400,vogue:400,engraved:400,techno:400,manuscript:400,typewriter:400,retrograde:400
+ impact:400,street:400,editorial:800,tech:700,grunge:400,rounded:700,mono:700,
+ literary:700,monument:400,noir:700,glass:800,collage:800,pixel:400,handwritten:800,
+ retro:400,cyber:700,industrial:400,ultra:800,couture:700,vogue:700,engraved:800,
+ techno:700,manuscript:800,typewriter:700,retrograde:400
 };
 const indianScript=/[\u0900-\u097f\u0b80-\u0bff\u0d00-\u0d7f]/u;
 const scriptFallback='"Noto Sans Malayalam","Noto Sans Tamil","Noto Sans Devanagari",sans-serif';
 export function usesNativeScript(text:string){return indianScript.test(text)}
-export function fontSpec(pack:FontPack,size:number,text:string,italic=false):string{
+export function fontSpec(pack:FontPack,size:number,text:string,_italic=false):string{
  const family=usesNativeScript(text)?scriptFallback:fontFamilies[pack]+',sans-serif';
- const weight=usesNativeScript(text)?600:fontWeights[pack];
- const style=italic&&(pack==='editorial'||pack==='literary')?'italic ':'';
- return style+weight+' '+Math.max(8,Math.round(size))+'px '+family;
+ const weight=usesNativeScript(text)?800:fontWeights[pack];
+ return weight+' '+Math.max(8,Math.round(size))+'px '+family;
 }
 export function applySceneFont(c:CanvasRenderingContext2D,pack:FontPack,size:number,text:string,italic=false){
  c.font=fontSpec(pack,size,text,italic);

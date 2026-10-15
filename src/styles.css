@@ -28,7 +28,7 @@
 .spotify-track span{color:#94abb5;font-size:11px}
 .spotify-track a{color:#95e5e8;font-size:11px}
 .lyric-display{text-align:center;padding:17px 12px;background:radial-gradient(ellipse at center,#162f3c,#0d1822 80%);border:1px solid #2a424f;border-radius:10px;min-height:120px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
-.lyric-display p{font-size:clamp(16px,2.6vw,27px);color:#ecf6f8;margin:0;line-height:1.5}
+.lyric-display p{font-weight:700;font-size:clamp(16px,2.6vw,27px);color:#ecf6f8;margin:0;line-height:1.5}
 .lyric-display .romanized{font-size:clamp(13px,1.6vw,18px);color:#91d4df}
 .lyric-display small{color:#8b9fad;font-size:11px}
 .lyrics-tools{display:flex;gap:18px;align-items:end;flex-wrap:wrap;margin-top:14px}

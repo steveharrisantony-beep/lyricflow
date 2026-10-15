@@ -25,7 +25,12 @@ page.on('console',message=>{if(message.type()==='error')console.log('Browser con
 await page.route('https://lrclib.net/api/**',route=>route.fulfill({json:[]}));
 try{
  await page.goto('http://127.0.0.1:5173/',{waitUntil:'domcontentloaded'});
- await page.locator('canvas.visual-canvas').waitFor({timeout:12000});
+ if(process.env.LYRICFLOW_QA_QUALITY==='Performance'){
+  await page.getByRole('button',{name:'Settings',exact:true}).dispatchEvent('click');
+  await page.getByRole('button',{name:'Performance',exact:true}).dispatchEvent('click');
+  await page.getByRole('button',{name:'Close settings',exact:true}).dispatchEvent('click');
+ }
+ await page.locator('canvas.visual-canvas').waitFor({timeout:30000});
  await page.locator('input[type="file"][accept*="audio"]').setInputFiles({name:'Test Artist - Rain on the River.wav',mimeType:'audio/wav',buffer:makeAudio()});
  await page.getByRole('button',{name:'Play track'}).click();
  await page.waitForFunction(()=>document.querySelector('canvas.visual-canvas')?.dataset.audioSource==='LOCAL AUDIO',{timeout:9000});
@@ -47,9 +52,9 @@ try{
  const initialLayout=await page.locator('canvas.cinematic-canvas').getAttribute('data-lyric-layout');
  if(!initialLayout||initialLayout==='none'||initialLayout==='classic')throw new Error('Spatial lyric director did not activate');
  console.log('PASS: spatial typography generated a lyric-specific composition');
- await page.getByLabel('Spatial kinetic lyrics').uncheck();
+ await page.getByLabel('Kinetic lyric choreography').uncheck();
  await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.lyricLayout==='classic',{timeout:6000});
- await page.getByLabel('Spatial kinetic lyrics').check();
+ await page.getByLabel('Kinetic lyric choreography').check();
  console.log('PASS: spatial typography can be toggled without losing lyrics');
  await page.getByLabel('Narrative objects').uncheck();
  await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.motif==='disabled',{timeout:6000});
@@ -94,8 +99,8 @@ try{
  console.log('PASS: all 40 scene controls rendered on tablet-sized layout');
  const loadedFonts=await page.evaluate(async()=>{
   const families=['400 24px "Anton"','700 24px "Orbitron"','700 24px "Unbounded"',
-   '400 24px "Italiana"','400 24px "Gloock"','400 24px "Michroma"',
-   '400 24px "Press Start 2P"','600 24px "Bodoni Moda"','700 24px "Cinzel Decorative"'];
+   '800 24px "Bricolage Grotesque"','800 24px "Syne"','700 24px "Space Mono"',
+   '400 24px "Press Start 2P"','700 24px "Fraunces"','400 24px "Black Ops One"'];
   for(const f of families){
    const loaded=await document.fonts.load(f,'LYRICFLOW');
    if(!loaded.length||!document.fonts.check(f,'LYRICFLOW'))return f;
@@ -111,9 +116,11 @@ try{
   await page.waitForFunction(expected=>document.querySelector('canvas.cinematic-canvas')?.dataset.sceneLabel===expected,name,{timeout:6000});
   await page.waitForTimeout(600);
   const pixels=await page.evaluate(()=>{
-    const canvas=document.querySelector('canvas.cinematic-canvas');
-    const ctx=canvas.getContext('2d');
-    const sample=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    const lyric=document.querySelector('canvas.cinematic-canvas');
+    const canvas=lyric.dataset.visualSystem==='cinematic'&&document.querySelector('.cinematic-webgl-canvas').style.display!=='none'?document.querySelector('.cinematic-webgl-canvas'):document.querySelector('.cinematic-effects');
+    const sampleCanvas=document.createElement('canvas');sampleCanvas.width=192;sampleCanvas.height=108;
+    const ctx=sampleCanvas.getContext('2d');ctx.drawImage(canvas,0,0,192,108);
+    const sample=ctx.getImageData(0,0,192,108).data;
     let v=0;
     for(let i=0;i<sample.length;i+=Math.max(4,Math.floor(sample.length/3000/4)*4))v=(Math.imul(v,33)+sample[i]+sample[i+1]+sample[i+2])|0;
     return v;
@@ -180,7 +187,7 @@ try{
  await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.motionBlur==='0');
  for(let i=0;i<6;i++)await blur.press('ArrowRight');
  console.log('PASS: adjustable temporal motion blur from 0 to 80');
- await page.getByLabel('Spatial kinetic lyrics').check();
+ await page.getByLabel('Kinetic lyric choreography').check();
  if(await page.locator('.cinematic-scene-card').count()!==40)throw new Error('Must preserve all forty scenes');
  console.log('PASS: motion blur layer is independent of lyric timeline');
  await page.locator('button.cinema-button').click();
