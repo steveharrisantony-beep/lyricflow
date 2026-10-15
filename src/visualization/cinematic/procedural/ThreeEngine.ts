@@ -410,7 +410,7 @@ export class ProceduralCinema {
   this.reactive.visible=narrativeObjects;
   const energy=smooth(intensity);
   const bass=smooth(p.bass),treble=smooth(p.treble),beat=smooth(p.beat);
-  const audioKick=energy*(bass*.32+beat*.22);
+  const audioKick=energy*motion*(bass*.32+beat*.22);
   if(this.atmosphere){
    this.atmosphere.uniforms.uTime.value=time;
    this.atmosphere.uniforms.uBass.value=bass*energy;
@@ -435,10 +435,10 @@ export class ProceduralCinema {
    a.mesh.position.y=a.base.y+Math.sin(spin)*.13*(1+a.kind)*motion;
    a.mesh.position.x=a.base.x+Math.cos(spin*.7)*.11*motion;
    if(a.kind===4){
-    const scale=a.size*(1+audioKick*.7+treble*energy*.25);
+    const scale=a.size*(1+audioKick*.7+treble*energy*motion*.25);
     a.mesh.scale.set(scale,scale,1);
    }else{
-    const scale=1+audioKick*(a.kind===3?.6:1.2)+treble*energy*.12;
+    const scale=1+audioKick*(a.kind===3?.6:1.2)+treble*energy*motion*.12;
     a.mesh.scale.copy(a.baseScale).multiplyScalar(scale);
    }
    a.mesh.rotation.y+=delta*(.12+treble*.5)*motion;
@@ -450,8 +450,8 @@ export class ProceduralCinema {
    for(let i=0;i<vals.length;i+=3){
     const x=this.waveBase[i],z=this.waveBase[i+2];
     // Raise the wave in world Y while preserving the surface's full Z depth.
-    vals[i+1]=this.waveBase[i+1]+Math.sin(x*.56+time*.64)*.18+
-       Math.cos(z*.65+time*.39)*.15+Math.sin((x+z)*.8+time*.7)*(.11+bass*.35*energy);
+    vals[i+1]=this.waveBase[i+1]+motion*(Math.sin(x*.56+time*.64)*.18+
+       Math.cos(z*.65+time*.39)*.15+Math.sin((x+z)*.8+time*.7)*(.11+bass*.35*energy));
    }
    pos.needsUpdate=true;
    this.wave.geometry.computeVertexNormals();
