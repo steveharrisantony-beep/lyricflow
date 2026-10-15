@@ -98,7 +98,12 @@ try{
  if(new Set(signatures).size!==names.length)throw new Error('Templates returned identical frames');
  console.log('PASS: all thirty cinematic templates produce distinct actual canvas frames');
 
- // Verify that a real WebP image replaces the procedural fallback after a ZIP import.
+ // Verify images committed under public/scene-art load without any user upload.
+ await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.premiumArtwork==='active',{timeout:12000});
+ if((await page.locator('.artwork-count').textContent())?.trim()!=='26 / 30')throw new Error('Expected 26 bundled premium backgrounds');
+ console.log('PASS: bundled GitHub image renders automatically, without any manual ZIP import');
+ // A pending scene uses the existing fallback until its own WebP is supplied.
+ await page.locator('.cinematic-scene-card').filter({hasText:'Analog Breakdown'}).click();
  await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.premiumArtwork==='fallback',{timeout:6000});
  const asset=await page.evaluate(()=>{
   const c=document.createElement('canvas');c.width=640;c.height=360;
@@ -107,13 +112,14 @@ try{
   g.fillStyle=gradient;g.fillRect(0,0,640,360);
   return c.toDataURL('image/webp',.78).split(',')[1];
  });
- const compressed=zipSync({'final-ascension.webp':new Uint8Array(Buffer.from(asset,'base64'))});
+ const compressed=zipSync({'analog-breakdown.webp':new Uint8Array(Buffer.from(asset,'base64'))});
  await page.getByLabel('Import cinematic scene background ZIP').setInputFiles({
   name:'LyricFlow_Test_Scene.zip',mimeType:'application/zip',buffer:Buffer.from(compressed)
  });
  await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.premiumArtwork==='active',{timeout:10000});
- await page.getByText('Installed 1 premium backgrounds.',{exact:false}).waitFor({timeout:6000});
- console.log('PASS: ZIP import replaces procedural scene with decoded WebP background on the actual canvas');
+ await page.getByText('Installed 1 local artwork overrides.',{exact:false}).waitFor({timeout:6000});
+ if((await page.locator('.artwork-count').textContent())?.trim()!=='27 / 30')throw new Error('One additional custom scene must increase coverage to 27');
+ console.log('PASS: optional ZIP import replaces a missing scene and increases image coverage to 27/30');
 
  await page.locator('button.cinema-button').click();
  await page.locator('.performance-mode').waitFor({timeout:6000});
