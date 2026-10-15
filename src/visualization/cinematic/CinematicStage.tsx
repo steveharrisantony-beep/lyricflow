@@ -4,11 +4,14 @@ import {getInputSource,getLocalMediaTime,readLocalAudio} from '../../audio/audio
 import {AUDIO_ONLY_SCENES,buildCinematicSchedule,byId,sceneAt,type DirectedScene,type SceneId} from './catalog';
 import {drawScene,NO_AUDIO,type Pulse} from './paint';
 import {drawInstrumentalMark,drawTypography} from './typography';
+import {drawNarrativeObjects} from './narrative';
+import {drawSpatialTypography,spatialLayoutFor} from './spatialTypography';
 export type Quality='High'|'Balanced'|'Performance';
 export type CameraMode='Automatic'|'Front'|'Orbit'|'Side'|'Top';
 export interface CinematicProps {
  quality:Quality;intensity:number;speed:number;reducedMotion:boolean;
  demo:boolean;paused:boolean;autoScenes:boolean;cameraMode:CameraMode;manualScene:SceneId;
+ spatialTypography:boolean;narrativeObjects:boolean;
 }
 const clamp=(n:number,a=0,b=1)=>Math.max(a,Math.min(b,n));
 const EMPTY_PULSE:Pulse={...NO_AUDIO};
@@ -100,17 +103,25 @@ export default function CinematicStage(props:CinematicProps){
     if(path==='pullback'||path==='Top'){zoom=1.045-Math.sin(visualTime*.14*motion)*.018;dy=-h*.013}
     ctx.translate(w*.5+dx,h*.5+dy);ctx.rotate(angle);ctx.scale(zoom,zoom);ctx.translate(-w*.5,-h*.5);
     drawScene(ctx,s,w,h,visualTime,p,config.quality);
+    if(config.narrativeObjects)drawNarrativeObjects(ctx,s,lyric.cue,w,h,visualTime,p,factor,config.reducedMotion);
     ctx.restore();
    };
    if(previous&&transition<1){paintOne(previous,1);paintOne(scene,transition)}
    else paintOne(scene,1);
    if(hasLyricTimeline&&lyric.cue){
     ctx.save();ctx.globalAlpha=Math.max(.04,transition);
-    drawTypography({c:ctx,scene,cue:lyric.cue,mode:lyric.mode,time:lyric.position,
-      width:w,height:h,pulse:p,intensity:factor,reducedMotion:config.reducedMotion});
+    if(config.spatialTypography){
+      drawSpatialTypography({c:ctx,scene,cue:lyric.cue,time:lyric.position,
+       mode:lyric.mode,w,h,p,intensity:factor,reduced:config.reducedMotion});
+    }else{
+      drawTypography({c:ctx,scene,cue:lyric.cue,mode:lyric.mode,time:lyric.position,
+       width:w,height:h,pulse:p,intensity:factor,reducedMotion:config.reducedMotion});
+    }
     ctx.restore();
    }else if(!snapshot.cues.length){drawInstrumentalMark(ctx,scene,w,h,measured?.loudness??demo)}
    element.dataset.currentScene=scene.id;
+   element.dataset.motif=config.narrativeObjects?String(lyric.cue?.mood||'audio'):'disabled';
+   element.dataset.lyricLayout=lyric.cue?(config.spatialTypography?spatialLayoutFor(scene,lyric.cue.text):'classic'):'none';
    element.dataset.sceneLabel=byId[scene.id].label;
    element.dataset.hasLyrics=hasLyricTimeline&&!!lyric.cue?'yes':'no';
    element.dataset.sceneCount=String(sequence.length);
@@ -125,6 +136,9 @@ export default function CinematicStage(props:CinematicProps){
    element.dataset.audioOnset=String(Math.round(p.onset*100));
    element.dataset.audioDownbeat=String(Math.round(p.downbeat*100));
    element.dataset.audioSection=measured?.section||'unknown';
+   element.dataset.audioFlux=String(Math.round((measured?.flux||0)*10000));
+   element.dataset.audioThreshold=String(Math.round((measured?.threshold||0)*10000));
+   element.dataset.audioBeatCount=String(measured?.beatCount||0);
   };
   raf=requestAnimationFrame(cinematicFrame);
   return()=>{cancelAnimationFrame(raf);observer.disconnect()};
