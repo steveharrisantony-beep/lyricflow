@@ -167,22 +167,8 @@
 .storyboard-item small{color:#768d9b;font-size:9px;line-height:1.5}
 .storyboard .player-footnote{margin-top:12px}
 
-/* Premium scene image importer, styled for touch on tablet landscape. */
-.artwork-panel{border:1px solid rgba(151,183,197,.25);border-radius:12px;padding:14px 16px;margin:14px 0;background:linear-gradient(120deg,rgba(36,63,80,.25),rgba(14,21,32,.48))}
-.artwork-summary{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
-.artwork-summary>div{display:flex;flex-direction:column;gap:5px}
-.artwork-summary b{font-size:11px;letter-spacing:1.15px;color:#eaf8ff}
-.artwork-summary small{color:#98b1c0;font-size:11px;line-height:1.5}
-.artwork-count{color:#a9e8e7;font-size:19px;font-variant-numeric:tabular-nums}
-.artwork-options{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:12px}
-.artwork-options button{min-height:42px}
-.artwork-hint{font-size:11px;color:#94abba;line-height:1.5}
-.artwork-panel .player-footnote{margin:10px 0 0;font-size:11px;line-height:1.6}
-@media(max-width:720px){.artwork-options{align-items:stretch;flex-direction:column}.artwork-options button{width:100%}}
-
-/* Imported artwork is the actual scene-card thumbnail, not the old gradient initials. */
+/* Scene previews use procedural-friendly typographic palette chips. */
 .cinematic-preview{position:relative;overflow:hidden;isolation:isolate}
-.scene-preview-image{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
 .scene-preview-initials{position:relative;z-index:1;display:block;text-shadow:0 2px 8px #000f,0 0 12px #000b}
 .cinematic-preview:has(.scene-preview-image) .scene-preview-initials{font-size:17px;color:#f6f9fa;background:#0008;padding:3px 6px;border-radius:4px}
 .stage-bottom span:first-child{max-width:75%;text-wrap:balance}
