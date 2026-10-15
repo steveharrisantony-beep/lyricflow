@@ -11,7 +11,6 @@ const decoded=new Map<SceneId,Layer>();
 let initialized=false;
 let initializing:Promise<void>|null=null;
 let loaded=0;
-const clamp=(n:number,a=0,b=1)=>Math.min(b,Math.max(a,n));
 
 function database():Promise<IDBDatabase>{
  return new Promise((resolve,reject)=>{
