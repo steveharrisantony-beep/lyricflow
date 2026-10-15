@@ -37,7 +37,14 @@
     "@fontsource/chakra-petch": "^5.2.0",
     "@fontsource/black-ops-one": "^5.2.0",
     "@fontsource/bricolage-grotesque": "^5.2.0",
-    "@fontsource/space-grotesk": "^5.2.0"
+    "@fontsource/space-grotesk": "^5.2.0",
+    "@fontsource/italiana": "^5.2.0",
+    "@fontsource/gloock": "^5.2.0",
+    "@fontsource/marcellus": "^5.2.0",
+    "@fontsource/michroma": "^5.2.0",
+    "@fontsource/poiret-one": "^5.2.0",
+    "@fontsource/special-elite": "^5.2.0",
+    "@fontsource/bungee-shade": "^5.2.0"
   },
   "devDependencies": {
     "@types/react": "latest",
