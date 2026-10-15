@@ -141,7 +141,7 @@ export class GraphicCompositions {
   // Fine film atmosphere: scattered deterministic stars, no image textures.
   for(let i=0;i<85;i++){
    const px=hash(i*3.1)*w,py=hash(i*3.1+22)*h*.7;
-   c.fillStyle=rgb('254,224,231',.07+hash(i*7)*.14);
+   c.fillStyle=rgb('254,224,231',.07+hash(i*7)*.10+.035*(1+Math.sin(t*.3+i*1.7)));
    c.fillRect(px,py,1,1);
   }
   if(!reduced){
@@ -154,7 +154,7 @@ export class GraphicCompositions {
   const bg=c.createLinearGradient(0,0,w,h);
   bg.addColorStop(0,'#f9e9bc');bg.addColorStop(.53,'#f6d9ac');bg.addColorStop(1,'#f9d0bc');
   c.globalAlpha=1-blur*.006;c.fillStyle=bg;c.fillRect(0,0,w,h);c.globalAlpha=1;
-  const unit=Math.min(w,h),pulse=clamp(this.geometricPulse*intensity);
+  const unit=Math.min(w,h),pulse=clamp((this.geometricPulse+p.bass*.08)*intensity);
   // Poster-like large architectural fields: not a screen full of identical particles.
   c.save();
   c.translate(w*.52,h*.48);
