@@ -119,6 +119,20 @@ The GitHub Actions build checks TypeScript, unit tests and production Vite outpu
 
 **Important:** Browser tests do not establish visual quality or 60 FPS on a Xiaomi Pad 8. Test the new visuals and performance on the actual tablet before starting the next milestone. No credentials, server, billing account or paid service is required for the initial visualizer.
 
+## Narrative cinematography and spatial lyric director
+
+This milestone preserves the existing **30 cinematic scenes** and adds independent layers inspired by the presentation principles in Cotodama and SonicGlass reference footage; it does not copy their proprietary art or scene files.
+
+**Narrative objects:** `src/visualization/cinematic/narrative.ts` chooses a symbolic illustration from lyric imagery (moon, rain, heart, flowers, flame, stars, skyline, road, bird, mountain, water, memory or abstract geometry). Lyrics take priority over scene mood; the visual remains anchored toward the side so primary lyric text retains negative space. These are original procedurally drawn Canvas 2D shapes, not photographs or video assets. Bass and treble independently modulate their size, highlight and movement; visual intensity and Reduced Motion limit their effect.
+
+**Spatial kinetic lyrics:** `spatialTypography.ts` gives each lyric a deterministic arrangement chosen from asymmetric, diagonal, vertical, collage, orbital, poster, editorial, and echo forms. Word-level accents follow source-provided timestamps where present and otherwise use clearly estimated timings. Letter splitting is avoided for Indic scripts. Switch **Spatial kinetic lyrics** off to use the older scene-specific typography, or switch **Narrative objects** off if you prefer a cleaner background.
+
+**Additional curated fonts:** Seven more locally bundled Fontsource families (Italiana, Gloock, Marcellus, Michroma, Poiret One, Special Elite, Bungee Shade) augment the original 19 families. Fontsource's fonts are published with permissive font licenses; licenses are still binding even for strictly personal and non-commercial projects. Do not add unlicensed font copies to this public repository. Source font license details should be checked for any future font changes.
+
+**LIVE AUDIO REACTIVITY:** `src/audio/beatDetector.ts` uses compressed positive spectral flux, an adaptive moving noise threshold, silence rejection, hit spacing, and tempo estimation from a history of onset intervals. Beat and onset pulses stay readable across slower UI samples. The default **50% sensitivity** mainly changes visual energy; it should not manufacture extra musical beats. Downbeat pulses are heuristic four-event groups, **not** confirmed downbeats or meter inference. Tempo estimates have a confidence score and may be uncertain with drums, syncopation, room acoustics, or microphones.
+
+Automated tests use a synthetic 120 BPM pulse train and check silence, sensitivity stability, lyric layouts, and bass/treble behavior. Real music and Xiaomi Pad 8 FPS must still be checked manually.
+
 ## Known limitations / future work
 
 1. Sophisticated pdoom-style choreographed typography and production-ready video-quality shaders remain future work.
