@@ -137,7 +137,7 @@ export default function App(){
   </section>
   <LocalPlayer ref={playerRef} onActiveChange={playing=>{setLocalPlaying(playing);if(playing){audioHubRef.current?.stop();micRef.current?.stop();}}} onTimeChange={setLocalTime} onFileChange={loaded=>{setLocalLoaded(loaded);setFileEpoch(e=>e+1);setIncoming(null)}} onTrackChange={setLocalTrack} onDurationChange={duration=>setLocalTrack(p=>p?{...p,duration}:p)}/>
   <TrackFinder track={localTrack} onMetadataChange={value=>{setLocalTrack(value);saveTrackCorrection(value)}} onLyricsFound={acceptLyrics}/>
-  <MicListener ref={micRef} localPlaying={localPlaying}/>
+  <MicListener ref={micRef} localPlaying={localPlaying} onBeforeActivate={()=>{playerRef.current?.pause();audioHubRef.current?.stop()}}/>
   <AudioSourceHub ref={audioHubRef} open={sourceOpen} onClose={()=>setSourceOpen(false)} onPickLocal={switchToLocal} onPickMic={switchToMic} onExternalActivated={activateExternal}/>
   <SpotifyDiscovery/>
   <footer>LYRICFLOW <span>·</span> PROCEDURAL 3D ENGINE <span>·</span> 30 SCENE COLLECTION <aside>SONG-DRIVEN MOTION GRAPHICS</aside></footer>
