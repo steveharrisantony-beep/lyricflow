@@ -22,7 +22,7 @@ const extraNames=new Set<string>([
  'bubble-pop','word-playground','sunset-frequency','typographic-vortex',
  'midnight-transit','final-ascension'
 ]);
-export function drawExpandedTypography({c,scene,current,whole,width:w,height:h,time:t,pulse:p,step,force}:ExpandedTypeArgs):boolean{
+export function drawExpandedTypography({c,scene,current,whole,width:w,height:h,time:t,pulse:_p,step,force}:ExpandedTypeArgs):boolean{
  if(!extraNames.has(scene.id))return false;
  const word=upper(current),all=whole;
  const f=Math.min(w,h),size=max(f*.16,26,142),delta=step*w*.08;
@@ -95,7 +95,7 @@ export function drawExpandedTypography({c,scene,current,whole,width:w,height:h,t
  }
  case 'inferno-letterforms':{
   c.save();c.translate(w*.5,h*.46);c.rotate(-.045);
-  c.shadowColor='#ff4d04';c.shadowBlur=22+p.beat*28;
+  c.shadowColor='#ff4d04';c.shadowBlur=22+Math.sin(t*.45)*5;
   type(c,word,0,0,size*1.45,'#fff0c8',w*.92,'industrial');
   c.shadowBlur=0;
   type(c,upper(all),0,h*.20,size*.36,'#ffa44a',w*.75,'impact');
