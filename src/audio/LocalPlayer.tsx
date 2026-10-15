@@ -1,11 +1,13 @@
-import { useEffect,useRef,useState } from 'react';
+import { forwardRef,useEffect,useImperativeHandle,useRef,useState } from 'react';
 import { Upload, Play, Pause, Volume2, Music2, X } from 'lucide-react';
 import { connectLocalAudio, setLocalAudioPlaying, setLocalMediaElement } from './audioSignal';
 import type {TrackInfo} from '../metadata/trackInfo';
 import {resolveTrackFilename} from '../metadata/metadataStore';
 
 const format=(seconds:number)=>Number.isFinite(seconds)?`${Math.floor(seconds/60)}:${String(Math.floor(seconds%60)).padStart(2,'0')}`:'0:00';
-export default function LocalPlayer({onActiveChange,onTimeChange,onFileChange,onTrackChange,onDurationChange}:{onActiveChange:(active:boolean)=>void;onTimeChange:(time:number)=>void;onFileChange:(loaded:boolean)=>void;onTrackChange:(track:TrackInfo|null)=>void;onDurationChange:(duration:number)=>void}){
+export interface LocalPlayerHandle{chooseFile:()=>void;pause:()=>void;stop:()=>void;play:()=>Promise<void>}
+type Props={onActiveChange:(active:boolean)=>void;onTimeChange:(time:number)=>void;onFileChange:(loaded:boolean)=>void;onTrackChange:(track:TrackInfo|null)=>void;onDurationChange:(duration:number)=>void};
+function LocalPlayer({onActiveChange,onTimeChange,onFileChange,onTrackChange,onDurationChange}:Props,ref:React.Ref<LocalPlayerHandle>){
  const audioRef=useRef<HTMLAudioElement>(null);
  const urlRef=useRef<string|null>(null);
  const ctxRef=useRef<AudioContext|null>(null);
@@ -54,6 +56,7 @@ export default function LocalPlayer({onActiveChange,onTimeChange,onFileChange,on
   if(urlRef.current){URL.revokeObjectURL(urlRef.current);urlRef.current=null}
   setLocalAudioPlaying(false);setLocalMediaElement(null);onTrackChange(null);onFileChange(false);onTimeChange(0);setName('');setTime(0);setDuration(0);setActive(false);onActiveChange(false);setError('');
  };
+ useImperativeHandle(ref,()=>({chooseFile:()=>fileRef.current?.click(),pause:()=>{audioRef.current?.pause();setLocalAudioPlaying(false);onActiveChange(false)},stop,play}),[onActiveChange]);
  useEffect(()=>()=>{audioRef.current?.pause();setLocalAudioPlaying(false);setLocalMediaElement(null);connectLocalAudio(null);if(urlRef.current)URL.revokeObjectURL(urlRef.current);void ctxRef.current?.close()},[]);
  return <section className="local-player">
    <div className="player-heading"><div className="heading-left"><span className="heading-icon"><Music2 size={17}/></span><div><b>LOCAL MUSIC PLAYER</b><small>Play your own audio · On-device analysis</small></div></div><span className="local-badge">NO UPLOADS</span></div>
@@ -69,3 +72,4 @@ export default function LocalPlayer({onActiveChange,onTimeChange,onFileChange,on
    <p className="player-footnote">Audio stays in this browser tab. Supported formats depend on your browser. Use files you are authorized to play.</p>
  </section>;
 }
+export default forwardRef(LocalPlayer);
