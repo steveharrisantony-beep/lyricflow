@@ -117,6 +117,7 @@ export class ProceduralCinema {
  private camera=new THREE.PerspectiveCamera(48,16/9,.1,90);
  private scene=new THREE.Scene();
  private world=new THREE.Group();
+ private reactive=new THREE.Group();
  private atmosphere:THREE.ShaderMaterial|null=null;
  private animated:Animated[]=[];
  private owned:THREE.Object3D[]=[];
@@ -162,6 +163,7 @@ export class ProceduralCinema {
   this.camera.position.set(0,0,17);
   this.camera.lookAt(0,0,0);
   this.scene.add(this.world);
+  this.world.add(this.reactive);
   this.scene.add(new THREE.AmbientLight('#ddeaff',1.25));
   const key=new THREE.DirectionalLight('#ffffff',3.1);
   key.position.set(-7,8,12);this.scene.add(key);
@@ -242,7 +244,7 @@ export class ProceduralCinema {
   }
  }
  private clearWorld(){
-  for(const object of this.owned){this.world.remove(object)}
+  for(const object of this.owned){object.parent?.remove(object)}
   for(const g of this.ownedGeometry)g.dispose();
   for(const m of this.ownedMaterials)m.dispose();
   this.ownedGeometry=[];
@@ -254,7 +256,7 @@ export class ProceduralCinema {
   this.hasHistory=false;this.renderCount=0;
  }
  private setupScene(id:SceneId,quality:RenderQuality){
-  if(this.currentId===id&&quality===this.quality)return;
+  if(this.currentId===id)return;
   this.clearWorld();this.currentId=id;this.look=PROCEDURAL_LOOKS[id];
   const palette=byId[id];
   this.colorAccent=makeColor(palette.accent);
@@ -376,7 +378,7 @@ export class ProceduralCinema {
   const mat=new THREE.PointsMaterial({color:palette.foreground,size:quality==='High'?.10:.07,
    sizeAttenuation:true,transparent:true,opacity:.60,blending:THREE.AdditiveBlending,depthWrite:false});
   this.ownedMaterials.push(mat);
-  this.particle=new THREE.Points(geometry,mat);this.world.add(this.particle);this.owned.push(this.particle);
+  this.particle=new THREE.Points(geometry,mat);this.reactive.add(this.particle);this.owned.push(this.particle);
   this.particleBase=points;
   // Additive sprite lights add dimension, bloom-like falloff, without external textures.
   if(this.glowMap){
@@ -388,20 +390,21 @@ export class ProceduralCinema {
     const pos=new THREE.Vector3((rand()-.5)*15,(rand()-.5)*10,-5+rand()*9);
     sprite.position.copy(pos);
     const size=2.2+rand()*4.1;sprite.scale.set(size,size,1);
-    this.world.add(sprite);this.owned.push(sprite);
+    this.reactive.add(sprite);this.owned.push(sprite);
     this.animated.push({mesh:sprite,base:pos,baseScale:sprite.scale.clone(),size,offset:rand()*TAU,kind:4});
    }
   }
   this.hasHistory=false;
  }
  render(id:SceneId,p:Pulse,time:number,intensity:number,motionBlur:number,
-  reduced:boolean,quality:RenderQuality){
+  reduced:boolean,quality:RenderQuality,narrativeObjects=true){
   if(!this.renderer||this.disposed||!this.source||!this.history)return false;
   const delta=Math.max(0,Math.min(.06,time-this.lastVisualTime));
   const sceneChanged=this.currentId!==id;
   if(sceneChanged)this.setupScene(id,quality);
   this.lastVisualTime=time;
   const motion=reduced?.16:1;
+  this.reactive.visible=narrativeObjects;
   const energy=smooth(intensity);
   const bass=smooth(p.bass),treble=smooth(p.treble),beat=smooth(p.beat);
   const audioKick=energy*(bass*.32+beat*.22);
