@@ -20,7 +20,7 @@ export function spatialLayoutFor(scene:DirectedScene,text:string):SpatialLayout{
 }
 export function spatialFontFor(scene:DirectedScene,text:string):FontPack {
  const idx=hash(scene.id+':'+text+':'+scene.variation)%featured.length;
- if(scene.font==='editorial'||scene.font==='literary')return ['couture','vogue','engraved','manuscript'][idx%4];
+ if(scene.font==='editorial'||scene.font==='literary')return (['couture','vogue','engraved','manuscript'] as const)[idx%4];
  return featured[idx];
 }
 function write(c:CanvasRenderingContext2D,text:string,x:number,y:number,size:number,color:string,width:number,font:FontPack,angle=0,outline=false){
