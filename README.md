@@ -70,6 +70,27 @@ Lyrics are analyzed **when loaded or edited**, not on every rendered frame. The 
 The design is inspired by the **architectural concepts** of https://github.com/mexicat/pdoom-video and reference images of Videobolt lyric videos. No proprietary templates, music recordings or other creators' graphical assets are embedded in the project.
 
 
+## Premium image-based backgrounds — new scene pack
+
+A new `artwork.ts` layer composites original, generated scene imagery below the existing animated narrative elements and kinetic lyrics. The **premium artwork is not coupled to the beat**: it uses subtle independent camera drift and a restrained vignette. Overlaid objects may continue to react to bass and treble. **Lyric scale, glow and word movement now follow the lyric timeline only** — no audio beat/bass pulse is applied to text.
+
+The generated **LyricFlow_26_Premium_Scene_Backgrounds.zip** is available in the ChatGPT project conversation as a download. It contains 26 optimized, 1280px-wide WebP images, each **named exactly after an existing scene ID** (for example, `ocean-reverie.webp`, `rain-on-glass.webp` and `midnight-transit.webp`), and a source/assignment manifest. The pack is about 1.6 MB.
+
+### Install from your Xiaomi Pad 8
+
+1. Download the artwork ZIP from the ChatGPT conversation to your tablet.
+2. Reopen LyricFlow through its StackBlitz preview (or your own deployment).
+3. Scroll to **CINEMATIC SCENE LIBRARY → PREMIUM BACKGROUND ARTWORK**.
+4. Tap **Import scene background ZIP** and select the file.
+5. LyricFlow verifies its filenames and WebP headers and stores the images in **IndexedDB on that browser**. It does not transmit them or ask for GitHub/API credentials.
+6. Select an installed scene or play music with the automatic director. The image-based background replaces that scene's original procedural backdrop; text and beat-reactive narrative motifs remain separately composited.
+
+The importer intentionally uses local caching. **This GitHub commit includes the complete loader but does not yet include the generated binary WebP assets.** The ZIP is delivered separately. A new browser profile/device must import it again. If local browser storage is cleared, the images must be reimported.
+
+**Remaining four scene backgrounds:** `analog-breakdown`, `monochrome-memory`, `ransom-poetry` and `pixel-pulse`. These currently retain their original procedural visuals instead of reusing an unrelated generated image.
+
+Images are matched by scene ID, not index or arbitrary filename. There are no hardcoded remote image URLs or embedded music recordings.
+
 ## Premium typography (self-hosted)
 
 The legacy DM Sans, Manrope and generic system-font presets were replaced in the cinematic lyrics engine. LyricFlow bundles **19 free and open-source Fontsource families** locally, including Anton, Bebas Neue, Cormorant Garamond, Orbitron, Rubik Dirt, Unbounded, Space Mono, Bodoni Moda, Cinzel Decorative, Fraunces, Syne, Abril Fatface, Press Start 2P, Caveat, Righteous, Chakra Petch, Black Ops One, Bricolage Grotesque, and Space Grotesk for the interface. The user pays nothing for these fonts and no runtime Google Fonts request is needed.
