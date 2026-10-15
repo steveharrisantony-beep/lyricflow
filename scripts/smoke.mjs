@@ -1,5 +1,6 @@
 import {chromium} from 'playwright';
 import {writeFileSync} from 'node:fs';
+import {zipSync} from 'fflate';
 
 function makeAudio(){
  const rate=16000,duration=6,count=rate*duration;
@@ -96,6 +97,24 @@ try{
  }
  if(new Set(signatures).size!==names.length)throw new Error('Templates returned identical frames');
  console.log('PASS: all thirty cinematic templates produce distinct actual canvas frames');
+
+ // Verify that a real WebP image replaces the procedural fallback after a ZIP import.
+ await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.premiumArtwork==='fallback',{timeout:6000});
+ const asset=await page.evaluate(()=>{
+  const c=document.createElement('canvas');c.width=640;c.height=360;
+  const g=c.getContext('2d');const gradient=g.createLinearGradient(0,0,640,360);
+  gradient.addColorStop(0,'#a12c4d');gradient.addColorStop(1,'#ffd4a6');
+  g.fillStyle=gradient;g.fillRect(0,0,640,360);
+  return c.toDataURL('image/webp',.78).split(',')[1];
+ });
+ const compressed=zipSync({'final-ascension.webp':new Uint8Array(Buffer.from(asset,'base64'))});
+ await page.getByLabel('Import cinematic scene background ZIP').setInputFiles({
+  name:'LyricFlow_Test_Scene.zip',mimeType:'application/zip',buffer:Buffer.from(compressed)
+ });
+ await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.premiumArtwork==='active',{timeout:10000});
+ await page.getByText('Installed 1 premium backgrounds.',{exact:false}).waitFor({timeout:6000});
+ console.log('PASS: ZIP import replaces procedural scene with decoded WebP background on the actual canvas');
+
  await page.locator('button.cinema-button').click();
  await page.locator('.performance-mode').waitFor({timeout:6000});
  console.log('PASS: Cinema Mode entered');
