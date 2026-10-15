@@ -205,6 +205,8 @@ export class ProceduralCinema {
   this.stage.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),this.temporalMaterial));
   this.copyScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),this.copyMaterial));
  }
+ /** Prevent ghost frames after scene/source transitions. */
+ resetTrails(){this.hasHistory=false;}
  resize(width:number,height:number,quality:RenderQuality){
   if(!this.renderer||this.disposed)return;
   const w=Math.max(2,Math.round(width)),h=Math.max(2,Math.round(height));
