@@ -92,6 +92,7 @@ export default function CinematicStage(props:CinematicProps){
    ctx.setTransform(element.width/w,0,0,element.height/h,0,0);
    // No old particle or sine-wave renderer is mounted under this canvas.
    const visualTime=time*config.speed*(config.reducedMotion?.15:1);
+   let premiumImageActive=false;
    const paintOne=(s:DirectedScene,alpha:number)=>{
     if(alpha<=.001)return;
     ctx.save();ctx.globalAlpha=alpha;
@@ -105,6 +106,7 @@ export default function CinematicStage(props:CinematicProps){
     ctx.translate(w*.5+dx,h*.5+dy);ctx.rotate(angle);ctx.scale(zoom,zoom);ctx.translate(-w*.5,-h*.5);
     // Premium artwork takes precedence; original graphics remain a safe fallback.
     const imageReady=drawPremiumBackground(ctx,s.id,w,h,visualTime,p,factor,config.reducedMotion);
+    if(imageReady)premiumImageActive=true;
     if(!imageReady)drawScene(ctx,s,w,h,visualTime,p,config.quality);
     if(config.narrativeObjects)drawNarrativeObjects(ctx,s,lyric.cue,w,h,visualTime,p,factor,config.reducedMotion);
     ctx.restore();
@@ -123,6 +125,7 @@ export default function CinematicStage(props:CinematicProps){
     ctx.restore();
    }else if(!snapshot.cues.length){drawInstrumentalMark(ctx,scene,w,h,measured?.loudness??demo)}
    element.dataset.currentScene=scene.id;
+   element.dataset.premiumArtwork=premiumImageActive?'active':'fallback';
    element.dataset.motif=config.narrativeObjects?String(lyric.cue?.mood||'audio'):'disabled';
    element.dataset.lyricLayout=lyric.cue?(config.spatialTypography?spatialLayoutFor(scene,lyric.cue.text):'classic'):'none';
    element.dataset.sceneLabel=byId[scene.id].label;
