@@ -86,8 +86,9 @@ export function drawNarrativeObjects(
  const r=unit*.17;
  switch(motif){
  case 'moon':
-  circle(c,0,0,r);
-  c.save();c.globalCompositeOperation='destination-out';circle(c,r*.42,-r*.26,r*.87);c.restore();
+  c.beginPath();c.arc(0,0,r,Math.PI*.29,Math.PI*1.69,false);
+  c.arc(r*.40,-r*.26,r*.79,Math.PI*1.52,Math.PI*.44,true);
+  c.closePath();c.fill();
   c.strokeStyle=template.foreground;c.globalAlpha=.2;c.beginPath();c.arc(0,0,r*1.5,0,TAU);c.stroke();
   break;
  case 'rain':
