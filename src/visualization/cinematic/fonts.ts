@@ -20,11 +20,14 @@ const fontFamilies:Record<FontPack,string>={
  cyber:'"Chakra Petch"',
  industrial:'"Black Ops One"',
  ultra:'"Bricolage Grotesque"',
+ couture:'"Italiana"',vogue:'"Gloock"',engraved:'"Marcellus"',
+ techno:'"Michroma"',manuscript:'"Poiret One"',typewriter:'"Special Elite"',retrograde:'"Bungee Shade"',
 };
 const fontWeights:Record<FontPack,number>={
  impact:400,street:400,editorial:600,tech:700,grunge:400,rounded:700,
  mono:700,literary:600,monument:700,noir:700,glass:800,collage:400,
- pixel:400,handwritten:700,retro:400,cyber:700,industrial:400,ultra:800
+ pixel:400,handwritten:700,retro:400,cyber:700,industrial:400,ultra:800,
+ couture:400,vogue:400,engraved:400,techno:400,manuscript:400,typewriter:400,retrograde:400
 };
 const indianScript=/[\u0900-\u097f\u0b80-\u0bff\u0d00-\u0d7f]/u;
 const scriptFallback='"Noto Sans Malayalam","Noto Sans Tamil","Noto Sans Devanagari",sans-serif';
@@ -41,5 +44,6 @@ export function applySceneFont(c:CanvasRenderingContext2D,pack:FontPack,size:num
 export function fontLabel(pack:FontPack){return fontFamilies[pack].replaceAll('"','')}
 export const FONT_SHOWCASE:readonly FontPack[]=[
  'impact','street','editorial','tech','grunge','rounded','mono','literary',
- 'monument','noir','glass','collage','pixel','handwritten','retro','cyber','industrial','ultra'
+ 'monument','noir','glass','collage','pixel','handwritten','retro','cyber','industrial','ultra',
+ 'couture','vogue','engraved','techno','manuscript','typewriter','retrograde'
 ] as const;
