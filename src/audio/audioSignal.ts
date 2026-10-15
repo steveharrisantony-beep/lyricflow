@@ -39,6 +39,8 @@ function syncAudioPump(){
 const clamp=(v:number)=>Math.max(0,Math.min(1,v));
 export function setAudioSensitivity(value:number){sensitivity=clamp(value)}
 export function getAudioSensitivity(){return sensitivity}
+/** Read-only by convention: stable, freshly smoothed 64-band spectrum from the active source. */
+export function getAudioFrequencyBands():Float32Array{return metrics.bands}
 export function setLocalMediaElement(element:HTMLAudioElement|null){mediaElement=element}
 export function getLocalMediaTime(){
  return mediaElement&&mediaElement.currentSrc&&(!microphonePlaying||playing)?mediaElement.currentTime:null
