@@ -104,7 +104,7 @@ function useOneCinematicRenderer(props:CinematicProps){
    ctx.setTransform(element.width/w,0,0,element.height/h,0,0);
    ctx.globalAlpha=1;
    ctx.globalCompositeOperation='source-over';
-   const rendered=graphics.render(scene.id,p,visualTime,factor,config.motionBlur,config.reducedMotion,config.quality,config.narrativeObjects);
+   const rendered=graphics.render(scene.id,p,visualTime,factor,config.motionBlur,config.reducedMotion,config.quality,config.narrativeObjects,config.cameraMode);
    if(rendered)ctx.drawImage(graphics.canvas,0,0,w,h);
    else drawSafeFallback(ctx,scene.id,w,h,visualTime,p);
    const transition=clamp((time-scene.start)/.7);
