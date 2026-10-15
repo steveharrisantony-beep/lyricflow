@@ -1,3 +1,10 @@
+import '@fontsource/italiana/400.css';
+import '@fontsource/gloock/400.css';
+import '@fontsource/marcellus/400.css';
+import '@fontsource/michroma/400.css';
+import '@fontsource/poiret-one/400.css';
+import '@fontsource/special-elite/400.css';
+import '@fontsource/bungee-shade/400.css';
 import '@fontsource/anton/400.css';
 import '@fontsource/bebas-neue/400.css';
 import '@fontsource/cormorant-garamond/600.css';
