@@ -2,7 +2,7 @@ import {forwardRef,useEffect,useImperativeHandle,useRef,useState} from 'react';
 import {Mic,MicOff} from 'lucide-react';
 import {connectMicrophoneAudio} from './audioSignal';
 export interface MicListenerHandle{start:()=>Promise<void>;stop:()=>void;isListening:()=>boolean}
-function MicListener({localPlaying}:{localPlaying:boolean},ref:React.Ref<MicListenerHandle>){
+function MicListener({localPlaying,onBeforeActivate}:{localPlaying:boolean;onBeforeActivate?:()=>void},ref:React.Ref<MicListenerHandle>){
  const streamRef=useRef<MediaStream|null>(null),contextRef=useRef<AudioContext|null>(null);
  const [status,setStatus]=useState<'idle'|'requesting'|'listening'|'denied'|'error'>('idle');
  const [message,setMessage]=useState('Microphone input is off.');
@@ -27,6 +27,7 @@ function MicListener({localPlaying}:{localPlaying:boolean},ref:React.Ref<MicList
    const analyser=context.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=.38;
    input.connect(analyser); // intentionally NOT connected to speakers (feedback prevention)
    await context.resume();
+   onBeforeActivate?.();
    streamRef.current=stream;contextRef.current=context;
    connectMicrophoneAudio(analyser);
    setStatus('listening');setMessage('Microphone active. Audio is analyzed locally, never saved or uploaded.');
