@@ -6,10 +6,12 @@ export interface AudioMetrics {
  onset:number;downbeat:number;bpm:number;tempoConfidence:number;
  section:'unknown'|'quiet'|'steady'|'building'|'energetic';sectionConfidence:number;
  flux:number;threshold:number;beatCount:number;
+ /** Smoothed logarithmically spaced 32Hz–14kHz energy bins. */
+ bands:Float32Array;
 }
 const metrics:AudioMetrics={loudness:0,bass:0,mids:0,treble:0,beat:0,rms:0,
  onset:0,downbeat:0,bpm:0,tempoConfidence:0,section:'unknown',sectionConfidence:0,
- flux:0,threshold:0,beatCount:0};
+ flux:0,threshold:0,beatCount:0,bands:new Float32Array(64)};
 let analyser:AnalyserNode|null=null;
 let frequency:Uint8Array<ArrayBuffer>|null=null;
 let waveform:Uint8Array<ArrayBuffer>|null=null;
@@ -47,7 +49,7 @@ function activate(node:AnalyserNode|null){
  frequency=node?new Uint8Array(new ArrayBuffer(node.frequencyBinCount)):null;
  waveform=node?new Uint8Array(new ArrayBuffer(node.fftSize)):null;
  lastSample=0;sectionAt=0;historyCursor=0;historyCount=0;lastSongTime=0;
- history.fill(0);detector.reset();
+ history.fill(0);metrics.bands.fill(0);detector.reset();
  for(const field of ['loudness','bass','mids','treble','beat','rms','onset','downbeat',
  'bpm','tempoConfidence','flux','threshold','beatCount'] as const)metrics[field]=0;
  metrics.section='unknown';metrics.sectionConfidence=0;
@@ -92,7 +94,23 @@ export function readLocalAudio(now=performance.now()):AudioMetrics|null{
  }
  const amplitude=Math.sqrt(sum/waveform.length);
  // Raw spectrum is analyzed independently of sensitivity; UI control scales visuals.
+ // 64 log-spaced bands let visual compositions react to specific frequencies.
+ const bands=metrics.bands;
+ const minHz=32,maxHz=Math.min(14000,nyquist*.95);
+ const ratio=maxHz/minHz;
  const gain=1.75*Math.pow(sensitivity,1.05);
+ const rise=.52,fall=.16;
+ for(let j=0;j<bands.length;j++){
+  const startHz=minHz*Math.pow(ratio,j/bands.length);
+  const endHz=minHz*Math.pow(ratio,(j+1)/bands.length);
+  const a=Math.max(0,Math.min(frequency.length-1,Math.floor(startHz/nyquist*frequency.length)));
+  const b=Math.max(a+1,Math.min(frequency.length,Math.ceil(endHz/nyquist*frequency.length)));
+  let sum=0,peak=0;
+  for(let i=a;i<b;i++){const v=frequency[i]/255;sum+=v;peak=Math.max(peak,v)}
+  const raw=(sum/(b-a))*.72+peak*.28;
+  const target=clamp(Math.max(0,raw-.045)*(1.7+gain*.48));
+  bands[j]+=(target-bands[j])*(target>bands[j]?rise:fall);
+ }
  const bass=clamp(band(35,230)*1.7*gain);
  const mids=clamp(band(230,2400)*2*gain);
  const treble=clamp(band(2400,11500)*2.25*gain);
