@@ -70,6 +70,29 @@ Lyrics are analyzed **when loaded or edited**, not on every rendered frame. The 
 The design is inspired by the **architectural concepts** of https://github.com/mexicat/pdoom-video and reference images of Videobolt lyric videos. No proprietary templates, music recordings or other creators' graphical assets are embedded in the project.
 
 
+## Audio source chooser and fullscreen live controls
+
+**Select Audio Source** in the upper-right corner of the visualization, or open the **Controls** drawer in Cinema Mode and choose a source.
+
+| Input | Support | Notes |
+| --- | --- | --- |
+| Local music file | Supported | Load MP3/M4A/WAV/other browser-compatible files from the tablet. Beat tracking uses the actual file data and the player clock provides lyric positioning. |
+| Microphone | Supported with permission | Uses Web Audio getUserMedia to analyze sound from nearby speakers. Requires HTTPS and mic permission. Does not record or upload. |
+| System/tab audio | Experimental; typically desktop Chrome | Uses getDisplayMedia after a user click, requests browser screen/tab sharing *with audio*, and analyzes only if an audio track was granted. Android browsers normally do not expose other apps' audio. No screen contents are stored or uploaded. Video track remains active during capture as required by some browsers and ends on disconnect. |
+| Internet radio | Conditional | Plays a direct HTTPS audio stream through a browser Audio element and Web Audio analyzer. Station must permit cross-origin loading (CORS); web pages, embedded players, DRM-protected streams and playlist URLs may not work. |
+| SoundCloud | Guidance only | Unlicensed copying/decoding an embedded cross-origin player is not implemented. Open SoundCloud in its own app/page and use permitted microphone capture from a different playback device. |
+| Virtual audio device | Desktop guidance only | Routing requires external operating-system audio software; a website cannot install or access a virtual device automatically. |
+
+The source chooser gives visible errors on unsupported paths and provides a **Disconnect** action for system or radio audio. Starting local music or microphone playback switches away from other active sources. Spotify currently-playing metadata remains separate from the audio analyzer and does not drive prohibited visual or lyric synchronization.
+
+**Cinema Mode:** tap **Cinema Mode**, then use the floating **Controls** button to open a touch-friendly drawer. You can select audio sources, manually switch scenes, toggle auto-direct, change sensitivity and motion blur, pause visuals, and adjust lyric delay. A separate **Exit cinema mode** button remains visible; tapping the artwork toggles the drawer rather than accidentally ending the presentation. Android browsers may not permit real fullscreen; the UI still enters clean presentation mode when fullscreen is blocked.
+
+**Lyrics Delay vs. LRC Offset:** two independent controls are now available below the lyric display.
+
+- **File timestamp offset** corrects time alignment in the actual LRC file. A positive offset advances the lyrics.
+- **Lyrics Delay** shifts their display relative to playback. A **positive** delay shows words **later**; a **negative** delay shows them **earlier**. Use ±0.25-second buttons, type a signed value (−30 to +30 seconds), or reset to zero. This delay is also available in the fullscreen drawer.
+- The synchronized lyric engine uses `playbackTime + fileOffset - lyricsDelay` everywhere—including the cinematic timeline—so the adjustment affects both displayed text and lyric-aware scene timing. Delay can be changed during playback.
+
 ## Three independent visual engines — first quality milestone
 
 LyricFlow has thirty selectable scenes. **Three of these have been rebuilt as individually art-directed showcase engines** and the remaining twenty-seven still use the earlier procedural Three.js scene families. These initial showcases are deliberately different approaches, not color variations of a shared background.
