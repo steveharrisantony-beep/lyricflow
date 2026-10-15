@@ -1,8 +1,8 @@
-import { useEffect,useState } from 'react';
+import { useEffect,useState,useRef } from 'react';
 import CinematicStage from './visualization/cinematic/CinematicStage';
 import {TEMPLATES,type SceneId} from './visualization/cinematic/catalog';
 import {fontLabel} from './visualization/cinematic/fonts';
-import {setAudioSensitivity} from './audio/audioSignal';
+import {setAudioSensitivity,getAudioFrequencyBands} from './audio/audioSignal';
 import LocalPlayer from './audio/LocalPlayer';
 import MicListener from './audio/MicListener';
 import SpotifyDiscovery from './spotify/SpotifyDiscovery';
@@ -16,7 +16,8 @@ type Quality='High'|'Balanced'|'Performance';
 export default function App(){
  const [scene,setScene]=useState<SceneId>('crimson-impact'),[intensity,setIntensity]=useState(65),[speed,setSpeed]=useState(55);
  const [liveScene,setLiveScene]=useState('Crimson Impact');
- const [renderStatus,setRenderStatus]=useState('INITIALIZING 3D');
+ const [renderStatus,setRenderStatus]=useState('INITIALIZING VISUALS');
+ const spectrumCanvas=useRef<HTMLCanvasElement>(null);
  const [quality,setQuality]=useState<Quality>('Balanced'),[demo,setDemo]=useState(true),[paused,setPaused]=useState(false);
  const [reducedMotion,setReducedMotion]=useState(false),[settings,setSettings]=useState(false),[fps,setFps]=useState(0);
  const [fullscreenError,setFullscreenError]=useState('');
@@ -44,6 +45,21 @@ export default function App(){
      const numeric=(key:string)=>Number(canvas.dataset[key]||0);
      if(canvas.dataset.sceneLabel)setLiveScene(previous=>previous===canvas.dataset.sceneLabel?previous:canvas.dataset.sceneLabel||previous);
      if(canvas.dataset.renderer)setRenderStatus(previous=>previous===canvas.dataset.renderer?previous:canvas.dataset.renderer||previous);
+     const meter=spectrumCanvas.current,frequency=getAudioFrequencyBands();
+     if(meter){
+      const mc=meter.getContext('2d');
+      if(mc){
+       const bw=meter.width/64;
+       mc.clearRect(0,0,meter.width,meter.height);
+       mc.fillStyle='#16232e';mc.fillRect(0,meter.height-1,meter.width,1);
+       for(let i=0;i<64;i++){
+        const e=Math.max(0,Math.min(1,frequency[i]));
+        mc.fillStyle=i<15?'#ffa38c':i<43?'#bc7bf0':'#8fe2e4';
+        const height=Math.max(1,e*(meter.height-4));
+        mc.fillRect(i*bw+1,meter.height-height,Math.max(2,bw-2),height);
+       }
+      }
+     }
      setAudioReadout({source:canvas.dataset.audioSource||'IDLE',level:numeric('audioLevel'),bass:numeric('audioBass'),mids:numeric('audioMids'),treble:numeric('audioTreble'),beat:numeric('audioBeat'),bpm:numeric('audioBpm'),tempoConfidence:numeric('audioTempoConfidence'),onset:numeric('audioOnset'),downbeat:numeric('audioDownbeat'),section:canvas.dataset.audioSection||'unknown',beatCount:numeric('audioBeatCount'),flux:numeric('audioFlux'),threshold:numeric('audioThreshold')});
    },90);
    return()=>clearInterval(id);
@@ -66,6 +82,7 @@ export default function App(){
   <section className="signal-panel" aria-label="Live audio analysis">
     <div className="signal-header"><strong>LIVE AUDIO REACTIVITY</strong><span className={'signal-mode '+(audioReadout.source==='LOCAL AUDIO'?'connected':'')}>{audioReadout.source==='LOCAL AUDIO'?'● Local audio detected':audioReadout.source==='MICROPHONE'?'● Microphone listening':audioReadout.source==='DEMO'?'◌ Simulated energy':'○ No audio source'}</span></div>
     <div className="signal-bars">{([['LOUDNESS',audioReadout.level],['BASS',audioReadout.bass],['MID',audioReadout.mids],['TREBLE',audioReadout.treble],['ONSET',audioReadout.onset],['BEAT',audioReadout.beat]] as const).map(([label,value])=><div className="signal-band" key={label}><span>{label}<b>{value}%</b></span><div className="signal-track"><i style={{width:value+'%'}}/></div></div>)}</div>
+    <div className="spectrum-diagnostic"><span>64-BAND FREQUENCY SPECTRUM <small>32 Hz – 14 kHz · log-scaled · smoothed</small></span><canvas ref={spectrumCanvas} width={640} height={58} aria-label="Live 64-band musical frequency spectrum"/></div>
     <div className="music-metrics"><span>Tempo <b>{audioReadout.bpm?audioReadout.bpm+' BPM':'Estimating…'}</b></span><span>Tempo confidence <b>{audioReadout.tempoConfidence}%</b></span><span>Section <b>{audioReadout.section}</b></span><span>Onset <b>{audioReadout.onset}%</b></span><span>Beat pulses <b>{audioReadout.beatCount}</b></span><span>Downbeat¹ <b>{audioReadout.downbeat}%</b></span></div>
     <p className="signal-hint">Spectral-flux onset detector · adaptive threshold · beat pulses held for readability. BPM and downbeat grouping are estimates, not verified studio beat grids.</p>
     <p className="signal-hint">{audioReadout.source==='LOCAL AUDIO'?'Analyzing the audio file locally. Try a bass-heavy section and watch the bars and visuals change.':audioReadout.source==='MICROPHONE'?'Analyzing nearby sound locally. Exact track timing is unavailable from microphone input.':'To react to real music, choose an MP3 from Local Music Player below and press Play, or start the microphone. Demo mode is simulated.'}</p>
