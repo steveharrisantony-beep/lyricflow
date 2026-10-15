@@ -22,12 +22,13 @@ function AudioSourceHub({open,onClose,onPickLocal,onPickMic,onExternalActivated}
  const radioContext=useRef<AudioContext|null>(null);
  const radioRef=useRef<HTMLAudioElement|null>(null);
  const closeSystem=()=>{
-  systemStream.current?.getTracks().forEach(track=>track.stop());systemStream.current=null;
+  const old=systemStream.current;systemStream.current=null;
+  old?.getTracks().forEach(track=>track.stop());
   if(systemContext.current){void systemContext.current.close().catch(()=>{});systemContext.current=null}
  };
  const closeRadio=()=>{
-  const player=radioRef.current;
-  if(player){player.pause();player.removeAttribute('src');player.load();radioRef.current=null}
+  const player=radioRef.current;radioRef.current=null;
+  if(player){player.pause();player.removeAttribute('src');player.load()}
   if(radioContext.current){void radioContext.current.close().catch(()=>{});radioContext.current=null}
  };
  const stop=()=>{
@@ -38,6 +39,12 @@ function AudioSourceHub({open,onClose,onPickLocal,onPickMic,onExternalActivated}
  const stopRef=useRef(stop);stopRef.current=stop;
  useImperativeHandle(ref,()=>({stop:()=>stopRef.current()}),[]);
  useEffect(()=>()=>{stopRef.current()},[]);
+ useEffect(()=>{
+  if(!open)return;
+  const escape=(event:KeyboardEvent)=>{if(event.key==='Escape')onClose()};
+  document.addEventListener('keydown',escape);
+  return()=>document.removeEventListener('keydown',escape);
+ },[open,onClose]);
  const startSystem=async()=>{
   if(!window.isSecureContext||!navigator.mediaDevices?.getDisplayMedia){
    setMessage('System/tab audio capture is unsupported in this browser. Android browsers generally cannot capture another app’s audio. Use the microphone instead.');return;
