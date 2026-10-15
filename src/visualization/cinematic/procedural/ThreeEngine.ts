@@ -11,6 +11,7 @@ import {TEMPLATES,byId,type SceneId} from '../catalog';
 import type {Pulse} from '../paint';
 
 export type RenderQuality='High'|'Balanced'|'Performance';
+export type ProceduralCamera='Automatic'|'Front'|'Orbit'|'Side'|'Top';
 type Look='ocean'|'clouds'|'glass'|'city'|'flames'|'nebula'|'petals'|'tunnel'|'monuments'
  |'paper'|'crystals'|'rings'|'metal'|'underwater'|'prisms';
 export const PROCEDURAL_LOOKS:Record<SceneId,Look>={
@@ -312,6 +313,7 @@ export class ProceduralCinema {
    if(this.look==='ocean'){
     const sun=this.add(this.shared.sphere,gold,new THREE.Vector3(3,2,-10),2.0,0,4);
     sun.scale.set(2.2,2.2,.23);
+    this.animated[this.animated.length-1].baseScale.copy(sun.scale);
    }
   }else if(this.look==='clouds'||this.look==='petals'){
    for(let i=0;i<Math.round(count*.65);i++)
@@ -340,6 +342,7 @@ export class ProceduralCinema {
       i%3===0?gold:i%2===0?dark:hero,new THREE.Vector3(x,y,z),
       .7+rand()*.65,rand()*TAU,2);
     ob.scale.set(.30+rand()*.8,height,.4+rand()*1.3);
+    this.animated[this.animated.length-1].baseScale.copy(ob.scale);
    }
    for(let i=0;i<5;i++)
     this.add(this.shared.torus,glass,new THREE.Vector3((i-2)*3,0,-9+i),
@@ -356,6 +359,7 @@ export class ProceduralCinema {
     const ob=this.add(this.shared.plane,i%3===0?hero:i%2===0?glass:gold,
      position,.5+rand()*2,rand()*TAU,0);
     ob.scale.set(.7+rand()*1.5,.55+rand()*.85,1);
+    this.animated[this.animated.length-1].baseScale.copy(ob.scale);
     ob.rotation.z=(rand()-.5)*1.1;
    }
   }else{ // nebula: floating star temples + orbital geometry
@@ -396,7 +400,7 @@ export class ProceduralCinema {
   this.hasHistory=false;
  }
  render(id:SceneId,p:Pulse,time:number,intensity:number,motionBlur:number,
-  reduced:boolean,quality:RenderQuality,narrativeObjects=true){
+  reduced:boolean,quality:RenderQuality,narrativeObjects=true,cameraMode:ProceduralCamera='Automatic'){
   if(!this.renderer||this.disposed||!this.source||!this.history)return false;
   if(time<this.lastVisualTime-.30||time-this.lastVisualTime>1.2)this.hasHistory=false;
   const delta=Math.max(0,Math.min(.06,time-this.lastVisualTime));
@@ -414,9 +418,17 @@ export class ProceduralCinema {
   }
   this.world.rotation.y=Math.sin(time*.095)*.11*motion;
   this.world.rotation.x=Math.sin(time*.07)*.055*motion;
-  this.camera.position.x=Math.sin(time*.14)*.45*motion;
-  this.camera.position.y=Math.cos(time*.10)*.30*motion;
-  this.camera.position.z=17-bass*.45*motion;
+  const path=cameraMode==='Automatic'?byId[id].camera:cameraMode;
+  const angle=time*.17*motion;
+  this.camera.position.x=path==='Orbit'||path==='orbit'?Math.sin(angle)*2.8:
+   path==='Side'||path==='side'?3.5:
+   Math.sin(time*.14)*.38*motion;
+  this.camera.position.y=path==='Top'?4.6:
+   path==='drift'?Math.cos(time*.13)*.55*motion:
+   Math.cos(time*.10)*.24*motion;
+  this.camera.position.z=path==='push'?16.2-Math.sin(time*.13)*.35*motion:
+   path==='pullback'?18.3+Math.sin(time*.12)*.4*motion:
+   path==='Top'?17.2:17-bass*.45*motion;
   this.camera.lookAt(0,0,0);
   for(const a of this.animated){
    const spin=time*(.1+.025*(a.kind%4))*motion+a.offset;
