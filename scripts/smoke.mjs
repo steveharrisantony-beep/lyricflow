@@ -2,6 +2,7 @@ import {chromium} from 'playwright';
 import {writeFileSync} from 'node:fs';
 import {zipSync} from 'fflate';
 
+function byIdToLabel(id){return id.split('-').map(x=>x[0].toUpperCase()+x.slice(1)).join(' ')}
 function makeAudio(){
  const rate=16000,duration=6,count=rate*duration;
  const wav=Buffer.alloc(44+count*2);
@@ -102,6 +103,31 @@ try{
  await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.premiumArtwork==='active',{timeout:12000});
  if((await page.locator('.artwork-count').textContent())?.trim()!=='26 / 30')throw new Error('Expected 26 bundled premium backgrounds');
  console.log('PASS: bundled GitHub image renders automatically, without any manual ZIP import');
+
+ // Regression: the user observed old wave graphics instead of the real image for Submerged Words.
+ // Exercise every bundled image, not just the last tile. All 26 must decode successfully.
+ const bundledIds=[
+  'bubble-pop','cloud-cathedral','color-riot','concrete-manifesto','crimson-impact',
+  'final-ascension','fragmented-thoughts','glass-architecture','holographic-frequency',
+  'inferno-letterforms','ink-rebellion','marker-diary','midnight-confession',
+  'midnight-transit','monument-titles','neon-velocity','ocean-reverie',
+  'petal-memory','quiet-pages','rain-on-glass','stellar-expansion',
+  'submerged-words','sunset-frequency','type-collision','typographic-vortex','word-playground'
+ ];
+ for(const id of bundledIds){
+  await page.locator('.cinematic-scene-card').filter({hasText:byIdToLabel(id)}).click();
+  await page.waitForFunction(id=>document.querySelector('canvas.cinematic-canvas')?.dataset.currentScene===id,id,{timeout:3000});
+  try{
+   await page.waitForFunction(id=>{
+    const c=document.querySelector('canvas.cinematic-canvas');
+    return c?.dataset.currentScene===id&&c?.dataset.artworkStatus==='ready'&&c?.dataset.premiumArtwork==='active';
+   },id,{timeout:9000});
+  }catch(error){
+   const state=await page.locator('canvas.cinematic-canvas').evaluate(c=>({scene:c.dataset.currentScene,status:c.dataset.artworkStatus,premium:c.dataset.premiumArtwork}));
+   throw new Error('Premium scene artwork failed to appear for '+id+' ('+JSON.stringify(state)+'): '+error.message);
+  }
+ }
+ console.log('PASS: all 26 bundled WebP backgrounds decode and replace procedural scenes, including Submerged Words');
  // A pending scene uses the existing fallback until its own WebP is supplied.
  await page.locator('.cinematic-scene-card').filter({hasText:'Analog Breakdown'}).click();
  await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.premiumArtwork==='fallback',{timeout:6000});
