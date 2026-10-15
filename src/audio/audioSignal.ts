@@ -17,6 +17,8 @@ let frequency:Uint8Array<ArrayBuffer>|null=null;
 let waveform:Uint8Array<ArrayBuffer>|null=null;
 let localAnalyser:AnalyserNode|null=null;
 let microphoneAnalyser:AnalyserNode|null=null;
+let externalAnalyser:AnalyserNode|null=null;
+let externalKind:'SYSTEM AUDIO'|'INTERNET RADIO'|null=null;
 let microphonePlaying=false;
 let mediaElement:HTMLAudioElement|null=null,playing=false,sensitivity=.5;
 let lastSample=0,sectionAt=0,historyCursor=0,historyCount=0,lastSongTime=0;
@@ -27,7 +29,7 @@ const history=new Float32Array(48);
 let audioPump:number|null=null;
 function syncAudioPump(){
  if(typeof window==='undefined')return;
- const active=Boolean(analyser&&(playing||microphonePlaying));
+ const active=Boolean(analyser&&(playing||microphonePlaying||externalKind));
  if(active&&audioPump===null){
   audioPump=window.setInterval(()=>{
    if(!document.hidden)readLocalAudio(performance.now());
@@ -43,7 +45,7 @@ export function getAudioSensitivity(){return sensitivity}
 export function getAudioFrequencyBands():Float32Array{return metrics.bands}
 export function setLocalMediaElement(element:HTMLAudioElement|null){mediaElement=element}
 export function getLocalMediaTime(){
- return mediaElement&&mediaElement.currentSrc&&(!microphonePlaying||playing)?mediaElement.currentTime:null
+ return mediaElement&&mediaElement.currentSrc&&(playing||(!microphonePlaying&&!externalKind))?mediaElement.currentTime:null
 }
 function activate(node:AnalyserNode|null){
  if(node===analyser)return;
@@ -58,21 +60,26 @@ function activate(node:AnalyserNode|null){
  syncAudioPump();
 }
 export function setLocalAudioPlaying(value:boolean){
- playing=value;activate(value?localAnalyser:microphonePlaying?microphoneAnalyser:null);
+ playing=value;activate(value?localAnalyser:externalKind?externalAnalyser:microphonePlaying?microphoneAnalyser:null);
 }
 export function isLocalAudioPlaying(){return playing&&localAnalyser!==null}
 export function isMicrophonePlaying(){return !playing&&microphonePlaying&&microphoneAnalyser!==null}
-export function getInputSource(){return isLocalAudioPlaying()?'LOCAL AUDIO':isMicrophonePlaying()?'MICROPHONE':'IDLE'}
+export function getInputSource(){return isLocalAudioPlaying()?'LOCAL AUDIO':externalKind??(isMicrophonePlaying()?'MICROPHONE':'IDLE')}
 export function connectLocalAudio(node:AnalyserNode|null){
  localAnalyser=node;
- if(playing||!microphonePlaying)activate(playing?node:null);
+ activate(playing?node:externalKind?externalAnalyser:microphonePlaying?microphoneAnalyser:null);
 }
 export function connectMicrophoneAudio(node:AnalyserNode|null){
  microphoneAnalyser=node;microphonePlaying=Boolean(node);
- if(!playing)activate(node);
+ if(!playing&&!externalKind)activate(node);
+}
+/** External permitted audio sources enter the same local-only beat analyzer. */
+export function connectExternalAudio(node:AnalyserNode|null,source:'SYSTEM AUDIO'|'INTERNET RADIO'='SYSTEM AUDIO'){
+ externalAnalyser=node;externalKind=node?source:null;
+ if(!playing)activate(node??(microphonePlaying?microphoneAnalyser:null));
 }
 export function readLocalAudio(now=performance.now()):AudioMetrics|null{
- if(!analyser||!frequency||!waveform||(!playing&&!microphonePlaying))return null;
+ if(!analyser||!frequency||!waveform||(!playing&&!microphonePlaying&&!externalKind))return null;
  if(now-lastSample<11)return metrics;
  lastSample=now;
  const songTime=playing?getLocalMediaTime():null;
