@@ -176,7 +176,7 @@ export function drawExpandedTypography({c,scene,current,whole,width:w,height:h,t
   break;
  }
  case 'final-ascension':{
-  c.shadowColor='#f7e5b8';c.shadowBlur=18+p.downbeat*21;
+  c.shadowColor='#f7e5b8';c.shadowBlur=18+6*Math.sin(t*.25);
   type(c,word,w*.5,h*.45-step*h*.045,size*1.15,'#fff9e5',w*.86,'monument');
   c.shadowBlur=0;
   type(c,upper(all),w*.5,h*.7,size*.30,'#d6bd90',w*.72,'literary');
