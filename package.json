@@ -44,7 +44,8 @@
     "@fontsource/michroma": "^5.2.0",
     "@fontsource/poiret-one": "^5.2.0",
     "@fontsource/special-elite": "^5.2.0",
-    "@fontsource/bungee-shade": "^5.2.0"
+    "@fontsource/bungee-shade": "^5.2.0",
+    "fflate": "^0.8.2"
   },
   "devDependencies": {
     "@types/react": "latest",
