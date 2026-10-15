@@ -5,12 +5,23 @@ const DB_NAME='lyricflow-cinematic-backgrounds';
 const STORE='artwork';
 const DB_VERSION=1;
 const MAX_IN_MEMORY=5;
-type Layer={image:HTMLImageElement;url:string;ready:boolean;failed:boolean};
+/** Shipped as real public/scene-art/*.webp Git files. Four scenes still use fallbacks. */
+export const BUNDLED_SCENES:readonly SceneId[]=[
+ 'bubble-pop','cloud-cathedral','color-riot','concrete-manifesto','crimson-impact',
+ 'final-ascension','fragmented-thoughts','glass-architecture','holographic-frequency',
+ 'inferno-letterforms','ink-rebellion','marker-diary','midnight-confession',
+ 'midnight-transit','monument-titles','neon-velocity','ocean-reverie',
+ 'petal-memory','quiet-pages','rain-on-glass','stellar-expansion',
+ 'submerged-words','sunset-frequency','type-collision','typographic-vortex',
+ 'word-playground'
+] as const;
+const bundled=new Set<SceneId>(BUNDLED_SCENES);
+type Layer={image:HTMLImageElement;url:string;ready:boolean;failed:boolean;revoke:boolean};
 const stored=new Map<SceneId,Blob>();
 const decoded=new Map<SceneId,Layer>();
 let initialized=false;
 let initializing:Promise<void>|null=null;
-let loaded=0;
+
 
 function database():Promise<IDBDatabase>{
  return new Promise((resolve,reject)=>{
@@ -55,13 +66,13 @@ export function initializeArtwork():Promise<void>{
     request.onerror=()=>reject(request.error??new Error('Cannot read installed scene images'));
    });
   }finally{db.close()}
-  loaded=stored.size;initialized=true;
+  initialized=true;
  })().finally(()=>{initializing=null});
  return initializing;
 }
-export function availableArtworkCount(){return loaded}
-export function hasArtwork(scene:SceneId){return stored.has(scene)}
-export function installedArtworks(){return [...stored.keys()]}
+export function availableArtworkCount(){return new Set<SceneId>([...bundled,...stored.keys()]).size}
+export function hasArtwork(scene:SceneId){return stored.has(scene)||bundled.has(scene)}
+export function installedArtworks(){return [...new Set<SceneId>([...bundled,...stored.keys()])]}
 export async function installArtworks(images:ReadonlyMap<SceneId,Blob>){
  if(!images.size)throw new Error('No valid artwork in the selected archive');
  await initializeArtwork();
@@ -69,10 +80,9 @@ export async function installArtworks(images:ReadonlyMap<SceneId,Blob>){
  for(const [id,blob] of images){
   stored.set(id,blob);
   const layer=decoded.get(id);
-  if(layer){URL.revokeObjectURL(layer.url);decoded.delete(id)}
+  if(layer){if(layer.revoke)URL.revokeObjectURL(layer.url);decoded.delete(id)}
  }
- loaded=stored.size;
- return loaded;
+ return availableArtworkCount();
 }
 function sceneLayer(id:SceneId):Layer|null{
  const old=decoded.get(id);
@@ -82,10 +92,10 @@ function sceneLayer(id:SceneId):Layer|null{
   return old;
  }
  const blob=stored.get(id);
- if(!blob)return null;
- const url=URL.createObjectURL(blob);
+ if(!blob&&!bundled.has(id))return null;
+ const url=blob?URL.createObjectURL(blob):`${import.meta.env.BASE_URL}scene-art/${id}.webp`;
  const image=new Image();
- const layer:Layer={image,url,ready:false,failed:false};
+ const layer:Layer={image,url,ready:false,failed:false,revoke:Boolean(blob)};
  image.onload=()=>{layer.ready=true};
  image.onerror=()=>{layer.failed=true};
  image.src=url;
@@ -94,7 +104,7 @@ function sceneLayer(id:SceneId):Layer|null{
   const first=decoded.keys().next().value;
   if(!first)break;
   const stale=decoded.get(first)!;decoded.delete(first);
-  URL.revokeObjectURL(stale.url);
+  if(stale.revoke)URL.revokeObjectURL(stale.url);
  }
  return layer;
 }
