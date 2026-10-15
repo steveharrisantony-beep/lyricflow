@@ -1,5 +1,5 @@
 import {forwardRef,useEffect,useImperativeHandle,useRef,useState} from 'react';
-import {AudioLines,Computer,Mic,Music2,Radio,MonitorSpeaker,ExternalLink,Volume2,X,Square,ChevronRight,Headphones} from 'lucide-react';
+import {Computer,Mic,Music2,Radio,MonitorSpeaker,ExternalLink,Volume2,X,Square,ChevronRight,Headphones} from 'lucide-react';
 import {connectExternalAudio} from './audioSignal';
 
 export interface AudioSourceHubHandle{stop:()=>void}
@@ -19,14 +19,14 @@ function AudioSourceHub({open,onClose,onPickLocal,onPickMic,onExternalActivated}
  const systemStream=useRef<MediaStream|null>(null);
  const systemContext=useRef<AudioContext|null>(null);
  const radioContext=useRef<AudioContext|null>(null);
- const radioRef=useRef<HTMLAudioElement>(null);
+ const radioRef=useRef<HTMLAudioElement|null>(null);
  const closeSystem=()=>{
   systemStream.current?.getTracks().forEach(track=>track.stop());systemStream.current=null;
   if(systemContext.current){void systemContext.current.close().catch(()=>{});systemContext.current=null}
  };
  const closeRadio=()=>{
   const player=radioRef.current;
-  if(player){player.pause();player.removeAttribute('src');player.load()}
+  if(player){player.pause();player.removeAttribute('src');player.load();radioRef.current=null}
   if(radioContext.current){void radioContext.current.close().catch(()=>{});radioContext.current=null}
  };
  const stop=()=>{
@@ -72,10 +72,13 @@ function AudioSourceHub({open,onClose,onPickLocal,onPickMic,onExternalActivated}
    if(address.protocol!=='https:'&&address.protocol!=='http:')throw Error('Use an HTTP(S) audio stream URL.');
    if(location.protocol==='https:'&&address.protocol!=='https:')throw Error('HTTPS pages require an HTTPS radio stream.');
   }catch(e){setMessage(e instanceof Error?e.message:'Enter a valid direct station stream URL.');return}
-  const audio=radioRef.current;if(!audio)return;
+  const audio=new Audio();radioRef.current=audio;
+ audio.addEventListener('ended',()=>{if(radioRef.current===audio){stopRef.current();setMessage('Radio stream ended.')}});
+ audio.addEventListener('error',()=>{if(radioRef.current===audio){stopRef.current();setMessage('Radio playback failed. Check the stream URL and CORS.')}});
   setBusy(true);setMessage('Connecting to station… The station must allow cross-origin audio analysis.');
   try{
    stop();
+   radioRef.current=audio;
    const context=new AudioContext();
    const input=context.createMediaElementSource(audio);
    const analyser=context.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=.38;
@@ -101,8 +104,6 @@ function AudioSourceHub({open,onClose,onPickLocal,onPickMic,onExternalActivated}
    {badge&&<span className="audio-source-badge">{badge}</span>}<ChevronRight size={17}/>
   </button>;
  return <>
-  <audio ref={radioRef} className="visually-hidden" preload="none" onEnded={()=>{if(source==='radio'){stop();setMessage('Radio stream ended.')}}}
-   onError={()=>{if(source==='radio'){stop();setMessage('Radio playback failed. Check the stream URL and its CORS settings.')}}}/>
   {open&&<div className="source-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
    <div className="source-modal" role="dialog" aria-modal="true" aria-label="Select audio source">
     <div className="source-modal-head"><div><span>LYRICFLOW INPUTS</span><h2>Select an audio source</h2><small>All permitted audio analysis stays on this device</small></div><button type="button" aria-label="Close audio sources" className="source-close" onClick={onClose}><X size={21}/></button></div>
