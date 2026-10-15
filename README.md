@@ -74,18 +74,15 @@ The design is inspired by the **architectural concepts** of https://github.com/m
 
 A new `artwork.ts` layer composites original, generated scene imagery below the existing animated narrative elements and kinetic lyrics. The **premium artwork is not coupled to the beat**: it uses subtle independent camera drift and a restrained vignette. Overlaid objects may continue to react to bass and treble. **Lyric scale, glow and word movement now follow the lyric timeline only** — no audio beat/bass pulse is applied to text.
 
-The generated **LyricFlow_26_Premium_Scene_Backgrounds.zip** is available in the ChatGPT project conversation as a download. It contains 26 optimized, 1280px-wide WebP images, each **named exactly after an existing scene ID** (for example, `ocean-reverie.webp`, `rain-on-glass.webp` and `midnight-transit.webp`), and a source/assignment manifest. The pack is about 1.6 MB.
+The same bundled art is also available as **LyricFlow_26_Premium_Scene_Backgrounds.zip** in the ChatGPT project conversation. It contains 26 optimized, 1280px-wide WebP images, each **named exactly after an existing scene ID** (for example, `ocean-reverie.webp`, `rain-on-glass.webp` and `midnight-transit.webp`), and a source/assignment manifest. The pack is about 1.6 MB.
 
-### Install from your Xiaomi Pad 8
+### Built into GitHub — no import required
 
-1. Download the artwork ZIP from the ChatGPT conversation to your tablet.
-2. Reopen LyricFlow through its StackBlitz preview (or your own deployment).
-3. Scroll to **CINEMATIC SCENE LIBRARY → PREMIUM BACKGROUND ARTWORK**.
-4. Tap **Import scene background ZIP** and select the file.
-5. LyricFlow verifies its filenames and WebP headers and stores the images in **IndexedDB on that browser**. It does not transmit them or ask for GitHub/API credentials.
-6. Select an installed scene or play music with the automatic director. The image-based background replaces that scene's original procedural backdrop; text and beat-reactive narrative motifs remain separately composited.
+**All 26 generated WebP files are now committed in `public/scene-art/`**, named after their scene IDs. Open LyricFlow through StackBlitz or your deployment; backgrounds download automatically from the same origin when a scene needs them. Files are optimized to about **1.6 MB total**, with a small decode cache for mobile browsers. Images and lyrics are composited independently.
 
-The importer intentionally uses local caching. **This GitHub commit includes the complete loader but does not yet include the generated binary WebP assets.** The ZIP is delivered separately. A new browser profile/device must import it again. If local browser storage is cleared, the images must be reimported.
+**Optional custom artwork:** Under **CINEMATIC SCENE LIBRARY → PREMIUM BACKGROUND ARTWORK**, tap **Import or replace scene artwork** and select a ZIP of scene-named WebPs. This locally overrides bundled images or adds an image for one of the four missing scenes. Overrides are kept in IndexedDB on the current browser; there is no server upload, GitHub token or subscription required. Other devices continue using the 26 included images until you add overrides.
+
+The separate downloadable ZIP remains available as a backup and as a reference of the exact scene file names. It is not required for normal use.
 
 **Remaining four scene backgrounds:** `analog-breakdown`, `monochrome-memory`, `ransom-poetry` and `pixel-pulse`. These currently retain their original procedural visuals instead of reusing an unrelated generated image.
 
