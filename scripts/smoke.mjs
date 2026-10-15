@@ -11,7 +11,8 @@ function makeAudio(){
  wav.write('data',36);wav.writeUInt32LE(count*2,40);
  for(let i=0;i<count;i++){
   const t=i/rate;
-  const sample=(Math.sin(2*Math.PI*110*t)*.55+Math.sin(2*Math.PI*440*t)*.23)*.7;
+  const rhythm=Math.exp(-(t%0.5)*17);
+  const sample=(Math.sin(2*Math.PI*110*t)*.55+Math.sin(2*Math.PI*440*t)*.23)*.8*rhythm;
   wav.writeInt16LE(Math.round(sample*32760),44+i*2);
  }
  return wav;
@@ -34,6 +35,18 @@ try{
  await page.locator('.lyrics-editor textarea').first().fill('[00:00.00]Rain falls on my river\n[00:02.00]The ocean flows\n[00:04.00]Water, waves and rain');
  await page.waitForFunction(()=>document.querySelector('.scene-summary')?.textContent?.includes('WATER'),{timeout:6000});
  console.log('PASS: lyrics produce context-driven scene selection');
+ await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.lyricLayout!=='none',{timeout:6000});
+ const initialLayout=await page.locator('canvas.cinematic-canvas').getAttribute('data-lyric-layout');
+ if(!initialLayout||initialLayout==='none'||initialLayout==='classic')throw new Error('Spatial lyric director did not activate');
+ console.log('PASS: spatial typography generated a lyric-specific composition');
+ await page.getByLabel('Spatial kinetic lyrics').uncheck();
+ await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.lyricLayout==='classic',{timeout:6000});
+ await page.getByLabel('Spatial kinetic lyrics').check();
+ console.log('PASS: spatial typography can be toggled without losing lyrics');
+ await page.getByLabel('Narrative objects').uncheck();
+ await page.waitForFunction(()=>document.querySelector('canvas.cinematic-canvas')?.dataset.motif==='disabled',{timeout:6000});
+ await page.getByLabel('Narrative objects').check();
+ console.log('PASS: lyric narrative layer can be toggled independently');
  const canvasCount=await page.locator('canvas.cinematic-canvas').count();
  if(canvasCount!==1)throw new Error('Cinematic renderer must own exactly one canvas');
  if(await page.locator('.three-lyrics canvas, canvas.visual-canvas:not(.cinematic-canvas)').count())throw new Error('Legacy visual layer still mounted');
@@ -53,6 +66,7 @@ try{
  console.log('PASS: all 30 scene controls rendered on tablet-sized layout');
  const loadedFonts=await page.evaluate(async()=>{
   const families=['400 24px "Anton"','700 24px "Orbitron"','700 24px "Unbounded"',
+   '400 24px "Italiana"','400 24px "Gloock"','400 24px "Michroma"',
    '400 24px "Press Start 2P"','600 24px "Bodoni Moda"','700 24px "Cinzel Decorative"'];
   for(const f of families){
    const loaded=await document.fonts.load(f,'LYRICFLOW');
