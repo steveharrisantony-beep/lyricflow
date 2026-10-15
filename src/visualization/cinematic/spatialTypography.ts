@@ -51,7 +51,7 @@ export interface SpatialArgs{
  * Cotodama-inspired spatial arrangement, not a copy of proprietary layouts.
  * Whole lyric is legible while its active word shifts scale/angle on the timeline.
  */
-export function drawSpatialTypography({c,scene,cue,time,mode,w,h,p,intensity,reduced}:SpatialArgs):SpatialLayout{
+export function drawSpatialTypography({c,scene,cue,time,mode,w,h,p:_p,intensity,reduced}:SpatialArgs):SpatialLayout{
  const layout=spatialLayoutFor(scene,cue.text);
  const font=spatialFontFor(scene,cue.text);
  const design=sceneColors(scene.id),v=visualWord(cue,time,mode);
@@ -59,7 +59,8 @@ export function drawSpatialTypography({c,scene,cue,time,mode,w,h,p,intensity,red
  const unit=Math.min(w,h);
  const motion=reduced?0:clamp(intensity);
  const enter=1-Math.min(1,v.percent*3);
- const punch=1+p.beat*.16*motion+p.bass*.14*motion;
+ // Word animation is driven by lyric timestamps, never music beats or frequency bands.
+ const punch=1+Math.sin(v.percent*Math.PI)*.055*motion;
  const title=v.word.toLocaleUpperCase().slice(0,90);
  const full=v.line.slice(0,320);
  const native=usesNativeScript(full);
@@ -67,7 +68,7 @@ export function drawSpatialTypography({c,scene,cue,time,mode,w,h,p,intensity,red
  const small=unit*(full.length>85?.045:full.length>45?.062:.085);
  c.save();
  c.shadowBlur=0;c.lineJoin='round';
- const alpha=.14+.08*p.treble;
+ const alpha=.14;
  switch(layout){
  case 'asymmetric':
   write(c,title,w*.66+(enter*w*.04),h*.41,large*1.38*punch,ink,w*.66,font,-.045);
@@ -107,7 +108,7 @@ export function drawSpatialTypography({c,scene,cue,time,mode,w,h,p,intensity,red
  }
  case 'orbit':{
   // Position text around a central negative-space circle / narrative object.
-  c.globalAlpha=.31;c.strokeStyle=accent;c.lineWidth=1.6+p.treble*2;
+  c.globalAlpha=.31;c.strokeStyle=accent;c.lineWidth=1.6;
   c.beginPath();c.ellipse(w*.50,h*.49,w*.22,h*.28,-.2,0,Math.PI*2);c.stroke();
   c.globalAlpha=1;
   write(c,title,w*.52,h*.21,large*.95*punch,ink,w*.75,font);
