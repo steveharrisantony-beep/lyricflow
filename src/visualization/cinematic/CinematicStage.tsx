@@ -10,7 +10,7 @@ import {getInputSource,getLocalMediaTime,readLocalAudio} from '../../audio/audio
 import {AUDIO_ONLY_SCENES,buildCinematicSchedule,byId,sceneAt,type DirectedScene,type SceneId} from './catalog';
 import {NO_AUDIO,type Pulse} from './paint';
 import {drawInstrumentalMark} from './typography';
-import {selectMotif} from './narrative';
+import {drawNarrativeObjects,selectMotif} from './narrative';
 import {ProceduralCinema} from './procedural/ThreeEngine';
 import {GraphicCompositions,type GraphicSystem} from './procedural/GraphicCompositions';
 
@@ -36,17 +36,32 @@ const sceneForAudio=(time:number,manual:SceneId,auto:boolean):DirectedScene=>{
  transition:template.transition,variation:index%5,section:index,reason:'audio-only visualizer'};
 };
 function drawSafeFallback(c:CanvasRenderingContext2D,id:SceneId,w:number,h:number,t:number,p:Pulse){
- const palette=byId[id],grad=c.createLinearGradient(0,0,w,h);
+ const palette=byId[id],u=Math.min(w,h),grad=c.createLinearGradient(0,0,w,h);
  grad.addColorStop(0,palette.background);grad.addColorStop(1,'#050916');
  c.fillStyle=grad;c.fillRect(0,0,w,h);
- const glow=c.createRadialGradient(w*.5,h*.46,0,w*.5,h*.48,w*.62);
- glow.addColorStop(0,palette.accent+'50');glow.addColorStop(1,'transparent');
+ const glow=c.createRadialGradient(w*.5,h*.46,0,w*.5,h*.48,w*.65);
+ glow.addColorStop(0,palette.accent+'58');glow.addColorStop(1,'transparent');
  c.fillStyle=glow;c.fillRect(0,0,w,h);
- c.save();c.translate(w*.5,h*.5);c.rotate(t*.035);
- for(let i=0;i<11;i++){
-  c.beginPath();c.strokeStyle=palette.foreground+'4a';c.lineWidth=1+p.bass;
-  c.ellipse(0,0,w*(.08+i*.025),h*(.1+i*.022),0,i*.2,i*.2+Math.PI*1.7);c.stroke();
- }c.restore();
+ // Perspective horizon grid
+ c.save();
+ c.strokeStyle=palette.foreground+'1f';
+ c.lineWidth=1;
+ const horizonY=h*.56;
+ for(let i=-6;i<=6;i++){
+  c.beginPath();c.moveTo(w*.5+i*w*.04,horizonY);c.lineTo(w*.5+i*w*.15,h);c.stroke();
+ }
+ for(let j=1;j<=6;j++){
+  const yy=horizonY+(h-horizonY)*(j/6)**1.6;
+  c.beginPath();c.moveTo(0,yy);c.lineTo(w,yy);c.stroke();
+ }
+ c.translate(w*.5,h*.48);c.rotate(t*.04);
+ for(let i=0;i<12;i++){
+  c.beginPath();c.strokeStyle=i%3===0?palette.accent+'88':palette.foreground+'4a';
+  c.lineWidth=1.2+p.bass*2;
+  c.ellipse(0,0,u*(.09+i*.028)*(1+p.bass*.08),u*(.11+i*.024)*(1+p.mids*.06),0,i*.2,i*.2+Math.PI*1.75);
+  c.stroke();
+ }
+ c.restore();
 }
 function useCinematicRenderer(props:CinematicProps){
  const host=useRef<HTMLDivElement>(null);
@@ -199,6 +214,9 @@ function useCinematicRenderer(props:CinematicProps){
    // Scene construction/rendering can take time. Never draw words with an earlier media timestamp.
    const lyricClock=getLocalMediaTime()??time;
    lyric=getLyricState(lyricClock);
+   if(config.narrativeObjects){
+    drawNarrativeObjects(textCtx,scene,lyric.cue,w,h,visualTime,pulse,factor,config.reducedMotion);
+   }
    if(lyric.cue){
     const project=visualMode==='cinematic'&&graphics.available?
      (x:number,y:number,z:number)=>graphics.projectPoint(x,y,z,w,h):makeLyricProjection(w,h,cameraFrame);
