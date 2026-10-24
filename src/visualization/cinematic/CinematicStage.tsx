@@ -1,7 +1,7 @@
 import {setLyricBackdrop} from './contrast';
 import {drawMotionGraphics,MOTION_SCENES} from './procedural/MotionGraphics';
 import {drawSceneTransition,transitionProgress,sceneEntryPose} from './transitions';
-import {drawKineticLyrics,lyricWordHit} from './kineticTypography';
+import {drawKineticLyrics,lyricWordHit,type LyricMotion} from './kineticTypography';
 import {MusicCameraRig,makeLyricProjection} from './cameraRig';
 import {getSpectrumSensitivity} from '../../audio/audioSignal';
 import {useEffect,useRef} from 'react';
@@ -20,6 +20,8 @@ export interface CinematicProps{
  quality:Quality;intensity:number;speed:number;reducedMotion:boolean;
  demo:boolean;paused:boolean;autoScenes:boolean;cameraMode:CameraMode;manualScene:SceneId;
  spatialTypography:boolean;narrativeObjects:boolean;motionBlur:number;
+ enabledScenes?:readonly SceneId[];
+ enabledKineticMotions?:readonly LyricMotion[];
 }
 /** The first three hand-directed showcases have separate rendering grammars. */
 export function visualSystemFor(id:SceneId):GraphicSystem|'cinematic'|'motion2d'{
@@ -28,9 +30,11 @@ export function visualSystemFor(id:SceneId):GraphicSystem|'cinematic'|'motion2d'
  if(id==='color-riot')return 'geometry';
  return 'cinematic';
 }
-const sceneForAudio=(time:number,manual:SceneId,auto:boolean):DirectedScene=>{
+const sceneForAudio=(time:number,manual:SceneId,auto:boolean,enabledScenes?:readonly SceneId[]):DirectedScene=>{
  const index=Math.max(0,Math.floor(time/13));
- const id=auto?AUDIO_ONLY_SCENES[index%AUDIO_ONLY_SCENES.length]:manual;
+ const allowed=enabledScenes&&enabledScenes.length>0?AUDIO_ONLY_SCENES.filter(s=>enabledScenes.includes(s)):AUDIO_ONLY_SCENES;
+ const pool=allowed.length>0?allowed:AUDIO_ONLY_SCENES;
+ const id=auto?pool[index%pool.length]:manual;
  const template=byId[id];
  return {id,start:index*13,end:(index+1)*13,font:template.font,layout:template.layout,camera:template.camera,
  transition:template.transition,variation:index%5,section:index,reason:'audio-only visualizer'};
@@ -85,7 +89,7 @@ function useCinematicRenderer(props:CinematicProps){
   wrapper.insertBefore(glCanvas,fx);
   element.dataset.renderer=graphics.available?'WEBGL 3D':'CANVAS FALLBACK';
   if(!graphics.available)element.dataset.rendererError='WebGL unavailable. Using Canvas fallback.';
-  let raf=0,last=0,elapsed=0,frames=0,fpsTime=0,quality=props.quality,revision=-1;
+  let raf=0,last=0,elapsed=0,frames=0,fpsTime=0,quality=props.quality,revision=-1,enabledScenesKey='';
   let sequence:DirectedScene[]=[];
   let w=1,h=1,adaptiveScale=1,slowSeconds=0,fastSeconds=0,modeLast='';
   const sample=document.createElement('canvas');sample.width=48;sample.height=30;
@@ -141,14 +145,16 @@ function useCinematicRenderer(props:CinematicProps){
    }
    const mediaTime=getLocalMediaTime(),time=mediaTime??elapsed;
    const snapshot=getLyricTimelineSnapshot();
-   if(snapshot.revision!==revision){
+   const currentScenesKey=(config.enabledScenes||[]).join(',');
+   if(snapshot.revision!==revision||currentScenesKey!==enabledScenesKey){
     revision=snapshot.revision;
+    enabledScenesKey=currentScenesKey;
     const key=snapshot.cues.map(c=>c.text).join('|').slice(0,1500);
-    sequence=buildCinematicSchedule(snapshot.sections,snapshot.cues,snapshot.genre,key);
+    sequence=buildCinematicSchedule(snapshot.sections,snapshot.cues,snapshot.genre,key,config.enabledScenes);
    }
    let lyric=getLyricState(time);
    const directed=config.autoScenes&&sequence.length>0?sceneAt(sequence,lyric.position):null;
-   const scene=directed??sceneForAudio(time,config.manualScene,config.autoScenes);
+   const scene=directed??sceneForAudio(time,config.manualScene,config.autoScenes,config.enabledScenes);
    const measured=readLocalAudio(now),source=getInputSource();
    const isDemo=source==='IDLE'&&config.demo&&mediaTime===null;
    const fake=isDemo?.20+.13*Math.sin(time*2.2)+.12*Math.pow(Math.max(0,Math.sin(time*3.4)),12):0;
@@ -221,7 +227,7 @@ function useCinematicRenderer(props:CinematicProps){
     const project=visualMode==='cinematic'&&graphics.available?
      (x:number,y:number,z:number)=>graphics.projectPoint(x,y,z,w,h):makeLyricProjection(w,h,cameraFrame);
     const result=drawKineticLyrics({c:textCtx,scene,cue:lyric.cue,time:lyric.position,
-     mode:lyric.mode,w,h,intensity:factor,reduced:config.reducedMotion,emphasis:snapshot.emphasis,project,animated:config.spatialTypography});
+     mode:lyric.mode,w,h,intensity:factor,reduced:config.reducedMotion,emphasis:snapshot.emphasis,project,animated:config.spatialTypography,enabledMotions:config.enabledKineticMotions});
     element.dataset.lyricLayout=config.spatialTypography?result.motion:'classic';
     element.dataset.lyricText=result.text;element.dataset.lyricWords=String(result.words);element.dataset.lyricDraws=String(result.drawn);
     element.dataset.lyricHighlights=String(result.highlights);element.dataset.lyricFont=result.font;

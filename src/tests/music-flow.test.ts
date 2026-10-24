@@ -1,6 +1,10 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import {parseSongs,resolveSong,searchSongs,resolverBase,type SongResult} from '../music/providers';
 import {isAutomaticLyricMatch,resolveAutomaticLyrics} from '../lyrics/providers';
+import {convertTtmlToEnhancedLrc,convertStructuredAppleJsonToLrc} from '../lyrics/appleLyrics';
+import {buildCinematicSchedule,TEMPLATES} from '../visualization/cinematic/catalog';
+import {lyricMotionFor} from '../visualization/cinematic/kineticTypography';
+import {buildCues} from '../lyrics/lyricTimeline';
 import {getAudioSensitivity,getSpectrumSensitivity,setSpectrumSensitivity,spectrumResponse} from '../audio/audioSignal';
 import {motionChannel,objectDrive} from '../visualization/cinematic/procedural/audioMotion';
 import type {TrackInfo,TrackCandidate} from '../metadata/trackInfo';
@@ -36,7 +40,7 @@ describe('music source boundaries',()=>{
   expect(resolved.streamUrl).toBe('https://resolver.example/audio/abcdefghijk');expect(resolved.artist).toBe('Verified Artist');
  });
 });
-describe('automatic lyric recording matching',()=>{
+describe('automatic lyric recording matching & Apple Music TTML word-sync',()=>{
  it('requires the correct title, artist, timing and duration',()=>{
   expect(isAutomaticLyricMatch(track,candidate)).toBe(true);
   for(const change of [{artist:'Cover artist'},{title:'Original rain live'},{duration:200},{instrumental:true},{hasSynced:false}])expect(isAutomaticLyricMatch(track,{...candidate,...change})).toBe(false);
@@ -57,6 +61,28 @@ describe('automatic lyric recording matching',()=>{
   const mock=vi.fn().mockResolvedValueOnce({ok:false,status:404}).mockResolvedValueOnce({ok:true,json:async()=>[raw,{...raw,id:2}]});vi.stubGlobal('fetch',mock);
   expect(await resolveAutomaticLyrics(track)).toBeNull();expect(mock).toHaveBeenCalledTimes(2);
  });
+ it('converts Apple Music TTML and syllable JSON into enhanced word-synced LRC',()=>{
+  const ttml='<tt><body><div><p begin="00:02.00" end="00:05.00"><span begin="00:02.00" end="00:03.20">Feel</span> <span begin="00:03.20" end="00:05.00">sound</span></p></div></body></tt>';
+  const parsedTtml=convertTtmlToEnhancedLrc(ttml);
+  expect(parsedTtml.hasWordSync).toBe(true);
+  expect(parsedTtml.lrc).toContain('[00:02.00]<00:02.00>Feel <00:03.20>sound');
+  const parsedJson=convertStructuredAppleJsonToLrc({
+   lyrics:[{time:1500,syllabus:[{text:'Hello',time:1500,duration:400},{text:'world',time:1900,duration:600}]}]
+  });
+  expect(parsedJson.hasWordSync).toBe(true);
+  expect(parsedJson.lrc).toContain('[00:01.50]<00:01.50>Hello <00:01.90>world');
+ });
+ it('restricts scheduled themes and kinetic motions to user-enabled subsets',()=>{
+  const cues=buildCues([{time:0,text:'Rain falls down'},{time:15,text:'Fire burns bright'}],[]);
+  const schedule=buildCinematicSchedule([],cues,'pop','test-key',['neon-velocity','glass-architecture']);
+  expect(schedule.length).toBeGreaterThan(0);
+  expect(schedule.every(s=>s.id==='neon-velocity'||s.id==='glass-architecture')).toBe(true);
+  const scene={...TEMPLATES[0],start:0,end:10,variation:1,section:0,reason:'test'};
+  for(let i=0;i<25;i++){
+   const motion=lyricMotionFor({...scene,variation:i},'Line '+i,['stamp','ribbon']);
+   expect(['stamp','ribbon']).toContain(motion);
+  }
+ });
 });
 describe('independent spectrum gain and instrument roles',()=>{
  it('lowers spectral energy without touching beat/overall sensitivity',()=>{
@@ -72,3 +98,4 @@ describe('independent spectrum gain and instrument roles',()=>{
   expect(objectDrive('bass',1,0,0,1)).toBe(1);expect(objectDrive('treble',0,0,1,0)).toBe(1);
  });
 });
+

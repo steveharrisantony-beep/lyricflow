@@ -93,11 +93,14 @@ function compareCandidates(a:Template,b:Template,plan:ScenePlan,genre:string,rec
  return grade(b)-grade(a);
 }
 /** Pure song-level scheduler. Scene choices are stable when seeking or replaying. */
-export function buildCinematicSchedule(plans:readonly ScenePlan[],cues:readonly LyricCue[],genre='',songKey=''):DirectedScene[]{
+export function buildCinematicSchedule(plans:readonly ScenePlan[],cues:readonly LyricCue[],genre='',songKey='',enabledScenes?:readonly SceneId[]):DirectedScene[]{
  if(!cues.length)return [];
  const g=normalizeGenre(genre);
  const recent:SceneId[]=[];
  const result:DirectedScene[]=[];
+ const allowedSet=enabledScenes&&enabledScenes.length>0?new Set(enabledScenes):null;
+ const pool=allowedSet?TEMPLATES.filter(t=>allowedSet.has(t.id)):TEMPLATES;
+ const activeTemplates=pool.length>0?pool:TEMPLATES;
  // Long sections are split into cinematic beats; lyric callbacks remain inside a visual family.
  const source=plans.length?plans:[{
   start:cues[0].time,end:cues[cues.length-1].end,mood:'abstract',font:'grotesk',
@@ -112,7 +115,7 @@ export function buildCinematicSchedule(plans:readonly ScenePlan[],cues:readonly 
    const start=section.start+duration*part/n;
    const finish=part===n-1?end:section.start+duration*(part+1)/n;
    const seed=stableHash(songKey+':'+i+':'+part);
-   const sorted=[...TEMPLATES].sort((a,b)=>compareCandidates(a,b,section,g,recent,seed));
+   const sorted=[...activeTemplates].sort((a,b)=>compareCandidates(a,b,section,g,recent,seed));
    const chosen=sorted[0];
    const variation=seed%5;
    const layout=LAYOUTS[(LAYOUTS.indexOf(chosen.layout)+variation)%LAYOUTS.length];

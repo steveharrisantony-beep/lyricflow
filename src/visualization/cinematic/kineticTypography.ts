@@ -17,8 +17,9 @@ const hash=(s:string)=>{
  return (n^(n>>>16))>>>0;
 };
 
-export function lyricMotionFor(scene:DirectedScene,text:string):LyricMotion{
- return LYRIC_MOTIONS[hash(scene.id+'|'+text+'|'+scene.variation)%LYRIC_MOTIONS.length];
+export function lyricMotionFor(scene:DirectedScene,text:string,enabledMotions?:readonly LyricMotion[]):LyricMotion{
+ const pool=enabledMotions&&enabledMotions.length>0?enabledMotions:LYRIC_MOTIONS;
+ return pool[hash(scene.id+'|'+text+'|'+scene.variation)%pool.length];
 }
 
 const packs:readonly FontPack[]=['impact','rounded','ultra','glass','industrial','tech','noir','cyber'];
@@ -88,6 +89,7 @@ export interface KineticArgs {
  emphasis:WordEmphasis;
  project?:ProjectPoint;
  animated?:boolean;
+ enabledMotions?:readonly LyricMotion[];
 }
 
 export interface KineticResult {
@@ -293,9 +295,10 @@ export function drawKineticLyrics({
  reduced,
  emphasis,
  project=makeLyricProjection(w,h,STILL_CAMERA),
- animated=true
+ animated=true,
+ enabledMotions
 }:KineticArgs):KineticResult{
- const motion=lyricMotionFor(scene,cue.text);
+ const motion=lyricMotionFor(scene,cue.text,enabledMotions);
  const font=lyricFontFor(scene,cue.text);
  const runs=lyricRuns(cue,mode,emphasis);
  const theme=byId[scene.id];

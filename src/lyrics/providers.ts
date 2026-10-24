@@ -1,6 +1,8 @@
 import {providerRequest} from '../network/request';
 import type {TrackInfo, TrackCandidate, SearchRecord} from '../metadata/trackInfo';
 import {rankCandidate} from '../metadata/trackInfo';
+import {fetchAppleMusicWordSyncedLyrics} from './appleLyrics';
+
 export interface LyricProvider {
  id:string; label:string;
  search(track:TrackInfo, signal?:AbortSignal):Promise<TrackCandidate[]>;
@@ -12,7 +14,7 @@ const record=(v:unknown):SearchRecord|null=>{
  if(!isRecord(v)||!Number.isSafeInteger(v.id)||!str(v.trackName))return null;
  return {id:num(v.id),trackName:str(v.trackName),artistName:str(v.artistName),
  albumName:str(v.albumName),duration:num(v.duration),instrumental:v.instrumental===true,
- syncedLyrics:typeof v.syncedLyrics==='string'?v.syncedLyrics:null,hasWordSync:v.hasWordSync===true};
+ syncedLyrics:typeof v.syncedLyrics==='string'?v.syncedLyrics:null,hasWordSync:v.hasWordSync===true || (typeof v.syncedLyrics==='string'&&v.syncedLyrics.includes('<'))};
 };
 export const lrclibProvider:LyricProvider={
  id:'lrclib',label:'LRCLIB (track candidates)',
@@ -33,7 +35,7 @@ export const lrclibProvider:LyricProvider={
 export async function retrievePermittedLyrics(candidate:TrackCandidate, signal?:AbortSignal){
  if(!Number.isSafeInteger(candidate.id)||candidate.id<=0)throw new Error('Invalid lyrics ID');
  signal?.throwIfAborted();
- if(candidate.syncedLyrics)return {synced:candidate.syncedLyrics,plain:'',source:'LRCLIB',sourceUrl:candidate.url,license:'Rights supplied by user'};
+ if(candidate.syncedLyrics)return {synced:candidate.syncedLyrics,plain:'',source:candidate.hasWordSync?'LRCLIB · Word-Synced':'LRCLIB',sourceUrl:candidate.url,license:'Rights supplied by user'};
  const response=await providerRequest('https://lrclib.net/api/get/'+candidate.id,signal);
  if(!response.ok)throw new Error('Lyrics provider returned HTTP '+response.status);
  const data:unknown=await response.json();
@@ -62,7 +64,6 @@ export async function resolveAutomaticLyrics(track:TrackInfo,signal?:AbortSignal
   const raw:unknown=await res.json(),valid=record(raw);
   if(valid){const candidate=rankCandidate(track,valid);
    if(isAutomaticLyricMatch(track,candidate))return {original:valid.syncedLyrics||'',romanized:'',source:'LRCLIB · matched recording',sourceUrl:candidate.url};
-
   }
  }else if(res.status===429)throw Error('Automatic lyrics temporarily unavailable (HTTP '+res.status+'). Retry or import LRC.');
  const candidates=await lrclibProvider.search(track,signal);
@@ -71,6 +72,94 @@ export async function resolveAutomaticLyrics(track:TrackInfo,signal?:AbortSignal
  if(matches.length!==1){if(!res.ok&&res.status!==404&&!matches.length)throw Error('Lyrics provider is temporarily unavailable. Try again shortly.');return null}
  const lyric=await retrievePermittedLyrics(matches[0],signal);
  return lyric.synced?{original:lyric.synced,romanized:'',source:lyric.source,sourceUrl:lyric.sourceUrl}:null;
+}
+
+export interface StashResolvedLyrics {
+ original:string;
+ romanized:string;
+ plain?:string;
+ source:string;
+ sourceUrl?:string;
+ hasWordSync:boolean;
+ candidates:TrackCandidate[];
+}
+
+/**
+ * Stash-style automatic lyrics resolution pipeline:
+ * 1. Queries Apple Music word-synced lyrics library (TTML / syllable word sync)
+ * 2. Falls back to LRCLIB exact match (duration-bounded)
+ * 3. Falls back to top-ranked LRCLIB synced or plain lyrics candidate
+ */
+export async function resolveStashLyricsChain(
+ track:TrackInfo,
+ signal?:AbortSignal
+):Promise<StashResolvedLyrics|null>{
+ if(track.title.trim().length<2)return null;
+ const cleaned:TrackInfo={
+  ...track,
+  title:cleanLyricMetadata(track.title),
+  artist:cleanLyricMetadata(track.artist)
+ };
+
+ // 1. Try Apple Music word-synced lyrics first (Stash primary word-sync source)
+ try{
+  const apple=await fetchAppleMusicWordSyncedLyrics(cleaned,signal);
+  if(apple&&apple.lrc){
+   // Also fetch LRCLIB candidates in background for alternative version switcher
+   const backupCandidates=await lrclibProvider.search(cleaned,signal).catch(()=>[]);
+   return {
+    original:apple.lrc,
+    romanized:'',
+    source:apple.source,
+    sourceUrl:apple.sourceUrl,
+    hasWordSync:apple.hasWordSync,
+    candidates:backupCandidates
+   };
+  }
+ }catch(e){
+  if(signal?.aborted)throw e;
+ }
+
+ // 2. Try exact LRCLIB recording lookup
+ try{
+  if(cleaned.artist&&cleaned.duration>0){
+   const exact=await resolveAutomaticLyrics(cleaned,signal);
+   if(exact&&exact.original){
+    const candidates=await lrclibProvider.search(cleaned,signal).catch(()=>[]);
+    return {
+     original:exact.original,
+     romanized:exact.romanized,
+     source:exact.original.includes('<')?'LRCLIB · Word-Synced':'LRCLIB · Synced',
+     sourceUrl:exact.sourceUrl,
+     hasWordSync:exact.original.includes('<'),
+     candidates
+    };
+   }
+  }
+ }catch(e){
+  if(signal?.aborted)throw e;
+ }
+
+ // 3. Fallback to LRCLIB ranked search candidates (best synced or plain match)
+ const candidates=await lrclibProvider.search(cleaned,signal).catch(()=>[]);
+ if(!candidates.length)return null;
+
+ const bestSynced=candidates.find(c=>c.hasSynced&&!c.instrumental&&c.confidence>=0.38);
+ const target=bestSynced||candidates.find(c=>!c.instrumental)||candidates[0];
+ if(!target)return null;
+
+ const retrieved=await retrievePermittedLyrics(target,signal);
+ if(!retrieved.synced&&!retrieved.plain)return null;
+
+ return {
+  original:retrieved.synced,
+  romanized:'',
+  plain:retrieved.plain,
+  source:retrieved.synced?(retrieved.synced.includes('<')?'LRCLIB · Word-Synced':'LRCLIB · Synced'):'LRCLIB · Plain Text',
+  sourceUrl:retrieved.sourceUrl,
+  hasWordSync:retrieved.synced.includes('<'),
+  candidates
+ };
 }
 
 /** Remove upload packaging only; preserve live/remix/acoustic/version identity. */
