@@ -101,7 +101,9 @@ export async function resolveStashLyricsChain(
   artist:cleanLyricMetadata(track.artist)
  };
 
- // 1. Try Apple Music word-synced lyrics first (Stash primary word-sync source)
+ let fallbackPlainResult: { plain: string; source: string; sourceUrl?: string } | null = null;
+
+ // 1. Try Stash Apple Music / ISRC TTML / Musixmatch / KuGou word-synced & synced lyrics first
  try{
   const apple=await fetchAppleMusicWordSyncedLyrics(cleaned,signal);
   if(apple&&apple.lrc){
@@ -109,12 +111,15 @@ export async function resolveStashLyricsChain(
    const backupCandidates=await lrclibProvider.search(cleaned,signal).catch(()=>[]);
    return {
     original:apple.lrc,
-    romanized:'',
+    romanized:apple.romanizedLrc||'',
     source:apple.source,
     sourceUrl:apple.sourceUrl,
     hasWordSync:apple.hasWordSync,
     candidates:backupCandidates
    };
+  }
+  if(apple&&apple.plain){
+   fallbackPlainResult={plain:apple.plain,source:apple.source,sourceUrl:apple.sourceUrl};
   }
  }catch(e){
   if(signal?.aborted)throw e;
@@ -142,19 +147,45 @@ export async function resolveStashLyricsChain(
 
  // 3. Fallback to LRCLIB ranked search candidates (best synced or plain match)
  const candidates=await lrclibProvider.search(cleaned,signal).catch(()=>[]);
- if(!candidates.length)return null;
+ if(!candidates.length){
+  if(fallbackPlainResult){
+   return {
+    original:'',
+    romanized:'',
+    plain:fallbackPlainResult.plain,
+    source:fallbackPlainResult.source,
+    sourceUrl:fallbackPlainResult.sourceUrl,
+    hasWordSync:false,
+    candidates:[]
+   };
+  }
+  return null;
+ }
 
  const bestSynced=candidates.find(c=>c.hasSynced&&!c.instrumental&&c.confidence>=0.38);
  const target=bestSynced||candidates.find(c=>!c.instrumental)||candidates[0];
  if(!target)return null;
 
  const retrieved=await retrievePermittedLyrics(target,signal);
- if(!retrieved.synced&&!retrieved.plain)return null;
+ if(!retrieved.synced&&!retrieved.plain){
+  if(fallbackPlainResult){
+   return {
+    original:'',
+    romanized:'',
+    plain:fallbackPlainResult.plain,
+    source:fallbackPlainResult.source,
+    sourceUrl:fallbackPlainResult.sourceUrl,
+    hasWordSync:false,
+    candidates
+   };
+  }
+  return null;
+ }
 
  return {
   original:retrieved.synced,
   romanized:'',
-  plain:retrieved.plain,
+  plain:retrieved.plain||fallbackPlainResult?.plain,
   source:retrieved.synced?(retrieved.synced.includes('<')?'LRCLIB · Word-Synced':'LRCLIB · Synced'):'LRCLIB · Plain Text',
   sourceUrl:retrieved.sourceUrl,
   hasWordSync:retrieved.synced.includes('<'),

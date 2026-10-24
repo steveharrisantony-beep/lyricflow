@@ -10,6 +10,27 @@ export function readableInk(background:string,preferred?:string){
  return contrastRatio(background,'#fffaf2')>=contrastRatio(background,'#151820')?'#fffaf2':'#151820';
 }
 
+function blendHex(hexA:string,hexB:string,t:number):string{
+ const a=hexA.replace('#',''),b=hexB.replace('#','');
+ const ch=[0,2,4].map(i=>{
+  const va=parseInt(a.slice(i,i+2),16),vb=parseInt(b.slice(i,i+2),16);
+  return Math.round(va+(vb-va)*t).toString(16).padStart(2,'0');
+ });
+ return '#'+ch.join('');
+}
+
+/** Preserve chromatic lyric colors while guaranteeing legibility over dynamic 3D/2D surfaces. */
+export function readableChromaticInk(background:string,preferred?:string):string{
+ if(!preferred||!/^#[a-f0-9]{6}$/i.test(preferred))return readableInk(background,preferred);
+ if(contrastRatio(background,preferred)>=3.0)return preferred;
+ const pole=luminance(background)<0.38?'#ffffff':'#101521';
+ for(const mix of [0.22,0.38,0.52,0.68]){
+  const candidate=blendHex(preferred,pole,mix);
+  if(contrastRatio(background,candidate)>=3.2)return candidate;
+ }
+ return readableInk(background,preferred);
+}
+
 const backdrops=new WeakMap<CanvasRenderingContext2D,{data:Uint8ClampedArray;width:number;height:number}>();
 export function setLyricBackdrop(c:CanvasRenderingContext2D,pixels:ImageData){backdrops.set(c,{data:pixels.data,width:pixels.width,height:pixels.height})}
 /** Sample the scene beneath the text. Keep solid typography free of stroked outlines. */
@@ -29,8 +50,8 @@ export function paintLyric(c:CanvasRenderingContext2D,text:string,x:number,y:num
   samples.sort((a,b)=>a.light-b.light);
   surface='#'+samples[3].rgb.map(v=>v.toString(16).padStart(2,'0')).join('');
  }
- const ink=readableInk(surface||'#101521',preferred);
- c.save();c.shadowColor=luminance(ink)<.25?'rgba(255,250,242,.15)':'rgba(0,0,0,.42)';
- c.shadowBlur=Math.min(9,c.measureText('M').width*.12);c.shadowOffsetY=2;
+ const ink=readableChromaticInk(surface||'#101521',preferred);
+ c.save();c.shadowColor=luminance(ink)<.25?'rgba(255,250,242,.28)':'rgba(0,0,0,.64)';
+ c.shadowBlur=Math.min(12,c.measureText('M').width*.16);c.shadowOffsetY=2;
  c.fillStyle=ink;c.fillText(text,x,y,maxWidth);c.restore();
 }

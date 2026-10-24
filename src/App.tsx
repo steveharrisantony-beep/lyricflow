@@ -1,5 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
-import CinematicStage, { type Quality, type CameraMode } from './visualization/cinematic/CinematicStage';
+import CinematicStage, {
+  CAMERA_VIEWS,
+  type Quality,
+  type CameraMode,
+  type CameraView,
+} from './visualization/cinematic/CinematicStage';
 import { TEMPLATES, type SceneId } from './visualization/cinematic/catalog';
 import { LYRIC_MOTIONS, type LyricMotion } from './visualization/cinematic/kineticTypography';
 import { fontLabel } from './visualization/cinematic/fonts';
@@ -27,6 +32,7 @@ import {
   saveSongDelayPreference,
   ALL_SCENE_IDS,
   ALL_KINETIC_MOTIONS,
+  ALL_CAMERA_VIEWS,
   type User,
 } from './firebase/firebaseClient';
 import {
@@ -61,6 +67,13 @@ const MOTION_DESCRIPTIONS: Record<LyricMotion, string> = {
   cascade: 'Stepped multi-row diagonal waterfall',
 };
 
+const CAMERA_VIEW_DESCRIPTIONS: Record<CameraView, string> = {
+  Front: 'Centered concert-stage framing with beat push',
+  Orbit: '360° sweeping orbital path around the 3D world',
+  Side: 'Wide lateral tracking angle with dynamic roll',
+  Top: 'Elevated overhead perspective looking down on geometry',
+};
+
 export default function App() {
   const initialPrefs = useRef(loadLocalPreferences()).current;
 
@@ -73,6 +86,7 @@ export default function App() {
   // Audio source selection state
   const [sourceMode, setSourceMode] = useState<AudioSourceMode | null>(null);
   const [sourceOpen, setSourceOpen] = useState(false);
+  const sourceAutoPromptedRef = useRef(false);
 
   // Visualizer & theme / kinetic toggle state
   const [sceneFilter, setSceneFilter] = useState<'all' | '2d' | '3d' | 'enabled'>('all');
@@ -85,10 +99,10 @@ export default function App() {
   const [quality, setQuality] = useState<Quality>(initialPrefs.quality);
   const [autoScenes, setAutoScenes] = useState(initialPrefs.autoScenes);
   const [spatialTypography, setSpatialTypography] = useState(initialPrefs.spatialTypography);
-  const [narrativeObjects, setNarrativeObjects] = useState(initialPrefs.narrativeObjects);
   const [cameraMode, setCameraMode] = useState<CameraMode>(initialPrefs.cameraMode);
   const [enabledScenes, setEnabledScenes] = useState<SceneId[]>(initialPrefs.enabledScenes);
   const [enabledKineticMotions, setEnabledKineticMotions] = useState<LyricMotion[]>(initialPrefs.enabledKineticMotions);
+  const [enabledCameraViews, setEnabledCameraViews] = useState<CameraView[]>(initialPrefs.enabledCameraViews);
 
   const [liveScene, setLiveScene] = useState('Crimson Impact');
   const [renderStatus, setRenderStatus] = useState('INITIALIZING VISUALS');
@@ -140,10 +154,10 @@ export default function App() {
           setQuality(cloudPrefs.quality);
           setAutoScenes(cloudPrefs.autoScenes);
           setSpatialTypography(cloudPrefs.spatialTypography);
-          setNarrativeObjects(cloudPrefs.narrativeObjects);
           setCameraMode(cloudPrefs.cameraMode);
           setEnabledScenes(cloudPrefs.enabledScenes);
           setEnabledKineticMotions(cloudPrefs.enabledKineticMotions);
+          setEnabledCameraViews(cloudPrefs.enabledCameraViews);
           prefsHydratedRef.current = true;
           setSyncBadge('Synced to Google Cloud');
         } catch {
@@ -158,15 +172,16 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // Prompt for audio source immediately after login if none chosen yet
+  // Prompt for audio source once after login if none chosen yet
   useEffect(() => {
     const isLoggedIn = Boolean(firebaseUser || sessionMode);
-    if (isLoggedIn && !sourceMode && !localLoaded) {
+    if (isLoggedIn && !sourceMode && !localLoaded && !sourceAutoPromptedRef.current) {
+      sourceAutoPromptedRef.current = true;
       setSourceOpen(true);
     }
   }, [firebaseUser, sessionMode, sourceMode, localLoaded]);
 
-  // Persist user preferences (settings + enabled themes + enabled kinetic styles)
+  // Persist user preferences (settings + enabled themes + enabled kinetic styles + camera views)
   useEffect(() => {
     const currentPrefs = {
       intensity,
@@ -177,10 +192,11 @@ export default function App() {
       quality,
       autoScenes,
       spatialTypography,
-      narrativeObjects,
+      narrativeObjects: false,
       cameraMode,
       enabledScenes,
       enabledKineticMotions,
+      enabledCameraViews,
     };
     saveLocalPreferences(currentPrefs);
     if (!prefsHydratedRef.current || !firebaseUser) return;
@@ -199,10 +215,10 @@ export default function App() {
     quality,
     autoScenes,
     spatialTypography,
-    narrativeObjects,
     cameraMode,
     enabledScenes,
     enabledKineticMotions,
+    enabledCameraViews,
     firebaseUser,
   ]);
 
@@ -419,6 +435,20 @@ export default function App() {
     });
   };
 
+  const toggleCameraViewEnabled = (view: CameraView) => {
+    setEnabledCameraViews(prev => {
+      if (prev.includes(view)) {
+        if (prev.length <= 1) return prev; // Keep at least 1 camera view active
+        const next = prev.filter(item => item !== view);
+        if (cameraMode === view) {
+          setCameraMode('Automatic');
+        }
+        return next;
+      }
+      return [...prev, view];
+    });
+  };
+
   const isAuthenticatedOrGuest = Boolean(firebaseUser || sessionMode);
 
   // First-time Login Gate
@@ -458,15 +488,13 @@ export default function App() {
         </div>
         <div className="track">
           <i className="dot" /> {localTrack?.title || 'Untitled session'} <span>·</span>{' '}
-          {localPlaying
-            ? localTrack?.source === 'provider'
-              ? 'Stash Online Player'
-              : 'Local Audio'
-            : localLoaded
-            ? 'Track paused'
+          {localLoaded && localTrack
+            ? `Audio: ${localTrack.audioSource || (localTrack.source === 'provider' ? 'Stash Online Player' : 'Local File')}`
             : demo
-            ? 'Demo mode'
-            : 'Idle'}{' '}
+              ? 'Demo mode'
+              : 'Idle'}{' '}
+          <span>·</span>{' '}
+          <small>Lyrics: {incoming?.source || 'Automatic (Apple Music / LRCLIB)'}</small>{' '}
           <span>·</span> <small>{syncBadge}</small>
         </div>
         <div className="header-right">
@@ -523,10 +551,10 @@ export default function App() {
           autoScenes={autoScenes}
           cameraMode={cameraMode}
           spatialTypography={spatialTypography}
-          narrativeObjects={narrativeObjects}
           motionBlur={motionBlur}
           enabledScenes={enabledScenes}
           enabledKineticMotions={enabledKineticMotions}
+          enabledCameraViews={enabledCameraViews}
         />
 
         {!performance && (
@@ -538,7 +566,11 @@ export default function App() {
             >
               <Headphones size={16} />
               <span>
-                <small>AUDIO SOURCE</small>
+                <small>
+                  {localTrack?.audioSource
+                    ? `AUDIO · ${localTrack.audioSource.toUpperCase()}`
+                    : 'AUDIO SOURCE'}
+                </small>
                 <b>
                   {sourceMode === 'online'
                     ? localTrack?.title || 'Stash Online Player'
@@ -967,25 +999,85 @@ export default function App() {
             Kinetic lyric choreography{' '}
             <small>({enabledKineticMotions.length} active styles)</small>
           </label>
-          <label className="auto-scenes">
-            <input
-              type="checkbox"
-              checked={narrativeObjects}
-              onChange={e => setNarrativeObjects(e.target.checked)}
-            />{' '}
-            Narrative objects <small>(bass forms · midrange rings · treble details)</small>
-          </label>
           <label className="camera-picker">
             Camera view{' '}
             <select
               value={cameraMode}
               onChange={e => setCameraMode(e.target.value as CameraMode)}
             >
-              {(['Automatic', 'Front', 'Orbit', 'Side', 'Top'] as const).map(v => (
-                <option key={v}>{v}</option>
+              <option value="Automatic">Automatic ({enabledCameraViews.length}/4 active)</option>
+              {CAMERA_VIEWS.map(v => (
+                <option key={v} value={v} disabled={!enabledCameraViews.includes(v)}>
+                  {v} {enabledCameraViews.includes(v) ? '(ON)' : '(OFF)'}
+                </option>
               ))}
             </select>
           </label>
+        </div>
+
+        <div className="camera-views-panel" aria-label="Camera views on off toggles">
+          <div className="camera-views-head">
+            <div>
+              <b>CAMERA VIEWS ({enabledCameraViews.length}/4 ACTIVE)</b>
+              <small>
+                Toggle individual camera angles ON or OFF — Automatic camera cycles only through enabled views
+              </small>
+            </div>
+            <button
+              type="button"
+              className="upload-button"
+              onClick={() => setEnabledCameraViews([...ALL_CAMERA_VIEWS])}
+            >
+              Enable All 4 Views
+            </button>
+          </div>
+          <div className="camera-view-grid">
+            {CAMERA_VIEWS.map(view => {
+              const isEnabled = enabledCameraViews.includes(view);
+              const isLockedToView = cameraMode === view;
+              return (
+                <div
+                  key={view}
+                  className={
+                    'kinetic-motion-card camera-view-card ' +
+                    (isEnabled ? 'enabled ' : 'disabled ') +
+                    (isLockedToView ? 'camera-locked' : '')
+                  }
+                >
+                  <div className="kinetic-motion-top">
+                    <button
+                      type="button"
+                      className="camera-view-select-btn"
+                      onClick={() => {
+                        if (!isEnabled) toggleCameraViewEnabled(view);
+                        setCameraMode(prev => (prev === view ? 'Automatic' : view));
+                      }}
+                    >
+                      <strong>{view.toUpperCase()}</strong>
+                      {isLockedToView && <span className="camera-lock-tag">LOCKED</span>}
+                    </button>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isEnabled}
+                      aria-label={`Toggle ${view} camera view`}
+                      className={'theme-toggle-pill ' + (isEnabled ? 'on' : 'off')}
+                      onClick={() => toggleCameraViewEnabled(view)}
+                    >
+                      {isEnabled ? (
+                        <>
+                          <Check size={12} /> ON
+                        </>
+                      ) : (
+                        'OFF'
+                      )}
+                    </button>
+                  </div>
+                  <small>{CAMERA_VIEW_DESCRIPTIONS[view]}</small>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         <div className="scene-filter" aria-label="Scene categories">

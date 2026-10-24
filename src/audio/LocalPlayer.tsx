@@ -3,9 +3,10 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import { Upload, Play, Pause, Volume2, Music2, X, Disc3, RefreshCw, Edit3, CheckCircle2, Clock } from 'lucide-react';
 import { connectLocalAudio, setLocalAudioPlaying, setLocalMediaElement } from './audioSignal';
 import type { TrackInfo } from '../metadata/trackInfo';
-import type { PlayableSong } from '../music/providers';
+import { MUSIC_SOURCES, type PlayableSong } from '../music/providers';
 import { resolveTrackFilename } from '../metadata/metadataStore';
 import { clampLyricDelay, formatLyricDelay } from '../lyrics/lyricTiming';
+import { describeAudioSource, describeLyricProvider } from '../lyrics/ManualLyrics';
 import type { AudioSourceMode } from './AudioSourceHub';
 import SongSearch from '../music/SongSearch';
 
@@ -99,7 +100,15 @@ function LocalPlayer(
     setTime(0);
     setDuration(song.duration);
     setError('');
-    const nextTrack: TrackInfo = { ...song, source: 'provider', confidence: 1 };
+    const audioSourceLabel = song.audioSource || MUSIC_SOURCES[song.provider] || 'Online Stream';
+    const nextTrack: TrackInfo = {
+      ...song,
+      source: 'provider',
+      provider: song.provider,
+      audioSource: audioSourceLabel,
+      sourceUrl: song.sourceUrl,
+      confidence: 1,
+    };
     setCurrentTrack(nextTrack);
     onTrackChange(nextTrack);
     onFileChange(true);
@@ -340,7 +349,12 @@ function LocalPlayer(
             <div>
               <b>PLAYER DETAILS</b>
               <small>
-                Active mode: {remote || sourceMode === 'online' ? 'Built-in Online Player (Stash Engine)' : 'Local Audio Upload'}
+                Audio Source:{' '}
+                {currentTrack
+                  ? describeAudioSource(currentTrack, Boolean(name)).detail
+                  : remote || sourceMode === 'online'
+                    ? 'Built-in Online Player (Stash Engine)'
+                    : 'Local Audio Upload'}
               </small>
             </div>
           </div>
@@ -451,9 +465,37 @@ function LocalPlayer(
             </span>
             <div className="song-lyric-sync-line">
               <CheckCircle2 size={14} />
-              <b>Lyrics Source: {lyricSourceLabel}</b>
+              <b>
+                Lyrics Provider:{' '}
+                {
+                  describeLyricProvider(
+                    lyricSourceLabel,
+                    hasWordSync,
+                    Boolean(currentTrack),
+                    false
+                  ).providerName
+                }
+              </b>
+              <span>({lyricSourceLabel})</span>
               {hasWordSync && <span className="word-sync-indicator">· Word-by-Word Sync Active</span>}
               {lyricStatusMessage && <small> — {lyricStatusMessage}</small>}
+            </div>
+            <div className="song-audio-source-line">
+              <Disc3 size={14} />
+              <b>
+                Audio Source: {describeAudioSource(currentTrack, Boolean(name)).providerName}
+              </b>
+              <span>({describeAudioSource(currentTrack, Boolean(name)).detail})</span>
+              {currentTrack?.sourceUrl && (
+                <a
+                  href={currentTrack.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="lyric-source-link"
+                >
+                  Open Source ↗
+                </a>
+              )}
             </div>
           </div>
         </div>

@@ -2,6 +2,10 @@
 export interface TrackInfo {
   title:string; artist:string; album:string; duration:number; fileName?:string;
   source:'filename'|'manual'|'provider'; confidence:number;
+  artwork?:string;
+  provider?:'ytmusic'|'soundcloud'|'jiosaavn'|'audius'|'resolver'|'local';
+  audioSource?:string;
+  sourceUrl?:string;
 }
 const stripTags=(text:string)=>text
  .replace(/\.(mp3|m4a|aac|wav|flac|ogg)$/i,'')
@@ -14,7 +18,7 @@ export function parseTrackFilename(filename:string):TrackInfo {
  const parts=clean.split(/\s+[-–—]\s+/).filter(Boolean);
  const artist=parts.length>=2?parts[0]:'';
  const title=parts.length>=2?parts.slice(1).join(' - '):clean;
- return {title,artist,album:'',duration:0,source:'filename',confidence:parts.length>=2?0.55:0.20};
+ return {title,artist,album:'',duration:0,fileName:filename,provider:'local',audioSource:`Local Audio File (${filename})`,source:'filename',confidence:parts.length>=2?0.55:0.20};
 }
 export function normalizeTrack(text:string){
  return text.toLocaleLowerCase().normalize('NFKD')

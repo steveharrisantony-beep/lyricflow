@@ -32,7 +32,7 @@ export const PROCEDURAL_LOOKS:Partial<Record<SceneId,Look>>={
  'typographic-vortex':'tunnel','midnight-transit':'city','final-ascension':'monuments'
 };
 
-const PI=Math.PI,TAU=PI*2;
+const PI=Math.PI;
 const smooth=(n:number)=>Math.max(0,Math.min(1,n));
 const seedNumber=(s:string)=>{let h=2166136261;for(let i=0;i<s.length;i++)h=Math.imul(h^s.charCodeAt(i),16777619);return h>>>0};
 const random=(seed:number)=>{let v=seed>>>0;return ()=>{v=(Math.imul(v,1664525)+1013904223)>>>0;return v/4294967296}};
@@ -381,49 +381,6 @@ export class ProceduralCinema {
   return m;
  }
 
- private add(
-  geometry:THREE.BufferGeometry,
-  material:THREE.Material,
-  position:THREE.Vector3,
-  size:number,
-  offset:number,
-  kind:number,
-  edgeKey?:string,
-  edgeMat?:THREE.LineBasicMaterial
- ){
-  const mesh=new THREE.Mesh(geometry,material);
-  mesh.position.copy(position);
-  mesh.scale.setScalar(size);
-  mesh.castShadow=material instanceof THREE.MeshStandardMaterial&&!material.transparent;
-  mesh.receiveShadow=mesh.castShadow;
-  mesh.rotation.set(offset*.17,offset*.28,offset*.11);
-  if(edgeKey&&edgeMat&&this.sharedEdges[edgeKey]){
-   mesh.add(new THREE.LineSegments(this.sharedEdges[edgeKey],edgeMat));
-  }
-  this.world.add(mesh);
-  this.owned.push(mesh);
-  this.animated.push({
-   mesh,
-   base:position.clone(),
-   baseScale:mesh.scale.clone(),
-   size,
-   offset,
-   kind,
-   material:material instanceof THREE.MeshPhysicalMaterial?material:undefined
-  });
-  return mesh;
- }
-
- private addRings(count:number,material:THREE.Material,depth=-6){
-  for(let i=0;i<count;i++){
-   const z=depth+i*1.12;
-   const scale=3.2+Math.abs(z)*.20;
-   const mesh=this.add(this.shared.torus,material,new THREE.Vector3(0,0,z),scale,i*.6,3);
-   mesh.rotation.x=.14+(i%3)*.06;
-   mesh.rotation.y=i*.065;
-  }
- }
-
  /** Build a luminous wireframe horizon grid / architectural cage (pdoom-video / baseline GPU line batch style). */
  private addStageWireGrid(colorHex:string,y=-5.9){
   const verts:number[]=[];
@@ -563,11 +520,6 @@ export class ProceduralCinema {
   if(cached)return;
 
   const rand=random(seedNumber(id));
-  const hero=this.material(palette.accent);
-  const ice=this.material(palette.foreground,true);
-  const dark=this.material(palette.background);
-  const gold=this.material(palette.foreground);
-  const glass=this.material(palette.accent,true);
   const wireAccent=new THREE.LineBasicMaterial({
    color:palette.accent,
    transparent:true,
@@ -584,39 +536,7 @@ export class ProceduralCinema {
   });
   this.ownedMaterials.push(wireAccent,wireFore);
 
-  const density=quality==='High'?1:quality==='Balanced'?.76:.48;
-  const count=Math.floor(24*density);
-
-  const arranged=(i:number,n:number)=>{
-   const a=TAU*i/Math.max(1,n),r=5.1+(i%3)*.72;
-   return new THREE.Vector3(Math.cos(a)*r,Math.sin(a)*r*.74,-5-(i%3)*2.1);
-  };
-  const pickKey=(shapes:string[])=>shapes[Math.floor(rand()*shapes.length)];
-  const addCloud=(x:number,y:number,z:number,r:number,k:number)=>{
-   for(let j=0;j<5;j++){
-    const pos=new THREE.Vector3(x+(j-2)*r*.53,y+Math.sin(j*2.6)*r*.36,z-j*.12);
-    this.add(this.shared.softSphere,j%3===0?gold:glass,pos,r*(.47+rand()*.54),k+j,0);
-   }
-  };
-
-  if(this.look==='tunnel'||this.look==='rings'){
-   this.addRings(quality==='Performance'?9:15,this.look==='tunnel'?hero:glass);
-   this.addStageWireGrid(palette.accent,-6.0);
-   for(let i=0;i<count;i++){
-    const angle=rand()*TAU,r=3.1+rand()*6.2;
-    const key=pickKey(['octa','ico','cube']);
-    this.add(
-     this.shared[key],
-     i%4?ice:hero,
-     new THREE.Vector3(Math.cos(angle)*r,Math.sin(angle)*r,-8+rand()*15),
-     .16+rand()*.52,
-     rand()*TAU,
-     1,
-     key,
-     i%2?wireAccent:wireFore
-    );
-   }
-  }else if(this.look==='ocean'||this.look==='underwater'){
+  if(this.look==='ocean'||this.look==='underwater'){
    const geom=new THREE.PlaneGeometry(24,17,52,36);
    geom.rotateX(-PI*.48);
    const coords=geom.attributes.position.array as Float32Array;
@@ -630,197 +550,10 @@ export class ProceduralCinema {
    this.owned.push(mesh);
    this.ownedGeometry.push(geom);
    this.wave=mesh;
-   for(let i=0;i<count;i++){
-    const pos=new THREE.Vector3((rand()-.5)*18,(rand()-.5)*10,-8+rand()*13);
-    const key=i%3===0?'octa':'sphere';
-    this.add(
-     this.shared[key],
-     i%3===0?gold:glass,
-     pos,
-     .12+rand()*.45,
-     rand()*TAU,
-     0,
-     key==='octa'?'octa':undefined,
-     wireFore
-    );
-   }
-   if(this.look==='ocean'){
-    const sun=this.add(this.shared.sphere,gold,new THREE.Vector3(3,2.2,-10),2.1,0,4);
-    sun.scale.set(2.3,2.3,.25);
-    this.animated[this.animated.length-1].baseScale.copy(sun.scale);
-    this.addRings(4,glass,-9);
-   }
-  }else if(this.look==='clouds'||this.look==='petals'){
-   for(let i=0;i<Math.round(count*.65);i++){
-    const pos=arranged(i,Math.round(count*.65));
-    addCloud(pos.x,pos.y,pos.z,.82+rand()*.82,i);
-   }
-   this.addRings(5,glass,-8);
-   if(this.look==='petals'){
-    for(let i=0;i<count;i++){
-     this.add(
-      this.shared.tetra,
-      i%3===0?gold:glass,
-      new THREE.Vector3((rand()-.5)*16,(rand()-.5)*10,-5+rand()*9),
-      .18+rand()*.36,
-      rand()*TAU,
-      1,
-      'tetra',
-      wireAccent
-     );
-    }
-   }
   }else if(id==='glass-architecture'){
-   const material=new THREE.MeshPhysicalMaterial({
-    color:'#9edbef',
-    metalness:.38,
-    roughness:.14,
-    clearcoat:1,
-    clearcoatRoughness:.08,
-    transparent:true,
-    opacity:.44,
-    side:THREE.DoubleSide,
-    depthWrite:false
-   });
-   const edgeMaterial=new THREE.LineBasicMaterial({color:'#b8f5ff',transparent:true,opacity:.64,depthWrite:false});
-   this.ownedMaterials.push(material,edgeMaterial);
    this.addStageWireGrid('#94cde9',-5.75);
-   const towers=quality==='Performance'?9:quality==='Balanced'?15:21;
-   for(let i=0;i<towers;i++){
-    const ring=i%3,angle=i*2.39996;
-    const radius=.6+ring*2.4+rand()*.55;
-    const x=Math.cos(angle)*radius,z=Math.sin(angle)*2.6-3;
-    const h=1.4+rand()*4.0+(ring===0?3.5:0);
-    const y=-5.6+h*.5;
-    const part=this.add(
-     this.shared.cube,
-     i%4===0?hero:material,
-     new THREE.Vector3(x,y,z),
-     1,
-     rand()*TAU,
-     2,
-     'cube',
-     edgeMaterial
-    );
-    part.scale.set(.35+rand()*.75,h,.4+rand()*.75);
-    part.rotation.set(0,angle*.15,0);
-    this.animated[this.animated.length-1].baseScale.copy(part.scale);
-    if(i%3===0){
-     const crystal=this.add(
-      this.shared.octa,
-      ice,
-      new THREE.Vector3(x,y+h*.52,z),
-      .45+rand()*.56,
-      rand()*TAU,
-      1,
-      'octa',
-      edgeMaterial
-     );
-     crystal.rotation.y=angle;
-    }
-   }
-   const halos=quality==='Performance'?3:6;
-   for(let i=0;i<halos;i++){
-    const ring=this.add(this.shared.torus,i%2?gold:glass,new THREE.Vector3(0,0,-5-i*.65),3.1+i*.7,i*.8,3);
-    ring.rotation.set(PI*.24+i*.12,PI*.13,-PI*.06);
-   }
-   const pedestal=this.add(this.shared.cylinder,dark,new THREE.Vector3(0,-5.7,-3),3.8,1,2);
-   pedestal.scale.set(1.45,.055,.8);
-   this.animated[this.animated.length-1].baseScale.copy(pedestal.scale);
-  }else if(this.look==='glass'||this.look==='crystals'||this.look==='prisms'){
+  }else if(['tunnel','rings','glass','crystals','prisms','monuments','city','metal','flames'].includes(this.look)){
    this.addStageWireGrid(palette.accent,-6.0);
-   this.addRings(6,glass,-8);
-   for(let i=0;i<count;i++){
-    const key=this.look==='glass'?pickKey(['cube','ico']):
-      this.look==='crystals'?pickKey(['octa','cone','tetra']):pickKey(['tetra','cube','cone']);
-    const pos=arranged(i,count);
-    const obj=this.add(
-     this.shared[key],
-     i%3===0?hero:i%2===0?glass:ice,
-     pos,
-     .54+(i%4)*.25,
-     rand()*TAU,
-     1,
-     key,
-     i%2===0?wireAccent:wireFore
-    );
-    obj.rotation.y=rand()*TAU;
-    obj.rotation.x=rand()*TAU;
-   }
-  }else if(this.look==='monuments'||this.look==='city'||this.look==='metal'){
-   this.addStageWireGrid(palette.accent,-6.05);
-   for(let i=0;i<count;i++){
-    const height=.6+rand()*5.6;
-    const side=i%2?1:-1,row=Math.floor(i/2);
-    const x=side*(3.6+(row%3)*1.55),z=-1-Math.floor(row/3)*2.8;
-    const y=-6.1+height*.5;
-    const key=i%6===0?'cylinder':'cube';
-    const ob=this.add(
-     this.shared[key],
-     i%3===0?gold:i%2===0?dark:hero,
-     new THREE.Vector3(x,y,z),
-     .72+rand()*.65,
-     rand()*TAU,
-     2,
-     key,
-     i%2===0?wireAccent:wireFore
-    );
-    ob.scale.set(.72,height,1.1);
-    ob.rotation.set(0,0,0);
-    this.animated[this.animated.length-1].baseScale.copy(ob.scale);
-   }
-   for(let i=0;i<6;i++){
-    this.add(this.shared.torus,glass,new THREE.Vector3((i-2.5)*2.6,0,-9+i),1.3+rand()*1.7,i*2.3,3);
-   }
-  }else if(this.look==='flames'){
-   this.addStageWireGrid(palette.accent,-5.9);
-   for(let i=0;i<count*1.3;i++){
-    const pos=new THREE.Vector3((rand()-.5)*18,-4+rand()*11,-9+rand()*12);
-    const key=pickKey(['cone','tetra','octa']);
-    this.add(
-     this.shared[key],
-     i%3===0?gold:hero,
-     pos,
-     .22+rand()*.88,
-     rand()*TAU,
-     2,
-     key,
-     wireAccent
-    );
-   }
-  }else if(this.look==='paper'){
-   for(let i=0;i<count;i++){
-    const position=arranged(i,count);
-    const ob=this.add(
-     this.shared.plane,
-     i%3===0?hero:i%2===0?glass:gold,
-     position,
-     .55+rand()*2.1,
-     rand()*TAU,
-     0,
-     'cube',
-     wireFore
-    );
-    ob.scale.set(.75+rand()*1.5,.58+rand()*.88,1);
-    this.animated[this.animated.length-1].baseScale.copy(ob.scale);
-    ob.rotation.z=(rand()-.5)*1.1;
-   }
-  }else{
-   this.addRings(10,glass,-9);
-   this.addStageWireGrid(palette.accent,-6.0);
-   for(let i=0;i<count;i++){
-    const key=pickKey(['ico','octa','torus']);
-    this.add(
-     this.shared[key],
-     i%2?ice:hero,
-     arranged(i,count),
-     .18+rand()*.92,
-     rand()*TAU,
-     1,
-     key!=='torus'?key:undefined,
-     wireAccent
-    );
-   }
   }
 
   if(['glass','city','metal','monuments','crystals','prisms'].includes(this.look)){
@@ -840,14 +573,8 @@ export class ProceduralCinema {
    this.owned.push(floor);
   }
 
-  // Flanking gyroscopic beat-driven orbit accents
-  for(let i=0;i<2;i++){
-   const ring=this.add(this.shared.torus,hero,new THREE.Vector3(i===0?-5.8:5.8,i===0?2.7:-2.7,-5-i*2),.75+i*.22,i,5);
-   ring.rotation.set(.22+i*.25,.15,0);
-  }
-
-  // Depth-space particle starfield / embers
-  const amount=quality==='High'?460:quality==='Balanced'?280:140;
+  // Subtle depth-space starfield (no narrative bass forms, midrange rings, or treble detail objects)
+  const amount=quality==='High'?280:quality==='Balanced'?180:90;
   const points=new Float32Array(amount*3);
   for(let i=0;i<amount;i++){
    points[i*3]=(rand()-.5)*37;
@@ -859,39 +586,18 @@ export class ProceduralCinema {
   this.ownedGeometry.push(geometry);
   const mat=new THREE.PointsMaterial({
    color:palette.foreground,
-   size:quality==='High'?.105:.075,
+   size:quality==='High'?.085:.065,
    sizeAttenuation:true,
    transparent:true,
-   opacity:.64,
+   opacity:.42,
    blending:THREE.AdditiveBlending,
    depthWrite:false
   });
   this.ownedMaterials.push(mat);
   this.particle=new THREE.Points(geometry,mat);
-  this.reactive.add(this.particle);
+  this.world.add(this.particle);
   this.owned.push(this.particle);
-
-  if(this.glowMap){
-   const m=new THREE.SpriteMaterial({
-    map:this.glowMap,
-    color:palette.accent,
-    transparent:true,
-    opacity:.32,
-    depthWrite:false,
-    blending:THREE.AdditiveBlending
-   });
-   this.ownedMaterials.push(m);
-   for(let i=0;i<6;i++){
-    const sprite=new THREE.Sprite(m);
-    const pos=new THREE.Vector3((rand()-.5)*15,(rand()-.5)*10,-5+rand()*9);
-    sprite.position.copy(pos);
-    const size=2.3+rand()*4.2;
-    sprite.scale.set(size,size,1);
-    this.reactive.add(sprite);
-    this.owned.push(sprite);
-    this.animated.push({mesh:sprite,base:pos,baseScale:sprite.scale.clone(),size,offset:rand()*TAU,kind:4});
-   }
-  }
+  this.reactive.visible=false;
   this.hasHistory=false;
  }
 
@@ -903,7 +609,7 @@ export class ProceduralCinema {
   motionBlur:number,
   reduced:boolean,
   quality:RenderQuality,
-  narrativeObjects=true,
+  _narrativeObjects=false,
   cameraMode:ProceduralCamera='Automatic',
   cameraFrame?:CameraFrame
  ){
@@ -914,7 +620,7 @@ export class ProceduralCinema {
   if(this.currentId!==id||this.builtQuality!==quality)this.setupScene(id,quality);
   this.lastVisualTime=time;
   const motion=reduced?.16:1;
-  this.reactive.visible=narrativeObjects;
+  this.reactive.visible=false;
   const energy=smooth(intensity);
   const bass=smooth(p.bass),treble=smooth(p.treble),beat=smooth(p.beat);
 
@@ -932,15 +638,16 @@ export class ProceduralCinema {
   this.world.rotation.x=Math.sin(time*.075)*.06*motion;
   const path=cameraMode==='Automatic'?byId[id].camera:cameraMode;
   const angle=time*.18*motion;
-  this.camera.position.x=path==='Orbit'||path==='orbit'?Math.sin(angle)*2.9:
-   path==='Side'||path==='side'?3.6:
+  this.camera.position.x=path==='Orbit'||path==='orbit'?Math.sin(angle)*3.1:
+   path==='Side'||path==='side'?3.8+Math.sin(time*.12)*.32*motion:
    Math.sin(time*.15)*.42*motion;
-  this.camera.position.y=path==='Top'?4.6:
+  this.camera.position.y=path==='Top'?4.8+Math.cos(time*.10)*.24*motion:
+   path==='Orbit'||path==='orbit'?Math.cos(angle*.65)*.62*motion:
    path==='drift'?Math.cos(time*.14)*.58*motion:
    Math.cos(time*.11)*.26*motion;
-  this.camera.position.z=path==='push'?16.1-Math.sin(time*.14)*.42*motion:
+  this.camera.position.z=path==='push'||path==='Front'?16.2-Math.sin(time*.14)*.42*motion-bass*.48*motion:
    path==='pullback'?18.2+Math.sin(time*.12)*.44*motion:
-   path==='Top'?17.2:17-bass*.52*motion;
+   path==='Top'?17.4-bass*.38*motion:17-bass*.52*motion;
   if(cameraFrame){
    this.camera.position.x+=cameraFrame.x*18+cameraFrame.yaw*22;
    this.camera.position.y+=cameraFrame.pitch*18-cameraFrame.y*18;

@@ -4,7 +4,7 @@ export const MUSIC_SOURCES={ytmusic:'YouTube Music',soundcloud:'SoundCloud',jios
 export interface SongResult {
  id:string;title:string;artist:string;album:string;duration:number;
  provider:keyof typeof MUSIC_SOURCES;sourceUrl:string;artwork?:string;
- directStreamUrl?:string;
+ directStreamUrl?:string;audioSource?:string;
 }
 export interface PlayableSong extends SongResult {streamUrl:string;format?:'hls'|'audio'}
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object';
@@ -24,9 +24,11 @@ export function parseSongs(value:unknown,provider:SongResult['provider']):SongRe
   const user=record(item.user)?item.user:{};
   const art=record(item.artwork)?item.artwork:{};
   const duration=typeof item.duration==='number'&&Number.isFinite(item.duration)?Math.max(0,item.duration):0;
-  return [{id:string(item.id),title:string(item.title),artist:string(item.artist)||string(user.name),album:string(item.album),duration,provider:(Object.hasOwn(MUSIC_SOURCES,string(item.provider))?string(item.provider):provider) as SongResult['provider'],
+  const resolvedProv=(Object.hasOwn(MUSIC_SOURCES,string(item.provider))?string(item.provider):provider) as SongResult['provider'];
+  return [{id:string(item.id),title:string(item.title),artist:string(item.artist)||string(user.name),album:string(item.album),duration,provider:resolvedProv,
    sourceUrl:provider==='audius'&&string(item.permalink)?'https://audius.co'+string(item.permalink):string(item.sourceUrl),artwork:string(art['480x480'])||string(art['150x150'])||string(item.artwork)||undefined,
-   directStreamUrl:string(item.directStreamUrl)||undefined}];
+   directStreamUrl:string(item.directStreamUrl)||undefined,
+   audioSource:string(item.audioSource)||undefined}];
  });
 }
 async function json(url:string,signal?:AbortSignal){
@@ -41,13 +43,14 @@ export async function searchSongs(query:string,provider:SongResult['provider'],b
  return parseSongs(await json(url,signal),provider);
 }
 export async function resolveSong(song:SongResult,base:string,signal?:AbortSignal):Promise<PlayableSong>{
- if(song.directStreamUrl)return {...song,streamUrl:song.directStreamUrl,format:'audio'};
- if(song.provider==='audius'&&!song.id.startsWith('audius_'))return {...song,streamUrl:'https://api.audius.co/v1/tracks/'+encodeURIComponent(song.id)+'/stream?app_name=LyricFlow'};
+ if(song.directStreamUrl)return {...song,streamUrl:song.directStreamUrl,format:'audio',audioSource:song.audioSource||MUSIC_SOURCES[song.provider]};
+ if(song.provider==='audius'&&!song.id.startsWith('audius_'))return {...song,streamUrl:'https://api.audius.co/v1/tracks/'+encodeURIComponent(song.id)+'/stream?app_name=LyricFlow',audioSource:song.audioSource||'Audius (Direct Stream)'};
  const root=resolverBase(base);
  const data=await json(root+'/resolve/'+encodeURIComponent(song.id),signal);
  if(!record(data)||typeof data.streamPath!=='string'||!/^\/audio\/[\w-]+$/.test(data.streamPath))throw Error('Invalid music resolver response.');
  const meta=record(data.track)?parseSongs({data:[data.track]},song.provider)[0]:null;
- return {...song,...meta,artist:meta?.artist||song.artist,title:meta?.title||song.title,streamUrl:root+data.streamPath,format:data.format==='hls'?'hls':'audio'};
+ const audioSource=string(data.audioSource)||meta?.audioSource||song.audioSource||MUSIC_SOURCES[song.provider];
+ return {...song,...meta,artist:meta?.artist||song.artist,title:meta?.title||song.title,streamUrl:root+data.streamPath,format:data.format==='hls'?'hls':'audio',audioSource};
 }
 
 /**

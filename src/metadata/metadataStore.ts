@@ -9,8 +9,8 @@ function entries():Entry[]{
 }
 export function resolveTrackFilename(fileName:string):TrackInfo{
  const found=entries().find(x=>x.fileName===fileName);
- if(found)return {...found,source:'manual',confidence:1};
- return {...parseTrackFilename(fileName),fileName};
+ if(found)return {...found,source:'manual',confidence:1,provider:'local',audioSource:`Local Audio File (${fileName})`};
+ return {...parseTrackFilename(fileName),fileName,provider:'local',audioSource:`Local Audio File (${fileName})`};
 }
 export function saveTrackCorrection(track:TrackInfo){
  if(!track.fileName||!track.title.trim())return;

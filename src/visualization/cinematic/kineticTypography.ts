@@ -1,5 +1,6 @@
 import type {LyricCue} from '../../lyrics/lyricTimeline';
 import {wordEmphasis,type WordEmphasis} from '../../lyrics/wordEmphasis';
+import {hasDistinctRomanized} from '../../romanization/romanize';
 import {byId,type DirectedScene,type FontPack} from './catalog';
 import {applySceneFont} from './fonts';
 import {contrastRatio,paintLyric,readableInk} from './contrast';
@@ -35,8 +36,12 @@ export interface LyricRun {
  index:number;
 }
 
+/**
+ * Prefer romanized lyrics whenever available (unless mode is explicitly 'original').
+ */
 export function lyricRuns(cue:LyricCue,mode:'original'|'romanized'|'both',emphasis:WordEmphasis):LyricRun[]{
- const visible=mode==='romanized'&&cue.romanized?cue.romanized:cue.text;
+ const preferRoman=mode!=='original'&&hasDistinctRomanized(cue.text,cue.romanized);
+ const visible=preferRoman?cue.romanized:cue.text;
  const words=visible.trim().split(/\s+/).filter(Boolean);
  const timed=cue.words.flatMap(segment=>{
   const tokens=segment.text.trim().split(/\s+/).filter(Boolean),length=tokens.reduce((n,t)=>n+t.length,0)||1;
@@ -50,7 +55,7 @@ export function lyricRuns(cue:LyricCue,mode:'original'|'romanized'|'both',emphas
  const letters=words.reduce((n,word)=>n+word.length,0)||1;
  let cursor=0;
  return words.map((text,index)=>{
-  const source=mode!=='romanized'&&timed.length===words.length?timed[index]:undefined;
+  const source=timed.length===words.length?timed[index]:undefined;
   const start=source?.start??cue.time+(cue.end-cue.time)*cursor/letters;
   cursor+=text.length;
   return {
@@ -65,6 +70,11 @@ export function lyricRuns(cue:LyricCue,mode:'original'|'romanized'|'both',emphas
 
 export function lyricWordHit(cue:LyricCue|null,time:number,emphasis:WordEmphasis,mode:'original'|'romanized'|'both'){
  if(!cue)return 0;
+ // Do not predict word-by-word impulses if only line-synced lyrics are available
+ if(cue.timing!=='sourced'){
+  const lineAge=time-cue.time;
+  return lineAge>=0&&lineAge<.55?0.45*Math.exp(-lineAge*7.5):0;
+ }
  let hit=0;
  for(const word of lyricRuns(cue,mode,emphasis)){
   const age=time-word.start;
@@ -99,9 +109,11 @@ export interface KineticResult {
  highlights:number;
  font:FontPack;
  text:string;
+ rows?:number;
+ activeColor?:string;
 }
 
-interface WordPlacement {
+export interface WordPlacement {
  word:LyricRun;
  width:number;
  row:number;
@@ -112,16 +124,37 @@ interface WordPlacement {
  colCount:number;
 }
 
-/** Partition a phrase into balanced typographic rows for poster-grade staging. */
-function buildWordRows(runs:LyricRun[],widths:number[],space:number,motion:LyricMotion):WordPlacement[]{
+/**
+ * Partition a phrase into balanced multi-line typographic rows so long lines
+ * are never rendered as a single cramped or overflowing line.
+ */
+export function buildWordRows(
+ runs:LyricRun[],
+ widths:number[],
+ space:number,
+ motion:LyricMotion,
+ maxRowWidthPx=Infinity
+):WordPlacement[]{
  const count=runs.length;
  if(count===0)return [];
- // Choose target row count based on motion grammar and phrase length
- const maxPerRow=
-  motion==='stamp'||motion==='dolly'?3:
-  motion==='cascade'||motion==='tilt'?3:
-  count>=8?4:count>=5?3:4;
- const numRows=count<=3?1:Math.min(3,Math.ceil(count/maxPerRow));
+ const totalChars=runs.reduce((sum,r)=>sum+r.text.length,0)+Math.max(0,count-1);
+ const totalPx=widths.reduce((sum,w)=>sum+w,0)+Math.max(0,count-1)*space;
+
+ // Determine how many rows are needed so long lines always split into multiple balanced lines
+ const maxWordsPerRow=
+  motion==='stamp'||motion==='dolly'||motion==='cascade'||motion==='tilt'?3:
+  count>=7?3:4;
+ const maxCharsPerRow=24;
+
+ const rowsByWords=count<=3&&totalChars<=maxCharsPerRow&&totalPx<=maxRowWidthPx
+  ?1
+  :Math.ceil(count/maxWordsPerRow);
+ const rowsByChars=totalChars>maxCharsPerRow?Math.ceil(totalChars/maxCharsPerRow):1;
+ const rowsByPx=Number.isFinite(maxRowWidthPx)&&maxRowWidthPx>0&&totalPx>maxRowWidthPx
+  ?Math.ceil(totalPx/maxRowWidthPx)
+  :1;
+
+ const numRows=Math.min(count,Math.min(5,Math.max(rowsByWords,rowsByChars,rowsByPx)));
  const rows:number[][]=Array.from({length:numRows},()=>[]);
  for(let i=0;i<count;i++){
   const r=Math.min(numRows-1,Math.floor(i*numRows/count));
@@ -153,7 +186,7 @@ function buildWordRows(runs:LyricRun[],widths:number[],space:number,motion:Lyric
  return placements;
 }
 
-/** Draw precision plotter framing, karaoke word-progress bar, and impact shockwaves using pure vector paths. */
+/** Draw precision plotter framing, karaoke word-progress bar (only when word-synced), and impact shockwaves. */
 function drawWordPlotterAccents(
  c:CanvasRenderingContext2D,
  halfW:number,
@@ -166,12 +199,13 @@ function drawWordPlotterAccents(
  accent:string,
  ink:string,
  energy:number,
- motion:LyricMotion
+ motion:LyricMotion,
+ hasWordSync:boolean
 ){
  if(typeof c.beginPath!=='function'||typeof c.fillRect!=='function')return;
  c.save();
- // 1. Active word luminous backing plate & precision corner brackets (baseline / pdoom-video HUD style)
- if(isActive&&energy>0.05){
+ // 1. Active word luminous backing plate & precision corner brackets (only when word-synced)
+ if(hasWordSync&&isActive&&energy>0.05){
   const padX=halfW*0.16+8;
   const padY=halfH*0.24+6;
   const bx=-halfW-padX,by=-halfH-padY,bw=(halfW+padX)*2,bh=(halfH+padY)*2;
@@ -185,18 +219,14 @@ function drawWordPlotterAccents(
   c.lineWidth=Math.max(1.5,halfH*0.055);
   c.globalAlpha=0.72+0.25*hit;
   c.beginPath();
-  // Top-left
   c.moveTo(bx,by+tick);c.lineTo(bx,by);c.lineTo(bx+tick,by);
-  // Top-right
   c.moveTo(bx+bw-tick,by);c.lineTo(bx+bw,by);c.lineTo(bx+bw,by+tick);
-  // Bottom-left
   c.moveTo(bx,by+bh-tick);c.lineTo(bx,by+bh);c.lineTo(bx+tick,by+bh);
-  // Bottom-right
   c.moveTo(bx+bw-tick,by+bh);c.lineTo(bx+bw,by+bh);c.lineTo(bx+bw,by+bh-tick);
   c.stroke();
  }
 
- // 2. Expanding vector shockwave frame on emphasized or stamp/elastic word onset
+ // 2. Expanding vector shockwave frame on emphasized or stamp/elastic onset
  if(hit>0.08&&energy>0.05&&(importance>0||motion==='stamp'||motion==='elastic')){
   const expand=(1-hit)*(halfH*0.65+importance*18);
   const sx=-halfW-expand,sy=-halfH*0.85-expand*0.6;
@@ -207,15 +237,13 @@ function drawWordPlotterAccents(
   c.strokeRect(sx,sy,sw,sh);
  }
 
- // 3. Karaoke word-level progress sweep bar underneath active & sung words
- const barY=halfH*0.78;
- const barH=Math.max(2.2,halfH*(importance>0?0.10:0.065));
- if(isActive|| (isSung&&importance>0)){
-  // Track rail
+ // 3. Karaoke word-level progress sweep bar ONLY when real word-sync timestamps are present
+ if(hasWordSync&&(isActive||(isSung&&importance>0))){
+  const barY=halfH*0.78;
+  const barH=Math.max(2.2,halfH*(importance>0?0.10:0.065));
   c.fillStyle=ink;
   c.globalAlpha=0.18;
   c.fillRect(-halfW,barY,halfW*2,barH);
-  // Sweeping karaoke fill
   const fillW=halfW*2*clamp(isActive?wordProgress:1,0.08,1);
   c.fillStyle=importance>0||isActive?accent:ink;
   c.globalAlpha=isActive?0.92:0.58;
@@ -232,7 +260,7 @@ function drawWordPlotterAccents(
  c.restore();
 }
 
-/** Draw subtle stage-level plotter crosshairs and phrase timeline rule (mexicat/pdoom-video HUD style). */
+/** Draw subtle stage-level plotter crosshairs and phrase timeline rule. */
 function drawStagePlotterFrame(
  c:CanvasRenderingContext2D,
  w:number,
@@ -246,7 +274,6 @@ function drawStagePlotterFrame(
  if(typeof c.beginPath!=='function'||typeof c.fillRect!=='function'||energy<=0.02)return;
  const u=Math.min(w,h);
  c.save();
- // Architectural horizon hairlines & corner registration ticks
  const marginX=w*0.08,marginY=h*0.14;
  const tick=u*0.018;
  c.strokeStyle=ink;
@@ -259,7 +286,6 @@ function drawStagePlotterFrame(
  c.moveTo(w-marginX-tick,h-marginY);c.lineTo(w-marginX,h-marginY);c.lineTo(w-marginX,h-marginY-tick);
  c.stroke();
 
- // Phrase timing progress filament at bottom of lyric safe zone
  const railW=w*0.26;
  const railX=(w-railW)*0.5;
  const railY=h*0.84;
@@ -270,7 +296,6 @@ function drawStagePlotterFrame(
  c.globalAlpha=0.68*energy;
  c.fillRect(railX,railY-0.5,railW*clamp(progress),2.5);
 
- // Motion-specific subtle vector datum
  if(motion==='cascade'||motion==='tilt'||motion==='sweep'){
   c.strokeStyle=accent;
   c.globalAlpha=0.12*energy;
@@ -281,6 +306,17 @@ function drawStagePlotterFrame(
  }
  c.restore();
 }
+
+export const LYRIC_COLOR_PALETTE=[
+ '#72efdd',
+ '#ff5e7e',
+ '#ffd166',
+ '#83e5ff',
+ '#c9ff78',
+ '#ff8f9b',
+ '#d980fa',
+ '#ff9f43'
+] as const;
 
 /** One continuous phrase, each word painted on a 3D projected world plane exactly once. */
 export function drawKineticLyrics({
@@ -307,31 +343,39 @@ export function drawKineticLyrics({
  const age=Math.max(0,time-cue.time);
  const duration=Math.max(.18,cue.end-cue.time);
  const progress=clamp(age/duration);
+ const hasWordSync=cue.timing==='sourced';
 
- // Larger, bolder poster-grade base size since multi-row staging prevents cramped single lines
- const baseline=Math.min(126,unit*(runs.length<=3?0.185:runs.length<=6?0.155:0.135));
+ const baseline=Math.min(118,unit*(runs.length<=3?0.175:runs.length<=6?0.142:runs.length<=10?0.118:0.102));
  const space=baseline*0.28;
  const widths=runs.map(word=>{
-  applySceneFont(c,font,baseline*(1+word.importance*0.28),word.text);
+  applySceneFont(c,font,baseline*(1+word.importance*0.26),word.text);
   return c.measureText(word.text).width;
  });
 
- const placements=buildWordRows(runs,widths,space,motion);
+ const placements=buildWordRows(runs,widths,space,motion,w*0.72);
+ const totalRowsCount=placements[0]?.totalRows||1;
  const widestRow=placements.reduce((m,p)=>Math.max(m,p.rowWidth),1);
- const fit=Math.min(1,w*0.82/Math.max(1,widestRow));
+ const heightCap=totalRowsCount>2?Math.min(1,0.72/(totalRowsCount*0.24)):1;
+ const fit=Math.min(heightCap,w*0.80/Math.max(1,widestRow));
  const size=baseline*fit;
 
  const origin=project(0,0,0),one=project(1,0,0);
  const pixelsPerWorld=Math.max(10,Math.hypot(one.x-origin.x,one.y-origin.y));
 
  const primaryInk=readableInk(theme.background,theme.foreground);
- const accentChoices=[theme.accent,'#c9ff78','#ffcc79','#ff8f9b','#83e5ff','#ff5e3a','#00f5d4','#b5179e'];
- const accent=accentChoices.find(color=>contrastRatio(theme.background,color)>=4.5&&color!==primaryInk)||primaryInk;
+ const candidateColors=[theme.accent,...LYRIC_COLOR_PALETTE];
+ const validAccents=candidateColors.filter(
+  color=>contrastRatio(theme.background,color)>=3.2&&color.toLowerCase()!==primaryInk.toLowerCase()
+ );
+ const pool=validAccents.length>0?validAccents:[theme.accent,primaryInk];
+ const phraseIdx=hash(scene.id+'|'+cue.text+'|'+Math.round(cue.time*2))%pool.length;
+ const phraseColor=pool[phraseIdx]||primaryInk;
+ const highlightColor=pool[(phraseIdx+1)%pool.length]||phraseColor;
 
  // Stage-level plotter HUD overlays
- drawStagePlotterFrame(c,w,h,progress,accent,primaryInk,energy,motion);
+ drawStagePlotterFrame(c,w,h,progress,phraseColor,primaryInk,energy,motion);
 
- // 3D Plane orientation (Tunai-0511/baseline _v.ts text3 world-plane camera projection)
+ // 3D Plane orientation
  const yaw=energy*(
   motion==='tilt'?0.22*Math.sin(progress*Math.PI-0.4):
   motion==='sweep'?0.18*(0.5-progress):
@@ -362,26 +406,25 @@ export function drawKineticLyrics({
   return project(xx*cr-yy*sr,xx*sr+yy*cr,zz*cp+y*sp+lineZ);
  };
 
- const rowSpacingWorld=(size*1.32)/pixelsPerWorld;
+ const rowSpacingWorld=(size*1.30)/pixelsPerWorld;
  let drawn=0,highlights=0;
 
  for(const item of placements){
   const {word,width,row,totalRows,rowX}=item;
-  const wordDuration=Math.max(0.08,word.end-word.start);
-  const wordAge=time-word.start;
-  const wordProgress=clamp(wordAge/wordDuration,0,1);
-  const isSung=wordAge>=0;
-  const isActive=wordAge>=0&&time<=word.end+0.08;
+  // Do NOT predict word-by-word timing if only line-synced lyrics are available
+  const wordDuration=hasWordSync?Math.max(0.08,word.end-word.start):duration;
+  const wordAge=hasWordSync?time-word.start:age;
+  const wordProgress=hasWordSync?clamp(wordAge/wordDuration,0,1):progress;
+  const isSung=hasWordSync?wordAge>=0:age>=0;
+  const isActive=hasWordSync?(wordAge>=0&&time<=word.end+0.08):false;
 
-  // Critically-damped & spring-oscillating onset physics (pdoom-video / baseline style)
-  const hit=wordAge>=0?Math.exp(-wordAge*8.5):0;
+  const hit=wordAge>=0?Math.exp(-wordAge*(hasWordSync?8.5:6.0)):0;
   const spring=wordAge>=0?Math.exp(-wordAge*7.5)*Math.cos(wordAge*24):0;
-  const preWait=wordAge<0?clamp(-wordAge/0.45,0,1):0;
+  const preWait=hasWordSync&&wordAge<0?clamp(-wordAge/0.45,0,1):0;
   const enter=energy*Math.exp(-age*12);
-  const stagger=energy*Math.exp(-Math.max(0,age-word.index*0.045)*14);
+  const stagger=energy*Math.exp(-Math.max(0,age-(hasWordSync?word.index*0.045:row*0.055))*14);
   const impulse=hit*energy*(0.06+word.importance*0.14);
 
-  // Base world coordinates from multi-row layout
   const baseRowY=((totalRows-1)*0.5-row)*rowSpacingWorld;
   let x=(rowX*fit)/pixelsPerWorld;
   let y=baseRowY;
@@ -453,7 +496,6 @@ export function drawKineticLyrics({
    applySceneFont(c,font,wordSize,word.text);
    const measuredW=width*fit*(1+(isActive?0.05*energy:0));
 
-   // Draw plotter reticles, karaoke word sweep bar, and shockwave frames
    drawWordPlotterAccents(
     c,
     measuredW*0.5,
@@ -463,13 +505,23 @@ export function drawKineticLyrics({
     isSung,
     hit,
     word.importance,
-    accent,
+    highlightColor,
     primaryInk,
     energy,
-    motion
+    motion,
+    hasWordSync
    );
 
-   const color=word.importance>0||isActive?accent:theme.foreground;
+   // Dynamic main lyric text color change:
+   // - Word-synced: active/emphasized words use highlightColor, sung words use phraseColor, upcoming use primaryInk
+   // - Line-synced: main lyric text uses dynamic phraseColor, emphasized words use highlightColor
+   const color=
+    word.importance>0||isActive
+     ?highlightColor
+     :hasWordSync
+     ?(isSung?phraseColor:primaryInk)
+     :phraseColor;
+
    paintLyric(c,word.text,0,0,measuredW*1.08,color);
    c.restore();
    drawn++;
@@ -482,6 +534,8 @@ export function drawKineticLyrics({
   drawn,
   highlights,
   font,
-  text:runs.map(word=>word.text).join(' ')
+  text:runs.map(word=>word.text).join(' '),
+  rows:totalRowsCount,
+  activeColor:phraseColor
  };
 }

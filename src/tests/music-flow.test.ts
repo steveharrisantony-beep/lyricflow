@@ -2,8 +2,11 @@ import {afterEach,describe,expect,it,vi} from 'vitest';
 import {parseSongs,resolveSong,searchSongs,resolverBase,type SongResult} from '../music/providers';
 import {isAutomaticLyricMatch,resolveAutomaticLyrics} from '../lyrics/providers';
 import {convertTtmlToEnhancedLrc,convertStructuredAppleJsonToLrc} from '../lyrics/appleLyrics';
+import {describeLyricProvider,describeAudioSource,splitLyricIntoBalancedLines} from '../lyrics/ManualLyrics';
 import {buildCinematicSchedule,TEMPLATES} from '../visualization/cinematic/catalog';
-import {lyricMotionFor} from '../visualization/cinematic/kineticTypography';
+import {lyricMotionFor,buildWordRows} from '../visualization/cinematic/kineticTypography';
+import {resolveActiveCameraView} from '../visualization/cinematic/CinematicStage';
+import {romanizeText,hasDistinctRomanized} from '../romanization/romanize';
 import {buildCues} from '../lyrics/lyricTimeline';
 import {getAudioSensitivity,getSpectrumSensitivity,setSpectrumSensitivity,spectrumResponse} from '../audio/audioSignal';
 import {motionChannel,objectDrive} from '../visualization/cinematic/procedural/audioMotion';
@@ -35,9 +38,10 @@ describe('music source boundaries',()=>{
   await expect(resolveSong(song,'https://resolver.example')).rejects.toThrow('Invalid');
  });
  it('resolves into a shared-player URL and uses richer recording metadata',async()=>{
-  vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({streamPath:'/audio/abcdefghijk',track:{...song,artist:'Verified Artist'}})}));
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({streamPath:'/audio/abcdefghijk',audioSource:'YouTube · JioSaavn 320kbps AAC',track:{...song,artist:'Verified Artist'}})}));
   const resolved=await resolveSong(song,'https://resolver.example');
   expect(resolved.streamUrl).toBe('https://resolver.example/audio/abcdefghijk');expect(resolved.artist).toBe('Verified Artist');
+  expect(resolved.audioSource).toBe('YouTube · JioSaavn 320kbps AAC');
  });
 });
 describe('automatic lyric recording matching & Apple Music TTML word-sync',()=>{
@@ -66,13 +70,33 @@ describe('automatic lyric recording matching & Apple Music TTML word-sync',()=>{
   const parsedTtml=convertTtmlToEnhancedLrc(ttml);
   expect(parsedTtml.hasWordSync).toBe(true);
   expect(parsedTtml.lrc).toContain('[00:02.00]<00:02.00>Feel <00:03.20>sound');
+  // Multi-syllable adjacent spans without whitespace glue into a single word (Stash TtmlParser.kt / Spicy Lyrics JoinSplitWords)
+  const syllableTtml='<tt><body><div><p begin="00:01.00" end="00:02.40"><span begin="00:01.00" end="00:01.30">beau</span><span begin="00:01.30" end="00:01.60">ti</span><span begin="00:01.60" end="00:02.00">ful</span> <span ttm:role="x-bg"><span begin="00:02.00" end="00:02.40">(yeah)</span></span> <span ttm:role="x-roman">bi-yu-ti-ful</span></p></div></body></tt>';
+  const parsedSyllable=convertTtmlToEnhancedLrc(syllableTtml);
+  expect(parsedSyllable.lrc).toContain('[00:01.00]<00:01.00>beautiful <00:02.00>(yeah)<00:02.40>');
+  expect(parsedSyllable.romanizedLrc).toContain('[00:01.00]bi-yu-ti-ful');
   const parsedJson=convertStructuredAppleJsonToLrc({
    lyrics:[{time:1500,syllabus:[{text:'Hello',time:1500,duration:400},{text:'world',time:1900,duration:600}]}]
   });
   expect(parsedJson.hasWordSync).toBe(true);
   expect(parsedJson.lrc).toContain('[00:01.50]<00:01.50>Hello <00:01.90>world');
  });
- it('restricts scheduled themes and kinetic motions to user-enabled subsets',()=>{
+ it('identifies lyrics provider and audio source clearly for the lyric panel UI',()=>{
+  expect(describeLyricProvider('Apple Music · Word-Synced TTML (lrc.red)',true,true,false)).toEqual({
+   providerName:'Apple Music',
+   syncMode:'Word-Synced TTML',
+   detail:'Apple Music · Word-Synced TTML (lrc.red)'
+  });
+  expect(describeLyricProvider('MusixMatch · Synced LRC',false,true,false).providerName).toBe('MusixMatch');
+  expect(describeLyricProvider('Local File · LRC (track.lrc)',false,true,false).providerName).toBe('Local File');
+  expect(describeAudioSource({...track,fileName:'demo.mp3',source:'filename'},true)).toEqual({
+   providerName:'Local File',
+   detail:'Local File · demo.mp3',
+   isLocal:true
+  });
+  expect(describeAudioSource({...track,provider:'ytmusic',audioSource:'YouTube Music · JioSaavn 320kbps AAC'},true).providerName).toBe('YouTube Music');
+ });
+ it('restricts scheduled themes, kinetic motions, and camera views to user-enabled subsets',()=>{
   const cues=buildCues([{time:0,text:'Rain falls down'},{time:15,text:'Fire burns bright'}],[]);
   const schedule=buildCinematicSchedule([],cues,'pop','test-key',['neon-velocity','glass-architecture']);
   expect(schedule.length).toBeGreaterThan(0);
@@ -81,7 +105,23 @@ describe('automatic lyric recording matching & Apple Music TTML word-sync',()=>{
   for(let i=0;i<25;i++){
    const motion=lyricMotionFor({...scene,variation:i},'Line '+i,['stamp','ribbon']);
    expect(['stamp','ribbon']).toContain(motion);
+   const cam=resolveActiveCameraView('Automatic',['Orbit','Top'],i*5,i);
+   expect(['Orbit','Top']).toContain(cam);
   }
+  expect(resolveActiveCameraView('Side',['Front','Orbit'],10,0)).toBe('Front');
+ });
+ it('splits long lyrics into multiple balanced rows and transliterates Indic scripts',()=>{
+  const longLine='Walking through the neon city lights under the pouring midnight rain until the morning sun';
+  const domRows=splitLyricIntoBalancedLines(longLine,34);
+  expect(domRows.length).toBeGreaterThan(1);
+  expect(domRows.join(' ')).toBe(longLine);
+  const runs=longLine.split(' ').map((text,i)=>({text,start:i,end:i+1,energy:.5,emphasis:false,importance:.5,index:i}));
+  const widths=runs.map(r=>r.text.length*14);
+  const wordRows=buildWordRows(runs,widths,10,'dolly',480);
+  expect(wordRows.length).toBeGreaterThan(1);
+  const hindi='नमस्ते दुनिया';
+  const rom=romanizeText(hindi);
+  expect(hasDistinctRomanized(hindi,rom.text)).toBe(true);
  });
 });
 describe('independent spectrum gain and instrument roles',()=>{

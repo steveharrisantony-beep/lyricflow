@@ -19,7 +19,7 @@ import {
 import firebaseConfig from '../../firebase-applet-config.json';
 import { TEMPLATES, type SceneId } from '../visualization/cinematic/catalog';
 import { LYRIC_MOTIONS, type LyricMotion } from '../visualization/cinematic/kineticTypography';
-import type { Quality, CameraMode } from '../visualization/cinematic/CinematicStage';
+import { CAMERA_VIEWS, type Quality, type CameraMode, type CameraView } from '../visualization/cinematic/CinematicStage';
 import type { TrackInfo } from '../metadata/trackInfo';
 import { normalizeTrack } from '../metadata/trackInfo';
 
@@ -98,6 +98,7 @@ export interface UserPreferencesData {
   cameraMode: CameraMode;
   enabledScenes: SceneId[];
   enabledKineticMotions: LyricMotion[];
+  enabledCameraViews: CameraView[];
 }
 
 export interface SongDelayRecord {
@@ -115,6 +116,7 @@ const LOCAL_SESSION_KEY = 'lyricflow.sessionMode.v2';
 
 export const ALL_SCENE_IDS: SceneId[] = TEMPLATES.map(t => t.id);
 export const ALL_KINETIC_MOTIONS: LyricMotion[] = [...LYRIC_MOTIONS];
+export const ALL_CAMERA_VIEWS: CameraView[] = [...CAMERA_VIEWS];
 
 export const DEFAULT_USER_PREFERENCES: UserPreferencesData = {
   intensity: 65,
@@ -125,10 +127,11 @@ export const DEFAULT_USER_PREFERENCES: UserPreferencesData = {
   quality: 'Balanced',
   autoScenes: true,
   spatialTypography: true,
-  narrativeObjects: true,
+  narrativeObjects: false,
   cameraMode: 'Automatic',
   enabledScenes: [...ALL_SCENE_IDS],
   enabledKineticMotions: [...ALL_KINETIC_MOTIONS],
+  enabledCameraViews: [...ALL_CAMERA_VIEWS],
 };
 
 const clampNum = (v: unknown, min: number, max: number, fallback: number) => {
@@ -143,6 +146,9 @@ export function sanitizePreferences(raw: Partial<UserPreferencesData> | null | u
     : [];
   const validMotions = Array.isArray(raw.enabledKineticMotions)
     ? raw.enabledKineticMotions.filter((m): m is LyricMotion => ALL_KINETIC_MOTIONS.includes(m as LyricMotion)).slice(0, 8)
+    : [];
+  const validCameraViews = Array.isArray(raw.enabledCameraViews)
+    ? raw.enabledCameraViews.filter((v): v is CameraView => ALL_CAMERA_VIEWS.includes(v as CameraView)).slice(0, 4)
     : [];
   const quality: Quality = raw.quality === 'High' || raw.quality === 'Balanced' || raw.quality === 'Performance'
     ? raw.quality
@@ -160,10 +166,11 @@ export function sanitizePreferences(raw: Partial<UserPreferencesData> | null | u
     quality,
     autoScenes: typeof raw.autoScenes === 'boolean' ? raw.autoScenes : DEFAULT_USER_PREFERENCES.autoScenes,
     spatialTypography: typeof raw.spatialTypography === 'boolean' ? raw.spatialTypography : DEFAULT_USER_PREFERENCES.spatialTypography,
-    narrativeObjects: typeof raw.narrativeObjects === 'boolean' ? raw.narrativeObjects : DEFAULT_USER_PREFERENCES.narrativeObjects,
+    narrativeObjects: false,
     cameraMode,
     enabledScenes: validScenes.length > 0 ? validScenes : [...ALL_SCENE_IDS],
     enabledKineticMotions: validMotions.length > 0 ? validMotions : [...ALL_KINETIC_MOTIONS],
+    enabledCameraViews: validCameraViews.length > 0 ? validCameraViews : [...ALL_CAMERA_VIEWS],
   };
 }
 

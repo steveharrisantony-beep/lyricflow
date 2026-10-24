@@ -4,6 +4,8 @@ import { cleanLyricMetadata } from './providers';
 
 export interface AppleLyricResult {
   lrc: string;
+  romanizedLrc?: string;
+  plain?: string;
   hasWordSync: boolean;
   source: string;
   sourceUrl?: string;
@@ -41,8 +43,13 @@ export function parseTtmlTime(value: string | null | undefined): number | null {
 /**
  * Convert Apple Music TTML XML (<p begin="..." end="..."><span begin="..." end="...">word</span></p>)
  * into enhanced word-synced LRC ([mm:ss.xx]<mm:ss.xx>word <mm:ss.xx>word2).
+ * Implements Stash TtmlParser.kt & Spicy Lyrics JoinSplitWords syllable gluing:
+ * - Extracts <span ttm:role="x-roman"> romanized lines when present
+ * - Unwraps nested <span ttm:role="x-bg"> background vocal containers
+ * - Strips non-sung <span ttm:role="x-translation"> / <span ttm:role="x-roman"> metadata spans from main vocal body
+ * - Glues adjacent syllable spans that have no whitespace between </span> and <span into unified words
  */
-export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; hasWordSync: boolean } {
+export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; romanizedLrc?: string; hasWordSync: boolean } {
   if (!ttml || !ttml.includes('<p')) return { lrc: '', hasWordSync: false };
   const decodeEntities = (s: string) =>
     s
@@ -57,29 +64,77 @@ export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; hasWordSy
   };
 
   const pRegex = /<p\b([^>]*)>([\s\S]*?)<\/p>/gi;
-  const spanRegex = /<span\b([^>]*)>([\s\S]*?)<\/span>/gi;
+  const leafSpanRegex = /<span\b([^>]*)>([^<]*)<\/span>/gi;
+  const romanSpanRegex = /<span\b[^>]*\bttm:role\s*=\s*["']x-roman["'][^>]*>([\s\S]*?)<\/span>/gi;
   const lines: string[] = [];
+  const romanLines: string[] = [];
   let hasWordSync = false;
 
   for (const pMatch of ttml.matchAll(pRegex)) {
     const pAttrs = pMatch[1] || '';
-    const pInner = pMatch[2] || '';
+    let pInner = pMatch[2] || '';
     const pBegin = parseTtmlTime(getAttr(pAttrs, 'begin'));
 
-    const wordTokens: { text: string; start: number; end: number }[] = [];
-    for (const sMatch of pInner.matchAll(spanRegex)) {
+    // Extract any embedded <span ttm:role="x-roman"> romanized line before stripping
+    const romanMatches = [...pInner.matchAll(romanSpanRegex)];
+    const extractedRoman = romanMatches
+      .map(m => decodeEntities(m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()))
+      .filter(Boolean)
+      .join(' ');
+
+    // 1. Strip translation / romanization metadata spans inside <p>
+    pInner = pInner.replace(
+      /<span\b[^>]*\bttm:role\s*=\s*["']x-(?:translation|roman)["'][^>]*>[\s\S]*?<\/span>/gi,
+      ''
+    );
+
+    // 2. Unwrap outer <span ttm:role="x-bg"> wrappers that contain nested timed <span ...> children
+    pInner = pInner.replace(
+      /<span\b[^>]*\bttm:role\s*=\s*["']x-bg["'][^>]*>([\s\S]*?<span\b[\s\S]*?)<\/span>\s*<\/span>/gi,
+      '$1</span>'
+    );
+
+    const wordTokens: { text: string; start: number; end: number; trailingSpace: boolean }[] = [];
+    let lastSpanEndIndex = -1;
+
+    for (const sMatch of pInner.matchAll(leafSpanRegex)) {
       const sAttrs = sMatch[1] || '';
       const role = getAttr(sAttrs, 'ttm:role');
       if (role && role !== 'x-bg') continue;
+
       const sBegin = parseTtmlTime(getAttr(sAttrs, 'begin'));
       const sEnd = parseTtmlTime(getAttr(sAttrs, 'end'));
-      const text = decodeEntities(sMatch[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+      const rawContent = decodeEntities(sMatch[2]);
+      const hadLeadingSpace = /^\s/.test(rawContent);
+      const hadTrailingSpace = /\s$/.test(rawContent);
+      const text = rawContent.replace(/\s+/g, ' ').trim();
+
+      const matchStartIndex = sMatch.index ?? 0;
+      const betweenText =
+        lastSpanEndIndex >= 0 ? pInner.slice(lastSpanEndIndex, matchStartIndex) : ' ';
+      const hasGapWhitespace = /\s/.test(betweenText);
+      lastSpanEndIndex = matchStartIndex + sMatch[0].length;
+
       if (text && sBegin !== null) {
-        wordTokens.push({
-          text,
-          start: sBegin,
-          end: sEnd !== null && sEnd >= sBegin ? sEnd : sBegin + 0.35,
-        });
+        const endSec = sEnd !== null && sEnd >= sBegin ? sEnd : sBegin + 0.35;
+        const prev = wordTokens[wordTokens.length - 1];
+        if (
+          prev &&
+          !hasGapWhitespace &&
+          !prev.trailingSpace &&
+          !hadLeadingSpace
+        ) {
+          prev.text += text;
+          prev.end = Math.max(prev.end, endSec);
+          prev.trailingSpace = hadTrailingSpace;
+        } else {
+          wordTokens.push({
+            text,
+            start: sBegin,
+            end: endSec,
+            trailingSpace: hadTrailingSpace,
+          });
+        }
       }
     }
 
@@ -91,15 +146,25 @@ export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; hasWordSy
         .join(' ');
       const lastEnd = wordTokens[wordTokens.length - 1].end;
       lines.push(`${formatLrcTimestamp(lineStart, '[')}${body}${formatLrcTimestamp(lastEnd, '<')}`);
+      if (extractedRoman) {
+        romanLines.push(`${formatLrcTimestamp(lineStart, '[')}${extractedRoman}`);
+      }
     } else {
       const plainText = decodeEntities(pInner.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
       if (plainText && pBegin !== null) {
         lines.push(`${formatLrcTimestamp(pBegin, '[')}${plainText}`);
+        if (extractedRoman) {
+          romanLines.push(`${formatLrcTimestamp(pBegin, '[')}${extractedRoman}`);
+        }
       }
     }
   }
 
-  return { lrc: lines.join('\n'), hasWordSync };
+  return {
+    lrc: lines.join('\n'),
+    romanizedLrc: romanLines.length > 0 ? romanLines.join('\n') : undefined,
+    hasWordSync,
+  };
 }
 
 /**
@@ -112,6 +177,9 @@ export function convertStructuredAppleJsonToLrc(payload: unknown): { lrc: string
 
   if (typeof data.ttml === 'string' && data.ttml.includes('<p')) {
     return convertTtmlToEnhancedLrc(data.ttml);
+  }
+  if (typeof data.ttmlContent === 'string' && data.ttmlContent.includes('<p')) {
+    return convertTtmlToEnhancedLrc(data.ttmlContent);
   }
   if (typeof data.lyrics === 'string' && data.lyrics.includes('<p')) {
     return convertTtmlToEnhancedLrc(data.lyrics);
@@ -147,17 +215,33 @@ export function convertStructuredAppleJsonToLrc(payload: unknown): { lrc: string
       : null;
 
     if (syllables && syllables.length > 0) {
-      const tokens: { text: string; start: number; end: number }[] = [];
+      const tokens: { text: string; start: number; end: number; partOfWord: boolean }[] = [];
       for (const syl of syllables) {
         if (!syl || typeof syl !== 'object') continue;
         const s = syl as Record<string, unknown>;
-        const txt = String(s.text ?? s.word ?? '').trim();
+        const rawTxt = String(s.text ?? s.word ?? '');
+        const txt = rawTxt.trim();
         if (!txt) continue;
         const tStartRaw = Number(s.time ?? s.startTimeMs ?? s.start ?? lineSec * 1000);
         const tDurRaw = Number(s.duration ?? s.durationMs ?? 300);
         const startSec = tStartRaw > 1000 || rawTime > 1000 ? tStartRaw / 1000 : tStartRaw;
         const durSec = tDurRaw > 50 ? tDurRaw / 1000 : tDurRaw;
-        tokens.push({ text: txt, start: startSec, end: startSec + Math.max(0.08, durSec) });
+        const endSec = startSec + Math.max(0.08, durSec);
+        const isPartOfWord = s.partOfWord === true;
+
+        const prev = tokens[tokens.length - 1];
+        if (prev && prev.partOfWord) {
+          prev.text += txt;
+          prev.end = Math.max(prev.end, endSec);
+          prev.partOfWord = isPartOfWord;
+        } else {
+          tokens.push({
+            text: txt,
+            start: startSec,
+            end: endSec,
+            partOfWord: isPartOfWord,
+          });
+        }
       }
       if (tokens.length > 0) {
         hasWordSync = true;
@@ -179,9 +263,14 @@ export function convertStructuredAppleJsonToLrc(payload: unknown): { lrc: string
 }
 
 /**
- * Stash-style Apple Music word-synced lyrics lookup:
- * 1. Resolves canonical Apple Music / iTunes track ID & metadata via iTunes Search API
- * 2. Queries public Apple Music TTML / word-sync lyrics endpoints (LyricsPlus / Boidu TTML proxy)
+ * Stash-style Apple Music & Multi-Source word-synced lyrics lookup:
+ * 1. Queries our server-side Stash lyrics pipeline (/music/lyrics) which resolves:
+ *    - lrc.red & Binimum ISRC Word-Synced Apple Music TTML
+ *    - iTunes Search API + Paxsenix Apple Music TTML
+ *    - Musixmatch RichSync word-synced & synced subtitles
+ *    - KuGou synced LRC
+ *    - YouTube Music InnerTube lyrics
+ * 2. Falls back to direct client-side lookup if running in offline/test mode.
  */
 export async function fetchAppleMusicWordSyncedLyrics(
   track: TrackInfo,
@@ -191,13 +280,72 @@ export async function fetchAppleMusicWordSyncedLyrics(
   const artist = cleanLyricMetadata(track.artist.trim());
   if (title.length < 2) return null;
 
+  // Step 1: Query our server-side Stash multi-source lyrics endpoint (/music/lyrics)
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    try {
+      signal?.throwIfAborted();
+      const params = new URLSearchParams({
+        title,
+        artist,
+        duration: String(Math.round(track.duration || 0)),
+      });
+      const serverUrl = `${window.location.origin}/music/lyrics?${params.toString()}`;
+      const res = await fetch(serverUrl, {
+        headers: { Accept: 'application/json' },
+        signal,
+      });
+      if (res.ok) {
+        const data = (await res.json()) as {
+          ttml?: string;
+          lrc?: string;
+          plain?: string;
+          source?: string;
+          sourceUrl?: string;
+          hasWordSync?: boolean;
+        };
+        if (typeof data.ttml === 'string' && data.ttml.includes('<p')) {
+          const parsed = convertTtmlToEnhancedLrc(data.ttml);
+          if (parsed.lrc) {
+            return {
+              lrc: parsed.lrc,
+              romanizedLrc: parsed.romanizedLrc,
+              hasWordSync: parsed.hasWordSync,
+              source: data.source || 'Apple Music · Word-Synced TTML',
+              sourceUrl: data.sourceUrl,
+            };
+          }
+        }
+        if (typeof data.lrc === 'string' && data.lrc.includes('[')) {
+          return {
+            lrc: data.lrc,
+            hasWordSync: Boolean(data.hasWordSync || data.lrc.includes('<')),
+            source: data.source || 'Stash · Synced Lyrics',
+            sourceUrl: data.sourceUrl,
+          };
+        }
+        if (typeof data.plain === 'string' && data.plain.trim().length > 10) {
+          return {
+            lrc: '',
+            plain: data.plain.trim(),
+            hasWordSync: false,
+            source: data.source || 'YouTube Music · InnerTube Lyrics',
+            sourceUrl: data.sourceUrl,
+          };
+        }
+      }
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      // Fall through to direct client lookup if server route is unavailable
+    }
+  }
+
   let appleTrackName = title;
   let appleArtistName = artist;
   let appleAlbumName = track.album || '';
   let appleDuration = track.duration || 0;
   let appleTrackViewUrl = '';
 
-  // Step 1: Canonicalize track against Apple Music / iTunes catalog (same as Stash)
+  // Step 2: Canonicalize track against Apple Music / iTunes catalog (same as Stash)
   try {
     const term = [title, artist].filter(Boolean).join(' ');
     const itunesUrl =
@@ -232,16 +380,8 @@ export async function fetchAppleMusicWordSyncedLyrics(
     // Proceed with user-supplied track metadata if iTunes lookup fails
   }
 
-  // Step 2: Query Stash-compatible Apple Music TTML / word-sync endpoints
+  // Step 3: Fallback direct endpoints
   const endpoints = [
-    'https://lyricsplus.prjktla.workers.dev/v2/lyrics/get?' +
-      new URLSearchParams({
-        title: appleTrackName,
-        artist: appleArtistName,
-        album: appleAlbumName,
-        duration: String(Math.round(appleDuration || track.duration || 0)),
-        source: 'apple,lyricsplus,musixmatch,spotify',
-      }).toString(),
     'https://lyrics-api.boidu.dev/getLyrics?' +
       new URLSearchParams({
         s: appleTrackName,
@@ -263,6 +403,7 @@ export async function fetchAppleMusicWordSyncedLyrics(
         if (parsed.lrc) {
           return {
             lrc: parsed.lrc,
+            romanizedLrc: parsed.romanizedLrc,
             hasWordSync: parsed.hasWordSync,
             source: parsed.hasWordSync ? 'Apple Music · Word-Synced TTML' : 'Apple Music · Timed Lyrics',
             sourceUrl: appleTrackViewUrl || undefined,
@@ -282,7 +423,6 @@ export async function fetchAppleMusicWordSyncedLyrics(
       }
     } catch (err) {
       if (signal?.aborted) throw err;
-      // Try next Apple Music lyric mirror
     }
   }
 

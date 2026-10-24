@@ -10,18 +10,37 @@ import {getInputSource,getLocalMediaTime,readLocalAudio} from '../../audio/audio
 import {AUDIO_ONLY_SCENES,buildCinematicSchedule,byId,sceneAt,type DirectedScene,type SceneId} from './catalog';
 import {NO_AUDIO,type Pulse} from './paint';
 import {drawInstrumentalMark} from './typography';
-import {drawNarrativeObjects,selectMotif} from './narrative';
 import {ProceduralCinema} from './procedural/ThreeEngine';
 import {GraphicCompositions,type GraphicSystem} from './procedural/GraphicCompositions';
 
 export type Quality='High'|'Balanced'|'Performance';
-export type CameraMode='Automatic'|'Front'|'Orbit'|'Side'|'Top';
+export const CAMERA_VIEWS=['Front','Orbit','Side','Top'] as const;
+export type CameraView=typeof CAMERA_VIEWS[number];
+export type CameraMode='Automatic'|CameraView;
 export interface CinematicProps{
  quality:Quality;intensity:number;speed:number;reducedMotion:boolean;
  demo:boolean;paused:boolean;autoScenes:boolean;cameraMode:CameraMode;manualScene:SceneId;
- spatialTypography:boolean;narrativeObjects:boolean;motionBlur:number;
+ spatialTypography:boolean;narrativeObjects?:boolean;motionBlur:number;
  enabledScenes?:readonly SceneId[];
  enabledKineticMotions?:readonly LyricMotion[];
+ enabledCameraViews?:readonly CameraView[];
+}
+export function resolveActiveCameraView(
+ cameraMode:CameraMode,
+ enabledCameraViews:readonly CameraView[]|undefined,
+ time:number,
+ sceneSection=0
+):CameraView{
+ const pool=enabledCameraViews&&enabledCameraViews.length>0
+  ?CAMERA_VIEWS.filter(v=>enabledCameraViews.includes(v))
+  :[...CAMERA_VIEWS];
+ const activePool=pool.length>0?pool:[...CAMERA_VIEWS];
+ if(cameraMode!=='Automatic'){
+  if(activePool.includes(cameraMode))return cameraMode;
+  return activePool[0];
+ }
+ const idx=(Math.max(0,Math.floor(time/11))+Math.max(0,sceneSection))%activePool.length;
+ return activePool[idx];
 }
 /** The first three hand-directed showcases have separate rendering grammars. */
 export function visualSystemFor(id:SceneId):GraphicSystem|'cinematic'|'motion2d'{
@@ -166,6 +185,7 @@ function useCinematicRenderer(props:CinematicProps){
    pulse.onset=measured?.onset??0;pulse.downbeat=measured?.downbeat??0;
    const factor=config.intensity;
    const visualTime=time*config.speed*(config.reducedMotion?.15:1);
+   const activeCameraView=resolveActiveCameraView(config.cameraMode,config.enabledCameraViews,time,scene.section);
    const cameraFrame=cameraRig.sample(time,pulse,factor,config.reducedMotion,
     lyricWordHit(lyric.cue,lyric.position,snapshot.emphasis,lyric.mode));
    if(scene.id!==previousId){
@@ -187,11 +207,14 @@ function useCinematicRenderer(props:CinematicProps){
     if(!old)target.setTransform(fx.width/w,0,0,fx.height/h,0,0);
     if(mode==='cinematic'&&graphics.available){
      graphics.render(id,pulse,visualTime,factor,transition<1?0:config.motionBlur,
-      config.reducedMotion,config.quality,config.narrativeObjects,config.cameraMode,cameraFrame);
+      config.reducedMotion,config.quality,false,activeCameraView,cameraFrame);
      if(old){target.setTransform(1,0,0,1,0,0);target.drawImage(glCanvas,0,0,outgoing.width,outgoing.height)}
     }else{
-     target.save();target.translate(w*.5+cameraFrame.x*w,h*.5+cameraFrame.y*h);
-     target.rotate(cameraFrame.roll);target.scale(cameraFrame.zoom*1.025,cameraFrame.zoom*1.025);target.translate(-w*.5,-h*.5);
+     const viewOffsetX=activeCameraView==='Side'?Math.sin(visualTime*.35)*w*.035:activeCameraView==='Orbit'?Math.cos(visualTime*.28)*w*.022:0;
+     const viewOffsetY=activeCameraView==='Top'?-h*.03:activeCameraView==='Orbit'?Math.sin(visualTime*.28)*h*.018:0;
+     const viewRoll=activeCameraView==='Side'?.018*Math.sin(visualTime*.4):activeCameraView==='Top'?.012*Math.cos(visualTime*.3):0;
+     target.save();target.translate(w*.5+cameraFrame.x*w+viewOffsetX,h*.5+cameraFrame.y*h+viewOffsetY);
+     target.rotate(cameraFrame.roll+viewRoll);target.scale(cameraFrame.zoom*1.025,cameraFrame.zoom*1.025);target.translate(-w*.5,-h*.5);
      if(mode==='cinematic')drawSafeFallback(target,id,w,h,visualTime,pulse);
      else if(mode==='motion2d')drawMotionGraphics(target,w,h,visualTime,pulse,id,factor,config.reducedMotion);
      else art.render(target,w,h,visualTime,{...pulse,bands:measured?.bands??(isDemo?demoBands:undefined)},mode,
@@ -220,9 +243,6 @@ function useCinematicRenderer(props:CinematicProps){
    // Scene construction/rendering can take time. Never draw words with an earlier media timestamp.
    const lyricClock=getLocalMediaTime()??time;
    lyric=getLyricState(lyricClock);
-   if(config.narrativeObjects){
-    drawNarrativeObjects(textCtx,scene,lyric.cue,w,h,visualTime,pulse,factor,config.reducedMotion);
-   }
    if(lyric.cue){
     const project=visualMode==='cinematic'&&graphics.available?
      (x:number,y:number,z:number)=>graphics.projectPoint(x,y,z,w,h):makeLyricProjection(w,h,cameraFrame);
@@ -239,6 +259,7 @@ function useCinematicRenderer(props:CinematicProps){
    element.dataset.lyricClock=lyricClock.toFixed(3);
    element.dataset.lyricClockLag=String(Math.round(Math.abs((getLocalMediaTime()??lyricClock)-lyricClock)*1000));
    element.dataset.cameraImpact=cameraFrame.impact.toFixed(3);element.dataset.cameraZoom=cameraFrame.zoom.toFixed(3);
+   element.dataset.cameraView=activeCameraView;
    element.dataset.wordKeywords=snapshot.emphasis.keywords.slice(0,12).join(',');
    // Warm scheduled geometry and shader programs before it reaches the playback clock.
    const next=directed?sequence.find(s=>s.start>=scene.end-.001):sceneForAudio(time+13,scene.id,true);
@@ -256,7 +277,7 @@ function useCinematicRenderer(props:CinematicProps){
    element.dataset.visualSystem=visualMode;
    element.dataset.currentScene=scene.id;
    element.dataset.motionBlur=String(config.reducedMotion?0:config.motionBlur);
-   element.dataset.motif=config.narrativeObjects?selectMotif(lyric.cue?.text||'',lyric.cue?.mood||'abstract',scene.id):'disabled';
+   element.dataset.motif='disabled';
    element.dataset.sceneLabel=byId[scene.id].label;
    element.dataset.hasLyrics=sequence.length>0&&!!lyric.cue?'yes':'no';
    element.dataset.sceneCount=String(sequence.length);

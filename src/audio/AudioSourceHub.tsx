@@ -35,11 +35,11 @@ function AudioSourceHub(
  useEffect(()=>{
   if(!open)return;
   const escape=(event:KeyboardEvent)=>{
-   if(event.key==='Escape'&&activeMode)onClose();
+   if(event.key==='Escape')onClose();
   };
   document.addEventListener('keydown',escape);
   return()=>document.removeEventListener('keydown',escape);
- },[open,activeMode,onClose]);
+ },[open,onClose]);
 
  const handleChooseLocal=()=>{
   onSelectMode('local');
@@ -53,7 +53,7 @@ function AudioSourceHub(
  };
 
  return <>
-  {open&&<div className="source-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget&&activeMode)onClose()}}>
+  {open&&<div className="source-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
    <div ref={modalRef} className="source-modal" role="dialog" aria-modal="true" aria-label="Choose audio source">
     <div className="source-modal-head">
      <div>
@@ -61,7 +61,10 @@ function AudioSourceHub(
       <h2>Choose your audio source</h2>
       <small>Select Local Audio Upload or stream from the Built-in Stash Online Player</small>
      </div>
-     {activeMode&&<button type="button" aria-label="Close audio sources" className="source-close" onClick={onClose}><X size={21}/></button>}
+     <button type="button" aria-label="Close audio sources" className="source-close" onClick={onClose} title="Close window">
+      <X size={20}/>
+      <span>Close</span>
+     </button>
     </div>
 
     <div className="source-two-card-grid">
@@ -96,11 +99,12 @@ function AudioSourceHub(
 
     {tab==='online'&&<div className="source-online-stage">
      <SongSearch onPlay={async song=>{onSelectMode('online');await onPlaySong(song);onClose()}}/>
-     {activeMode==='online'&&<div className="source-modal-foot">
-      <span>Tip: You can also search and switch songs directly from the main player bar below the visualizer.</span>
-      <button type="button" className="source-primary" onClick={onClose}>Continue to Visualizer</button>
-     </div>}
     </div>}
+
+    <div className="source-modal-foot">
+     <span>Tip: You can also search and switch songs directly from the main player bar below the visualizer.</span>
+     <button type="button" className="source-primary" onClick={onClose}>Close Window</button>
+    </div>
    </div>
   </div>}
  </>;

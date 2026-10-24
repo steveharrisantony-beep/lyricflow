@@ -140,7 +140,7 @@ export default function TrackFinder({
    if(apple&&apple.lrc){
     onLyricsFound({
      original:apple.lrc,
-     romanized:'',
+     romanized:apple.romanizedLrc||'',
      source:apple.source,
      sourceUrl:apple.sourceUrl,
      hasWordSync:apple.hasWordSync
