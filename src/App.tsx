@@ -5,8 +5,18 @@ import CinematicStage, {
   type CameraMode,
   type CameraView,
 } from './visualization/cinematic/CinematicStage';
-import { TEMPLATES, type SceneId } from './visualization/cinematic/catalog';
-import { LYRIC_MOTIONS, type LyricMotion } from './visualization/cinematic/kineticTypography';
+import {
+  TEMPLATES,
+  VOXELWALL_CATEGORIES,
+  type SceneId,
+  type VoxelWallCategory,
+} from './visualization/cinematic/catalog';
+import {
+  VOXELVERSE_STYLES,
+  VOXELVERSE_FAMILIES,
+  type LyricMotion,
+  type VoxelVerseFamily,
+} from './visualization/cinematic/kineticTypography';
 import { fontLabel } from './visualization/cinematic/fonts';
 import { setAudioSensitivity, getAudioFrequencyBands, setSpectrumSensitivity } from './audio/audioSignal';
 import LocalPlayer, { type LocalPlayerHandle } from './audio/LocalPlayer';
@@ -56,29 +66,28 @@ import {
 
 const choices = TEMPLATES;
 
-const MOTION_DESCRIPTIONS: Record<LyricMotion, string> = {
-  dolly: '3D camera Z-axis push & word impulse',
-  rise: 'Critically-damped vertical lift & pitch',
-  sweep: 'Horizontal tracking glide with shear',
-  tilt: 'Alternating diagonal plane rotation',
-  elastic: 'Spring-oscillating word stretch',
-  ribbon: 'Sinusoidal 3D wave & roll',
-  stamp: 'High-impact kinetic slam & shockwave',
-  cascade: 'Stepped multi-row diagonal waterfall',
-};
-
 const CAMERA_VIEW_DESCRIPTIONS: Record<CameraView, string> = {
   Front: 'Centered concert-stage framing with beat push',
-  Orbit: '360° sweeping orbital path around the 3D world',
+  Orbit: '360° sweeping orbital path around the canvas',
   Side: 'Wide lateral tracking angle with dynamic roll',
   Top: 'Elevated overhead perspective looking down on geometry',
 };
+
+const SIGNATURE_VOXELWALL_IDS: readonly SceneId[] = [
+  'holographic-tide',
+  'chroma-moire-voids',
+  'crystal-resonance',
+  'celestial-orbit',
+  'aurora-field',
+  'signal-chamber',
+  'chromatic-drive',
+];
 
 export default function App() {
   const initialPrefs = useRef(loadLocalPreferences()).current;
 
   // Auth & session state
-  const [firebaseUser, setFirebaseUser] = useState<User | null>(() => auth.currentUser);
+  const [firebaseUser, setFirebaseUser] = useState<User | null>(() => auth?.currentUser ?? null);
   const [sessionMode, setSessionMode] = useState<'google' | 'guest' | null>(() => getSavedSessionMode());
   const [authReady, setAuthReady] = useState(false);
   const [syncBadge, setSyncBadge] = useState('Local profile');
@@ -88,9 +97,10 @@ export default function App() {
   const [sourceOpen, setSourceOpen] = useState(false);
   const sourceAutoPromptedRef = useRef(false);
 
-  // Visualizer & theme / kinetic toggle state
-  const [sceneFilter, setSceneFilter] = useState<'all' | '2d' | '3d' | 'enabled'>('all');
-  const [scene, setScene] = useState<SceneId>('crimson-impact');
+  // Visualizer & VoxelWall / VoxelVerse filter state
+  const [sceneFilter, setSceneFilter] = useState<'all' | VoxelWallCategory | 'enabled'>('all');
+  const [verseFamilyFilter, setVerseFamilyFilter] = useState<'all' | 'featured' | VoxelVerseFamily>('all');
+  const [scene, setScene] = useState<SceneId>('holographic-tide');
   const [intensity, setIntensity] = useState(initialPrefs.intensity);
   const [speed, setSpeed] = useState(initialPrefs.speed);
   const [sensitivity, setSensitivity] = useState(initialPrefs.sensitivity);
@@ -104,8 +114,8 @@ export default function App() {
   const [enabledKineticMotions, setEnabledKineticMotions] = useState<LyricMotion[]>(initialPrefs.enabledKineticMotions);
   const [enabledCameraViews, setEnabledCameraViews] = useState<CameraView[]>(initialPrefs.enabledCameraViews);
 
-  const [liveScene, setLiveScene] = useState('Crimson Impact');
-  const [renderStatus, setRenderStatus] = useState('INITIALIZING VISUALS');
+  const [liveScene, setLiveScene] = useState('Holographic Tide');
+  const [renderStatus, setRenderStatus] = useState('VOXELWALL 2D ENGINE');
   const spectrumCanvas = useRef<HTMLCanvasElement>(null);
   const playerRef = useRef<LocalPlayerHandle>(null);
   const audioHubRef = useRef<AudioSourceHubHandle>(null);
@@ -418,7 +428,7 @@ export default function App() {
   const toggleSceneEnabled = (id: SceneId) => {
     setEnabledScenes(prev => {
       if (prev.includes(id)) {
-        if (prev.length <= 1) return prev; // Keep at least 1 theme active
+        if (prev.length <= 1) return prev;
         return prev.filter(item => item !== id);
       }
       return [...prev, id];
@@ -428,7 +438,7 @@ export default function App() {
   const toggleKineticMotionEnabled = (motion: LyricMotion) => {
     setEnabledKineticMotions(prev => {
       if (prev.includes(motion)) {
-        if (prev.length <= 1) return prev; // Keep at least 1 motion active
+        if (prev.length <= 1) return prev;
         return prev.filter(item => item !== motion);
       }
       return [...prev, motion];
@@ -438,7 +448,7 @@ export default function App() {
   const toggleCameraViewEnabled = (view: CameraView) => {
     setEnabledCameraViews(prev => {
       if (prev.includes(view)) {
-        if (prev.length <= 1) return prev; // Keep at least 1 camera view active
+        if (prev.length <= 1) return prev;
         const next = prev.filter(item => item !== view);
         if (cameraMode === view) {
           setCameraMode('Automatic');
@@ -451,7 +461,6 @@ export default function App() {
 
   const isAuthenticatedOrGuest = Boolean(firebaseUser || sessionMode);
 
-  // First-time Login Gate
   if (authReady && !isAuthenticatedOrGuest) {
     return (
       <LoginScreen
@@ -472,6 +481,12 @@ export default function App() {
   const enabledChoices = choices.filter(c => enabledScenes.includes(c.id));
   const stepperPool = enabledChoices.length > 0 ? enabledChoices : choices;
 
+  const filteredVerseStyles = VOXELVERSE_STYLES.filter(style => {
+    if (verseFamilyFilter === 'all') return true;
+    if (verseFamilyFilter === 'featured') return Boolean(style.featured);
+    return style.family === verseFamilyFilter;
+  });
+
   return (
     <div className={'shell ' + (performance ? 'performance-mode' : '')}>
       <header className="header">
@@ -483,7 +498,7 @@ export default function App() {
             <strong>
               lyric<span>flow</span>
             </strong>
-            <small>STASH SOUNDSTAGE &amp; KINETIC LYRICS</small>
+            <small>VOXELWALL SOUNDSTAGE &amp; VOXELVERSE LYRICS</small>
           </div>
         </div>
         <div className="track">
@@ -779,13 +794,13 @@ export default function App() {
           <div>
             <b>{liveScene}</b>
             <small>
-              {enabledScenes.length}/40 Themes · {enabledKineticMotions.length}/8 Kinetic Styles
+              {enabledScenes.length}/{choices.length} VoxelWall Themes · {enabledKineticMotions.length}/{VOXELVERSE_STYLES.length} VoxelVerse Styles
             </small>
           </div>
         </div>
         <div className="stage-bottom">
           <span>
-            <i className="dot" /> {renderStatus} · PROCEDURAL CINEMA
+            <i className="dot" /> {renderStatus} · VOXELWALL &amp; VOXELVERSE
           </span>
           <span>{fps} FPS</span>
         </div>
@@ -821,7 +836,7 @@ export default function App() {
               ))}
             </div>
             <p className="note">
-              Settings, enabled themes, kinetic animation toggles, and per-song lyric delays are
+              Settings, enabled VoxelWall themes, VoxelVerse lyric style toggles, and per-song lyric delays are
               automatically saved to your profile.
             </p>
           </aside>
@@ -887,18 +902,17 @@ export default function App() {
         enabledScenes={enabledScenes}
       />
 
-      {/* 6. THEME & KINETIC ANIMATION CUSTOMIZER */}
-      <section className="control-panel" aria-label="Themes and kinetic lyric animation toggles">
+      {/* 6. VOXELVERSE LYRIC STYLES & VOXELWALL BACKGROUND CUSTOMIZER */}
+      <section className="control-panel" aria-label="VoxelWall themes and VoxelVerse lyric animation toggles">
         <div className="control-heading">
           <div className="heading-left">
             <span className="heading-icon">
               <Sparkles size={16} />
             </span>
             <div>
-              <b>KINETIC LYRIC ANIMATION STYLES ({enabledKineticMotions.length}/8 ACTIVE)</b>
+              <b>VOXELVERSE LYRIC ANIMATION STYLES ({enabledKineticMotions.length}/{VOXELVERSE_STYLES.length} ACTIVE)</b>
               <small>
-                Toggle individual 3D word choreography styles on or off — auto-director uses only
-                enabled styles
+                19 VoxelVerse lyric styles organized into Signature, Spatial, Kinetic, and Editorial families — toggle individual styles ON or OFF
               </small>
             </div>
           </div>
@@ -908,28 +922,55 @@ export default function App() {
               className="upload-button"
               onClick={() => setEnabledKineticMotions([...ALL_KINETIC_MOTIONS])}
             >
-              Enable All 8 Styles
+              Enable All 19 Styles
             </button>
           </div>
         </div>
 
+        <div className="scene-filter" aria-label="VoxelVerse style families">
+          <button
+            type="button"
+            aria-pressed={verseFamilyFilter === 'all'}
+            onClick={() => setVerseFamilyFilter('all')}
+          >
+            All 19
+          </button>
+          <button
+            type="button"
+            aria-pressed={verseFamilyFilter === 'featured'}
+            onClick={() => setVerseFamilyFilter('featured')}
+          >
+            Featured · {VOXELVERSE_STYLES.filter(s => s.featured).length}
+          </button>
+          {VOXELVERSE_FAMILIES.map(fam => (
+            <button
+              key={fam.id}
+              type="button"
+              aria-pressed={verseFamilyFilter === fam.id}
+              onClick={() => setVerseFamilyFilter(fam.id)}
+            >
+              {fam.name} · {fam.count}
+            </button>
+          ))}
+        </div>
+
         <div className="kinetic-motion-grid">
-          {LYRIC_MOTIONS.map(motion => {
-            const isEnabled = enabledKineticMotions.includes(motion);
+          {filteredVerseStyles.map(style => {
+            const isEnabled = enabledKineticMotions.includes(style.id);
             return (
               <div
-                key={motion}
+                key={style.id}
                 className={'kinetic-motion-card ' + (isEnabled ? 'enabled' : 'disabled')}
               >
                 <div className="kinetic-motion-top">
-                  <strong>{motion.toUpperCase()}</strong>
+                  <strong>{style.name.toUpperCase()}</strong>
                   <button
                     type="button"
                     role="switch"
                     aria-checked={isEnabled}
-                    aria-label={`Toggle ${motion} kinetic lyric animation`}
+                    aria-label={`Toggle ${style.name} VoxelVerse lyric animation`}
                     className={'theme-toggle-pill ' + (isEnabled ? 'on' : 'off')}
-                    onClick={() => toggleKineticMotionEnabled(motion)}
+                    onClick={() => toggleKineticMotionEnabled(style.id)}
                   >
                     {isEnabled ? (
                       <>
@@ -940,7 +981,7 @@ export default function App() {
                     )}
                   </button>
                 </div>
-                <small>{MOTION_DESCRIPTIONS[motion]}</small>
+                <small>{style.family.toUpperCase()} · {style.detail}</small>
               </div>
             );
           })}
@@ -952,10 +993,9 @@ export default function App() {
               <Waves size={16} />
             </span>
             <div>
-              <b>CINEMATIC VISUAL THEMES ({enabledScenes.length}/40 ENABLED)</b>
+              <b>VOXELWALL MUSIC-REACTIVE BACKGROUNDS ({enabledScenes.length}/{choices.length} ENABLED)</b>
               <small>
-                Turn individual themes ON or OFF to curate your visualizer pool, or click a theme
-                card to preview
+                32 VoxelWall live music-reactive wallpapers across Flow, Contours, Sculptures, Space, Nature, Architecture, and Journeys (all 3D themes, Crimson Impact, and Vinyl Groove removed)
               </small>
             </div>
           </div>
@@ -965,7 +1005,7 @@ export default function App() {
               className="upload-button"
               onClick={() => setEnabledScenes([...ALL_SCENE_IDS])}
             >
-              Enable All 40 Themes
+              Enable All {choices.length} Themes
             </button>
             <label className="demo-toggle">
               <div>
@@ -996,7 +1036,7 @@ export default function App() {
               checked={spatialTypography}
               onChange={e => setSpatialTypography(e.target.checked)}
             />{' '}
-            Kinetic lyric choreography{' '}
+            VoxelVerse lyric choreography{' '}
             <small>({enabledKineticMotions.length} active styles)</small>
           </label>
           <label className="camera-picker">
@@ -1080,23 +1120,34 @@ export default function App() {
           </div>
         </div>
 
-        <div className="scene-filter" aria-label="Scene categories">
-          {(
-            [
-              ['all', 'All 40'],
-              ['2d', '2D motion · 12'],
-              ['3d', '3D worlds · 28'],
-              ['enabled', `Enabled (${enabledScenes.length})`],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              aria-pressed={sceneFilter === value}
-              onClick={() => setSceneFilter(value)}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="scene-filter" aria-label="VoxelWall scene categories">
+          <button
+            type="button"
+            aria-pressed={sceneFilter === 'all'}
+            onClick={() => setSceneFilter('all')}
+          >
+            All {choices.length}
+          </button>
+          {VOXELWALL_CATEGORIES.map(cat => {
+            const count = choices.filter(c => c.family === cat.id).length;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                aria-pressed={sceneFilter === cat.id}
+                onClick={() => setSceneFilter(cat.id)}
+              >
+                {cat.label} · {count}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            aria-pressed={sceneFilter === 'enabled'}
+            onClick={() => setSceneFilter('enabled')}
+          >
+            Enabled ({enabledScenes.length})
+          </button>
         </div>
 
         <div className="scene-grid cinematic-grid">
@@ -1104,20 +1155,16 @@ export default function App() {
             .filter(item => {
               if (sceneFilter === 'enabled') return enabledScenes.includes(item.id);
               if (sceneFilter === 'all') return true;
-              return (
-                (sceneFilter === '2d') ===
-                (item.family === '2d' || ['crimson-impact', 'color-riot'].includes(item.id))
-              );
+              return item.family === sceneFilter;
             })
             .map((item, i) => {
               const isEnabled = enabledScenes.includes(item.id);
+              const isSignature = SIGNATURE_VOXELWALL_IDS.includes(item.id);
               return (
                 <div
                   className={
                     'scene-card cinematic-scene-card ' +
-                    (['crimson-impact', 'color-riot', 'glass-architecture'].includes(item.id)
-                      ? 'premiere-scene '
-                      : '') +
+                    (isSignature ? 'premiere-scene ' : '') +
                     (scene === item.id && !autoScenes ? 'selected ' : '') +
                     (!isEnabled ? 'scene-disabled' : '')
                   }
@@ -1138,19 +1185,15 @@ export default function App() {
                     <span className="scene-preview-initials">
                       {item.label.slice(0, 2).toUpperCase()}
                     </span>
-                    {['crimson-impact', 'color-riot', 'glass-architecture'].includes(item.id) && (
-                      <span className="premiere-tag">SIGNATURE</span>
-                    )}
+                    {isSignature && <span className="premiere-tag">VOXELWALL</span>}
                   </span>
                   <span className="scene-copy">
                     <b>{item.label}</b>
                     <small>
-                      {item.id === 'crimson-impact'
-                        ? '64-band spectrum'
+                      {item.id === 'signal-chamber'
+                        ? '64-band chamber · ' + fontLabel(item.font)
                         : item.id === 'color-riot'
-                        ? 'Generative poster art'
-                        : item.id === 'glass-architecture'
-                        ? 'Architectural 3D'
+                        ? 'Kinetic geometry · ' + fontLabel(item.font)
                         : item.family + ' · ' + fontLabel(item.font)}
                     </small>
                   </span>
@@ -1344,8 +1387,8 @@ export default function App() {
       />
 
       <footer>
-        LYRICFLOW <span>·</span> STASH ONLINE PLAYER &amp; APPLE MUSIC WORD-SYNC <span>·</span>{' '}
-        {enabledScenes.length}/40 THEMES ACTIVE <aside>CLOUD-SYNCED SOUNDSTAGE</aside>
+        LYRICFLOW <span>·</span> VOXELWALL BACKGROUNDS &amp; VOXELVERSE LYRICS <span>·</span>{' '}
+        {enabledScenes.length}/{choices.length} THEMES · {enabledKineticMotions.length}/{VOXELVERSE_STYLES.length} STYLES ACTIVE <aside>CLOUD-SYNCED SOUNDSTAGE</aside>
       </footer>
     </div>
   );

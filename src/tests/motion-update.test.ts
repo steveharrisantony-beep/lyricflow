@@ -25,8 +25,8 @@ describe('live motion graphics',()=>{
   expect(objectDrive('treble',1,1,0,1)).toBe(0);
   const e=new BandEnvelope();expect(e.update(.8,.025,0)).toBe(0);
  });
- it('routes ten distinct new themes to the 2D engine',()=>{
-  expect(new Set(MOTION_SCENES).size).toBe(10);
+ it('routes thirty distinct VoxelWall themes to the 2D motion engine',()=>{
+  expect(new Set(MOTION_SCENES).size).toBe(30);
   for(const id of MOTION_SCENES)expect(visualSystemFor(id)).toBe('motion2d');
  });
  it('keeps lyric ink and accents readable against every scene surface',()=>{

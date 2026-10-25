@@ -1,15 +1,16 @@
-import {byId,type SceneId} from '../catalog';
+import {byId,TEMPLATES,type SceneId} from '../catalog';
 import type {Pulse} from '../paint';
-export const MOTION_SCENES:readonly SceneId[]=[
- 'paper-cut','orbital-score','silk-waves','bauhaus-beat','star-map',
- 'halftone-club','ribbon-dance','vinyl-groove','pixel-garden','contour-flow'
-];
+
+export const MOTION_SCENES:readonly SceneId[]=TEMPLATES
+ .map(t=>t.id)
+ .filter((id):id is SceneId=>id!=='signal-chamber'&&id!=='color-riot');
+
 const TAU=Math.PI*2;
 
 /**
- * Ten art-directed 2D motion graphics plates inspired by mexicat/pdoom-video
- * and Tunai-0511/baseline. Combines multi-layer architectural composition,
- * precision plotter hairlines, and distinct instrument-role reactivity.
+ * VoxelWall-inspired (https://voxelwall.app/wallpapers) music-reactive live backgrounds
+ * across all 7 categories: Flow, Contours, Sculptures, Space, Nature, Architecture, and Journeys.
+ * Every scene responds to real-time bass, midrange, treble, beat, and onset envelopes.
  */
 export function drawMotionGraphics(
  c:CanvasRenderingContext2D,
@@ -21,7 +22,8 @@ export function drawMotionGraphics(
  intensity:number,
  reduced:boolean
 ){
- const theme=byId[id],u=Math.min(w,h),k=intensity*(reduced?.12:1);
+ const theme=byId[id]||TEMPLATES[0];
+ const u=Math.min(w,h),k=intensity*(reduced?.12:1);
  const bass=p.bass*k,mid=p.mids*k,high=p.treble*k,hit=p.beat*k,onset=(p.onset??0)*k;
  const t=time*(reduced?.1:1);
 
@@ -33,12 +35,12 @@ export function drawMotionGraphics(
  const gradient=c.createLinearGradient(0,h,w,0);
  gradient.addColorStop(0,theme.accent+'2c');
  gradient.addColorStop(.52,theme.background);
- gradient.addColorStop(1,theme.accent+'4a');
+ gradient.addColorStop(1,theme.accent+'48');
  c.fillStyle=gradient;
  c.fillRect(0,0,w,h);
 
  const glow=c.createRadialGradient(w*.5,h*.5,u*.04,w*.5,h*.5,u*.68);
- glow.addColorStop(0,theme.accent+'28');
+ glow.addColorStop(0,theme.accent+'2a');
  glow.addColorStop(1,'transparent');
  c.fillStyle=glow;
  c.fillRect(0,0,w,h);
@@ -53,9 +55,9 @@ export function drawMotionGraphics(
   c.beginPath();c.moveTo(x,y);c.lineTo(x2,y2);c.stroke();
  };
 
- // Subtle architectural plotter grid behind all 2D plates
+ // Subtle architectural plotter grid behind all VoxelWall plates
  c.save();
- c.strokeStyle=theme.foreground+'12';
+ c.strokeStyle=theme.foreground+'10';
  c.lineWidth=1;
  for(let gx=1;gx<8;gx++)line(w*gx/8,h*.08,w*gx/8,h*.92);
  for(let gy=1;gy<6;gy++)line(w*.06,h*gy/6,w*.94,h*gy/6);
@@ -65,8 +67,159 @@ export function drawMotionGraphics(
  c.strokeStyle=theme.accent;
 
  switch(id){
+ // ==================== FLOW ====================
+ case 'holographic-tide':
+ case 'liquid-filigree':
+ case 'crimson-current':
+ case 'silk-waves':
+ case 'ribbon-dance': {
+  const ribbonCount=id==='holographic-tide'?16:id==='liquid-filigree'?18:id==='silk-waves'?12:15;
+  const freq1=id==='liquid-filigree'?2.2:id==='crimson-current'?1.5:1.3;
+  for(let i=0;i<ribbonCount;i++){
+   const yBase=h*(.08+i*(.84/(ribbonCount-1)));
+   c.beginPath();
+   for(let x=-12;x<=w+12;x+=10){
+    const nx=x/w;
+    const wave1=Math.sin(nx*TAU*freq1+t*.52+i*.48)*u*(.042+bass*.16);
+    const wave2=Math.cos(nx*TAU*3.2-t*.74+i*.32)*u*(.018+high*.058);
+    const y=yBase+wave1+wave2;
+    if(x===-12)c.moveTo(x,y);else c.lineTo(x,y);
+   }
+   c.strokeStyle=i%3===0?theme.accent+'cc':i%2?theme.accent+'77':theme.foreground+'44';
+   c.lineWidth=u*(id==='silk-waves'?.020:id==='crimson-current'?.014:.0058)*(1+mid*.85);
+   c.stroke();
+   if(i%3===0){
+    const nodeX=w*((.16+i*.11+t*.05)%0.84+0.08);
+    const nx=nodeX/w;
+    const nodeY=yBase+Math.sin(nx*TAU*freq1+t*.52+i*.48)*u*(.042+bass*.16);
+    circle(nodeX,nodeY,u*(.007+hit*.016),theme.accent);
+   }
+  }
+  break;
+ }
+
+ case 'gilded-whirlpool': {
+  c.save();
+  c.translate(w*.5,h*.5);
+  const arms=6;
+  for(let arm=0;arm<arms;arm++){
+   c.beginPath();
+   for(let s=0;s<=90;s++){
+    const frac=s/90;
+    const angle=arm*(TAU/arms)+frac*TAU*2.1-t*(.65+mid*.35);
+    const radius=u*(.02+frac*.46)*(1+bass*.14)+Math.sin(frac*12-t*2.4)*u*.012*high;
+    const x=Math.cos(angle)*radius*1.22;
+    const y=Math.sin(angle)*radius;
+    if(s===0)c.moveTo(x,y);else c.lineTo(x,y);
+   }
+   c.strokeStyle=arm%2===0?theme.accent+'cc':theme.foreground+'66';
+   c.lineWidth=u*(.004+hit*.006);
+   c.stroke();
+  }
+  for(let r=1;r<=5;r++){
+   circle(0,0,u*(.06*r+bass*.04),theme.accent+'44',true);
+  }
+  c.restore();
+  break;
+ }
+
+ // ==================== CONTOURS ====================
+ case 'chroma-moire-voids': {
+  const shift=u*(.04+bass*.09);
+  const centers=[
+   {x:w*.5+Math.cos(t*.42)*shift,y:h*.5+Math.sin(t*.36)*shift,col:theme.accent+'88'},
+   {x:w*.5-Math.cos(t*.38)*shift,y:h*.5-Math.sin(t*.48)*shift,col:theme.foreground+'55'}
+  ];
+  for(const center of centers){
+   for(let i=1;i<=18;i++){
+    const r=u*(.03*i+mid*.02)+Math.sin(t*1.4+i*.4)*u*high*.012;
+    c.lineWidth=i%4===0?2.0:1.0;
+    circle(center.x,center.y,r,center.col,true);
+   }
+  }
+  break;
+ }
+
+ case 'cobalt-contours':
+ case 'molten-contours':
+ case 'layered-contours':
+ case 'contour-flow': {
+  const rings=id==='molten-contours'?24:20;
+  const lobes=id==='cobalt-contours'?4:id==='layered-contours'?5:3;
+  for(let i=0;i<rings;i++){
+   c.beginPath();
+   for(let j=0;j<=120;j++){
+    const a=j/120*TAU;
+    const r=u*(.11+i*.018)*(1+bass*.16)
+     +Math.sin(a*lobes+t*.48+i*.24)*u*(.028+mid*.054)
+     +Math.cos(a*7-t*.62+i*.15)*u*(.010+high*.020);
+    const x=w*.5+Math.cos(a)*r*1.32;
+    const y=h*.5+Math.sin(a)*r;
+    if(j===0)c.moveTo(x,y);else c.lineTo(x,y);
+   }
+   c.closePath();
+   c.strokeStyle=i%4===0?theme.foreground+'99':theme.accent+(i%2?'66':'bb');
+   c.lineWidth=i%4===0?2.2:1.15;
+   c.stroke();
+  }
+  break;
+ }
+
+ // ==================== SCULPTURES ====================
+ case 'crystal-resonance': {
+  c.save();
+  c.translate(w*.5,h*.5);
+  const shards=12;
+  for(let i=0;i<shards;i++){
+   const a=i*(TAU/shards)+t*.18;
+   const len=u*(.16+(i%3)*.08+bass*.16+hit*.06);
+   const spread=.22+mid*.14;
+   c.beginPath();
+   c.moveTo(0,0);
+   c.lineTo(Math.cos(a-spread)*len*.58,Math.sin(a-spread)*len*.58);
+   c.lineTo(Math.cos(a)*len,Math.sin(a)*len);
+   c.lineTo(Math.cos(a+spread)*len*.58,Math.sin(a+spread)*len*.58);
+   c.closePath();
+   c.fillStyle=i%2===0?theme.accent+'38':theme.foreground+'22';
+   c.fill();
+   c.strokeStyle=i%2===0?theme.accent:theme.foreground+'88';
+   c.lineWidth=1.4;
+   c.stroke();
+  }
+  c.restore();
+  break;
+ }
+
+ case 'pearl-resonance':
+ case 'tidal-bloom': {
+  c.save();
+  c.translate(w*.5,h*.5);
+  const petals=id==='tidal-bloom'?14:10;
+  for(let layer=4;layer>=1;layer--){
+   const baseR=u*(.08*layer+bass*.07);
+   for(let i=0;i<petals;i++){
+    const a=i*(TAU/petals)+t*(.14*layer*(layer%2?1:-1));
+    const px=Math.cos(a)*baseR*.55;
+    const py=Math.sin(a)*baseR*.55;
+    c.save();
+    c.translate(px,py);
+    c.rotate(a);
+    c.beginPath();
+    c.ellipse(0,0,baseR*(.52+mid*.18),baseR*(.24+high*.10),0,0,TAU);
+    c.fillStyle=layer%2===0?theme.accent+'28':theme.foreground+'1c';
+    c.fill();
+    c.strokeStyle=layer%2===0?theme.accent+'aa':theme.foreground+'66';
+    c.lineWidth=1.3;
+    c.stroke();
+    c.restore();
+   }
+  }
+  circle(0,0,u*(.045+hit*.025),theme.accent);
+  c.restore();
+  break;
+ }
+
  case 'paper-cut': {
-  // Multi-layered brutalist paper diorama canyon + floating geometric shards
   for(let i=0;i<10;i++){
    const side=i%2===0?-1:1;
    const layer=Math.floor(i/2);
@@ -79,23 +232,21 @@ export function drawMotionGraphics(
    c.fillStyle=i%3===0?theme.accent:i%3===1?'#d5c8ae':'#6e9896';
    const rw=u*(.46+bass*.22),rh=u*(.16+hit*.09);
    c.fillRect(-rw*.5,-rh*.5,rw,rh);
-   // Plotter bevel rule along each paper slab
    c.strokeStyle=theme.foreground+'55';
    c.lineWidth=1.2;
    c.strokeRect(-rw*.46,-rh*.42,rw*.92,rh*.84);
    c.restore();
   }
-  // Central aperture framing rings
-  c.strokeStyle=theme.accent+'66';
   circle(w*.5,h*.5,u*(.33+bass*.06),theme.accent+'55',true);
   circle(w*.5,h*.5,u*(.39+hit*.05),theme.foreground+'33',true);
   break;
  }
+
+ // ==================== SPACE ====================
+ case 'celestial-orbit':
  case 'orbital-score': {
-  // Celestial astrolabe & pdoom-video spacetime gyroscope
   c.save();
   c.translate(w*.5,h*.5);
-  // Outer degree calibration ticks
   const outerR=u*(.42+bass*.04);
   c.strokeStyle=theme.foreground+'38';
   for(let deg=0;deg<72;deg++){
@@ -110,12 +261,12 @@ export function drawMotionGraphics(
    c.rotate(rot);
    c.strokeStyle=i%2?theme.accent+'99':theme.foreground+'66';
    c.lineWidth=u*(i%3===0?.0032:.0018);
-   const r=u*(.16+i*.042+bass*.075);
+   const r=u*(.15+i*.042+bass*.075);
    c.beginPath();
-   c.ellipse(0,0,r,r*(.48+(i%3)*.12),0,0,TAU);
+   c.ellipse(0,0,r,r*(.46+(i%3)*.12),0,0,TAU);
    c.stroke();
    const ang=t*(.24+i*.05)+i*1.1;
-   const sx=Math.cos(ang)*r,sy=Math.sin(ang)*r*(.48+(i%3)*.12);
+   const sx=Math.cos(ang)*r,sy=Math.sin(ang)*r*(.46+(i%3)*.12);
    circle(sx,sy,u*(.009+high*.018),theme.accent);
    circle(sx,sy,u*(.022+hit*.025),theme.foreground+'55',true);
    nodes.push({
@@ -124,7 +275,6 @@ export function drawMotionGraphics(
    });
    c.restore();
   }
-  // Plotter vector chords linking orbital satellites
   c.strokeStyle=theme.accent+'44';
   c.lineWidth=1;
   for(let i=0;i<nodes.length-1;i++){
@@ -133,65 +283,45 @@ export function drawMotionGraphics(
   c.restore();
   break;
  }
- case 'silk-waves':
- case 'ribbon-dance': {
-  const ribbonCount=id==='silk-waves'?12:15;
-  for(let i=0;i<ribbonCount;i++){
-   const yBase=h*(.09+i*(.82/(ribbonCount-1)));
-   c.beginPath();
-   for(let x=-12;x<=w+12;x+=10){
-    const nx=x/w;
-    const wave1=Math.sin(nx*TAU*(id==='silk-waves'?1.2:1.8)+t*.48+i*.55)*u*(.042+bass*.15);
-    const wave2=Math.cos(nx*TAU*3.1-t*.72+i*.3)*u*(.018+high*.055);
-    const y=yBase+wave1+wave2;
-    if(x===-12)c.moveTo(x,y);else c.lineTo(x,y);
-   }
-   c.strokeStyle=i%2?theme.accent+'99':theme.foreground+'44';
-   c.lineWidth=u*(id==='silk-waves'?.022:.0055)*(1+mid*.85);
-   c.stroke();
-   // Harmonic crest nodes along every third ribbon
-   if(i%3===0){
-    const nodeX=w*((.18+i*.11+t*.05)%0.84+0.08);
-    const nx=nodeX/w;
-    const nodeY=yBase+Math.sin(nx*TAU*(id==='silk-waves'?1.2:1.8)+t*.48+i*.55)*u*(.042+bass*.15);
-    circle(nodeX,nodeY,u*(.007+hit*.015),theme.accent);
-   }
-  }
-  break;
- }
- case 'bauhaus-beat': {
-  // Constructivist architectural poster (Moholy-Nagy / baseline style)
-  circle(w*.14,h*.22,u*(.20+bass*.11),'#d94c2e');
-  circle(w*.14,h*.22,u*(.25+hit*.08),theme.foreground+'66',true);
-  circle(w*.88,h*.80,u*(.21+hit*.09),'#315e81');
-  // Diagonal constructivist beam
+
+ case 'orbital-halo': {
   c.save();
   c.translate(w*.5,h*.5);
-  c.rotate(-0.32+Math.sin(t*.15)*.04);
-  c.fillStyle=theme.foreground+'18';
-  c.fillRect(-w*.6,-u*.045,w*1.2,u*.09);
-  c.restore();
-  // Rotating geometric kinetic square + inner reticle
-  c.save();
-  c.translate(w*.84,h*.20);
-  c.rotate(t*.12+mid*.45);
-  c.fillStyle='#d9aa35';
-  const sq=u*(.26+bass*.06);
-  c.fillRect(-sq*.5,-sq*.5,sq,sq);
-  c.strokeStyle='#222728';
-  c.lineWidth=u*.006;
-  c.strokeRect(-sq*.36,-sq*.36,sq*.72,sq*.72);
-  c.restore();
-  // 16-bar rhythmic step ladder
-  for(let i=0;i<16;i++){
-   const barH=h*(.06+((i*7)%5)*.022+high*.14+bass*(i%2?.08:0));
-   c.fillStyle=i%4===0?'#d94c2e': '#222728';
-   c.fillRect(w*.05+i*u*.024,h*.90-barH,u*.014,barH);
+  const baseR=u*(.22+bass*.07);
+  for(let ray=0;ray<64;ray++){
+   const a=ray*TAU/64+t*.12;
+   const harmonic=.5+.5*Math.sin(ray*1.7+t*2.4);
+   const len=baseR+u*(.04+harmonic*.12*(.3+bass+high)+hit*.05);
+   c.strokeStyle=ray%2===0?theme.accent+'cc':theme.foreground+'66';
+   c.lineWidth=u*.004;
+   line(Math.cos(a)*baseR*.88,Math.sin(a)*baseR*.88,Math.cos(a)*len,Math.sin(a)*len);
   }
+  circle(0,0,baseR,theme.accent+'aa',true);
+  circle(0,0,baseR*1.28,theme.foreground+'44',true);
+  c.restore();
   break;
  }
+
+ case 'infinite-tunnel': {
+  c.save();
+  c.translate(w*.5,h*.5);
+  const depthCount=16;
+  for(let i=0;i<depthCount;i++){
+   const phase=((i/depthCount)+(t*.24))%1;
+   const r=u*(.03+Math.pow(phase,1.7)*.62)*(1+bass*.12);
+   c.save();
+   c.rotate(phase*1.2+t*.15*(i%2?1:-1));
+   c.strokeStyle=i%2===0?theme.accent:theme.foreground;
+   c.globalAlpha=Math.sin(phase*Math.PI)*.85;
+   c.lineWidth=1.2+phase*2.6+hit*2;
+   c.strokeRect(-r,-r*.68,r*2,r*1.36);
+   c.restore();
+  }
+  c.restore();
+  break;
+ }
+
  case 'star-map': {
-  // Astrometric triangulation network + polar coordinate reticle
   c.save();
   c.strokeStyle=theme.accent+'33';
   circle(w*.5,h*.5,u*(.22+mid*.05),theme.accent+'33',true);
@@ -218,8 +348,127 @@ export function drawMotionGraphics(
   c.globalAlpha=1;
   break;
  }
+
+ // ==================== NATURE ====================
+ case 'aurora-field': {
+  const curtains=7;
+  for(let cIdx=0;cIdx<curtains;cIdx++){
+   const baseY=h*(.22+cIdx*.08);
+   c.beginPath();
+   for(let x=0;x<=w;x+=14){
+    const nx=x/w;
+    const sway=Math.sin(nx*TAU*1.6+t*.45+cIdx*.7)*u*(.05+bass*.12)
+     +Math.cos(nx*TAU*4.2-t*.8+cIdx)*u*(.018+high*.04);
+    const y=baseY+sway;
+    if(x===0)c.moveTo(x,y);else c.lineTo(x,y);
+   }
+   c.strokeStyle=cIdx%2===0?theme.accent+'aa':theme.foreground+'55';
+   c.lineWidth=u*(.018+mid*.016);
+   c.stroke();
+  }
+  break;
+ }
+
+ case 'silver-current':
+ case 'glow-lagoon': {
+  const swells=16;
+  for(let i=0;i<swells;i++){
+   const yBase=h*(.18+i*.046);
+   c.beginPath();
+   for(let x=0;x<=w;x+=12){
+    const nx=x/w;
+    const swell=Math.sin(nx*TAU*2.1+t*.65+i*.42)*u*(.022+bass*.09);
+    const ripple=Math.cos(nx*TAU*5.5-t*1.1+i)*u*(.008+high*.025);
+    const y=yBase+swell+ripple;
+    if(x===0)c.moveTo(x,y);else c.lineTo(x,y);
+   }
+   c.strokeStyle=i%3===0?theme.accent+'bb':theme.foreground+'40';
+   c.lineWidth=1.4+(i/swells)*2.4+mid*2;
+   c.stroke();
+  }
+  // Bioluminescent spores
+  for(let s=0;s<28;s++){
+   const sx=w*((s*19/28+t*.02)%1);
+   const sy=h*(.25+((s*13)%65)/100)+Math.sin(t*1.2+s)*u*.03;
+   circle(sx,sy,u*(.004+high*.009),s%2===0?theme.accent:theme.foreground);
+  }
+  break;
+ }
+
+ case 'pixel-garden': {
+  const cols=28;
+  for(let i=0;i<cols;i++){
+   const x=i*w/(cols-1),step=u*.019;
+   const harmonic=.5+.5*Math.sin(i*1.9+t*.7);
+   const stem=h*(.08+harmonic*.14+bass*.22+(i%3===0?mid*.1:0));
+   c.fillStyle=i%2?'#457c69':theme.accent;
+   c.fillRect(x,h-stem,step,stem);
+   const bloom=step*(2.1+high*3.2+hit*1.2);
+   c.fillStyle=i%3?'#d9e78a':'#ef9d93';
+   c.fillRect(x-bloom/2+step/2,h-stem-bloom,bloom,bloom);
+   c.fillStyle=theme.foreground;
+   c.fillRect(x-step*.3,h-stem-bloom*.65,step*1.6,step*1.6);
+   if(i%2===0){
+    const sy=h*(.12+((i*17)%60)/100)+Math.sin(t*.55+i)*u*(.04+mid*.08);
+    c.fillStyle=theme.accent+'88';
+    c.fillRect(x,sy,step*.85,step*.85);
+   }
+  }
+  break;
+ }
+
+ // ==================== ARCHITECTURE ====================
+ case 'neon-metal-matrix': {
+  const cols=18,rows=10;
+  const cellW=w*.84/cols,cellH=h*.76/rows;
+  const startX=w*.08,startY=h*.12;
+  for(let r=0;r<rows;r++){
+   for(let col=0;col<cols;col++){
+    const cx=startX+(col+.5)*cellW;
+    const cy=startY+(r+.5)*cellH;
+    const wave=Math.sin(col*.45+r*.55-t*2.1);
+    const scale=.28+.38*(.5+.5*wave)+bass*.32;
+    const bw=cellW*scale,bh=cellH*scale;
+    c.strokeStyle=(r+col)%3===0?theme.accent+'cc':theme.foreground+'44';
+    c.lineWidth=1.2;
+    c.strokeRect(cx-bw*.5,cy-bh*.5,bw,bh);
+    if((r+col)%4===0){
+     circle(cx,cy,u*(.004+high*.008),theme.accent);
+    }
+   }
+  }
+  break;
+ }
+
+ case 'bauhaus-beat': {
+  circle(w*.14,h*.22,u*(.20+bass*.11),'#d94c2e');
+  circle(w*.14,h*.22,u*(.25+hit*.08),theme.foreground+'66',true);
+  circle(w*.88,h*.80,u*(.21+hit*.09),'#315e81');
+  c.save();
+  c.translate(w*.5,h*.5);
+  c.rotate(-0.32+Math.sin(t*.15)*.04);
+  c.fillStyle=theme.foreground+'18';
+  c.fillRect(-w*.6,-u*.045,w*1.2,u*.09);
+  c.restore();
+  c.save();
+  c.translate(w*.84,h*.20);
+  c.rotate(t*.12+mid*.45);
+  c.fillStyle='#d9aa35';
+  const sq=u*(.26+bass*.06);
+  c.fillRect(-sq*.5,-sq*.5,sq,sq);
+  c.strokeStyle='#222728';
+  c.lineWidth=u*.006;
+  c.strokeRect(-sq*.36,-sq*.36,sq*.72,sq*.72);
+  c.restore();
+  for(let i=0;i<16;i++){
+   const barH=h*(.06+((i*7)%5)*.022+high*.14+bass*(i%2?.08:0));
+   c.fillStyle=i%4===0?'#d94c2e':'#222728';
+   c.fillRect(w*.05+i*u*.024,h*.90-barH,u*.014,barH);
+  }
+  break;
+ }
+
  case 'halftone-club': {
-  // Radial frequency-modulated halftone matrix + club aperture rings
   for(let row=0;row<16;row++)for(let col=0;col<26;col++){
    const x=(col+.5)*w/26,y=(row+.5)*h/16;
    const dist=Math.hypot(x-w*.5,y-h*.5)/u;
@@ -234,74 +483,53 @@ export function drawMotionGraphics(
   circle(w*.5,h*.5,u*(.24+mid*.06),theme.accent+'88',true);
   break;
  }
- case 'vinyl-groove': {
-  // Mastering lathe & radial vector oscilloscope
-  c.save();
-  c.translate(w*.5,h*.5);
-  c.scale(1+bass*.12,1+bass*.12);
-  for(let i=0;i<28;i++){
-   c.lineWidth=i%5===0?2.2:1;
-   const r=u*(.10+i*.0135)+Math.sin(t*2+i*.5)*u*mid*.004;
-   circle(0,0,r,theme.foreground+(i%5===0?'88':'2a'),true);
+
+ // ==================== JOURNEYS ====================
+ case 'chromatic-drive':
+ case 'white-velocity': {
+  const horizon=h*.46;
+  circle(w*.5,horizon,u*(.16+bass*.06),theme.accent+'55');
+  circle(w*.5,horizon,u*(.21+hit*.05),theme.accent,true);
+  for(let lane=-8;lane<=8;lane++){
+   c.strokeStyle=lane%2===0?theme.accent+'88':theme.foreground+'44';
+   c.lineWidth=lane===0?2.2:1.2;
+   line(w*.5+lane*w*.022,horizon,w*.5+lane*w*.13,h);
   }
-  // Stroboscopic rim dots + 16 radial frequency needles
-  for(let i=0;i<24;i++){
-   const a=i*TAU/24+t*.18;
-   const inner=u*.39,outer=u*(.43+(i%2?high:bass)*.095+hit*.04);
-   c.strokeStyle=i%3===0?theme.foreground:theme.accent;
-   c.lineWidth=u*.006;
-   line(Math.cos(a)*inner,Math.sin(a)*inner,Math.cos(a)*outer,Math.sin(a)*outer);
-  }
-  circle(0,0,u*(.045+hit*.02),theme.accent);
-  c.restore();
-  break;
- }
- case 'pixel-garden': {
-  // Cyber-botanical isometric voxel equalizer + bioluminescent spores
-  const cols=28;
-  for(let i=0;i<cols;i++){
-   const x=i*w/(cols-1),step=u*.019;
-   const harmonic=.5+.5*Math.sin(i*1.9+t*.7);
-   const stem=h*(.08+harmonic*.14+bass*.22+(i%3===0?mid*.1:0));
-   c.fillStyle=i%2?'#457c69':theme.accent;
-   c.fillRect(x,h-stem,step,stem);
-   const bloom=step*(2.1+high*3.2+hit*1.2);
-   c.fillStyle=i%3?'#d9e78a':'#ef9d93';
-   c.fillRect(x-bloom/2+step/2,h-stem-bloom,bloom,bloom);
-   // Inner pixel core
-   c.fillStyle=theme.foreground;
-   c.fillRect(x-step*.3,h-stem-bloom*.65,step*1.6,step*1.6);
-   if(i%2===0){
-    const sy=h*(.12+((i*17)%60)/100)+Math.sin(t*.55+i)*u*(.04+mid*.08);
-    c.fillStyle=theme.accent+'88';
-    c.fillRect(x,sy,step*.85,step*.85);
-   }
+  for(let row=1;row<=10;row++){
+   const pRow=((row/10)+(t*.35))%1;
+   const yy=horizon+(h-horizon)*Math.pow(pRow,1.75);
+   c.strokeStyle=theme.accent+'77';
+   c.lineWidth=1+pRow*2.2;
+   line(0,yy,w,yy);
   }
   break;
  }
- case 'contour-flow': {
-  // Multi-harmonic topographic isoline field
-  for(let i=0;i<22;i++){
+
+ case 'origami-flight': {
+  const flock=14;
+  for(let i=0;i<flock;i++){
+   const px=w*((.08+i*.068+t*.045)%0.88+0.06);
+   const py=h*(.18+((i*29)%64)/100)+Math.sin(t*1.1+i)*u*(.03+mid*.05);
+   const wing=u*(.028+bass*.025+(i%3)*0.008);
+   const flap=Math.sin(t*3.2+i*1.3)*(.25+high*.35);
+   c.save();
+   c.translate(px,py);
+   c.rotate(-.18+Math.cos(t*.5+i)*.08);
    c.beginPath();
-   for(let j=0;j<=120;j++){
-    const a=j/120*TAU;
-    const r=u*(.13+i*.0175)*(1+bass*.16)
-     +Math.sin(a*3+t*.45+i*.24)*u*(.028+mid*.052)
-     +Math.cos(a*7-t*.6+i*.15)*u*(.010+high*.018);
-    const x=w*.5+Math.cos(a)*r*1.32;
-    const y=h*.5+Math.sin(a)*r;
-    if(j===0)c.moveTo(x,y);else c.lineTo(x,y);
-   }
+   c.moveTo(wing,0);
+   c.lineTo(-wing*.7,-wing*(.65+flap));
+   c.lineTo(-wing*.2,0);
+   c.lineTo(-wing*.7,wing*(.65-flap));
    c.closePath();
-   c.strokeStyle=i%5===0?theme.foreground+'88':theme.accent+(i%3?'55':'aa');
-   c.lineWidth=i%5===0?2:1.1;
-   c.stroke();
+   c.fillStyle=i%3===0?theme.accent:theme.foreground+'cc';
+   c.fill();
+   c.restore();
   }
   break;
  }
  }
 
- // Beat-reactive HUD corner brackets & edge telemetry bars (pdoom-video / baseline style)
+ // Beat-reactive HUD corner brackets & edge telemetry bars
  const pulseBar=u*(.055+hit*.14+onset*.08);
  c.globalAlpha=.28+hit*.68;
  c.fillStyle=theme.accent;

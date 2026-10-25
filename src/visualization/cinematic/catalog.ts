@@ -1,84 +1,155 @@
 import type {Mood,ScenePlan} from '../../lyrics/sceneDirector';
 import type {LyricCue} from '../../lyrics/lyricTimeline';
 
+export type VoxelWallCategory =
+ | 'flow'
+ | 'contours'
+ | 'sculptures'
+ | 'space'
+ | 'nature'
+ | 'architecture'
+ | 'journeys';
+
 export type SceneId =
- | 'crimson-impact'|'concrete-manifesto'|'rain-on-glass'|'neon-velocity'
- | 'ink-rebellion'|'ocean-reverie'|'color-riot'|'analog-breakdown'
- | 'cloud-cathedral'|'stellar-expansion'|'fragmented-thoughts'|'quiet-pages'
- | 'monochrome-memory'|'monument-titles'|'midnight-confession'|'glass-architecture'
- | 'ransom-poetry'|'type-collision'|'petal-memory'|'submerged-words'
- | 'inferno-letterforms'|'holographic-frequency'|'pixel-pulse'|'marker-diary'
- | 'bubble-pop'|'word-playground'|'sunset-frequency'|'typographic-vortex'
- | 'midnight-transit'|'final-ascension'
- | 'paper-cut'|'orbital-score'|'silk-waves'|'bauhaus-beat'|'star-map'
- | 'halftone-club'|'ribbon-dance'|'vinyl-groove'|'pixel-garden'|'contour-flow';
+ // Flow (6)
+ | 'holographic-tide'
+ | 'liquid-filigree'
+ | 'crimson-current'
+ | 'gilded-whirlpool'
+ | 'silk-waves'
+ | 'ribbon-dance'
+ // Contours (5)
+ | 'chroma-moire-voids'
+ | 'cobalt-contours'
+ | 'molten-contours'
+ | 'layered-contours'
+ | 'contour-flow'
+ // Sculptures (4)
+ | 'crystal-resonance'
+ | 'pearl-resonance'
+ | 'tidal-bloom'
+ | 'paper-cut'
+ // Space (5)
+ | 'celestial-orbit'
+ | 'orbital-halo'
+ | 'infinite-tunnel'
+ | 'orbital-score'
+ | 'star-map'
+ // Nature (4)
+ | 'aurora-field'
+ | 'silver-current'
+ | 'glow-lagoon'
+ | 'pixel-garden'
+ // Architecture (4)
+ | 'signal-chamber'
+ | 'neon-metal-matrix'
+ | 'bauhaus-beat'
+ | 'halftone-club'
+ // Journeys (4)
+ | 'chromatic-drive'
+ | 'origami-flight'
+ | 'white-velocity'
+ | 'color-riot';
+
 export type Layout='hero'|'editorial'|'left'|'stack'|'poster'|'scattered';
 export type Transition='flash'|'wipe'|'dissolve'|'glitch'|'ripple'|'ink'|'zoom';
 export type FontPack='impact'|'street'|'editorial'|'tech'|'grunge'|'rounded'|'mono'|'literary'
  | 'monument'|'noir'|'glass'|'collage'|'pixel'|'handwritten'|'retro'|'cyber'|'industrial'|'ultra'
  | 'couture'|'vogue'|'engraved'|'techno'|'manuscript'|'typewriter'|'retrograde';
 export type CameraPath='push'|'drift'|'side'|'orbit'|'pullback';
-export interface Template {
- id:SceneId; label:string; family:string; moods:readonly Mood[]; genres:readonly string[];
- background:string; foreground:string; accent:string; font:FontPack;
- layout:Layout; transition:Transition; camera:CameraPath; baseEnergy:number;
-}
-export const TEMPLATES:readonly Template[]=[
- {id:'crimson-impact',label:'Crimson Impact',family:'cinematic',moods:['fire','celebration'],genres:['rock','metal','cinematic'],background:'#210509',foreground:'#fff6ef',accent:'#fa2239',font:'impact',layout:'hero',transition:'flash',camera:'push',baseEnergy:.86},
- {id:'concrete-manifesto',label:'Concrete Manifesto',family:'urban',moods:['fire','solitude'],genres:['hip-hop','rap','trap'],background:'#181b1c',foreground:'#f9f0d8',accent:'#f4cb39',font:'street',layout:'poster',transition:'wipe',camera:'side',baseEnergy:.67},
- {id:'rain-on-glass',label:'Rain on Glass',family:'water',moods:['water','solitude'],genres:['ambient','ballad','lofi'],background:'#071b27',foreground:'#d6eaf0',accent:'#81bfd1',font:'editorial',layout:'editorial',transition:'ripple',camera:'drift',baseEnergy:.27},
- {id:'neon-velocity',label:'Neon Velocity',family:'electronic',moods:['celebration','cosmic'],genres:['edm','techno','electronic','synth'],background:'#090720',foreground:'#f8f4ff',accent:'#fa49d3',font:'tech',layout:'hero',transition:'zoom',camera:'push',baseEnergy:.88},
- {id:'ink-rebellion',label:'Ink Rebellion',family:'grunge',moods:['fire','solitude'],genres:['grunge','punk','rock','metal'],background:'#ede9df',foreground:'#181617',accent:'#d82c31',font:'grunge',layout:'left',transition:'ink',camera:'side',baseEnergy:.81},
- {id:'ocean-reverie',label:'Ocean Reverie',family:'water',moods:['water','warm','memory'],genres:['ballad','ambient','acoustic'],background:'#0c3652',foreground:'#fff2e9',accent:'#f4ba93',font:'editorial',layout:'editorial',transition:'ripple',camera:'drift',baseEnergy:.30},
- {id:'color-riot',label:'Color Riot',family:'pop',moods:['celebration','warm'],genres:['pop','funk','dance'],background:'#feda36',foreground:'#171829',accent:'#fa486d',font:'rounded',layout:'scattered',transition:'wipe',camera:'side',baseEnergy:.81},
- {id:'analog-breakdown',label:'Analog Breakdown',family:'retro',moods:['memory','solitude'],genres:['indie','synth','retro','lofi'],background:'#111b1f',foreground:'#e4ecdf',accent:'#f37770',font:'mono',layout:'left',transition:'glitch',camera:'pullback',baseEnergy:.44},
- {id:'cloud-cathedral',label:'Cloud Cathedral',family:'dream',moods:['warm','nature','memory'],genres:['ambient','classical','cinematic'],background:'#626995',foreground:'#ffffff',accent:'#f6d1bc',font:'editorial',layout:'editorial',transition:'dissolve',camera:'drift',baseEnergy:.25},
- {id:'stellar-expansion',label:'Stellar Expansion',family:'cosmic',moods:['cosmic','memory'],genres:['synth','cinematic','electronic'],background:'#080a21',foreground:'#f4f4ff',accent:'#998fff',font:'tech',layout:'hero',transition:'zoom',camera:'orbit',baseEnergy:.63},
- {id:'fragmented-thoughts',label:'Fragmented Thoughts',family:'experimental',moods:['solitude','memory','fire'],genres:['alternative','indie','experimental'],background:'#0e1014',foreground:'#f7f7f0',accent:'#ff6956',font:'grunge',layout:'stack',transition:'ink',camera:'pullback',baseEnergy:.53},
- {id:'quiet-pages',label:'Quiet Pages',family:'minimal',moods:['solitude','memory','warm','nature'],genres:['acoustic','classical','ballad','ambient'],background:'#e9e4d9',foreground:'#27252a',accent:'#ae786b',font:'literary',layout:'editorial',transition:'dissolve',camera:'drift',baseEnergy:.16},
 
- {id:'monochrome-memory',label:'Monochrome Memory',family:'noir',moods:['memory','solitude'],genres:['indie','ballad','film','cinematic'],background:'#111112',foreground:'#efeee8',accent:'#999b9c',font:'noir',layout:'editorial',transition:'dissolve',camera:'drift',baseEnergy:.22},
- {id:'monument-titles',label:'Monument Titles',family:'epic',moods:['celebration','cosmic','fire'],genres:['orchestral','cinematic','anthem','rock'],background:'#080c16',foreground:'#ffefd1',accent:'#e4ae67',font:'monument',layout:'hero',transition:'zoom',camera:'push',baseEnergy:.82},
- {id:'midnight-confession',label:'Midnight Confession',family:'intimate',moods:['solitude','warm','memory'],genres:['ballad','acoustic','piano','indie'],background:'#07070a',foreground:'#f8eee7',accent:'#d55265',font:'literary',layout:'left',transition:'dissolve',camera:'drift',baseEnergy:.16},
- {id:'glass-architecture',label:'Glass Architecture',family:'structural',moods:['cosmic','abstract'],genres:['progressive','ambient','experimental','electronic'],background:'#0a101b',foreground:'#d9eff2',accent:'#94cde9',font:'glass',layout:'stack',transition:'zoom',camera:'orbit',baseEnergy:.45},
- {id:'ransom-poetry',label:'Ransom Poetry',family:'collage',moods:['memory','solitude','fire'],genres:['indie','alternative','hip-hop'],background:'#b7aa92',foreground:'#1e1a1c',accent:'#f7e4a4',font:'collage',layout:'scattered',transition:'wipe',camera:'side',baseEnergy:.62},
- {id:'type-collision',label:'Type Collision',family:'brutalist',moods:['celebration','fire'],genres:['rap','funk','pop','hip-hop'],background:'#f7f2dc',foreground:'#171923',accent:'#db301e',font:'ultra',layout:'stack',transition:'flash',camera:'push',baseEnergy:.78},
- {id:'petal-memory',label:'Petal Memory',family:'botanical',moods:['nature','warm','memory'],genres:['folk','romantic','ballad','classical'],background:'#22152d',foreground:'#fceaf0',accent:'#ec98bb',font:'editorial',layout:'editorial',transition:'dissolve',camera:'drift',baseEnergy:.26},
- {id:'submerged-words',label:'Submerged Words',family:'underwater',moods:['water','solitude','memory'],genres:['ambient','chill','indie','ballad'],background:'#041c31',foreground:'#dbf7ff',accent:'#39c9dc',font:'glass',layout:'editorial',transition:'ripple',camera:'drift',baseEnergy:.30},
- {id:'inferno-letterforms',label:'Inferno Letterforms',family:'inferno',moods:['fire','celebration'],genres:['metal','rock','hardstyle','cinematic'],background:'#190500',foreground:'#fff6e7',accent:'#ff771c',font:'industrial',layout:'hero',transition:'flash',camera:'push',baseEnergy:.94},
- {id:'holographic-frequency',label:'Holographic Frequency',family:'holographic',moods:['cosmic','celebration'],genres:['techno','electronic','experimental','edm'],background:'#03141d',foreground:'#d5ffff',accent:'#3cffce',font:'cyber',layout:'stack',transition:'glitch',camera:'orbit',baseEnergy:.75},
- {id:'pixel-pulse',label:'Pixel Pulse',family:'arcade',moods:['celebration','memory'],genres:['chiptune','retro','synth','game'],background:'#100e37',foreground:'#faf6cc',accent:'#fb63bf',font:'pixel',layout:'hero',transition:'wipe',camera:'side',baseEnergy:.79},
- {id:'marker-diary',label:'Marker Diary',family:'sketchbook',moods:['memory','warm','nature'],genres:['acoustic','indie','pop','folk'],background:'#f1e6d3',foreground:'#34322f',accent:'#f7a03b',font:'handwritten',layout:'left',transition:'wipe',camera:'drift',baseEnergy:.34},
- {id:'bubble-pop',label:'Bubble Pop',family:'bubble',moods:['celebration','warm'],genres:['k-pop','pop','dance','funk'],background:'#b9a4fa',foreground:'#fff8f2',accent:'#fb559e',font:'rounded',layout:'scattered',transition:'dissolve',camera:'drift',baseEnergy:.73},
- {id:'word-playground',label:'Word Playground',family:'typographic',moods:['celebration','warm','abstract'],genres:['pop','funk','indie','dance'],background:'#e6f5ea',foreground:'#181b23',accent:'#fa5839',font:'ultra',layout:'scattered',transition:'wipe',camera:'side',baseEnergy:.73},
- {id:'sunset-frequency',label:'Sunset Frequency',family:'vaporwave',moods:['warm','nature','memory'],genres:['tropical','chill','synth','pop'],background:'#3f2269',foreground:'#ffe7d3',accent:'#ff9b64',font:'retro',layout:'editorial',transition:'dissolve',camera:'drift',baseEnergy:.41},
- {id:'typographic-vortex',label:'Typographic Vortex',family:'vortex',moods:['cosmic','fire','solitude'],genres:['experimental','electronic','cinematic','techno'],background:'#0d0713',foreground:'#faf2ff',accent:'#ec71fc',font:'tech',layout:'hero',transition:'zoom',camera:'orbit',baseEnergy:.87},
- {id:'midnight-transit',label:'Midnight Transit',family:'transit',moods:['solitude','memory','fire'],genres:['trap','urban','synth','pop'],background:'#030a16',foreground:'#f0f5f6',accent:'#f39f59',font:'street',layout:'left',transition:'zoom',camera:'push',baseEnergy:.60},
- {id:'final-ascension',label:'Final Ascension',family:'ascension',moods:['celebration','cosmic','warm'],genres:['anthem','cinematic','orchestral','rock'],background:'#07070c',foreground:'#fff4da',accent:'#e5c291',font:'monument',layout:'hero',transition:'flash',camera:'pullback',baseEnergy:.99},
- {id:'paper-cut',label:'Paper Cut',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#f1eadc',foreground:'#222536',accent:'#d65e3c',font:'editorial',layout:'hero',transition:'wipe',camera:'drift',baseEnergy:.55},
- {id:'orbital-score',label:'Orbital Score',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#080d24',foreground:'#eff7ff',accent:'#64d6de',font:'tech',layout:'hero',transition:'zoom',camera:'drift',baseEnergy:.55},
- {id:'silk-waves',label:'Silk Waves',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#f4dfe7',foreground:'#332442',accent:'#9b4584',font:'editorial',layout:'hero',transition:'dissolve',camera:'drift',baseEnergy:.55},
- {id:'bauhaus-beat',label:'Bauhaus Beat',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#f3ebd4',foreground:'#222728',accent:'#d94c2e',font:'impact',layout:'hero',transition:'wipe',camera:'drift',baseEnergy:.55},
- {id:'star-map',label:'Star Map',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#091821',foreground:'#eff8df',accent:'#9edab4',font:'mono',layout:'hero',transition:'dissolve',camera:'drift',baseEnergy:.55},
- {id:'halftone-club',label:'Halftone Club',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#23102d',foreground:'#fff1dc',accent:'#ed80b2',font:'grunge',layout:'hero',transition:'ink',camera:'drift',baseEnergy:.55},
- {id:'ribbon-dance',label:'Ribbon Dance',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#11122c',foreground:'#f2f1ff',accent:'#9c93ff',font:'rounded',layout:'hero',transition:'ripple',camera:'drift',baseEnergy:.55},
- {id:'vinyl-groove',label:'Vinyl Groove',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#e8bc78',foreground:'#302419',accent:'#9c3c32',font:'retro',layout:'hero',transition:'zoom',camera:'drift',baseEnergy:.55},
- {id:'pixel-garden',label:'Pixel Garden',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#102b29',foreground:'#e7ffc5',accent:'#9ed36f',font:'pixel',layout:'hero',transition:'wipe',camera:'drift',baseEnergy:.55},
- {id:'contour-flow',label:'Contour Flow',family:'2d',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#eef0e8',foreground:'#173837',accent:'#36887a',font:'literary',layout:'hero',transition:'dissolve',camera:'drift',baseEnergy:.55},
+export interface Template {
+ id:SceneId;
+ label:string;
+ family:VoxelWallCategory;
+ moods:readonly Mood[];
+ genres:readonly string[];
+ background:string;
+ foreground:string;
+ accent:string;
+ font:FontPack;
+ layout:Layout;
+ transition:Transition;
+ camera:CameraPath;
+ baseEnergy:number;
+}
+
+export const VOXELWALL_CATEGORIES:readonly {id:VoxelWallCategory;label:string;description:string}[]=[
+ {id:'flow',label:'Flow',description:'Iridescent fluid currents, silk ribbons, and harmonic whirlpools'},
+ {id:'contours',label:'Contours',description:'Topographic isolines, chromatic moiré fields, and molten elevation ridges'},
+ {id:'sculptures',label:'Sculptures',description:'Faceted crystal prisms, nacreous acoustic spheres, and paper dioramas'},
+ {id:'space',label:'Space',description:'Celestial orbits, eclipse halos, astrolabes, and infinite sacred portals'},
+ {id:'nature',label:'Nature',description:'Geomagnetic auroras, bioluminescent lagoons, ocean swells, and voxel flora'},
+ {id:'architecture',label:'Architecture',description:'Brutalist signal chambers, neon metal matrices, and constructivist grids'},
+ {id:'journeys',label:'Journeys',description:'Chromatic synth horizons, origami flocks, and kinetic slipstreams'}
 ] as const;
+
+export const TEMPLATES:readonly Template[]=[
+ // FLOW (6)
+ {id:'holographic-tide',label:'Holographic Tide',family:'flow',moods:['water','cosmic','celebration'],genres:['electronic','pop','synth','ambient'],background:'#071326',foreground:'#eefaff',accent:'#5ef2e4',font:'glass',layout:'hero',transition:'ripple',camera:'drift',baseEnergy:.68},
+ {id:'liquid-filigree',label:'Liquid Filigree',family:'flow',moods:['warm','water','memory'],genres:['classical','ambient','ballad','indie'],background:'#121024',foreground:'#fcf6ea',accent:'#f5c26b',font:'couture',layout:'editorial',transition:'dissolve',camera:'drift',baseEnergy:.48},
+ {id:'crimson-current',label:'Crimson Current',family:'flow',moods:['fire','warm','solitude'],genres:['rock','electronic','cinematic','hip-hop'],background:'#1d0710',foreground:'#fff2f4',accent:'#ff5c77',font:'vogue',layout:'hero',transition:'wipe',camera:'push',baseEnergy:.78},
+ {id:'gilded-whirlpool',label:'Gilded Whirlpool',family:'flow',moods:['celebration','warm','fire'],genres:['pop','funk','dance','cinematic'],background:'#181206',foreground:'#fff8e6',accent:'#f7b93e',font:'monument',layout:'poster',transition:'zoom',camera:'orbit',baseEnergy:.74},
+ {id:'silk-waves',label:'Silk Waves',family:'flow',moods:['water','warm','memory'],genres:['electronic','pop','indie','ballad'],background:'#f4dfe7',foreground:'#2b1d38',accent:'#8f2d75',font:'editorial',layout:'hero',transition:'dissolve',camera:'drift',baseEnergy:.52},
+ {id:'ribbon-dance',label:'Ribbon Dance',family:'flow',moods:['celebration','abstract','cosmic'],genres:['electronic','pop','dance'],background:'#11122c',foreground:'#f2f1ff',accent:'#9c93ff',font:'rounded',layout:'hero',transition:'ripple',camera:'drift',baseEnergy:.64},
+
+ // CONTOURS (5)
+ {id:'chroma-moire-voids',label:'Chroma Moire Voids',family:'contours',moods:['abstract','cosmic','solitude'],genres:['experimental','techno','electronic','idm'],background:'#090b18',foreground:'#f3f5ff',accent:'#c98bff',font:'cyber',layout:'stack',transition:'glitch',camera:'orbit',baseEnergy:.72},
+ {id:'cobalt-contours',label:'Cobalt Contours',family:'contours',moods:['water','solitude','abstract'],genres:['ambient','lofi','electronic','indie'],background:'#061933',foreground:'#e8f4ff',accent:'#63b8ff',font:'tech',layout:'editorial',transition:'ripple',camera:'side',baseEnergy:.46},
+ {id:'molten-contours',label:'Molten Contours',family:'contours',moods:['fire','celebration','warm'],genres:['rock','metal','electronic','trap'],background:'#210b04',foreground:'#fff3e8',accent:'#ff8533',font:'industrial',layout:'poster',transition:'flash',camera:'push',baseEnergy:.86},
+ {id:'layered-contours',label:'Layered Contours',family:'contours',moods:['nature','memory','warm'],genres:['acoustic','folk','indie','ambient'],background:'#141e19',foreground:'#eef7f0',accent:'#75d99c',font:'engraved',layout:'left',transition:'dissolve',camera:'pullback',baseEnergy:.42},
+ {id:'contour-flow',label:'Contour Flow',family:'contours',moods:['abstract','nature','memory'],genres:['electronic','pop','indie'],background:'#eef0e8',foreground:'#15302f',accent:'#25695d',font:'literary',layout:'hero',transition:'dissolve',camera:'drift',baseEnergy:.50},
+
+ // SCULPTURES (4)
+ {id:'crystal-resonance',label:'Crystal Resonance',family:'sculptures',moods:['cosmic','celebration','abstract'],genres:['electronic','synth','pop','cinematic'],background:'#0b1629',foreground:'#f0f9ff',accent:'#7ce8ff',font:'ultra',layout:'hero',transition:'zoom',camera:'orbit',baseEnergy:.76},
+ {id:'pearl-resonance',label:'Pearl Resonance',family:'sculptures',moods:['warm','memory','solitude'],genres:['classical','piano','ballad','ambient'],background:'#f5efe6',foreground:'#241f26',accent:'#8c4a6b',font:'manuscript',layout:'editorial',transition:'dissolve',camera:'drift',baseEnergy:.34},
+ {id:'tidal-bloom',label:'Tidal Bloom',family:'sculptures',moods:['water','nature','warm'],genres:['indie','pop','ambient','chill'],background:'#082228',foreground:'#ebfffb',accent:'#52e3c2',font:'handwritten',layout:'scattered',transition:'ripple',camera:'orbit',baseEnergy:.58},
+ {id:'paper-cut',label:'Paper Cut',family:'sculptures',moods:['abstract','celebration','memory'],genres:['electronic','pop','indie'],background:'#f1eadc',foreground:'#1e2130',accent:'#b54324',font:'collage',layout:'hero',transition:'wipe',camera:'drift',baseEnergy:.55},
+
+ // SPACE (5)
+ {id:'celestial-orbit',label:'Celestial Orbit',family:'space',moods:['cosmic','memory','solitude'],genres:['cinematic','synth','ambient','orchestral'],background:'#06091c',foreground:'#f2f4ff',accent:'#8cb4ff',font:'techno',layout:'hero',transition:'zoom',camera:'orbit',baseEnergy:.66},
+ {id:'orbital-halo',label:'Orbital Halo',family:'space',moods:['cosmic','fire','celebration'],genres:['electronic','cinematic','anthem','rock'],background:'#13091f',foreground:'#fbf2ff',accent:'#ff7ae0',font:'impact',layout:'hero',transition:'flash',camera:'push',baseEnergy:.84},
+ {id:'infinite-tunnel',label:'Infinite Tunnel',family:'space',moods:['cosmic','celebration','fire'],genres:['techno','edm','electronic','trance'],background:'#050d1a',foreground:'#ecfbff',accent:'#47e6ff',font:'street',layout:'stack',transition:'zoom',camera:'push',baseEnergy:.90},
+ {id:'orbital-score',label:'Orbital Score',family:'space',moods:['abstract','cosmic','memory'],genres:['electronic','pop','indie'],background:'#080d24',foreground:'#eff7ff',accent:'#64d6de',font:'noir',layout:'hero',transition:'zoom',camera:'drift',baseEnergy:.58},
+ {id:'star-map',label:'Star Map',family:'space',moods:['cosmic','solitude','memory'],genres:['electronic','pop','indie','ambient'],background:'#091821',foreground:'#eff8df',accent:'#9edab4',font:'mono',layout:'hero',transition:'dissolve',camera:'drift',baseEnergy:.44},
+
+ // NATURE (4)
+ {id:'aurora-field',label:'Aurora Field',family:'nature',moods:['nature','cosmic','warm'],genres:['ambient','folk','cinematic','ballad'],background:'#071c1f',foreground:'#edfff9',accent:'#6bf2b8',font:'typewriter',layout:'editorial',transition:'dissolve',camera:'drift',baseEnergy:.40},
+ {id:'silver-current',label:'Ocean Pulse',family:'nature',moods:['water','solitude','memory'],genres:['ambient','ballad','acoustic','lofi'],background:'#071f2e',foreground:'#ebf8ff',accent:'#7ad7f0',font:'retrograde',layout:'editorial',transition:'ripple',camera:'drift',baseEnergy:.38},
+ {id:'glow-lagoon',label:'Glow Lagoon',family:'nature',moods:['water','nature','warm'],genres:['chill','tropical','indie','pop'],background:'#062624',foreground:'#eafff8',accent:'#4df0c8',font:'rounded',layout:'left',transition:'ripple',camera:'side',baseEnergy:.54},
+ {id:'pixel-garden',label:'Pixel Garden',family:'nature',moods:['nature','celebration','memory'],genres:['electronic','pop','indie','chiptune'],background:'#102b29',foreground:'#e7ffc5',accent:'#9ed36f',font:'pixel',layout:'hero',transition:'wipe',camera:'drift',baseEnergy:.60},
+
+ // ARCHITECTURE (4)
+ {id:'signal-chamber',label:'Signal Chamber',family:'architecture',moods:['fire','abstract','solitude'],genres:['hip-hop','trap','electronic','industrial'],background:'#14121d',foreground:'#f7f2ff',accent:'#ff6e59',font:'industrial',layout:'poster',transition:'flash',camera:'push',baseEnergy:.82},
+ {id:'neon-metal-matrix',label:'Neon Metal Matrix',family:'architecture',moods:['cosmic','celebration','abstract'],genres:['techno','edm','cyberpunk','synth'],background:'#0b1017',foreground:'#ecf6ff',accent:'#45f0df',font:'cyber',layout:'stack',transition:'glitch',camera:'side',baseEnergy:.85},
+ {id:'bauhaus-beat',label:'Bauhaus Beat',family:'architecture',moods:['abstract','celebration','warm'],genres:['electronic','pop','indie','funk'],background:'#f3ebd4',foreground:'#202526',accent:'#b8381e',font:'impact',layout:'hero',transition:'wipe',camera:'drift',baseEnergy:.65},
+ {id:'halftone-club',label:'Halftone Club',family:'architecture',moods:['celebration','fire','abstract'],genres:['electronic','pop','dance','hip-hop'],background:'#23102d',foreground:'#fff1dc',accent:'#ed80b2',font:'grunge',layout:'hero',transition:'ink',camera:'drift',baseEnergy:.70},
+
+ // JOURNEYS (4)
+ {id:'chromatic-drive',label:'Chromatic Drive',family:'journeys',moods:['celebration','fire','cosmic'],genres:['synth','pop','electronic','rock'],background:'#160826',foreground:'#fff2fa',accent:'#ff6ec7',font:'retro',layout:'hero',transition:'zoom',camera:'push',baseEnergy:.83},
+ {id:'origami-flight',label:'Origami Flight',family:'journeys',moods:['warm','nature','memory'],genres:['indie','acoustic','pop','cinematic'],background:'#f2ede2',foreground:'#232634',accent:'#c4492d',font:'editorial',layout:'scattered',transition:'wipe',camera:'side',baseEnergy:.52},
+ {id:'white-velocity',label:'White Velocity',family:'journeys',moods:['celebration','abstract','fire'],genres:['edm','drum-and-bass','rock','pop'],background:'#eef2f7',foreground:'#151b26',accent:'#1f5eff',font:'street',layout:'poster',transition:'wipe',camera:'push',baseEnergy:.88},
+ {id:'color-riot',label:'Color Riot',family:'journeys',moods:['celebration','warm','abstract'],genres:['pop','funk','dance'],background:'#feda36',foreground:'#171829',accent:'#b81d43',font:'ultra',layout:'scattered',transition:'wipe',camera:'side',baseEnergy:.81},
+] as const;
+
 export const byId=Object.fromEntries(TEMPLATES.map(t=>[t.id,t])) as Record<SceneId,Template>;
+
 export interface DirectedScene {
  id:SceneId;start:number;end:number;layout:Layout;camera:CameraPath;
  font:FontPack;transition:Transition;variation:number;section:number;reason:string;
 }
+
 const LAYOUTS:Layout[]=['hero','editorial','left','stack','poster','scattered'];
 const CAMERAS:CameraPath[]=['push','drift','side','orbit','pullback'];
+
 function stableHash(input:string):number {
  let h=2166136261;
  for(let i=0;i<input.length;i++)h=Math.imul(h^input.charCodeAt(i),16777619);
  return h>>>0;
 }
+
 function normalizeGenre(value:string){return value.toLowerCase().replace(/[-_]/g,' ').trim()}
+
 function compareCandidates(a:Template,b:Template,plan:ScenePlan,genre:string,recent:readonly SceneId[],seed:number){
  const grade=(t:Template)=>{
   let score=t.moods.includes(plan.mood)?4:0;
@@ -92,6 +163,7 @@ function compareCandidates(a:Template,b:Template,plan:ScenePlan,genre:string,rec
  };
  return grade(b)-grade(a);
 }
+
 /** Pure song-level scheduler. Scene choices are stable when seeking or replaying. */
 export function buildCinematicSchedule(plans:readonly ScenePlan[],cues:readonly LyricCue[],genre='',songKey='',enabledScenes?:readonly SceneId[]):DirectedScene[]{
  if(!cues.length)return [];
@@ -101,7 +173,6 @@ export function buildCinematicSchedule(plans:readonly ScenePlan[],cues:readonly 
  const allowedSet=enabledScenes&&enabledScenes.length>0?new Set(enabledScenes):null;
  const pool=allowedSet?TEMPLATES.filter(t=>allowedSet.has(t.id)):TEMPLATES;
  const activeTemplates=pool.length>0?pool:TEMPLATES;
- // Long sections are split into cinematic beats; lyric callbacks remain inside a visual family.
  const source=plans.length?plans:[{
   start:cues[0].time,end:cues[cues.length-1].end,mood:'abstract',font:'grotesk',
   motion:'drift',camera:'dolly',confidence:.2,palette:0,reason:'fallback',energy:.35
@@ -127,6 +198,7 @@ export function buildCinematicSchedule(plans:readonly ScenePlan[],cues:readonly 
  }
  return result;
 }
+
 export function sceneAt(list:readonly DirectedScene[],time:number):DirectedScene|null {
  if(!list.length)return null;
  let lo=0,hi=list.length-1;
@@ -134,15 +206,5 @@ export function sceneAt(list:readonly DirectedScene[],time:number):DirectedScene
  while(lo<hi){const mid=Math.ceil((lo+hi)/2);if(list[mid].start<=time)lo=mid;else hi=mid-1;}
  return time<list[lo].end?list[lo]:null;
 }
-export const AUDIO_ONLY_SCENES:readonly SceneId[]=[
- 'crimson-impact','cloud-cathedral','type-collision','submerged-words',
- 'neon-velocity','monochrome-memory','color-riot','glass-architecture',
- 'inferno-letterforms','quiet-pages','holographic-frequency','petal-memory',
- 'midnight-transit','bubble-pop','fragmented-thoughts','sunset-frequency',
- 'concrete-manifesto','stellar-expansion','marker-diary','monument-titles',
- 'analog-breakdown','ocean-reverie','ransom-poetry','typographic-vortex',
- 'rain-on-glass','pixel-pulse','ink-rebellion','word-playground',
- 'midnight-confession','final-ascension',
- 'paper-cut','orbital-score','silk-waves','bauhaus-beat','star-map',
- 'halftone-club','ribbon-dance','vinyl-groove','pixel-garden','contour-flow'
-] as const;
+
+export const AUDIO_ONLY_SCENES:readonly SceneId[]=TEMPLATES.map(t=>t.id);

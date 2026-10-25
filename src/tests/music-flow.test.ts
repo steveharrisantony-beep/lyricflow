@@ -98,13 +98,13 @@ describe('automatic lyric recording matching & Apple Music TTML word-sync',()=>{
  });
  it('restricts scheduled themes, kinetic motions, and camera views to user-enabled subsets',()=>{
   const cues=buildCues([{time:0,text:'Rain falls down'},{time:15,text:'Fire burns bright'}],[]);
-  const schedule=buildCinematicSchedule([],cues,'pop','test-key',['neon-velocity','glass-architecture']);
+  const schedule=buildCinematicSchedule([],cues,'pop','test-key',['holographic-tide','celestial-orbit']);
   expect(schedule.length).toBeGreaterThan(0);
-  expect(schedule.every(s=>s.id==='neon-velocity'||s.id==='glass-architecture')).toBe(true);
+  expect(schedule.every(s=>s.id==='holographic-tide'||s.id==='celestial-orbit')).toBe(true);
   const scene={...TEMPLATES[0],start:0,end:10,variation:1,section:0,reason:'test'};
   for(let i=0;i<25;i++){
-   const motion=lyricMotionFor({...scene,variation:i},'Line '+i,['stamp','ribbon']);
-   expect(['stamp','ribbon']).toContain(motion);
+   const motion=lyricMotionFor({...scene,variation:i},'Line '+i,['ship','elastic']);
+   expect(['ship','elastic']).toContain(motion);
    const cam=resolveActiveCameraView('Automatic',['Orbit','Top'],i*5,i);
    expect(['Orbit','Top']).toContain(cam);
   }
@@ -117,7 +117,7 @@ describe('automatic lyric recording matching & Apple Music TTML word-sync',()=>{
   expect(domRows.join(' ')).toBe(longLine);
   const runs=longLine.split(' ').map((text,i)=>({text,start:i,end:i+1,energy:.5,emphasis:false,importance:.5,index:i}));
   const widths=runs.map(r=>r.text.length*14);
-  const wordRows=buildWordRows(runs,widths,10,'dolly',480);
+  const wordRows=buildWordRows(runs,widths,10,'ship',480);
   expect(wordRows.length).toBeGreaterThan(1);
   const hindi='नमस्ते दुनिया';
   const rom=romanizeText(hindi);

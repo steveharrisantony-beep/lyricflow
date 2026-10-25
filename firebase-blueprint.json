@@ -62,11 +62,11 @@
         },
         "enabledScenes": {
           "type": "array",
-          "description": "Bounded list of enabled visual theme IDs (1 to 40)."
+          "description": "Bounded list of enabled VoxelWall visual theme IDs (1 to 32)."
         },
         "enabledKineticMotions": {
           "type": "array",
-          "description": "Bounded list of enabled kinetic lyric animation styles (1 to 8)."
+          "description": "Bounded list of enabled VoxelVerse lyric animation styles (1 to 19)."
         },
         "createdAt": {
           "type": "string",

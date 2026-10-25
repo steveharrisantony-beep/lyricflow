@@ -1,11 +1,14 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, type FirebaseApp } from 'firebase/app';
 import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
   signOut as firebaseSignOut,
-  onAuthStateChanged,
-  type User
+  onAuthStateChanged as firebaseOnAuthStateChanged,
+  type Auth,
+  type User,
+  type NextOrObserver,
+  type Unsubscribe,
 } from 'firebase/auth';
 import {
   getFirestore,
@@ -14,7 +17,8 @@ import {
   getDocFromServer,
   setDoc,
   updateDoc,
-  serverTimestamp
+  serverTimestamp,
+  type Firestore,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { TEMPLATES, type SceneId } from '../visualization/cinematic/catalog';
@@ -23,9 +27,57 @@ import { CAMERA_VIEWS, type Quality, type CameraMode, type CameraView } from '..
 import type { TrackInfo } from '../metadata/trackInfo';
 import { normalizeTrack } from '../metadata/trackInfo';
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
+const env = ((import.meta as unknown as { env?: Record<string, string | undefined> }).env) ?? {};
+
+const resolvedFirebaseConfig = {
+  ...firebaseConfig,
+  apiKey: (env.VITE_FIREBASE_API_KEY || firebaseConfig.apiKey || '').trim(),
+  projectId: (env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId || '').trim(),
+  appId: (env.VITE_FIREBASE_APP_ID || firebaseConfig.appId || '').trim(),
+  authDomain: (env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfig.authDomain || '').trim(),
+  firestoreDatabaseId: (env.VITE_FIREBASE_DATABASE_ID || firebaseConfig.firestoreDatabaseId || '').trim(),
+  storageBucket: (env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket || '').trim(),
+  messagingSenderId: (env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfig.messagingSenderId || '').trim(),
+};
+
+export const isFirebaseConfigured = Boolean(resolvedFirebaseConfig.apiKey && resolvedFirebaseConfig.projectId);
+
+let appInstance: FirebaseApp | null = null;
+let dbInstance: Firestore | null = null;
+let authInstance: Auth | null = null;
+
+if (isFirebaseConfigured) {
+  try {
+    appInstance = initializeApp(resolvedFirebaseConfig);
+    dbInstance = resolvedFirebaseConfig.firestoreDatabaseId
+      ? getFirestore(appInstance, resolvedFirebaseConfig.firestoreDatabaseId)
+      : getFirestore(appInstance);
+    authInstance = getAuth(appInstance);
+  } catch (err) {
+    console.warn('Firebase initialization skipped; running in local storage mode.', err);
+    appInstance = null;
+    dbInstance = null;
+    authInstance = null;
+  }
+}
+
+export const db = dbInstance;
+export const auth = authInstance;
+
+export function onAuthStateChanged(
+  authObj: Auth | null,
+  nextOrObserver: NextOrObserver<User>
+): Unsubscribe {
+  if (!authObj) {
+    if (typeof nextOrObserver === 'function') {
+      nextOrObserver(null);
+    } else if (nextOrObserver && typeof nextOrObserver.next === 'function') {
+      nextOrObserver.next(null);
+    }
+    return () => {};
+  }
+  return firebaseOnAuthStateChanged(authObj, nextOrObserver);
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -54,15 +106,16 @@ export interface FirestoreErrorInfo {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+  const currentUser = auth?.currentUser;
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+      userId: currentUser?.uid,
+      email: currentUser?.email,
+      emailVerified: currentUser?.emailVerified,
+      isAnonymous: currentUser?.isAnonymous,
+      tenantId: currentUser?.tenantId,
+      providerInfo: currentUser?.providerData?.map(provider => ({
         providerId: provider.providerId,
         email: provider.email,
       })) || []
@@ -75,6 +128,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 }
 
 async function testConnection() {
+  if (!db) return;
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
@@ -142,10 +196,10 @@ const clampNum = (v: unknown, min: number, max: number, fallback: number) => {
 export function sanitizePreferences(raw: Partial<UserPreferencesData> | null | undefined): UserPreferencesData {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_USER_PREFERENCES };
   const validScenes = Array.isArray(raw.enabledScenes)
-    ? raw.enabledScenes.filter((id): id is SceneId => ALL_SCENE_IDS.includes(id as SceneId)).slice(0, 40)
+    ? raw.enabledScenes.filter((id): id is SceneId => ALL_SCENE_IDS.includes(id as SceneId)).slice(0, ALL_SCENE_IDS.length)
     : [];
   const validMotions = Array.isArray(raw.enabledKineticMotions)
-    ? raw.enabledKineticMotions.filter((m): m is LyricMotion => ALL_KINETIC_MOTIONS.includes(m as LyricMotion)).slice(0, 8)
+    ? raw.enabledKineticMotions.filter((m): m is LyricMotion => ALL_KINETIC_MOTIONS.includes(m as LyricMotion)).slice(0, ALL_KINETIC_MOTIONS.length)
     : [];
   const validCameraViews = Array.isArray(raw.enabledCameraViews)
     ? raw.enabledCameraViews.filter((v): v is CameraView => ALL_CAMERA_VIEWS.includes(v as CameraView)).slice(0, 4)
@@ -255,6 +309,11 @@ export function setSavedSessionMode(mode: 'google' | 'guest' | null): void {
 }
 
 export async function signInWithGoogle(): Promise<User> {
+  if (!auth) {
+    throw new Error(
+      'Google Cloud Sign-In requires VITE_FIREBASE_API_KEY in your local .env file. Please continue as Guest or set VITE_FIREBASE_API_KEY.'
+    );
+  }
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
   const result = await signInWithPopup(auth, provider);
@@ -264,14 +323,15 @@ export async function signInWithGoogle(): Promise<User> {
 
 export async function signOutUser(): Promise<void> {
   setSavedSessionMode(null);
-  if (auth.currentUser) {
+  if (auth?.currentUser) {
     await firebaseSignOut(auth);
   }
 }
 
-export { onAuthStateChanged, type User };
+export { type User };
 
 export async function fetchCloudPreferences(user: User): Promise<UserPreferencesData> {
+  if (!db) return loadLocalPreferences();
   const path = `userPreferences/${user.uid}`;
   const ref = doc(db, 'userPreferences', user.uid);
   try {
@@ -296,7 +356,7 @@ export async function saveCloudPreferences(
 ): Promise<void> {
   const clean = sanitizePreferences(prefs);
   saveLocalPreferences(clean);
-  if (!user.emailVerified) return;
+  if (!db || !user.emailVerified) return;
   const path = `userPreferences/${user.uid}`;
   const ref = doc(db, 'userPreferences', user.uid);
   const displayName = (user.displayName || user.email || 'LyricFlow User').slice(0, 120);
@@ -353,7 +413,7 @@ export async function fetchSongDelayPreference(
 ): Promise<SongDelayRecord | null> {
   const local = loadLocalSongDelay(track);
   const songId = computeSongKey(track);
-  if (!songId || !user || !user.emailVerified) return local;
+  if (!db || !songId || !user || !user.emailVerified) return local;
 
   const path = `userPreferences/${user.uid}/songDelays/${songId}`;
   const ref = doc(db, 'userPreferences', user.uid, 'songDelays', songId);
@@ -395,7 +455,7 @@ export async function saveSongDelayPreference(
   };
   saveLocalSongDelay(record);
 
-  if (!user || !user.emailVerified) return record;
+  if (!db || !user || !user.emailVerified) return record;
 
   // Ensure parent userPreferences document exists before writing subcollection
   const parentRef = doc(db, 'userPreferences', user.uid);

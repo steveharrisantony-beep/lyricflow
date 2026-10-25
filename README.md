@@ -1,175 +1,289 @@
-# LyricFlow — Music and lyric motion graphics
+# LyricFlow — VoxelWall Music-Reactive Soundstage & VoxelVerse Animated Lyrics
 
-A browser visualizer built with React, TypeScript, Vite, Three.js/WebGL, Canvas 2D
-and Web Audio. Audio analysis runs on your device. The scene library contains
-**40 themes: 28 WebGL worlds and 12 Canvas compositions**, including ten new 2D
-motion themes. No paid graphics or AI service is required.
+[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Tunai-0511/lyricflow?file=README.md)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Tunai-0511/lyricflow?quickstart=1)
 
-## Open in your browser
+**LyricFlow** is a studio-grade, real-time audio-reactive music visualizer and synchronized kinetic lyric stage. It combines **32 VoxelWall-inspired 2D music-reactive live wallpapers** across seven curated visual families with **19 VoxelVerse animated lyric choreography styles**, **Stash multi-catalog online streaming**, **Apple Music syllable/word-synced TTML & line-synced LRC engines**, **offline Indic-to-Latin phonetic romanization**, and **Firebase Authentication & Cloud Firestore profile synchronization**.
 
-- **Frontend:** [Open StackBlitz](https://stackblitz.com/github/steveharrisantony-beep/lyricflow).
-  Local music, microphone, permitted direct streams, lyrics and scenes work here.
-- **Frontend and music resolver:** [Open GitHub Codespaces](https://codespaces.new/steveharrisantony-beep/lyricflow).
-  The devcontainer installs dependencies and starts both services. Open forwarded
-  port **5173** after setup. Vite proxies `/music` to the resolver on port 8000.
-  Your GitHub access and Codespaces usage limits apply.
+> **Maintenance Policy:** This `README.md` is the canonical technical reference for LyricFlow and is continuously updated alongside every architectural, visual, audio, and lyric-engine update.
 
-Choose **Audio Source**, then load a local file or search a connected catalog.
-Choose a scene in **All 40**, **2D motion** or **3D worlds**. **Auto-direct** follows
-lyric sections when available and cycles through all themes otherwise. Cinema
-Mode provides a controls drawer with scene selection, playback, seeking,
-sensitivity, spectrum gain, blur and lyric delay.
+---
 
-## Music search and playback
+## Table of Contents
 
-| Source | Connection | Mechanism |
-| --- | --- | --- |
-| YouTube Music | Music resolver | Public song search with ytmusicapi; yt-dlp resolves the selected recording |
-| SoundCloud | Music resolver | yt-dlp catalog search and playback resolution; progressive or HLS audio |
-| JioSaavn | Music resolver | Public catalog search; yt-dlp resolves the selected song page |
-| YouTube | Music resolver | yt-dlp public recording search and playback resolution |
-| Audius | Direct browser API | Public Audius catalog; gated/unstreamable results excluded |
-| Local file | No server | Browser-supported audio from your device |
-| Microphone | HTTPS and permission | Nearby sound analysis; no recording or upload |
-| System/tab audio | Browser-dependent | Shared audio with permission; generally unavailable on Android |
-| Internet radio | Direct HTTPS stream | Source must permit browser playback and Web Audio access |
+1. [Core Features & Capabilities](#1-core-features--capabilities)
+2. [VoxelWall Music-Reactive Live Wallpapers (32 Scenes)](#2-voxelwall-music-reactive-live-wallpapers-32-scenes)
+3. [VoxelVerse Animated Lyric Styles (19 Choreography Modes)](#3-voxelverse-animated-lyric-styles-19-choreography-modes)
+4. [Audio Reactivity & 64-Band Spectral Pipeline](#4-audio-reactivity--64-band-spectral-pipeline)
+5. [Audio Sources & Stash Multi-Catalog Streaming](#5-audio-sources--stash-multi-catalog-streaming)
+6. [Synchronized Lyrics Engine & Provider Attribution](#6-synchronized-lyrics-engine--provider-attribution)
+7. [Romanization & Multi-Script Support](#7-romanization--multi-script-support)
+8. [Camera Views, Stage Framing & Contrast Engine](#8-camera-views-stage-framing--contrast-engine)
+9. [Cloud Sync, Authentication & Security Architecture](#9-cloud-sync-authentication--security-architecture)
+10. [Project Structure](#10-project-structure)
+11. [Getting Started & Commands](#11-getting-started--commands)
+12. [Reference Links & Technical Inspirations](#12-reference-links--technical-inspirations)
 
-**The resolver is included as code, not a deployed service.** Use Codespaces with
-both services, or host [`server`](server/README.md) and save its HTTPS URL under
-**Audio Source → Search settings**. A frontend-only host cannot execute Python.
-On a tablet, `localhost` means the tablet, not a remote server.
+---
 
-Search metadata and audio resolution are separate. Playback uses one media
-player, so the analyzer, seek control and lyrics follow the same audio clock.
-HLS support loads on demand. Source availability varies by country, recording,
-server IP and provider changes. A search result does not guarantee playable audio.
-No login cookies, Spotify audio extraction or restricted-content bypass is used.
+## 1. Core Features & Capabilities
 
-## Lyrics and synchronization
+- **32 VoxelWall 2D Music-Reactive Backgrounds (`https://voxelwall.app/wallpapers`)**:
+  - Pure, high-FPS 2D procedural canvas and spectral-geometry wallpapers organized into **7 VoxelWall categories**: *Flow*, *Contours*, *Sculptures*, *Space*, *Nature*, *Architecture*, and *Journeys*.
+  - All legacy 3D WebGL themes, *Crimson Impact*, and *Vinyl Groove* have been permanently removed in favor of crisp, zero-bloat 2D music-reactive compositions.
+  - Every background can be individually toggled **ON/OFF** to curate the active auto-director rotation pool.
+- **19 VoxelVerse Lyric Animation Styles (`https://voxelwall.app/verse#verse-styles`)**:
+  - Full support for all **19 VoxelVerse text styles** organized into four families: **Signature** (*Ship, Fisheye, Visual, Fisheye Visual*), **Spatial** (*Orbit, Cascade, Prism, Scatter*), **Kinetic** (*Surge, Elastic, Echo, Halo*), and **Editorial** (*Reel, Hinge, Fable, Carnival, Broadside, Portal, Mosaic*).
+  - Each style features dedicated 3D-projected plane orientation, spring physics, vector framing plates, semantic lyric emblems, and individual **ON/OFF** toggles.
+- **Transparent Provider & Audio Source Attribution**:
+  - Displays live **Lyrics Provider** badges (*Apple Music Word-Synced TTML*, *MusixMatch*, *LRCLIB*, *KuGou*, *YouTube Music*, or *Local File*) and **Audio Source** badges (*JioSaavn 320kbps AAC*, *YouTube Music*, *SoundCloud*, *Audius*, or *Local Device File*) in both the header and lyric panel.
+- **Honest Word-Sync vs. Line-Sync Rendering**:
+  - When **word-synced TTML / enhanced LRC** (`<mm:ss.xx>`) timestamps are present, LyricFlow renders smooth syllable/word karaoke sweeps and per-word kinetic impulses.
+  - When only **line-synced LRC** (`[mm:ss.xx]`) is available, LyricFlow **never fabricates or predicts fake word-by-word timing**—instead rendering clean, line-level synchronized typography.
+- **Balanced Multi-Line Lyric Wrapping**:
+  - Long lyric phrases are automatically partitioned into balanced multi-line rows (`buildWordRows` on the canvas stage and `splitLyricIntoBalancedLines` / `splitWordsIntoBalancedRows` in the DOM lyric stage) so lyrics never clip or stretch into a single cramped line.
+- **Romanized Lyrics Priority & 9-Script Indic Transliteration**:
+  - Automatically extracts Apple Music `<span ttm:role="x-roman">` tracks and performs offline phonetic transliteration for **Devanagari (Hindi/Marathi/Sanskrit), Malayalam, Tamil, Telugu, Kannada, Bengali, Gujarati, Gurmukhi (Punjabi), and Odia**, preferring Romanized display whenever available.
+- **Dynamic Main Lyric Color Engine**:
+  - Real-time main lyric text color shifting across phrases with WCAG AA contrast clamping (`readableChromaticInk`), plus manual color presets (*Auto Scene & Line Shift, Cyan Glow, Neon Rose, Solar Gold, Emerald Pulse, Electric Violet, Warm Coral, Classic White*).
 
-1. Correct the selected recording's title and artist under **Find Lyrics**.
-2. Confirm permission to display the lyrics and enable **Automatically load
-   matching timed lyrics**, or choose a candidate manually.
-3. Import an authorized LRC file under **Edit / import lyrics** if no match exists.
+---
 
-Automatic matching checks the permitted local library, then LRCLIB exact lookup,
-then search. It requires matching title/artist, timed lyrics and recording length
-within five seconds. Different versions still require confirmation. Upload labels
-such as `(Official Audio)` and artist `- Topic` suffixes are cleaned; live/remix
-markers are preserved. Transient network/5xx errors retry with bounded backoff.
-Rate limits remain visible. Search payloads containing timestamps are reused,
-avoiding a redundant fetch. Requests are cancelled when recording or mode changes.
-Fetched text is held in memory for the session and is only saved when requested.
+## 2. VoxelWall Music-Reactive Live Wallpapers (32 Scenes)
 
-Line timing uses `HTMLAudioElement.currentTime`, including pause and seek.
-**Lyrics delay** and LRC file offset are independent. Real word timestamps are
-used when supplied; estimated word timings are labelled. Microphone input does
-not identify songs or automatically recover a recording's vocal timing.
-Original, Romanized and combined display modes remain available. Local Sanscript
-provides approximate Malayalam, Tamil and Hindi transliteration; corrections and
-permitted lyric entries can be stored in the local browser library.
+Inspired by [VoxelWall Live Wallpapers](https://voxelwall.app/wallpapers), all 32 scenes react in real time to 64-band frequency energy, bass envelopes, midrange harmonics, treble shimmer, and beat/onset impulses:
 
-## Motion, materials and transitions
+| Category | Scene ID | Label | Visual Grammar & Audio Reactivity |
+| :--- | :--- | :--- | :--- |
+| **Flow** | `holographic-tide` | **Holographic Tide** | Iridescent multi-ribbon fluid tide waves driven by bass swells and midrange phase |
+| **Flow** | `liquid-filigree` | **Liquid Filigree** | Delicate filigree harmonic streams with golden-cyan crest nodes on beats |
+| **Flow** | `crimson-current` | **Crimson Current** | Deep velvet-crimson fluid currents and harmonic eddies |
+| **Flow** | `gilded-whirlpool` | **Gilded Whirlpool** | Golden 6-arm logarithmic spiral vortex rotating with midrange and bass |
+| **Flow** | `silk-waves` | **Silk Waves** | Wide translucent silk ribbon waves with harmonic crest nodes |
+| **Flow** | `ribbon-dance` | **Ribbon Dance** | Luminous phase-shifted vector ribbons undulating across the stage |
+| **Contours** | `chroma-moire-voids` | **Chroma Moire Voids** | Dual-center chromatic interference moiré rings and phase voids |
+| **Contours** | `cobalt-contours` | **Cobalt Contours** | Deep cobalt 4-lobe elevation isolines and terraced frequency ridges |
+| **Contours** | `molten-contours` | **Molten Contours** | Glowing magma 24-ring topographic isolines and bass-driven strata |
+| **Contours** | `layered-contours` | **Layered Contours** | Stepped 5-lobe botanical topographic contour elevation fields |
+| **Contours** | `contour-flow` | **Contour Flow** | Multi-harmonic topographic isoline field with precision plotter hairlines |
+| **Sculptures** | `crystal-resonance` | **Crystal Resonance** | 12-shard faceted geometric crystal prisms refracting bass and beat impulses |
+| **Sculptures** | `pearl-resonance` | **Pearl Resonance** | Nacreous concentric acoustic petal spheres and harmonic ripples |
+| **Sculptures** | `tidal-bloom` | **Tidal Bloom** | 14-petal radial acoustic bloom expanding with bass and treble |
+| **Sculptures** | `paper-cut` | **Paper Cut** | Multi-layered brutalist paper diorama canyon with floating geometric slabs |
+| **Space** | `celestial-orbit` | **Celestial Orbit** | 8-ring planetary astrolabe with degree calibration ticks and vector chords |
+| **Space** | `orbital-halo` | **Orbital Halo** | 64-ray luminous eclipse corona and radial frequency halo |
+| **Space** | `infinite-tunnel` | **Infinite Tunnel** | 16-layer rotating sacred-geometry portal rushing forward on bass hits |
+| **Space** | `orbital-score` | **Orbital Score** | Spacetime gyroscope with orbiting harmonic satellites |
+| **Space** | `star-map` | **Star Map** | 60-node astrometric triangulation network and polar coordinate reticle |
+| **Nature** | `aurora-field` | **Aurora Field** | 7-layer shimmering geomagnetic aurora borealis curtains |
+| **Nature** | `silver-current` | **Ocean Pulse** | Silver-cyan bioluminescent ocean swell and floating light spores |
+| **Nature** | `glow-lagoon` | **Glow Lagoon** | Nocturnal bioluminescent lagoon ripples and harmonic spore field |
+| **Nature** | `pixel-garden` | **Pixel Garden** | 28-column cyber-botanical voxel equalizer with blooming frequency caps |
+| **Architecture** | `signal-chamber` | **Signal Chamber** | 64-band spectral sculpture with mirrored reflection floor and upper contour spline |
+| **Architecture** | `neon-metal-matrix` | **Neon Metal Matrix** | 18×10 cybernetic grid matrix with frequency-modulated cells |
+| **Architecture** | `bauhaus-beat` | **Bauhaus Beat** | Constructivist architectural poster with 16-bar rhythmic step ladder |
+| **Architecture** | `halftone-club` | **Halftone Club** | 26×16 radial frequency-modulated halftone matrix and club aperture rings |
+| **Journeys** | `chromatic-drive` | **Chromatic Drive** | Synth-horizon perspective speed lanes and pulsing solar aperture |
+| **Journeys** | `origami-flight` | **Origami Flight** | 14-wing folded geometric paper flock soaring across harmonic wind currents |
+| **Journeys** | `white-velocity` | **White Velocity** | High-contrast daylight vector slipstream and perspective horizon grid |
+| **Journeys** | `color-riot` | **Color Riot** | Constructivist kinetic geometry poster with 64-band hexagonal lattice and 3D hex stack |
 
-- Adaptive band envelopes preserve new hits after sustained, compressed music.
-  Bass moves and expands large forms; mids turn rings; treble animates small
-  details and particles; separate beat accents expand edge rings and markers.
-- Damped spring motion has stronger visible travel while architectural forms
-  stay grounded. Visual intensity limits the response; spectrum gain controls
-  only 64-band bar height and does not alter beat detection.
-- 3D scenes use arranged arcs, layered groups and aligned architectural rows,
-  leaving room for lyrics. Materials include procedural grain/gradient maps,
-  bump detail, bevels, environment reflections and physical shading.
-- Structural floors receive soft shadows: High uses 1024px maps, Balanced 512px,
-  and Performance disables shadow maps. Quality also limits pixel count and detail.
-- Scene changes use live outgoing/incoming worlds with short whip/push, zoom,
-  staggered slice and radial handoffs. Progress uses real elapsed time, so a slow
-  render does not stretch a cut. Up to two inactive 3D worlds are retained, and
-  the next scheduled world is built/compiled before the cut. Lyrics sample the
-  playback clock again after rendering so scene work cannot replay an old phrase.
-- A music camera rig adds bounded, decaying shake/roll and focal punches on detected
-  hits, plus slow 3D dolly/orbit movement. Lyric planes project through the same
-  Three.js camera in 3D scenes; Canvas scenes use a pinhole projection. Reduced
-  Motion disables camera impulses and transitions.
-- **One phrase at a time:** every word is drawn once. There is no enlarged duplicate
-  word, echo stack or repeated full-line caption. Eight motion treatments vary
-  depth, approach, rise, tilt, elastic entry and ribbon movement within that phrase.
-- Whole-song word frequency identifies repeated content/hook words, filters common
-  filler words, and gives those words larger type, a contrasting color and stronger
-  motion. This is a deterministic local frequency heuristic, not semantic AI.
-- Thin display fonts and generic stroke outlines have been removed. Lyrics use
-  heavy faces and a restrained shadow; bold Malayalam, Tamil and Devanagari fonts
-  are bundled. Original or Romanized mode selects one stage phrase. In Both mode
-  the stage stays original; distinct Romanization remains in the lyric reader.
-  An identical Romanized line is not repeated.
-- Lyric ink continues to adapt to the rendered background. Word timing follows
-  the audio clock and supplied timestamps, with estimated timing labelled.
+---
 
-### Ten new 2D themes
+## 3. VoxelVerse Animated Lyric Styles (19 Choreography Modes)
 
-| Theme | Composition |
-| --- | --- |
-| Paper Cut | Layered paper forms with cast shadows |
-| Orbital Score | Elliptical orbits with treble satellites |
-| Silk Waves | Broad, flowing frequency ribbons |
-| Bauhaus Beat | Balanced circles, blocks and rhythmic bars |
-| Star Map | Connected constellation points and bass orbit |
-| Halftone Club | Frequency-driven dot fields and beat rings |
-| Ribbon Dance | Fine, layered wave ribbons |
-| Vinyl Groove | Concentric record grooves and radial accents |
-| Pixel Garden | Bass-driven pixel stems and treble blooms |
-| Contour Flow | Nested topographic curves with independent ripples |
+Inspired by [VoxelVerse (`#verse-styles`)](https://voxelwall.app/verse#verse-styles), LyricFlow implements 19 distinct lyric animation styles across four families:
 
-The original thirty themes remain available. Crimson Impact uses a dedicated
-64-band spectrum composition; Color Riot uses a generative geometric poster.
-The other original themes use procedural WebGL geometry, with a Canvas fallback
-when WebGL is unavailable. The lyric director generates stable section-based
-schedules and avoids recent scene repetition. Mood/imagery analysis is a local
-heuristic; no lyric text is sent to an AI service.
+| Family | Style ID | Name | Choreography & Visual Detail |
+| :--- | :--- | :--- | :--- |
+| **Signature** | `ship` | **Ship** | 3D Z-axis camera propulsion with word-by-word depth impulse |
+| **Signature** | `fisheye` | **Fisheye** | Spherical barrel-lens magnification bulging centered words forward |
+| **Signature** | `visual` | **Visual** | Gentle harmonic wave paired with semantic lyric emblems & star icons |
+| **Signature** | `fisheye-visual` | **Fisheye Visual** | Spherical fisheye lens curvature combined with lyric icon emblems |
+| **Spatial** | `orbit` | **Orbit** | Tilted orbital plane with oversized hero words and luminous ring halos |
+| **Spatial** | `cascade` | **Cascade** | Stepped multi-row diagonal waterfall with sculpted 3D depth |
+| **Spatial** | `prism` | **Prism** | Chromatic multi-layer dimensional offset frames and shear |
+| **Spatial** | `scatter` | **Scatter** | Asymmetric word clusters with playful alternating shear angles |
+| **Kinetic** | `surge` | **Surge** | Rising fluid word wave with cresting vertical momentum |
+| **Kinetic** | `elastic` | **Elastic** | Critically-damped spring stretch and settle with bold emphasis |
+| **Kinetic** | `echo` | **Echo** | Receding twin contour echo frames layered behind active words |
+| **Kinetic** | `halo` | **Halo** | Expanding luminous concentric rings around each active word |
+| **Editorial** | `reel` | **Reel** | Rolling vertical tape-reel column motion with pitch rotation |
+| **Editorial** | `hinge` | **Hinge** | Folded architectural word walls with turning perspective planes |
+| **Editorial** | `fable` | **Fable** | Storybook painted words with expressive ornamental corner emblems |
+| **Editorial** | `carnival` | **Carnival** | High-impact kinetic slam with 4-point star-sticker collage accents |
+| **Editorial** | `broadside` | **Broadside** | Tracking editorial typography framed in angled paper-ticket plates |
+| **Editorial** | `portal` | **Portal** | Folding aperture windows and rounded lyric capsules around active words |
+| **Editorial** | `mosaic` | **Mosaic** | Curved typographic arc framed inside modular moving lyric grid cells |
 
-See [Baseline analysis](BASELINE_REVIEW.md) and [earlier reference analysis](REFERENCE_REVIEW.md) for pdoom-video, party-mode, vizz.fm
-and Stash code paths, adapted concepts and differences.
+---
 
-## Development and verification
+## 4. Audio Reactivity & 64-Band Spectral Pipeline
 
+- **64-Band Log-Scaled Frequency Analyzer (`src/audio/audioSignal.ts`)**:
+  - Maps 32 Hz – 14 kHz into 64 logarithmically spaced musical bands with independent **Spectrum Gain** control and a quiet-room noise gate (`spectrumResponse`).
+- **Spectral-Flux Beat & Tempo Detector (`src/audio/beatDetector.ts`)**:
+  - Computes real-time spectral flux, adaptive onset thresholds, tempo estimation (BPM), tempo confidence, and downbeat phase without false triggers during silence.
+- **Instrument-Role Separation (`src/visualization/cinematic/procedural/audioMotion.ts` & `src/audio/bandEnvelope.ts`)**:
+  - Separates **Bass** (20–250 Hz), **Midrange** (250–2000 Hz), **Treble** (2–14 kHz), and **Beat/Onset** envelopes with adaptive headroom preservation (`BandEnvelope`) so new hits punch through even during loud sustained passages.
+
+---
+
+## 5. Audio Sources & Stash Multi-Catalog Streaming
+
+Accessible anytime from the stage bar (**Choose Audio Source**) with a dedicated modal close button (`×` header button, `Close Window` footer button, `Escape` key, or backdrop click):
+
+1. **Stash Online Player (`src/music/providers.ts`)**:
+   - **JioSaavn Direct Catalog**: Instant search and direct 320kbps/160kbps MP4/AAC full-song streaming.
+   - **YouTube Music & YouTube Resolver**: High-bitrate full-track streaming via the integrated `/api/music/search`, `/api/music/resolve`, and `/api/music/stream` proxy routes.
+   - **SoundCloud & Audius**: Full-track progressive and HLS streaming with automatic recording metadata preservation.
+2. **Local Audio Upload (`src/audio/LocalPlayer.tsx`)**:
+   - Supports `.mp3`, `.wav`, `.flac`, `.m4a`, `.ogg`, and `.aac` files decoded locally in the browser via the Web Audio API.
+
+---
+
+## 6. Synchronized Lyrics Engine & Provider Attribution
+
+When a song loads, `TrackFinder` (`src/metadata/TrackFinder.tsx`) and `providers.ts` (`src/lyrics/providers.ts`) automatically query a multi-tier cascade:
+
+1. **Apple Music Syllable/Word-Synced TTML (`src/lyrics/appleLyrics.ts`)**:
+   - Queries Apple Music / iTunes catalog IDs and converts TTML (`<p begin="..." end="...">`, `<span begin="..." end="...">`, `<span ttm:role="x-bg">`, and `<span ttm:role="x-roman">`) or structured syllable JSON into enhanced LRC (`[mm:ss.xx]<mm:ss.xx>Word`).
+   - Automatically glues adjacent multi-syllable spans without trailing whitespace into unified words while preserving syllable timing.
+2. **MusixMatch RichSync & Line-Synced LRC**:
+   - Word-level RichSync and line-synced LRC fallback via the `/api/lyrics/apple` server proxy.
+3. **LRCLIB Exact & Search Matching**:
+   - Strict duration-validated (`±2.5s`) recording match against `lrclib.net/api/get` and `/api/search`.
+4. **KuGou & YouTube Music Transcript Fallback**:
+   - Line-synced LRC decoding from KuGou and timed transcript extraction from YouTube Music.
+5. **Local `.lrc`, `.ttml`, `.xml`, and `.txt` Import**:
+   - Import custom lyric files or edit timestamps on-demand with per-song delay adjustments (`-30s` to `+30s`).
+
+---
+
+## 7. Romanization & Multi-Script Support
+
+- **Offline Indic Phonetic Transliteration (`src/romanization/romanize.ts`)**:
+  - Supports **Devanagari (Hindi / Marathi / Sanskrit)**, **Malayalam**, **Tamil**, **Telugu**, **Kannada**, **Bengali**, **Gujarati**, **Gurmukhi (Punjabi)**, and **Odia** with vowel-sign (matra) composition, virama consonant cluster handling, anusvara/chandrabindu nasalization, and inherent schwa rules.
+- **Apple Music Native Romanization**:
+  - Automatically extracts `<span ttm:role="x-roman">` from Apple Music TTML payloads when available.
+- **Romanized-First Display**:
+  - Defaults to preferring Romanized lyrics on both the primary kinetic canvas and the interactive lyric panel whenever non-Latin scripts are detected.
+
+---
+
+## 8. Camera Views, Stage Framing & Contrast Engine
+
+- **4 Interactive Camera Views (`Front`, `Orbit`, `Side`, `Top`)**:
+  - Each camera view has an individual **ON/OFF** switch in the control panel.
+  - **Automatic Camera** cycles deterministically only through user-enabled views, or locks to a single view when selected.
+- **WCAG AA Contrast Enforcement (`src/visualization/cinematic/contrast.ts` & `typography.ts`)**:
+  - Continuously samples the live canvas backdrop (`48×30` luminance downsampler) and guarantees a minimum `4.5:1` contrast ratio for all foreground and accent lyric inks (`readableInk` and `readableChromaticInk`).
+
+---
+
+## 9. Cloud Sync, Authentication & Security Architecture
+
+- **Google Sign-In & Guest Session (`src/auth/LoginScreen.tsx`, `src/firebase/firebaseClient.ts`)**:
+  - Sign in with Google to synchronize visual intensity, speed, audio sensitivity, spectrum gain, motion blur, quality preset, enabled VoxelWall themes (`1–32`), enabled VoxelVerse lyric styles (`1–19`), enabled camera views (`1–4`), and per-song lyric delays (`userPreferences/{uid}/songDelays/{songId}`) to Cloud Firestore.
+  - Full offline `localStorage` persistence in Guest Mode.
+- **Secret-Free Repository Policy (`.env.example` & `firebase-applet-config.json`)**:
+  - No API keys or OAuth client secrets are committed to tracked files. Copy `.env.example` to `.env.local` (gitignored) and provide `VITE_FIREBASE_API_KEY` when enabling Firebase Cloud Sync; when omitted, LyricFlow automatically runs in local storage mode without initialization errors.
+- **Hardened Firestore Security Rules (`firestore.rules`)**:
+  - Default-deny catch-all, strict owner UID + `email_verified` enforcement, exact schema key whitelisting (`hasAll` / `hasOnly`), bounded list sizes, and immutable `uid`/`createdAt` invariants.
+
+---
+
+## 10. Project Structure
+
+```text
+├── server.ts                                      # Express + Vite full-stack server (/api/music/* & /api/lyrics/*)
+├── firestore.rules                                # Hardened Cloud Firestore security rules
+├── firebase-blueprint.json                        # Firestore schema blueprint
+├── src/
+│   ├── App.tsx                                    # Main studio interface, VoxelWall & VoxelVerse controls
+│   ├── audio/
+│   │   ├── AudioSourceHub.tsx                     # Modal selector for Stash Online Player vs. Local Upload
+│   │   ├── LocalPlayer.tsx                        # Playback transport, seek bar, & per-song delay controls
+│   │   ├── audioSignal.ts                         # Web Audio graph & 64-band log-scaled analyzer
+│   │   ├── bandEnvelope.ts                        # Adaptive attack/release envelope follower
+│   │   └── beatDetector.ts                        # Spectral-flux onset, beat, & BPM tempo detector
+│   ├── lyrics/
+│   │   ├── ManualLyrics.tsx                       # Synchronized lyric stage, provider badges, & color picker
+│   │   ├── appleLyrics.ts                         # Apple Music TTML & syllable JSON -> Enhanced LRC parser
+│   │   ├── lrc.ts                                 # Line-synced & word-synced (<mm:ss.xx>) LRC parser
+│   │   ├── lyricTimeline.ts                       # Playback cue scheduler & whole-song emphasis snapshot
+│   │   ├── providers.ts                           # Multi-provider lyric cascade (Apple/MusixMatch/LRCLIB)
+│   │   └── sceneDirector.ts                       # Semantic lyric mood & energy analyzer
+│   ├── metadata/
+│   │   ├── TrackFinder.tsx                        # Automatic track & lyric resolver
+│   │   └── trackInfo.ts                           # Filename & recording metadata normalizer
+│   ├── music/
+│   │   └── providers.ts                           # Stash multi-catalog search & stream resolver
+│   ├── romanization/
+│   │   └── romanize.ts                            # 9-script offline Indic-to-Latin transliterator
+│   ├── visualization/cinematic/
+│   │   ├── CinematicStage.tsx                     # Dual-canvas compositor (background + sharp top lyric layer)
+│   │   ├── catalog.ts                             # 32 VoxelWall scene templates across 7 categories
+│   │   ├── kineticTypography.ts                   # 19 VoxelVerse lyric animation styles & multi-line layout
+│   │   ├── cameraRig.ts                           # Beat-reactive 3D projection rig for kinetic typography
+│   │   ├── contrast.ts                            # Real-time backdrop luminance sampler & WCAG contrast guard
+│   │   ├── fonts.ts                               # 25 curated display, editorial, & monospace font packs
+│   │   └── procedural/
+│   │       ├── MotionGraphics.ts                  # 30 VoxelWall 2D music-reactive live wallpaper painters
+│   │       ├── GraphicCompositions.ts             # 64-band Signal Chamber spectrum & Color Riot hex geometry
+│   │       └── audioMotion.ts                     # Instrument-role channel routing
+│   └── tests/                                     # 10 Vitest test suites covering audio, lyrics, & visuals
+```
+
+---
+
+## 11. Getting Started & Commands
+
+### Prerequisites
+- **Node.js** 20+ and **npm**
+
+### Installation & Development
 ```bash
-npm ci
-npm run dev                         # frontend
-python -m pip install -r server/requirements.txt
-npm run dev:full                    # frontend + Python resolver; Node 22+
-npm run typecheck
-npm test
-python -m unittest server.test_app
+# Install dependencies
+npm install
+
+# Start the full-stack Express + Vite development server on port 3000
+npm run dev
+```
+
+### Verification & Production Build
+```bash
+# Run the complete Vitest unit & integration test suite
+npx vitest run
+
+# Type-check and build the production bundle
 npm run build
 ```
 
-With the dev server running and Chrome available:
+---
 
-```bash
-npm run smoke          # local audio, forty themes, lyrics, controls
-npm run smoke:music    # search -> playback -> analyzer -> lyrics -> seek/delay
-npm run smoke:kinetic  # single phrase, word emphasis, camera hits and cut-time clock checks
-npm run smoke:motion   # ten 2D outputs, transitions, 3D rendering, tablet layout
-npm run smoke:hls      # generated AAC/HLS playback and cleanup; requires ffmpeg
-```
+## 12. Reference Links & Technical Inspirations
 
-Browser checks use original synthetic audio and fixture provider responses.
-Resolver tests check adapters, URL validation, range forwarding and HLS rewriting.
-These establish integration behavior, not live provider uptime. Actual Xiaomi
-Pad 8 FPS, touch feel, permissions and music availability require testing on the
-tablet and chosen deployment. Software WebGL FPS is not a tablet benchmark.
-The bundled fonts and Three.js make the initial build substantial; HLS loads in
-a separate chunk only when needed.
+### Visual & Typographic References
+- **VoxelWall — Music-Reactive Live Wallpapers (Flow, Contours, Sculptures, Space, Nature, Architecture, Journeys)**:  
+  [https://voxelwall.app/wallpapers](https://voxelwall.app/wallpapers)
+- **VoxelVerse — 19 Animated Desktop Lyric Styles (Signature, Spatial, Kinetic, Editorial)**:  
+  [https://voxelwall.app/verse#verse-styles](https://voxelwall.app/verse#verse-styles)
+- **VoxelWall Engine Architecture Overview**:  
+  [https://voxelwall.app/engine](https://voxelwall.app/engine)
+- **Baseline Audio-Reactive Visualizer (`Tunai-0511/baseline`)**:  
+  [https://github.com/Tunai-0511/baseline](https://github.com/Tunai-0511/baseline) · Local architecture review: [`BASELINE_REVIEW.md`](./BASELINE_REVIEW.md)
+- **p(doom) Procedural Audio-Visual System (`mexicat/pdoom-video`)**:  
+  [https://github.com/mexicat/pdoom-video](https://github.com/mexicat/pdoom-video) · Local reference review: [`REFERENCE_REVIEW.md`](./REFERENCE_REVIEW.md)
 
-## Permissions and limitations
-
-Use recordings and lyrics you are authorized to play and display. Search results
-are not proof of rights. Only explicitly saved permitted lyrics enter the browser
-library; local storage does not sync between devices. Spotify's separate metadata
-panel does not supply audio or drive visualization/lyric timing. No private Apple,
-KuGou or YouTube lyric endpoint is used.
-
-This is live, generative motion graphics. pdoom's hand-authored storyline, offline
-stem separation, verified beat grids, forced vocal alignment and video export are
-not implemented. See [Stash notes](STASH_RESEARCH.md) and the resolver setup for
-source boundaries and deployment details.
+### Streaming & Lyric Synchronization References
+- **Stash Audio & Apple Music TTML Architecture (`STASH_RESEARCH.md`)**:  
+  Local research notes: [`STASH_RESEARCH.md`](./STASH_RESEARCH.md)
+- **LRCLIB Synchronized Lyrics API**:  
+  [https://lrclib.net/docs](https://lrclib.net/docs)
+- **Apple Timed Text Markup Language (TTML) Specification**:  
+  [https://www.w3.org/TR/ttml2/](https://www.w3.org/TR/ttml2/)
+- **MDN Web Audio API (`AnalyserNode` & Real-Time Frequency Analysis)**:  
+  [https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
+- **Cloud Firestore Security Rules Documentation**:  
+  [https://firebase.google.com/docs/firestore/security/get-started](https://firebase.google.com/docs/firestore/security/get-started)

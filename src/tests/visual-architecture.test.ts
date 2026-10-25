@@ -5,15 +5,15 @@ import {getAudioFrequencyBands,getAudioSensitivity,setAudioSensitivity} from '..
 import {GraphicCompositions} from '../visualization/cinematic/procedural/GraphicCompositions';
 
 describe('visual architecture',()=>{
- it('exposes three distinct hand-directed render systems',()=>{
-  expect(visualSystemFor('crimson-impact')).toBe('spectrum');
+ it('exposes three distinct 2D render systems with zero 3D WebGL themes',()=>{
+  expect(visualSystemFor('signal-chamber')).toBe('spectrum');
   expect(visualSystemFor('color-riot')).toBe('geometry');
-  expect(visualSystemFor('glass-architecture')).toBe('cinematic');
+  expect(visualSystemFor('holographic-tide')).toBe('motion2d');
  });
- it('leaves all other scene IDs available through WebGL',()=>{
-  const remaining=TEMPLATES.filter(t=>t.family!=='2d'&&!['crimson-impact','color-riot'].includes(t.id));
-  expect(remaining).toHaveLength(28);
-  expect(remaining.every(t=>visualSystemFor(t.id)==='cinematic')).toBe(true);
+ it('routes all other 30 VoxelWall scene IDs through the 2D motion engine',()=>{
+  const remaining=TEMPLATES.filter(t=>!['signal-chamber','color-riot'].includes(t.id));
+  expect(remaining).toHaveLength(30);
+  expect(remaining.every(t=>visualSystemFor(t.id)==='motion2d')).toBe(true);
  });
  it('provides a non-allocating stable 64-band analyzer interface',()=>{
   const bands=getAudioFrequencyBands();

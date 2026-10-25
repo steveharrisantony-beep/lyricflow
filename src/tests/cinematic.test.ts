@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {TEMPLATES,AUDIO_ONLY_SCENES,buildCinematicSchedule,sceneAt,byId} from '../visualization/cinematic/catalog';
+import {TEMPLATES,AUDIO_ONLY_SCENES,VOXELWALL_CATEGORIES,buildCinematicSchedule,sceneAt,byId} from '../visualization/cinematic/catalog';
 import {buildCues} from '../lyrics/lyricTimeline';
 import {analyzeSections} from '../lyrics/sceneDirector';
 import {fontLabel,FONT_SHOWCASE,fontSpec} from '../visualization/cinematic/fonts';
@@ -12,12 +12,16 @@ const sample=Array.from({length:48},(_,i)=>({
 const cues=buildCues(sample,[]);
 const sections=analyzeSections(sample);
 
-describe('cinematic scene catalog',()=>{
- it('provides forty original cinematic templates',()=>{
-  expect(TEMPLATES).toHaveLength(40);
-  expect(new Set(TEMPLATES.map(t=>t.id)).size).toBe(40);
-  expect(new Set(TEMPLATES.map(t=>t.family)).size).toBeGreaterThanOrEqual(20);
-  expect(new Set(TEMPLATES.map(t=>t.background)).size).toBe(40);
+describe('VoxelWall cinematic scene catalog',()=>{
+ it('provides 32 VoxelWall music-reactive templates across 7 categories with no 3D themes, Crimson Impact, or Vinyl Groove',()=>{
+  expect(TEMPLATES).toHaveLength(32);
+  expect(new Set(TEMPLATES.map(t=>t.id)).size).toBe(32);
+  expect(new Set(TEMPLATES.map(t=>t.family)).size).toBe(VOXELWALL_CATEGORIES.length);
+  expect(new Set(TEMPLATES.map(t=>t.background)).size).toBe(32);
+  const ids=TEMPLATES.map(t=>t.id as string);
+  expect(ids).not.toContain('crimson-impact');
+  expect(ids).not.toContain('vinyl-groove');
+  expect(ids).not.toContain('glass-architecture');
  });
  it('gives every scene a valid bundled premium font pack',()=>{
   for(const item of TEMPLATES){
@@ -49,8 +53,8 @@ describe('cinematic scene catalog',()=>{
   expect(sceneAt(directed,directed[1].start+.2)?.id).toBe(directed[1].id);
   expect(sceneAt(directed,-15)).toBeNull();
  });
- it('has several distinct audio-only fallback environments',()=>{
-  expect(AUDIO_ONLY_SCENES.length).toBeGreaterThanOrEqual(12);
+ it('has 32 distinct audio-only fallback environments',()=>{
+  expect(AUDIO_ONLY_SCENES).toHaveLength(32);
   expect(new Set(AUDIO_ONLY_SCENES).size).toBe(AUDIO_ONLY_SCENES.length);
  });
 });

@@ -51,9 +51,9 @@ service cloud.firestore {
       data.narrativeObjects is bool &&
       data.cameraMode is string && data.cameraMode.size() <= 20 &&
       data.cameraMode in ['Automatic', 'Front', 'Orbit', 'Side', 'Top'] &&
-      data.enabledScenes is list && data.enabledScenes.size() >= 1 && data.enabledScenes.size() <= 40 &&
+      data.enabledScenes is list && data.enabledScenes.size() >= 1 && data.enabledScenes.size() <= 64 &&
       data.enabledScenes[0] is string && data.enabledScenes[0].size() <= 64 &&
-      data.enabledKineticMotions is list && data.enabledKineticMotions.size() >= 1 && data.enabledKineticMotions.size() <= 8 &&
+      data.enabledKineticMotions is list && data.enabledKineticMotions.size() >= 1 && data.enabledKineticMotions.size() <= 32 &&
       data.enabledKineticMotions[0] is string && data.enabledKineticMotions[0].size() <= 32 &&
       data.createdAt is timestamp &&
       data.updatedAt is timestamp;
