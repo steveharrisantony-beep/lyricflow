@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {TEMPLATES,AUDIO_ONLY_SCENES,VOXELWALL_CATEGORIES,buildCinematicSchedule,sceneAt,byId} from '../visualization/cinematic/catalog';
+import {TEMPLATES,AUDIO_ONLY_SCENES,VOXELWALL_CATEGORIES,buildCinematicSchedule,sceneAt,byId,resolveThemePalette} from '../visualization/cinematic/catalog';
 import {buildCues} from '../lyrics/lyricTimeline';
 import {analyzeSections} from '../lyrics/sceneDirector';
 import {fontLabel,FONT_SHOWCASE,fontSpec} from '../visualization/cinematic/fonts';
@@ -13,15 +13,32 @@ const cues=buildCues(sample,[]);
 const sections=analyzeSections(sample);
 
 describe('VoxelWall cinematic scene catalog',()=>{
- it('provides 32 VoxelWall music-reactive templates across 7 categories with no 3D themes, Crimson Impact, or Vinyl Groove',()=>{
-  expect(TEMPLATES).toHaveLength(32);
-  expect(new Set(TEMPLATES.map(t=>t.id)).size).toBe(32);
+ it('provides 23 genuinely distinct VoxelWall music-reactive templates across 7 categories with multi-palette support and no duplicate color-swap clones',()=>{
+  expect(TEMPLATES).toHaveLength(23);
+  expect(new Set(TEMPLATES.map(t=>t.id)).size).toBe(23);
   expect(new Set(TEMPLATES.map(t=>t.family)).size).toBe(VOXELWALL_CATEGORIES.length);
-  expect(new Set(TEMPLATES.map(t=>t.background)).size).toBe(32);
+  expect(new Set(TEMPLATES.map(t=>t.background)).size).toBe(23);
   const ids=TEMPLATES.map(t=>t.id as string);
   expect(ids).not.toContain('crimson-impact');
   expect(ids).not.toContain('vinyl-groove');
   expect(ids).not.toContain('glass-architecture');
+  expect(ids).not.toContain('liquid-filigree');
+  expect(ids).not.toContain('crimson-current');
+  expect(ids).not.toContain('silk-waves');
+  expect(ids).not.toContain('molten-contours');
+  expect(ids).not.toContain('layered-contours');
+  expect(ids).not.toContain('pearl-resonance');
+  expect(ids).not.toContain('orbital-score');
+  expect(ids).not.toContain('silver-current');
+  expect(ids).not.toContain('white-velocity');
+  for(const item of TEMPLATES){
+   expect(item.palettes.length).toBeGreaterThanOrEqual(4);
+   for(const pal of item.palettes){
+    const resolved=resolveThemePalette(item.id,pal.id);
+    expect(resolved.id).toBe(pal.id);
+    expect(resolved.background).toMatch(/^#[0-9a-f]{6}$/i);
+   }
+  }
  });
  it('gives every scene a valid bundled premium font pack',()=>{
   for(const item of TEMPLATES){
@@ -53,8 +70,8 @@ describe('VoxelWall cinematic scene catalog',()=>{
   expect(sceneAt(directed,directed[1].start+.2)?.id).toBe(directed[1].id);
   expect(sceneAt(directed,-15)).toBeNull();
  });
- it('has 32 distinct audio-only fallback environments',()=>{
-  expect(AUDIO_ONLY_SCENES).toHaveLength(32);
+ it('has 23 distinct audio-only fallback environments',()=>{
+  expect(AUDIO_ONLY_SCENES).toHaveLength(23);
   expect(new Set(AUDIO_ONLY_SCENES).size).toBe(AUDIO_ONLY_SCENES.length);
  });
 });

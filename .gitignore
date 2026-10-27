@@ -4,6 +4,7 @@ dist/
 .env
 .env.*
 !.env.example
+firebase-applet-config.json
 
 __pycache__/
 *.pyc

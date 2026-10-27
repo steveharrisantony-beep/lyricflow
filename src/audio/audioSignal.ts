@@ -51,9 +51,12 @@ export function spectrumResponse(raw:number,gain=spectrumSensitivity){
 }
 /** Read-only by convention: stable, freshly smoothed 64-band spectrum from the active source. */
 export function getAudioFrequencyBands():Float32Array{return metrics.bands}
+let virtualMediaTime:number|null=null;
+export function setVirtualMediaTime(time:number|null){virtualMediaTime=typeof time==='number'&&Number.isFinite(time)?Math.max(0,time):null}
 export function setLocalMediaElement(element:HTMLAudioElement|null){mediaElement=element}
 export function getLocalMediaTime(){
- return mediaElement&&mediaElement.currentSrc&&(playing||(!microphonePlaying&&!externalKind))?mediaElement.currentTime:null
+ if(mediaElement&&mediaElement.currentSrc&&(playing||(!microphonePlaying&&!externalKind)))return mediaElement.currentTime;
+ return virtualMediaTime;
 }
 function activate(node:AnalyserNode|null){
  if(node===analyser)return;

@@ -25,15 +25,17 @@ describe('live motion graphics',()=>{
   expect(objectDrive('treble',1,1,0,1)).toBe(0);
   const e=new BandEnvelope();expect(e.update(.8,.025,0)).toBe(0);
  });
- it('routes thirty distinct VoxelWall themes to the 2D motion engine',()=>{
-  expect(new Set(MOTION_SCENES).size).toBe(30);
+ it('routes twenty-one distinct VoxelWall themes to the 2D motion engine',()=>{
+  expect(new Set(MOTION_SCENES).size).toBe(21);
   for(const id of MOTION_SCENES)expect(visualSystemFor(id)).toBe('motion2d');
  });
- it('keeps lyric ink and accents readable against every scene surface',()=>{
+ it('keeps lyric ink and accents readable against every scene surface and every colour palette',()=>{
   for(const template of TEMPLATES){
-   const p=sceneColors(template.id);
-   expect(contrastRatio(p.background,p.foreground),p.id).toBeGreaterThanOrEqual(4.5);
-   expect(contrastRatio(p.background,p.accent),p.id).toBeGreaterThanOrEqual(4.5);
+   for(const pal of template.palettes){
+    const p=sceneColors(template.id,pal.id);
+    expect(contrastRatio(p.background,p.foreground),`${p.id}:${pal.id}`).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(p.background,p.accent),`${p.id}:${pal.id}`).toBeGreaterThanOrEqual(4.5);
+   }
   }
   expect(readableInk('#ffffff')).toBe('#151820');
   expect(readableInk('#000000')).toBe('#fffaf2');

@@ -1,13 +1,13 @@
 import { useEffect, useState, useRef } from 'react';
 import CinematicStage, {
-  CAMERA_VIEWS,
   type Quality,
-  type CameraMode,
-  type CameraView,
+  type YouTubeBackgroundMode,
 } from './visualization/cinematic/CinematicStage';
 import {
   TEMPLATES,
   VOXELWALL_CATEGORIES,
+  byId,
+  resolveThemePalette,
   type SceneId,
   type VoxelWallCategory,
 } from './visualization/cinematic/catalog';
@@ -16,34 +16,33 @@ import {
   VOXELVERSE_FAMILIES,
   type LyricMotion,
   type VoxelVerseFamily,
+  type LyricFillPaceMode,
 } from './visualization/cinematic/kineticTypography';
+import { computeBassThreshold } from './visualization/cinematic/cameraRig';
 import { fontLabel } from './visualization/cinematic/fonts';
 import { setAudioSensitivity, getAudioFrequencyBands, setSpectrumSensitivity } from './audio/audioSignal';
 import LocalPlayer, { type LocalPlayerHandle } from './audio/LocalPlayer';
 import AudioSourceHub, { type AudioSourceHubHandle, type AudioSourceMode } from './audio/AudioSourceHub';
 import { clampLyricDelay, formatLyricDelay } from './lyrics/lyricTiming';
-import ManualLyrics, { type IncomingLyrics } from './lyrics/ManualLyrics';
+import ManualLyrics, {
+  LYRIC_COLOR_MAP,
+  type IncomingLyrics,
+  type LyricColorMode,
+} from './lyrics/ManualLyrics';
 import TrackFinder from './metadata/TrackFinder';
-import type { TrackInfo } from './metadata/trackInfo';
-import { saveTrackCorrection } from './metadata/metadataStore';
-import LoginScreen from './auth/LoginScreen';
 import {
-  auth,
-  onAuthStateChanged,
-  signInWithGoogle,
-  signOutUser,
-  getSavedSessionMode,
-  setSavedSessionMode,
+  extractYouTubeVideoId,
+  isLyricVideoTrack,
+  type TrackInfo,
+} from './metadata/trackInfo';
+import { saveTrackCorrection } from './metadata/metadataStore';
+import {
   loadLocalPreferences,
   saveLocalPreferences,
-  fetchCloudPreferences,
-  saveCloudPreferences,
   fetchSongDelayPreference,
   saveSongDelayPreference,
   ALL_SCENE_IDS,
   ALL_KINETIC_MOTIONS,
-  ALL_CAMERA_VIEWS,
-  type User,
 } from './firebase/firebaseClient';
 import {
   AudioLines,
@@ -59,19 +58,12 @@ import {
   PanelRightClose,
   PanelRightOpen,
   LogOut,
-  LogIn,
   Check,
   Sparkles,
+  Video,
 } from 'lucide-react';
 
 const choices = TEMPLATES;
-
-const CAMERA_VIEW_DESCRIPTIONS: Record<CameraView, string> = {
-  Front: 'Centered concert-stage framing with beat push',
-  Orbit: '360° sweeping orbital path around the canvas',
-  Side: 'Wide lateral tracking angle with dynamic roll',
-  Top: 'Elevated overhead perspective looking down on geometry',
-};
 
 const SIGNATURE_VOXELWALL_IDS: readonly SceneId[] = [
   'holographic-tide',
@@ -83,19 +75,14 @@ const SIGNATURE_VOXELWALL_IDS: readonly SceneId[] = [
   'chromatic-drive',
 ];
 
+type CinemaDrawerTab = 'all' | 'themes' | 'lyrics' | 'camera' | 'engine';
+
 export default function App() {
   const initialPrefs = useRef(loadLocalPreferences()).current;
-
-  // Auth & session state
-  const [firebaseUser, setFirebaseUser] = useState<User | null>(() => auth?.currentUser ?? null);
-  const [sessionMode, setSessionMode] = useState<'google' | 'guest' | null>(() => getSavedSessionMode());
-  const [authReady, setAuthReady] = useState(false);
-  const [syncBadge, setSyncBadge] = useState('Local profile');
 
   // Audio source selection state
   const [sourceMode, setSourceMode] = useState<AudioSourceMode | null>(null);
   const [sourceOpen, setSourceOpen] = useState(false);
-  const sourceAutoPromptedRef = useRef(false);
 
   // Visualizer & VoxelWall / VoxelVerse filter state
   const [sceneFilter, setSceneFilter] = useState<'all' | VoxelWallCategory | 'enabled'>('all');
@@ -109,10 +96,24 @@ export default function App() {
   const [quality, setQuality] = useState<Quality>(initialPrefs.quality);
   const [autoScenes, setAutoScenes] = useState(initialPrefs.autoScenes);
   const [spatialTypography, setSpatialTypography] = useState(initialPrefs.spatialTypography);
-  const [cameraMode, setCameraMode] = useState<CameraMode>(initialPrefs.cameraMode);
   const [enabledScenes, setEnabledScenes] = useState<SceneId[]>(initialPrefs.enabledScenes);
   const [enabledKineticMotions, setEnabledKineticMotions] = useState<LyricMotion[]>(initialPrefs.enabledKineticMotions);
-  const [enabledCameraViews, setEnabledCameraViews] = useState<CameraView[]>(initialPrefs.enabledCameraViews);
+  const [cameraShakeEnabled, setCameraShakeEnabled] = useState<boolean>(initialPrefs.cameraShakeEnabled);
+  const [cameraShakeSensitivity, setCameraShakeSensitivity] = useState<number>(initialPrefs.cameraShakeSensitivity);
+  const [lyricMinFontSize, setLyricMinFontSize] = useState<number>(initialPrefs.lyricMinFontSize);
+  const [lyricMaxFontSize, setLyricMaxFontSize] = useState<number>(initialPrefs.lyricMaxFontSize);
+  const [themePalettes, setThemePalettes] = useState<Record<string, string>>(initialPrefs.themePalettes);
+
+  // YouTube video background & embedded lyric auto-hide state
+  const [youtubeBackgroundMode, setYoutubeBackgroundMode] = useState<YouTubeBackgroundMode>('video');
+  const [autoHideYoutubeLyrics, setAutoHideYoutubeLyrics] = useState<boolean>(true);
+  const [hasSeparateAudioStream, setHasSeparateAudioStream] = useState<boolean>(true);
+  const [playerVolume, setPlayerVolume] = useState<number>(85);
+
+  // Shared lyric display & color controls (controllable from both Lyric Panel and Cinema Mode)
+  const [lyricColorMode, setLyricColorMode] = useState<LyricColorMode>('auto');
+  const [lyricFillPaceMode, setLyricFillPaceMode] = useState<LyricFillPaceMode>('auto');
+  const [lyricDisplayMode, setLyricDisplayMode] = useState<'original' | 'romanized' | 'both'>('both');
 
   const [liveScene, setLiveScene] = useState('Holographic Tide');
   const [renderStatus, setRenderStatus] = useState('VOXELWALL 2D ENGINE');
@@ -120,6 +121,7 @@ export default function App() {
   const playerRef = useRef<LocalPlayerHandle>(null);
   const audioHubRef = useRef<AudioSourceHubHandle>(null);
   const [cinemaControlsOpen, setCinemaControlsOpen] = useState(false);
+  const [cinemaTab, setCinemaTab] = useState<CinemaDrawerTab>('all');
 
   // Lyrics & per-song delay state
   const [lyricDelay, setLyricDelay] = useState(0);
@@ -142,56 +144,7 @@ export default function App() {
   const [fileEpoch, setFileEpoch] = useState(0);
   const [performance, setPerformance] = useState(false);
 
-  const prefsHydratedRef = useRef(false);
-
-  // Listen to Firebase Auth state
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async user => {
-      setFirebaseUser(user);
-      setAuthReady(true);
-      if (user) {
-        setSessionMode('google');
-        setSavedSessionMode('google');
-        setSyncBadge('Syncing with Google Cloud…');
-        try {
-          const cloudPrefs = await fetchCloudPreferences(user);
-          prefsHydratedRef.current = false;
-          setIntensity(cloudPrefs.intensity);
-          setSpeed(cloudPrefs.speed);
-          setSensitivity(cloudPrefs.sensitivity);
-          setSpectrumControl(cloudPrefs.spectrumGain);
-          setMotionBlur(cloudPrefs.motionBlur);
-          setQuality(cloudPrefs.quality);
-          setAutoScenes(cloudPrefs.autoScenes);
-          setSpatialTypography(cloudPrefs.spatialTypography);
-          setCameraMode(cloudPrefs.cameraMode);
-          setEnabledScenes(cloudPrefs.enabledScenes);
-          setEnabledKineticMotions(cloudPrefs.enabledKineticMotions);
-          setEnabledCameraViews(cloudPrefs.enabledCameraViews);
-          prefsHydratedRef.current = true;
-          setSyncBadge('Synced to Google Cloud');
-        } catch {
-          prefsHydratedRef.current = true;
-          setSyncBadge('Saved locally (cloud offline)');
-        }
-      } else {
-        prefsHydratedRef.current = true;
-        setSyncBadge('Guest session (saved on device)');
-      }
-    });
-    return () => unsub();
-  }, []);
-
-  // Prompt for audio source once after login if none chosen yet
-  useEffect(() => {
-    const isLoggedIn = Boolean(firebaseUser || sessionMode);
-    if (isLoggedIn && !sourceMode && !localLoaded && !sourceAutoPromptedRef.current) {
-      sourceAutoPromptedRef.current = true;
-      setSourceOpen(true);
-    }
-  }, [firebaseUser, sessionMode, sourceMode, localLoaded]);
-
-  // Persist user preferences (settings + enabled themes + enabled kinetic styles + camera views)
+  // Persist user preferences locally
   useEffect(() => {
     const currentPrefs = {
       intensity,
@@ -203,19 +156,17 @@ export default function App() {
       autoScenes,
       spatialTypography,
       narrativeObjects: false,
-      cameraMode,
+      cameraMode: 'Front' as const,
       enabledScenes,
       enabledKineticMotions,
-      enabledCameraViews,
+      enabledCameraViews: ['Front'] as ('Front')[],
+      cameraShakeEnabled,
+      cameraShakeSensitivity,
+      lyricMinFontSize,
+      lyricMaxFontSize,
+      themePalettes,
     };
     saveLocalPreferences(currentPrefs);
-    if (!prefsHydratedRef.current || !firebaseUser) return;
-    const timer = setTimeout(() => {
-      void saveCloudPreferences(firebaseUser, currentPrefs)
-        .then(() => setSyncBadge('All settings synced'))
-        .catch(() => setSyncBadge('Saved locally'));
-    }, 600);
-    return () => clearTimeout(timer);
   }, [
     intensity,
     speed,
@@ -225,11 +176,13 @@ export default function App() {
     quality,
     autoScenes,
     spatialTypography,
-    cameraMode,
     enabledScenes,
     enabledKineticMotions,
-    enabledCameraViews,
-    firebaseUser,
+    cameraShakeEnabled,
+    cameraShakeSensitivity,
+    lyricMinFontSize,
+    lyricMaxFontSize,
+    themePalettes,
   ]);
 
   // Load saved per-song lyric delay & custom lyric override when track changes
@@ -241,17 +194,19 @@ export default function App() {
       setDelaySavedStatus('Default 0.00s · adjusts per song');
       return;
     }
+    // Default to YouTube Video background whenever a new YouTube track is loaded
+    if (extractYouTubeVideoId(localTrack)) {
+      setYoutubeBackgroundMode('video');
+    }
     let cancelled = false;
-    void fetchSongDelayPreference(firebaseUser, localTrack)
+    void fetchSongDelayPreference(null, localTrack)
       .then(record => {
         if (cancelled) return;
         if (record) {
           setLyricDelay(clampLyricDelay(record.delaySeconds));
           setSavedCustomLrc(record.customLyricsLrc || '');
           setDelaySavedStatus(
-            firebaseUser
-              ? `Restored ${formatLyricDelay(record.delaySeconds)} from your Google account for "${localTrack.title}"`
-              : `Restored ${formatLyricDelay(record.delaySeconds)} saved on device for "${localTrack.title}"`
+            `Restored ${formatLyricDelay(record.delaySeconds)} saved on device for "${localTrack.title}"`
           );
         } else {
           setLyricDelay(0);
@@ -268,33 +223,37 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [songIdentityKey, firebaseUser]);
+  }, [songIdentityKey]);
 
   const updateLyricDelay = (value: number) => {
     const clamped = clampLyricDelay(value);
     setLyricDelay(clamped);
     if (localTrack) {
-      setDelaySavedStatus(
-        firebaseUser
-          ? `Saving ${formatLyricDelay(clamped)} for "${localTrack.title}" to Google Cloud…`
-          : `Saved ${formatLyricDelay(clamped)} for "${localTrack.title}" on this device`
-      );
-      void saveSongDelayPreference(firebaseUser, localTrack, clamped)
-        .then(() => {
-          if (firebaseUser) {
-            setDelaySavedStatus(`Saved ${formatLyricDelay(clamped)} for "${localTrack.title}" to Google Cloud`);
-          }
-        })
-        .catch(() => {
-          setDelaySavedStatus(`Saved ${formatLyricDelay(clamped)} on this device`);
-        });
+      setDelaySavedStatus(`Saved ${formatLyricDelay(clamped)} for "${localTrack.title}" on this device`);
+      void saveSongDelayPreference(null, localTrack, clamped).catch(() => {});
+    }
+  };
+
+  const handleMinFontSizeChange = (val: number) => {
+    const clamped = Math.max(16, Math.min(72, val));
+    setLyricMinFontSize(clamped);
+    if (clamped > lyricMaxFontSize) {
+      setLyricMaxFontSize(clamped);
+    }
+  };
+
+  const handleMaxFontSizeChange = (val: number) => {
+    const clamped = Math.max(32, Math.min(130, val));
+    setLyricMaxFontSize(clamped);
+    if (clamped < lyricMinFontSize) {
+      setLyricMinFontSize(Math.max(16, clamped));
     }
   };
 
   const handleSaveCustomOverride = (lrc: string) => {
     setSavedCustomLrc(lrc);
     if (localTrack) {
-      void saveSongDelayPreference(firebaseUser, localTrack, lyricDelay, lrc).catch(() => {});
+      void saveSongDelayPreference(null, localTrack, lyricDelay, lrc).catch(() => {});
     }
   };
 
@@ -435,6 +394,13 @@ export default function App() {
     });
   };
 
+  const selectThemePalette = (sceneId: SceneId, paletteId: string) => {
+    setThemePalettes(prev => ({
+      ...prev,
+      [sceneId]: paletteId,
+    }));
+  };
+
   const toggleKineticMotionEnabled = (motion: LyricMotion) => {
     setEnabledKineticMotions(prev => {
       if (prev.includes(motion)) {
@@ -445,47 +411,29 @@ export default function App() {
     });
   };
 
-  const toggleCameraViewEnabled = (view: CameraView) => {
-    setEnabledCameraViews(prev => {
-      if (prev.includes(view)) {
-        if (prev.length <= 1) return prev;
-        const next = prev.filter(item => item !== view);
-        if (cameraMode === view) {
-          setCameraMode('Automatic');
-        }
-        return next;
-      }
-      return [...prev, view];
-    });
-  };
-
-  const isAuthenticatedOrGuest = Boolean(firebaseUser || sessionMode);
-
-  if (authReady && !isAuthenticatedOrGuest) {
-    return (
-      <LoginScreen
-        onGoogleLogin={async () => {
-          await signInWithGoogle();
-          setSessionMode('google');
-          setSourceOpen(true);
-        }}
-        onGuestLogin={() => {
-          setSavedSessionMode('guest');
-          setSessionMode('guest');
-          setSourceOpen(true);
-        }}
-      />
-    );
-  }
-
   const enabledChoices = choices.filter(c => enabledScenes.includes(c.id));
   const stepperPool = enabledChoices.length > 0 ? enabledChoices : choices;
+  const activeTemplate = byId[scene] || choices[0];
+  const activeScenePalette = resolveThemePalette(activeTemplate.id, themePalettes[activeTemplate.id]);
 
   const filteredVerseStyles = VOXELVERSE_STYLES.filter(style => {
     if (verseFamilyFilter === 'all') return true;
     if (verseFamilyFilter === 'featured') return Boolean(style.featured);
     return style.family === verseFamilyFilter;
   });
+
+  const customLyricAccentHex =
+    lyricColorMode !== 'auto' ? LYRIC_COLOR_MAP[lyricColorMode].main : undefined;
+
+  const activeYoutubeVideoId = extractYouTubeVideoId(localTrack);
+  const isLyricVideoDetected = Boolean(activeYoutubeVideoId && isLyricVideoTrack(localTrack));
+  const hideStageLyricsForVideo = Boolean(
+    activeYoutubeVideoId &&
+      youtubeBackgroundMode === 'video' &&
+      autoHideYoutubeLyrics &&
+      isLyricVideoDetected
+  );
+  const activeBassThresholdPct = Math.round(computeBassThreshold(cameraShakeSensitivity) * 100);
 
   return (
     <div className={'shell ' + (performance ? 'performance-mode' : '')}>
@@ -504,41 +452,14 @@ export default function App() {
         <div className="track">
           <i className="dot" /> {localTrack?.title || 'Untitled session'} <span>·</span>{' '}
           {localLoaded && localTrack
-            ? `Audio: ${localTrack.audioSource || (localTrack.source === 'provider' ? 'Stash Online Player' : 'Local File')}`
+            ? `Source: ${localTrack.audioSource || (localTrack.source === 'provider' ? 'Online Player' : 'Local File')}`
             : demo
               ? 'Demo mode'
               : 'Idle'}{' '}
           <span>·</span>{' '}
-          <small>Lyrics: {incoming?.source || 'Automatic (Apple Music / LRCLIB)'}</small>{' '}
-          <span>·</span> <small>{syncBadge}</small>
+          <small>Lyrics: {incoming?.source || 'Automatic (Apple Music / LRCLIB)'}</small>
         </div>
         <div className="header-right">
-          {firebaseUser ? (
-            <div className="user-pill">
-              <span>{firebaseUser.displayName || firebaseUser.email}</span>
-              <button
-                type="button"
-                className="user-action-btn"
-                onClick={() => {
-                  void signOutUser();
-                  setSessionMode(null);
-                }}
-              >
-                Sign out
-              </button>
-            </div>
-          ) : (
-            <div className="user-pill">
-              <span>Guest Mode</span>
-              <button
-                type="button"
-                className="user-action-btn"
-                onClick={() => void signInWithGoogle()}
-              >
-                <LogIn size={13} /> Google Sign-In
-              </button>
-            </div>
-          )}
           <button
             className="icon-btn"
             aria-label="Settings"
@@ -564,12 +485,27 @@ export default function App() {
           paused={paused}
           reducedMotion={reducedMotion}
           autoScenes={autoScenes}
-          cameraMode={cameraMode}
+          cameraMode="Front"
           spatialTypography={spatialTypography}
           motionBlur={motionBlur}
           enabledScenes={enabledScenes}
           enabledKineticMotions={enabledKineticMotions}
-          enabledCameraViews={enabledCameraViews}
+          enabledCameraViews={['Front']}
+          cameraShakeEnabled={cameraShakeEnabled}
+          cameraShakeSensitivity={cameraShakeSensitivity}
+          themePalettes={themePalettes}
+          customLyricAccentColor={customLyricAccentHex}
+          lyricFillPaceMode={lyricFillPaceMode}
+          lyricMinFontSize={lyricMinFontSize}
+          lyricMaxFontSize={lyricMaxFontSize}
+          audioPaused={Boolean(localLoaded && !localPlaying)}
+          youtubeVideoId={activeYoutubeVideoId}
+          youtubeBackgroundMode={youtubeBackgroundMode}
+          hideStageLyrics={hideStageLyricsForVideo}
+          playbackTime={localTime}
+          hasSeparateAudioStream={hasSeparateAudioStream}
+          playerVolume={playerVolume}
+          onYoutubeTimeUpdate={(ct, dur) => playerRef.current?.syncExternalClock(ct, dur)}
         />
 
         {!performance && (
@@ -583,15 +519,15 @@ export default function App() {
               <span>
                 <small>
                   {localTrack?.audioSource
-                    ? `AUDIO · ${localTrack.audioSource.toUpperCase()}`
-                    : 'AUDIO SOURCE'}
+                    ? `SOURCE · ${localTrack.audioSource.toUpperCase()}`
+                    : 'AUDIO & VIDEO SOURCE'}
                 </small>
                 <b>
                   {sourceMode === 'online'
-                    ? localTrack?.title || 'Stash Online Player'
+                    ? localTrack?.title || 'JioSaavn & YouTube Player'
                     : sourceMode === 'local'
-                    ? localTrack?.title || 'Local Audio Upload'
-                    : 'Choose Audio Source'}
+                      ? localTrack?.title || 'Local Audio Upload'
+                      : 'Choose Source (JioSaavn / YouTube / Local)'}
                 </b>
               </span>
               <ChevronRight size={17} />
@@ -629,14 +565,16 @@ export default function App() {
             {cinemaControlsOpen && (
               <aside className="cinema-drawer" aria-label="Cinema live controls">
                 <div className="cinema-drawer-head">
-                  <b>LYRICFLOW LIVE</b>
+                  <b>LYRICFLOW LIVE STUDIO</b>
                   <span>
                     {audioReadout.source} · {fps} FPS
                   </span>
                 </div>
+
                 <button className="cinema-source-action" onClick={() => setSourceOpen(true)}>
-                  <Headphones size={17} /> Choose audio source <ChevronRight size={16} />
+                  <Headphones size={17} /> Choose source (JioSaavn / YouTube / Local) <ChevronRight size={16} />
                 </button>
+
                 {localLoaded && (
                   <div className="cinema-playback">
                     <strong>{localTrack?.title}</strong>
@@ -667,120 +605,495 @@ export default function App() {
                     />
                   </div>
                 )}
-                <div className="cinema-scene-steppers">
-                  <button
-                    aria-label="Previous scene"
-                    onClick={() => {
-                      const i = Math.max(0, stepperPool.findIndex(c => c.id === scene));
-                      setScene(stepperPool[(i - 1 + stepperPool.length) % stepperPool.length].id);
-                      setAutoScenes(false);
-                    }}
-                  >
-                    <ChevronLeft size={18} />
-                  </button>
-                  <select
-                    aria-label="Cinema scene"
-                    value={scene}
-                    onChange={e => {
-                      setScene(e.target.value as SceneId);
-                      setAutoScenes(false);
-                    }}
-                  >
-                    {stepperPool.map(c => (
-                      <option value={c.id} key={c.id}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    aria-label="Next scene"
-                    onClick={() => {
-                      const i = Math.max(0, stepperPool.findIndex(c => c.id === scene));
-                      setScene(stepperPool[(i + 1) % stepperPool.length].id);
-                      setAutoScenes(false);
-                    }}
-                  >
-                    <ChevronRight size={18} />
-                  </button>
+
+                {/* Section Filter Tabs in Cinema Mode */}
+                <div className="cinema-tabs" role="tablist" aria-label="Cinema control sections">
+                  {(
+                    [
+                      ['all', 'All'],
+                      ['themes', 'Themes'],
+                      ['lyrics', 'Lyrics'],
+                      ['camera', 'Camera'],
+                      ['engine', 'Engine'],
+                    ] as const
+                  ).map(([tabId, label]) => (
+                    <button
+                      key={tabId}
+                      type="button"
+                      role="tab"
+                      aria-selected={cinemaTab === tabId}
+                      className={cinemaTab === tabId ? 'active' : ''}
+                      onClick={() => setCinemaTab(tabId)}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
-                <label className="cinema-check">
-                  <input
-                    type="checkbox"
-                    checked={autoScenes}
-                    onChange={e => setAutoScenes(e.target.checked)}
-                  />{' '}
-                  Auto-direct enabled scenes
-                </label>
-                <label className="cinema-range">
-                  <span>
-                    Sensitivity <b>{sensitivity}%</b>
-                  </span>
-                  <input
-                    aria-label="Cinema audio sensitivity"
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={sensitivity}
-                    onChange={e => setSensitivity(Number(e.target.value))}
-                  />
-                </label>
-                <label className="cinema-range">
-                  <span>
-                    Spectrum gain <b>{spectrumSensitivity}%</b>
-                  </span>
-                  <input
-                    aria-label="Cinema spectrum gain"
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={spectrumSensitivity}
-                    onChange={e => setSpectrumControl(Number(e.target.value))}
-                  />
-                </label>
-                <label className="cinema-range">
-                  <span>
-                    Motion blur <b>{reducedMotion ? 0 : motionBlur}%</b>
-                  </span>
-                  <input
-                    aria-label="Cinema motion blur"
-                    type="range"
-                    min="0"
-                    max="80"
-                    step="5"
-                    disabled={reducedMotion}
-                    value={motionBlur}
-                    onChange={e => setMotionBlur(Number(e.target.value))}
-                  />
-                </label>
-                <div className="cinema-delay">
-                  <span>
-                    LYRICS DELAY <b>{formatLyricDelay(lyricDelay)}</b>
-                  </span>
-                  <div>
-                    <button
-                      aria-label="Cinema advance lyrics"
-                      onClick={() => updateLyricDelay(lyricDelay - 0.25)}
-                    >
-                      −0.25s
-                    </button>
-                    <button
-                      aria-label="Cinema reset lyric delay"
-                      onClick={() => updateLyricDelay(0)}
-                    >
-                      Reset
-                    </button>
-                    <button
-                      aria-label="Cinema delay lyrics"
-                      onClick={() => updateLyricDelay(lyricDelay + 0.25)}
-                    >
-                      +0.25s
-                    </button>
+
+                {/* 1. THEMES, YOUTUBE VIDEO BACKGROUND & COLOUR PALETTES SECTION */}
+                {(cinemaTab === 'all' || cinemaTab === 'themes') && (
+                  <div className="cinema-section">
+                    <div className="cinema-section-title">
+                      <span>BACKGROUND &amp; COLOUR PALETTES</span>
+                      <small>{enabledScenes.length}/{choices.length} ON</small>
+                    </div>
+
+                    {activeYoutubeVideoId && (
+                      <div className="cinema-field">
+                        <span>
+                          YouTube Background Mode:{' '}
+                          <b>
+                            {youtubeBackgroundMode === 'video'
+                              ? 'YouTube Video'
+                              : 'Built-in Themes'}
+                          </b>
+                        </span>
+                        <input
+                          aria-label="Cinema YouTube background slider"
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="1"
+                          value={youtubeBackgroundMode === 'video' ? 0 : 1}
+                          onChange={e =>
+                            setYoutubeBackgroundMode(
+                              Number(e.target.value) === 0 ? 'video' : 'theme'
+                            )
+                          }
+                        />
+                        <div className="cinema-inline-actions">
+                          <button
+                            type="button"
+                            className={youtubeBackgroundMode === 'video' ? 'active' : ''}
+                            onClick={() => setYoutubeBackgroundMode('video')}
+                          >
+                            YouTube Video
+                          </button>
+                          <button
+                            type="button"
+                            className={youtubeBackgroundMode === 'theme' ? 'active' : ''}
+                            onClick={() => setYoutubeBackgroundMode('theme')}
+                          >
+                            Built-in Themes
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="cinema-scene-steppers">
+                      <button
+                        aria-label="Previous scene"
+                        onClick={() => {
+                          const i = Math.max(0, stepperPool.findIndex(c => c.id === scene));
+                          setScene(stepperPool[(i - 1 + stepperPool.length) % stepperPool.length].id);
+                          setAutoScenes(false);
+                        }}
+                      >
+                        <ChevronLeft size={18} />
+                      </button>
+                      <select
+                        aria-label="Cinema scene"
+                        value={scene}
+                        onChange={e => {
+                          setScene(e.target.value as SceneId);
+                          setAutoScenes(false);
+                        }}
+                      >
+                        {choices.map(c => (
+                          <option value={c.id} key={c.id}>
+                            {c.label} ({c.family}) {enabledScenes.includes(c.id) ? '' : '[OFF]'}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        aria-label="Next scene"
+                        onClick={() => {
+                          const i = Math.max(0, stepperPool.findIndex(c => c.id === scene));
+                          setScene(stepperPool[(i + 1) % stepperPool.length].id);
+                          setAutoScenes(false);
+                        }}
+                      >
+                        <ChevronRight size={18} />
+                      </button>
+                    </div>
+
+                    <div className="cinema-field">
+                      <span>
+                        Colour Palette for <b>{activeTemplate.label}</b>:
+                      </span>
+                      <div className="cinema-palette-swatches">
+                        {activeTemplate.palettes.map(pal => {
+                          const isPalActive = activeScenePalette.id === pal.id;
+                          return (
+                            <button
+                              key={pal.id}
+                              type="button"
+                              className={'cinema-palette-chip ' + (isPalActive ? 'active' : '')}
+                              onClick={() => selectThemePalette(activeTemplate.id, pal.id)}
+                            >
+                              <span
+                                className="cinema-palette-dot"
+                                style={{
+                                  background: `linear-gradient(135deg, ${pal.accent}, ${pal.background})`,
+                                }}
+                              />
+                              {pal.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <label className="cinema-check">
+                      <input
+                        type="checkbox"
+                        checked={autoScenes}
+                        onChange={e => setAutoScenes(e.target.checked)}
+                      />{' '}
+                      Auto-direct enabled scenes ({enabledScenes.length} active)
+                    </label>
+
+                    <div className="cinema-inline-actions">
+                      <button
+                        type="button"
+                        onClick={() => toggleSceneEnabled(activeTemplate.id)}
+                      >
+                        {enabledScenes.includes(activeTemplate.id)
+                          ? `Disable "${activeTemplate.label}"`
+                          : `Enable "${activeTemplate.label}"`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEnabledScenes([...ALL_SCENE_IDS])}
+                      >
+                        Enable All {choices.length}
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
+
+                {/* 2. LYRICS, COLOUR, FONT SIZE & VOXELVERSE STYLES SECTION */}
+                {(cinemaTab === 'all' || cinemaTab === 'lyrics') && (
+                  <div className="cinema-section">
+                    <div className="cinema-section-title">
+                      <span>LYRICS &amp; VOXELVERSE STYLES</span>
+                      <small>{enabledKineticMotions.length}/{VOXELVERSE_STYLES.length} ON</small>
+                    </div>
+
+                    {activeYoutubeVideoId && (
+                      <label className="cinema-check">
+                        <input
+                          type="checkbox"
+                          checked={autoHideYoutubeLyrics}
+                          onChange={e => setAutoHideYoutubeLyrics(e.target.checked)}
+                        />{' '}
+                        Auto-hide stage lyrics if YouTube video contains lyrics (
+                        {isLyricVideoDetected ? 'Lyric video detected' : 'Standard video'})
+                      </label>
+                    )}
+
+                    <label className="cinema-check">
+                      <input
+                        type="checkbox"
+                        checked={spatialTypography}
+                        onChange={e => setSpatialTypography(e.target.checked)}
+                      />{' '}
+                      VoxelVerse 3D Lyric Choreography
+                    </label>
+
+                    <label className="cinema-field">
+                      <span>VoxelVerse Animation Style</span>
+                      <select
+                        aria-label="Cinema VoxelVerse lyric style"
+                        value={
+                          enabledKineticMotions.length === 1 ? enabledKineticMotions[0] : 'auto'
+                        }
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === 'auto') {
+                            setEnabledKineticMotions([...ALL_KINETIC_MOTIONS]);
+                          } else {
+                            setEnabledKineticMotions([val as LyricMotion]);
+                          }
+                        }}
+                      >
+                        <option value="auto">
+                          Auto-Rotate Enabled Styles ({enabledKineticMotions.length} active)
+                        </option>
+                        {VOXELVERSE_STYLES.map(s => (
+                          <option key={s.id} value={s.id}>
+                            Lock to: {s.name} ({s.family} · {s.detail})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="cinema-field">
+                      <span>Lyric Script Display</span>
+                      <select
+                        aria-label="Cinema lyric display mode"
+                        value={lyricDisplayMode}
+                        onChange={e =>
+                          setLyricDisplayMode(e.target.value as 'original' | 'romanized' | 'both')
+                        }
+                      >
+                        <option value="both">Prefer Romanized + Original</option>
+                        <option value="romanized">Romanized Only (Preferred)</option>
+                        <option value="original">Original Script Only</option>
+                      </select>
+                    </label>
+
+                    <label className="cinema-field">
+                      <span>Lyric Active Fill Colour</span>
+                      <select
+                        aria-label="Cinema lyric color mode"
+                        value={lyricColorMode}
+                        onChange={e => setLyricColorMode(e.target.value as LyricColorMode)}
+                      >
+                        <option value="auto">Auto (Background Adaptive)</option>
+                        {(
+                          Object.entries(LYRIC_COLOR_MAP) as [
+                            Exclude<LyricColorMode, 'auto'>,
+                            { label: string }
+                          ][]
+                        ).map(([key, val]) => (
+                          <option key={key} value={key}>
+                            {val.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="cinema-field">
+                      <span>Word-Sync Fill Pace</span>
+                      <select
+                        aria-label="Cinema lyric fill pace"
+                        value={lyricFillPaceMode}
+                        onChange={e => setLyricFillPaceMode(e.target.value as LyricFillPaceMode)}
+                      >
+                        <option value="auto">Auto (Slow: Letter · Fast: Word)</option>
+                        <option value="letter">Slow Mode (Letter by Letter)</option>
+                        <option value="word">Fast Mode (Word by Word)</option>
+                      </select>
+                    </label>
+
+                    <label className="cinema-range">
+                      <span>
+                        Lyric Min Font Size <b>{lyricMinFontSize}px</b>
+                      </span>
+                      <input
+                        aria-label="Cinema lyric minimum font size"
+                        type="range"
+                        min="16"
+                        max="72"
+                        step="2"
+                        value={lyricMinFontSize}
+                        onChange={e => handleMinFontSizeChange(Number(e.target.value))}
+                      />
+                    </label>
+
+                    <label className="cinema-range">
+                      <span>
+                        Lyric Max Font Size <b>{lyricMaxFontSize}px</b>
+                      </span>
+                      <input
+                        aria-label="Cinema lyric maximum font size"
+                        type="range"
+                        min="32"
+                        max="130"
+                        step="2"
+                        value={lyricMaxFontSize}
+                        onChange={e => handleMaxFontSizeChange(Number(e.target.value))}
+                      />
+                    </label>
+
+                    <div className="cinema-delay">
+                      <span>
+                        LYRICS DELAY <b>{formatLyricDelay(lyricDelay)}</b>
+                      </span>
+                      <div>
+                        <button
+                          aria-label="Cinema advance lyrics"
+                          onClick={() => updateLyricDelay(lyricDelay - 0.25)}
+                        >
+                          −0.25s
+                        </button>
+                        <button
+                          aria-label="Cinema reset lyric delay"
+                          onClick={() => updateLyricDelay(0)}
+                        >
+                          Reset
+                        </button>
+                        <button
+                          aria-label="Cinema delay lyrics"
+                          onClick={() => updateLyricDelay(lyricDelay + 0.25)}
+                        >
+                          +0.25s
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. CAMERA (FRONT VIEW) & SMOOTH BASS SHAKE SECTION */}
+                {(cinemaTab === 'all' || cinemaTab === 'camera') && (
+                  <div className="cinema-section">
+                    <div className="cinema-section-title">
+                      <span>FRONT CAMERA &amp; BASS SHAKE</span>
+                      <small>BASS THRESHOLD ≥ {activeBassThresholdPct}%</small>
+                    </div>
+
+                    <label className="cinema-check">
+                      <input
+                        type="checkbox"
+                        aria-label="Cinema camera shake toggle"
+                        checked={cameraShakeEnabled}
+                        onChange={e => setCameraShakeEnabled(e.target.checked)}
+                      />{' '}
+                      Smooth Bass-Driven Camera Shake ({cameraShakeEnabled ? 'ON' : 'OFF'})
+                    </label>
+
+                    <label className="cinema-range">
+                      <span>
+                        Bass Shake Sensitivity (Threshold ≥ {activeBassThresholdPct}%){' '}
+                        <b>{cameraShakeEnabled ? cameraShakeSensitivity : 0}%</b>
+                      </span>
+                      <input
+                        aria-label="Cinema camera shake sensitivity"
+                        type="range"
+                        min="0"
+                        max="100"
+                        disabled={!cameraShakeEnabled || reducedMotion}
+                        value={cameraShakeSensitivity}
+                        onChange={e => setCameraShakeSensitivity(Number(e.target.value))}
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {/* 4. VISUAL ENGINE & AUDIO REACTIVITY SECTION */}
+                {(cinemaTab === 'all' || cinemaTab === 'engine') && (
+                  <div className="cinema-section">
+                    <div className="cinema-section-title">
+                      <span>AUDIO &amp; VISUAL ENGINE</span>
+                      <small>{quality.toUpperCase()}</small>
+                    </div>
+
+                    <label className="cinema-range">
+                      <span>
+                        Visual intensity <b>{intensity}%</b>
+                      </span>
+                      <input
+                        aria-label="Cinema visual intensity"
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={intensity}
+                        onChange={e => setIntensity(Number(e.target.value))}
+                      />
+                    </label>
+
+                    <label className="cinema-range">
+                      <span>
+                        Animation speed <b>{speed}%</b>
+                      </span>
+                      <input
+                        aria-label="Cinema animation speed"
+                        type="range"
+                        min="10"
+                        max="100"
+                        value={speed}
+                        onChange={e => setSpeed(Number(e.target.value))}
+                      />
+                    </label>
+
+                    <label className="cinema-range">
+                      <span>
+                        Audio sensitivity <b>{sensitivity}%</b>
+                      </span>
+                      <input
+                        aria-label="Cinema audio sensitivity"
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={sensitivity}
+                        onChange={e => setSensitivity(Number(e.target.value))}
+                      />
+                    </label>
+
+                    <label className="cinema-range">
+                      <span>
+                        Spectrum gain <b>{spectrumSensitivity}%</b>
+                      </span>
+                      <input
+                        aria-label="Cinema spectrum gain"
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={spectrumSensitivity}
+                        onChange={e => setSpectrumControl(Number(e.target.value))}
+                      />
+                    </label>
+
+                    <label className="cinema-range">
+                      <span>
+                        Motion blur <b>{reducedMotion ? 0 : motionBlur}%</b>
+                      </span>
+                      <input
+                        aria-label="Cinema motion blur"
+                        type="range"
+                        min="0"
+                        max="80"
+                        step="5"
+                        disabled={reducedMotion}
+                        value={motionBlur}
+                        onChange={e => setMotionBlur(Number(e.target.value))}
+                      />
+                    </label>
+
+                    <div className="cinema-field">
+                      <span>Rendering Quality</span>
+                      <div className="cinema-inline-actions">
+                        {(['High', 'Balanced', 'Performance'] as Quality[]).map(q => (
+                          <button
+                            key={q}
+                            type="button"
+                            className={quality === q ? 'active' : ''}
+                            onClick={() => setQuality(q)}
+                          >
+                            {q}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <label className="cinema-check">
+                      <input
+                        type="checkbox"
+                        checked={reducedMotion}
+                        onChange={e => setReducedMotion(e.target.checked)}
+                      />{' '}
+                      Reduced motion
+                    </label>
+
+                    <label className="cinema-check">
+                      <input
+                        type="checkbox"
+                        checked={demo}
+                        onChange={e => setDemo(e.target.checked)}
+                      />{' '}
+                      Demo mode (simulated energy when idle)
+                    </label>
+                  </div>
+                )}
+
                 <div className="cinema-drawer-foot">
                   <button onClick={() => setPaused(p => !p)}>
                     {paused ? <Play size={15} /> : <Pause size={15} />}{' '}
                     {paused ? 'Resume' : 'Pause'} visuals
+                  </button>
+                  <button onClick={fullscreen}>
+                    <Expand size={14} /> Fullscreen
                   </button>
                   <button onClick={() => void togglePerformance()}>Exit Cinema</button>
                 </div>
@@ -792,9 +1105,17 @@ export default function App() {
         <div className="scene-chip cinematic-chip">
           <span className="chip-icon">✦</span>
           <div>
-            <b>{liveScene}</b>
+            <b>
+              {activeYoutubeVideoId && youtubeBackgroundMode === 'video'
+                ? 'YouTube Video Background'
+                : `${liveScene} · ${activeScenePalette.name}`}
+            </b>
             <small>
-              {enabledScenes.length}/{choices.length} VoxelWall Themes · {enabledKineticMotions.length}/{VOXELVERSE_STYLES.length} VoxelVerse Styles
+              {activeYoutubeVideoId && youtubeBackgroundMode === 'video'
+                ? hideStageLyricsForVideo
+                  ? 'Lyric Video Detected · Stage Lyrics Auto-Hidden'
+                  : 'VoxelVerse Lyrics Engine Overlaid on Video'
+                : `${enabledScenes.length}/${choices.length} Unique Themes · ${enabledKineticMotions.length}/${VOXELVERSE_STYLES.length} VoxelVerse Styles`}
             </small>
           </div>
         </div>
@@ -836,12 +1157,108 @@ export default function App() {
               ))}
             </div>
             <p className="note">
-              Settings, enabled VoxelWall themes, VoxelVerse lyric style toggles, and per-song lyric delays are
-              automatically saved to your profile.
+              Settings, enabled VoxelWall themes, colour palettes, smooth bass camera shake, lyric font size bounds, VoxelVerse lyric style toggles, and per-song lyric delays are
+              automatically saved on your device.
             </p>
           </aside>
         )}
       </section>
+
+      {/* YOUTUBE BACKGROUND & EMBEDDED LYRIC VIDEO CONTROLS (VISIBLE WHEN YOUTUBE SOURCE IS ACTIVE) */}
+      {activeYoutubeVideoId && (
+        <section
+          className="local-player youtube-stage-options"
+          aria-label="YouTube video background and lyric overlay controls"
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+            padding: '14px 20px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: '1 1 280px' }}>
+            <span className="heading-icon">
+              <Video size={17} />
+            </span>
+            <div>
+              <b style={{ display: 'block', fontSize: '0.88rem', letterSpacing: '0.04em' }}>
+                YOUTUBE SOURCE · STAGE BACKGROUND &amp; LYRICS OVERLAY
+              </b>
+              <small style={{ opacity: 0.8 }}>
+                {youtubeBackgroundMode === 'video'
+                  ? hideStageLyricsForVideo
+                    ? 'Playing YouTube video background · Lyric Video detected ("lyrical"/"lyrics") — stage lyrics engine auto-hidden'
+                    : 'Playing YouTube video as background with VoxelVerse lyrics engine on top'
+                  : 'Using Built-in VoxelWall themes as background with VoxelVerse lyrics engine'}
+              </small>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: '18px',
+            }}
+          >
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+              }}
+            >
+              <span>
+                Background:{' '}
+                <b>
+                  {youtubeBackgroundMode === 'video' ? 'YouTube Video' : 'Built-in Themes'}
+                </b>
+              </span>
+              <input
+                aria-label="Use YouTube video or built-in themes as background"
+                type="range"
+                min="0"
+                max="1"
+                step="1"
+                value={youtubeBackgroundMode === 'video' ? 0 : 1}
+                onChange={e =>
+                  setYoutubeBackgroundMode(Number(e.target.value) === 0 ? 'video' : 'theme')
+                }
+                style={{ width: '74px', accentColor: '#22d3ee', cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: '0.74rem', opacity: 0.75 }}>(0: Video · 1: Theme)</span>
+            </label>
+
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                aria-label="Automatically hide lyrics engine if video already contains lyrics"
+                checked={autoHideYoutubeLyrics}
+                onChange={e => setAutoHideYoutubeLyrics(e.target.checked)}
+              />
+              <span>
+                Auto-hide lyrics engine if video contains lyrics{' '}
+                <small style={{ opacity: 0.75 }}>
+                  ({isLyricVideoDetected ? 'Lyric video detected' : 'No embedded lyrics detected'})
+                </small>
+              </span>
+            </label>
+          </div>
+        </section>
+      )}
 
       {/* 2. PLAYER DETAILS -> 3. SONG DETAILS -> 4. TIMEBAR */}
       <LocalPlayer
@@ -856,6 +1273,8 @@ export default function App() {
         lyricDelay={lyricDelay}
         onLyricDelayChange={updateLyricDelay}
         delaySavedStatus={delaySavedStatus}
+        onAudioStreamModeChange={setHasSeparateAudioStream}
+        onVolumeChange={setPlayerVolume}
         onActiveChange={playing => {
           setLocalPlaying(playing);
           if (playing) audioHubRef.current?.stop();
@@ -892,6 +1311,7 @@ export default function App() {
         key={fileEpoch}
         time={localTime}
         trackLoaded={localLoaded}
+        isPlaying={!localLoaded || localPlaying}
         track={localTrack}
         incoming={incoming}
         delay={lyricDelay}
@@ -900,6 +1320,19 @@ export default function App() {
         onToggleCustomEdit={() => setCustomEditOpen(v => !v)}
         onSaveCustomOverride={handleSaveCustomOverride}
         enabledScenes={enabledScenes}
+        activeSceneId={scene}
+        themePalettes={themePalettes}
+        lyricColorMode={lyricColorMode}
+        onLyricColorModeChange={setLyricColorMode}
+        lyricFillPaceMode={lyricFillPaceMode}
+        onLyricFillPaceModeChange={setLyricFillPaceMode}
+        displayMode={lyricDisplayMode}
+        onDisplayModeChange={setLyricDisplayMode}
+        minFontSize={lyricMinFontSize}
+        maxFontSize={lyricMaxFontSize}
+        onMinFontSizeChange={handleMinFontSizeChange}
+        onMaxFontSizeChange={handleMaxFontSizeChange}
+        bpm={audioReadout.bpm}
       />
 
       {/* 6. VOXELVERSE LYRIC STYLES & VOXELWALL BACKGROUND CUSTOMIZER */}
@@ -995,7 +1428,7 @@ export default function App() {
             <div>
               <b>VOXELWALL MUSIC-REACTIVE BACKGROUNDS ({enabledScenes.length}/{choices.length} ENABLED)</b>
               <small>
-                32 VoxelWall live music-reactive wallpapers across Flow, Contours, Sculptures, Space, Nature, Architecture, and Journeys (all 3D themes, Crimson Impact, and Vinyl Groove removed)
+                {choices.length} unique VoxelWall 2D designs across 7 categories — each theme includes multiple selectable colour palettes (no duplicate theme designs)
               </small>
             </div>
           </div>
@@ -1039,84 +1472,50 @@ export default function App() {
             VoxelVerse lyric choreography{' '}
             <small>({enabledKineticMotions.length} active styles)</small>
           </label>
-          <label className="camera-picker">
-            Camera view{' '}
-            <select
-              value={cameraMode}
-              onChange={e => setCameraMode(e.target.value as CameraMode)}
-            >
-              <option value="Automatic">Automatic ({enabledCameraViews.length}/4 active)</option>
-              {CAMERA_VIEWS.map(v => (
-                <option key={v} value={v} disabled={!enabledCameraViews.includes(v)}>
-                  {v} {enabledCameraViews.includes(v) ? '(ON)' : '(OFF)'}
-                </option>
-              ))}
-            </select>
-          </label>
         </div>
 
-        <div className="camera-views-panel" aria-label="Camera views on off toggles">
-          <div className="camera-views-head">
-            <div>
-              <b>CAMERA VIEWS ({enabledCameraViews.length}/4 ACTIVE)</b>
-              <small>
-                Toggle individual camera angles ON or OFF — Automatic camera cycles only through enabled views
-              </small>
+        <div className="camera-views-panel" aria-label="Front camera and smooth bass-reactive camera shake controls">
+          <div className="camera-shake-bar" style={{ marginTop: 0, paddingTop: 0, borderTop: 'none' }}>
+            <div className="camera-shake-toggle-group">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={cameraShakeEnabled}
+                aria-label="Toggle camera shake"
+                className={'theme-toggle-pill ' + (cameraShakeEnabled ? 'on' : 'off')}
+                onClick={() => setCameraShakeEnabled(prev => !prev)}
+              >
+                {cameraShakeEnabled ? (
+                  <>
+                    <Check size={12} /> SHAKE ON
+                  </>
+                ) : (
+                  'SHAKE OFF'
+                )}
+              </button>
+              <div>
+                <b>FRONT CAMERA · SMOOTH BASS-THRESHOLD CAMERA SHAKE</b>
+                <small>
+                  {cameraShakeEnabled
+                    ? `Sensitivity ${cameraShakeSensitivity}% sets bass trigger threshold ≥ ${activeBassThresholdPct}% — smooth damped shake reacts strictly to bass`
+                    : 'Camera shake disabled — steady centered Front stage framing'}
+                </small>
+              </div>
             </div>
-            <button
-              type="button"
-              className="upload-button"
-              onClick={() => setEnabledCameraViews([...ALL_CAMERA_VIEWS])}
-            >
-              Enable All 4 Views
-            </button>
-          </div>
-          <div className="camera-view-grid">
-            {CAMERA_VIEWS.map(view => {
-              const isEnabled = enabledCameraViews.includes(view);
-              const isLockedToView = cameraMode === view;
-              return (
-                <div
-                  key={view}
-                  className={
-                    'kinetic-motion-card camera-view-card ' +
-                    (isEnabled ? 'enabled ' : 'disabled ') +
-                    (isLockedToView ? 'camera-locked' : '')
-                  }
-                >
-                  <div className="kinetic-motion-top">
-                    <button
-                      type="button"
-                      className="camera-view-select-btn"
-                      onClick={() => {
-                        if (!isEnabled) toggleCameraViewEnabled(view);
-                        setCameraMode(prev => (prev === view ? 'Automatic' : view));
-                      }}
-                    >
-                      <strong>{view.toUpperCase()}</strong>
-                      {isLockedToView && <span className="camera-lock-tag">LOCKED</span>}
-                    </button>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={isEnabled}
-                      aria-label={`Toggle ${view} camera view`}
-                      className={'theme-toggle-pill ' + (isEnabled ? 'on' : 'off')}
-                      onClick={() => toggleCameraViewEnabled(view)}
-                    >
-                      {isEnabled ? (
-                        <>
-                          <Check size={12} /> ON
-                        </>
-                      ) : (
-                        'OFF'
-                      )}
-                    </button>
-                  </div>
-                  <small>{CAMERA_VIEW_DESCRIPTIONS[view]}</small>
-                </div>
-              );
-            })}
+            <label className="camera-shake-slider">
+              <span>
+                Bass threshold sensitivity <b>{cameraShakeEnabled ? cameraShakeSensitivity : 0}%</b>
+              </span>
+              <input
+                aria-label="Camera shake sensitivity"
+                type="range"
+                min="0"
+                max="100"
+                disabled={!cameraShakeEnabled || reducedMotion}
+                value={cameraShakeSensitivity}
+                onChange={e => setCameraShakeSensitivity(Number(e.target.value))}
+              />
+            </label>
           </div>
         </div>
 
@@ -1160,6 +1559,7 @@ export default function App() {
             .map((item, i) => {
               const isEnabled = enabledScenes.includes(item.id);
               const isSignature = SIGNATURE_VOXELWALL_IDS.includes(item.id);
+              const activePalette = resolveThemePalette(item.id, themePalettes[item.id]);
               return (
                 <div
                   className={
@@ -1177,8 +1577,8 @@ export default function App() {
                   <span
                     className="scene-art cinematic-preview"
                     style={{
-                      background: `linear-gradient(135deg, ${item.accent}, ${item.background} 75%)`,
-                      color: item.foreground,
+                      background: `linear-gradient(135deg, ${activePalette.accent}, ${activePalette.background} 75%)`,
+                      color: activePalette.foreground,
                       fontFamily: fontLabel(item.font),
                     }}
                   >
@@ -1193,9 +1593,38 @@ export default function App() {
                       {item.id === 'signal-chamber'
                         ? '64-band chamber · ' + fontLabel(item.font)
                         : item.id === 'color-riot'
-                        ? 'Kinetic geometry · ' + fontLabel(item.font)
-                        : item.family + ' · ' + fontLabel(item.font)}
+                          ? 'Kinetic geometry · ' + fontLabel(item.font)
+                          : item.family + ' · ' + fontLabel(item.font)}
                     </small>
+                    <div
+                      className="theme-palette-bar"
+                      onClick={e => e.stopPropagation()}
+                      role="group"
+                      aria-label={`${item.label} colour palettes`}
+                    >
+                      {item.palettes.map(pal => {
+                        const isSelectedPal = activePalette.id === pal.id;
+                        return (
+                          <button
+                            key={pal.id}
+                            type="button"
+                            title={`${pal.name} palette`}
+                            aria-label={`${item.label} ${pal.name} palette`}
+                            aria-pressed={isSelectedPal}
+                            className={'palette-swatch-btn ' + (isSelectedPal ? 'active' : '')}
+                            style={{
+                              background: `linear-gradient(135deg, ${pal.accent} 45%, ${pal.background} 55%)`,
+                            }}
+                            onClick={() => {
+                              selectThemePalette(item.id, pal.id);
+                              setScene(item.id);
+                              setAutoScenes(false);
+                            }}
+                          />
+                        );
+                      })}
+                      <span className="palette-active-name">{activePalette.name}</span>
+                    </div>
                   </span>
                   <button
                     type="button"
@@ -1307,11 +1736,13 @@ export default function App() {
           <span className={'signal-mode ' + (audioReadout.source === 'LOCAL AUDIO' ? 'connected' : '')}>
             {audioReadout.source === 'LOCAL AUDIO'
               ? localTrack?.source === 'provider'
-                ? '● Stash Online Stream Active'
+                ? '● Online Stream Active'
                 : '● Local Audio Active'
-              : audioReadout.source === 'DEMO'
-              ? '◌ Simulated energy'
-              : '○ Idle'}
+              : audioReadout.source === 'YOUTUBE VIDEO'
+                ? '● YouTube Video Active'
+                : audioReadout.source === 'DEMO'
+                  ? '◌ Simulated energy'
+                  : '○ Idle'}
           </span>
         </div>
         <div className="signal-bars">
@@ -1388,7 +1819,7 @@ export default function App() {
 
       <footer>
         LYRICFLOW <span>·</span> VOXELWALL BACKGROUNDS &amp; VOXELVERSE LYRICS <span>·</span>{' '}
-        {enabledScenes.length}/{choices.length} THEMES · {enabledKineticMotions.length}/{VOXELVERSE_STYLES.length} STYLES ACTIVE <aside>CLOUD-SYNCED SOUNDSTAGE</aside>
+        {enabledScenes.length}/{choices.length} UNIQUE THEMES · {enabledKineticMotions.length}/{VOXELVERSE_STYLES.length} STYLES ACTIVE <aside>JIOSAAVN &amp; YOUTUBE SOUNDSTAGE</aside>
       </footer>
     </div>
   );

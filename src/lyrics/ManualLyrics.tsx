@@ -2,10 +2,14 @@ import {useEffect,useMemo,useRef,useState} from 'react';
 import type {TrackInfo} from '../metadata/trackInfo';
 import {detectLanguage,romanizeText,hasDistinctRomanized} from '../romanization/romanize';
 import {parseLRC,type TimedWord} from './lrc';
-import {buildCues,setLyricTimeline} from './lyricTimeline';
+import {buildCues,computeNaturalLineEnd,setLyricTimeline} from './lyricTimeline';
 import {analyzeSections} from './sceneDirector';
-import {buildCinematicSchedule,byId,type SceneId} from '../visualization/cinematic/catalog';
-import {LYRIC_COLOR_PALETTE} from '../visualization/cinematic/kineticTypography';
+import {buildCinematicSchedule,byId,resolveThemePalette,type SceneId} from '../visualization/cinematic/catalog';
+import {
+ computeBackgroundAdaptiveLyricColors,
+ resolveLyricFillPace,
+ type LyricFillPaceMode
+} from '../visualization/cinematic/kineticTypography';
 import {saveUserLyrics} from './userLibrary';
 import {clampLyricDelay,effectiveLyricTime,formatLyricDelay} from './lyricTiming';
 import {convertTtmlToEnhancedLrc} from './appleLyrics';
@@ -198,7 +202,7 @@ export function describeAudioSource(
 
 export type LyricColorMode='auto'|'cyan'|'rose'|'gold'|'emerald'|'violet'|'coral'|'white';
 
-const LYRIC_COLOR_MAP:Record<Exclude<LyricColorMode,'auto'>,{main:string;highlight:string;label:string}>={
+export const LYRIC_COLOR_MAP:Record<Exclude<LyricColorMode,'auto'>,{main:string;highlight:string;label:string}>={
  cyan:{main:'#72efdd',highlight:'#aef8ff',label:'Cyan Glow'},
  rose:{main:'#ff6b8b',highlight:'#ffc2d1',label:'Neon Rose'},
  gold:{main:'#ffd166',highlight:'#fff0a8',label:'Solar Gold'},
@@ -213,6 +217,7 @@ const SAMPLE='[00:00.00]<00:00.00>This <00:00.60>is <00:01.10>an <00:01.60>origi
 export default function ManualLyrics({
  time,
  trackLoaded,
+ isPlaying=true,
  track,
  incoming,
  delay,
@@ -220,10 +225,24 @@ export default function ManualLyrics({
  customEditOpen,
  onToggleCustomEdit,
  onSaveCustomOverride,
- enabledScenes
+ enabledScenes,
+ activeSceneId='holographic-tide',
+ themePalettes,
+ lyricColorMode:controlledColorMode,
+ onLyricColorModeChange,
+ lyricFillPaceMode:controlledFillPaceMode,
+ onLyricFillPaceModeChange,
+ displayMode:controlledDisplayMode,
+ onDisplayModeChange,
+ minFontSize=26,
+ maxFontSize=88,
+ onMinFontSizeChange,
+ onMaxFontSizeChange,
+ bpm=0
 }:{
  time:number;
  trackLoaded:boolean;
+ isPlaying?:boolean;
  track:TrackInfo|null;
  incoming:IncomingLyrics|null;
  delay:number;
@@ -232,12 +251,26 @@ export default function ManualLyrics({
  onToggleCustomEdit?:()=>void;
  onSaveCustomOverride?:(lrc:string)=>void;
  enabledScenes?:readonly SceneId[];
+ activeSceneId?:SceneId;
+ themePalettes?:Record<string,string>;
+ lyricColorMode?:LyricColorMode;
+ onLyricColorModeChange?:(mode:LyricColorMode)=>void;
+ lyricFillPaceMode?:LyricFillPaceMode;
+ onLyricFillPaceModeChange?:(pace:LyricFillPaceMode)=>void;
+ displayMode?:'original'|'romanized'|'both';
+ onDisplayModeChange?:(mode:'original'|'romanized'|'both')=>void;
+ minFontSize?:number;
+ maxFontSize?:number;
+ onMinFontSizeChange?:(size:number)=>void;
+ onMaxFontSizeChange?:(size:number)=>void;
+ bpm?:number;
 }){
  const [raw,setRaw]=useState('');
  const [roman,setRoman]=useState('');
  const [plain,setPlain]=useState('');
- const [mode,setMode]=useState<'original'|'romanized'|'both'>('both');
- const [lyricColorMode,setLyricColorMode]=useState<LyricColorMode>('auto');
+ const [internalMode,setInternalMode]=useState<'original'|'romanized'|'both'>('both');
+ const [internalColorMode,setInternalColorMode]=useState<LyricColorMode>('auto');
+ const [internalFillPace,setInternalFillPace]=useState<LyricFillPaceMode>('auto');
  const [offset,setOffset]=useState(0);
  const [genre,setGenre]=setGenreState('');
  const [source,setSource]=useState('Automatic (Apple Music / LRCLIB)');
@@ -246,6 +279,24 @@ export default function ManualLyrics({
  const [message,setMessage]=useState('');
  const [autoRoman,setAutoRoman]=useState(true);
  const fileRef=useRef<HTMLInputElement>(null);
+
+ const mode=controlledDisplayMode??internalMode;
+ const setMode=(next:'original'|'romanized'|'both')=>{
+  setInternalMode(next);
+  onDisplayModeChange?.(next);
+ };
+
+ const lyricColorMode=controlledColorMode??internalColorMode;
+ const setLyricColorMode=(next:LyricColorMode)=>{
+  setInternalColorMode(next);
+  onLyricColorModeChange?.(next);
+ };
+
+ const lyricFillPaceMode=controlledFillPaceMode??internalFillPace;
+ const setLyricFillPaceMode=(next:LyricFillPaceMode)=>{
+  setInternalFillPace(next);
+  onLyricFillPaceModeChange?.(next);
+ };
 
  function setGenreState(initial:string){
   return useState(initial);
@@ -342,7 +393,7 @@ export default function ManualLyrics({
   const rows=plain.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).slice(0,300);
   if(!rows.length){setMessage('No untimed lines available.');return}
   const interval=track?.duration&&track.duration>0?Math.max(1,track.duration/rows.length):4;
-  const lrc=rows.map((line,i)=>{const t=i*interval;const mm=String(Math.floor(t/60)).padStart(2,'0');const ss=(t%60).toFixed(2).padStart(5,'0');return '['+mm+':'+ss+']'+line}).join('\n');
+  const lrc=rows.map((line,i)=>{const t=i*interval;const mm=String.prototype.padStart.call(Math.floor(t/60),2,'0');const ss=(t%60).toFixed(2).padStart(5,'0');return '['+mm+':'+ss+']'+line}).join('\n');
   setRaw(lrc);if(autoRoman&&!corrected)setRoman(romanizeText(lrc).text);
   setPlain('');setSource(source+' · estimated timing');
   setMessage('Approximate line timestamps generated.');
@@ -373,10 +424,26 @@ export default function ManualLyrics({
 
  const lyricTime=effectiveLyricTime(time,offset,delay);
  let idx=-1;for(let i=0;i<lines.length;i++){if(lines[i].time<=lyricTime)idx=i;else break}
- const prevLine=idx>0?lines[idx-1]:undefined;
- const current=lines[idx],next=lines[idx+1];
+ const candidate=idx>=0?lines[idx]:undefined;
+ const next=lines[idx+1];
+ const candidateEnd=useMemo(
+  ()=>candidate?computeNaturalLineEnd(candidate,next?.time):0,
+  [candidate,next?.time]
+ );
+
+ // Do NOT hold previous lyrics during pause or instrumental music breaks!
+ const isPausedSession=Boolean(trackLoaded&&!isPlaying);
+ const isWithinVocalWindow=Boolean(
+  candidate&&
+  candidate.text.trim().length>0&&
+  lyricTime>=candidate.time&&
+  lyricTime<candidateEnd&&
+  !isPausedSession
+ );
+ const current=isWithinVocalWindow?candidate:undefined;
+ const prevLine=isWithinVocalWindow&&idx>0?lines[idx-1]:undefined;
  const prevRom=idx>0?romanLines[idx-1]?.text:'';
- const rom=romanLines[idx]?.text||'';
+ const rom=idx>=0?romanLines[idx]?.text||'':'';
  const nextRom=romanLines[idx+1]?.text||'';
 
  const hasWordTags=useMemo(()=>lines.some(l=>l.words&&l.words.some(w=>w.timing==='sourced')),[lines]);
@@ -404,20 +471,23 @@ export default function ManualLyrics({
   [track,trackLoaded]
  );
 
- // Dynamic main lyric text color change mechanism
- const {activeMainColor,activeHighlightColor}=useMemo(()=>{
-  if(lyricColorMode!=='auto'){
-   const preset=LYRIC_COLOR_MAP[lyricColorMode];
-   return {activeMainColor:preset.main,activeHighlightColor:preset.highlight};
-  }
-  const activeScene=storyboard.find(s=>lyricTime>=s.start&&lyricTime<s.end);
-  const sceneAccent=activeScene?byId[activeScene.id]?.accent:undefined;
-  const palette=sceneAccent?[sceneAccent,...LYRIC_COLOR_PALETTE]:[...LYRIC_COLOR_PALETTE];
-  const colorIdx=Math.max(0,idx)%palette.length;
-  const main=palette[colorIdx]||'#72efdd';
-  const highlight=palette[(colorIdx+1)%palette.length]||'#ffffff';
-  return {activeMainColor:main,activeHighlightColor:highlight};
- },[lyricColorMode,storyboard,lyricTime,idx]);
+ // NEW LYRIC COLOUR MECHANISM:
+ // 1. Entire line starts in a single uniform `baseColor` based on the active background.
+ // 2. `sungColor` is applied sequentially (letter-by-letter for slow songs, word-by-word for fast songs)
+ //    only when real word-by-word sync is available.
+ const {baseLineColor,sungAccentColor}=useMemo(()=>{
+  const scheduledScene=storyboard.find(s=>lyricTime>=s.start&&lyricTime<s.end)?.id||activeSceneId;
+  const resolvedSceneId=byId[scheduledScene]?scheduledScene:'holographic-tide';
+  const palette=resolveThemePalette(resolvedSceneId,themePalettes?.[resolvedSceneId]);
+  const customOverride=lyricColorMode!=='auto'?LYRIC_COLOR_MAP[lyricColorMode].main:undefined;
+  const {baseColor,sungColor}=computeBackgroundAdaptiveLyricColors(
+   palette.background,
+   palette.foreground,
+   palette.accent,
+   customOverride
+  );
+  return {baseLineColor:baseColor,sungAccentColor:sungColor};
+ },[lyricColorMode,storyboard,lyricTime,activeSceneId,themePalettes]);
 
  // Only build word-by-word tokens when REAL sourced word-sync is available for this line!
  // Never predict/estimate word sync when only line-synced lyrics are available.
@@ -441,6 +511,11 @@ export default function ManualLyrics({
   });
  },[current,currentHasWordSync,preferRoman,rom]);
 
+ const activeFillPace=useMemo<'letter'|'word'|'line'>(()=>{
+  if(!currentHasWordSync||activeSourcedWords.length===0)return 'line';
+  return resolveLyricFillPace(activeSourcedWords,bpm,lyricFillPaceMode);
+ },[currentHasWordSync,activeSourcedWords,bpm,lyricFillPaceMode]);
+
  // Split long lines into multiple balanced lines (both for word-synced and line-synced)
  const activeWordRows=useMemo(
   ()=>splitWordsIntoBalancedRows(activeSourcedWords,36,6),
@@ -455,26 +530,23 @@ export default function ManualLyrics({
   [secondaryLineText]
  );
 
- const currentLineEnd=useMemo(()=>{
-  if(!current)return 0;
-  if(activeSourcedWords.length>0)return activeSourcedWords[activeSourcedWords.length-1].end;
-  return next?Math.min(next.time,current.time+6):current.time+4;
- },[current,next,activeSourcedWords]);
+ // Dynamic stage font size bounded by user's minFontSize and maxFontSize levels
+ const panelMinPx=Math.max(14,Math.round(minFontSize*0.62));
+ const panelMaxPx=Math.max(panelMinPx+4,Math.round(maxFontSize*0.52));
+ const stageFontSizeCss=`clamp(${panelMinPx}px, 2.8vw, ${panelMaxPx}px)`;
 
- // Spicy Lyrics / Stash 3-dot instrumental interlude indicator when vocal gap >= 3.5s
+ // Instrumental interlude indicator when between vocal lines
  const interludeProgress=useMemo(()=>{
-  if(!lines.length)return null;
-  if(idx===-1&&lines[0].time>=3.0&&lyricTime>=0&&lyricTime<lines[0].time){
+  if(!lines.length||isPausedSession)return null;
+  if(idx===-1&&lines[0].time>=1.5&&lyricTime>=0&&lyricTime<lines[0].time){
    return Math.max(0,Math.min(1,lyricTime/lines[0].time));
   }
-  if(current&&next){
-   const gap=next.time-currentLineEnd;
-   if(gap>=3.8&&lyricTime>currentLineEnd+0.25&&lyricTime<next.time){
-    return Math.max(0,Math.min(1,(lyricTime-currentLineEnd)/gap));
-   }
+  if(candidate&&next&&lyricTime>=candidateEnd&&lyricTime<next.time){
+   const gap=Math.max(0.2,next.time-candidateEnd);
+   return Math.max(0,Math.min(1,(lyricTime-candidateEnd)/gap));
   }
   return null;
- },[lines,idx,current,next,currentLineEnd,lyricTime]);
+ },[lines,idx,candidate,next,candidateEnd,lyricTime,isPausedSession]);
 
  return <section className="local-player lyrics-panel">
   <div className="player-heading">
@@ -482,7 +554,12 @@ export default function ManualLyrics({
     <span className="heading-icon">文</span>
     <div>
      <b>AUTOMATIC WORD-SYNCED &amp; LINE-SYNCED LYRICS</b>
-     <small>{lyricProviderInfo.detail} · {hasWordTags?'Syllable / Word-level timestamps active':'Line-level synchronization (no fake word prediction)'}</small>
+     <small>
+      {lyricProviderInfo.detail} ·{' '}
+      {hasWordTags
+       ? `Word-sync active (${activeFillPace==='letter'?'Slow pace: Letter-by-letter fill':'Fast pace: Word-by-word fill'})`
+       : 'Line-level synchronization (uniform line colour · no fake word prediction)'}
+     </small>
     </div>
    </div>
    <button className="upload-button" onClick={onToggleCustomEdit}>
@@ -537,7 +614,7 @@ export default function ManualLyrics({
     <div className="spicy-interlude-dots" aria-label="Instrumental interlude">
      {[0,1,2].map(dotIdx=>{
       const dotFill=Math.max(0,Math.min(1,interludeProgress*3-dotIdx));
-      return <span key={dotIdx} className={'spicy-dot '+(dotFill>0.1?'active':'')} style={{opacity:0.28+dotFill*0.72,transform:`scale(${0.88+dotFill*0.28})`,backgroundColor:activeMainColor}}/>;
+      return <span key={dotIdx} className={'spicy-dot '+(dotFill>0.1?'active':'')} style={{opacity:0.28+dotFill*0.72,transform:`scale(${0.88+dotFill*0.28})`,backgroundColor:sungAccentColor}}/>;
      })}
     </div>
    )}
@@ -545,34 +622,59 @@ export default function ManualLyrics({
     {currentHasWordSync?(
      <div className="spicy-word-multiline" role="region" aria-label="Word-synced lyrics">
       {activeWordRows.map((rowWords,rowIdx)=>(
-       <p className="spicy-word-line" key={'row-'+rowIdx}>
+       <p className="spicy-word-line" key={'row-'+rowIdx} style={{color:baseLineColor,fontSize:stageFontSizeCss}}>
         {rowWords.map((w,wIdx)=>{
          const dur=Math.max(0.05,w.end-w.start);
          const rawProg=(lyricTime-w.start)/dur;
          const prog=Math.max(0,Math.min(1,rawProg));
-         const state=rawProg>=1?'sung':rawProg>0?'active':'upcoming';
-         const pct=Math.round(prog*100);
+         const isSpokenStart=lyricTime>=w.start;
+         const isSpokenEnd=lyricTime>=w.end;
+         const state=isSpokenEnd?'sung':isSpokenStart?'active':'upcoming';
+
+         if(activeFillPace==='letter'){
+          // Slow song: change colour of letters one by one as it is said
+          const chars=Array.from(w.text);
+          const sungLetters=
+           !isSpokenStart?0:
+           isSpokenEnd?chars.length:
+           Math.max(1,Math.min(chars.length,Math.ceil(prog*chars.length)));
+          return (
+           <span
+            key={rowIdx+'-'+wIdx+'-'+w.start}
+            className={`spicy-word ${state}`}
+            style={{color:baseLineColor}}
+           >
+            {chars.map((ch,cIdx)=>{
+             const isLetterSung=cIdx<sungLetters;
+             return (
+              <span
+               key={cIdx}
+               style={{
+                color:isLetterSung?sungAccentColor:baseLineColor,
+                textShadow:isLetterSung?`0 0 14px ${sungAccentColor}66`:undefined,
+                transition:'color 70ms linear'
+               }}
+              >
+               {ch}
+              </span>
+             );
+            })}
+            {wIdx<rowWords.length-1?' ':''}
+           </span>
+          );
+         }
+
+         // Fast-paced song: change colour of words one by one as it is said
+         const wordColor=isSpokenStart?sungAccentColor:baseLineColor;
          return (
           <span
            key={rowIdx+'-'+wIdx+'-'+w.start}
            className={`spicy-word ${state}`}
-           style={
-            state==='active'
-             ? {
-                backgroundImage:`linear-gradient(90deg, ${activeHighlightColor} ${Math.max(0,pct-8)}%, ${activeMainColor} ${pct}%, rgba(220,236,242,0.34) ${Math.min(100,pct+14)}%)`,
-                WebkitBackgroundClip:'text',
-                backgroundClip:'text',
-                color:'transparent',
-                WebkitTextFillColor:'transparent',
-                filter:`drop-shadow(0 0 12px ${activeMainColor}80)`
-               }
-             : state==='sung'
-             ? {
-                color:activeMainColor,
-                textShadow:`0 0 16px ${activeMainColor}55`
-               }
-             : undefined
-           }
+           style={{
+            color:wordColor,
+            textShadow:isSpokenStart?`0 0 16px ${sungAccentColor}55`:undefined,
+            transition:'color 80ms linear'
+           }}
           >
            {w.text}{wIdx<rowWords.length-1?' ':''}
           </span>
@@ -582,14 +684,16 @@ export default function ManualLyrics({
       ))}
      </div>
     ):(
+     /* Line-synced only: entire line is a single uniform colour based on the background — NO word-by-word prediction */
      <div className="spicy-word-multiline" role="region" aria-label="Line-synced lyrics">
       {activeLineRows.map((rowText,rowIdx)=>(
        <p
         key={'line-row-'+rowIdx}
         className="spicy-word-line spicy-line-synced"
         style={{
-         color:activeMainColor,
-         textShadow:`0 0 18px ${activeMainColor}45`
+         color:baseLineColor,
+         fontSize:stageFontSizeCss,
+         textShadow:`0 0 16px ${baseLineColor}35`
         }}
        >
         {rowText}
@@ -605,7 +709,15 @@ export default function ManualLyrics({
      </div>
     )}
    </>:
-    <p>{plain?'Untimed lyrics loaded — click "Create approximate timestamps" below to synchronize.':lines.length?'Waiting for first vocal cue…':'Lyrics load automatically when you select a song from Stash Online Player or upload a local file.'}</p>}
+    <p>
+     {isPausedSession
+      ? 'Playback paused — resume song to continue synchronized lyrics.'
+      : plain
+      ? 'Untimed lyrics loaded — click "Create approximate timestamps" below to synchronize.'
+      : lines.length
+      ? 'Instrumental break · awaiting next vocal cue…'
+      : 'Lyrics load automatically when you select a song from Stash Online Player or upload a local file.'}
+    </p>}
    {nextDisplay&&<small className="spicy-next-line">UP NEXT · {splitLyricIntoBalancedLines(nextDisplay,44,8).join(' / ')}</small>}
   </div>
 
@@ -619,15 +731,44 @@ export default function ManualLyrics({
    </label>
    <label>Main lyric color
     <select aria-label="Main lyric text color" value={lyricColorMode} onChange={e=>setLyricColorMode(e.target.value as LyricColorMode)}>
-     <option value="auto">Auto (Scene &amp; Line Color Shift)</option>
+     <option value="auto">Auto (Background Adaptive)</option>
      {(Object.entries(LYRIC_COLOR_MAP) as [Exclude<LyricColorMode,'auto'>,{label:string}][]).map(([key,val])=>(
       <option key={key} value={key}>{val.label}</option>
      ))}
     </select>
    </label>
+   <label>Word-sync fill pace
+    <select aria-label="Lyric fill pace" value={lyricFillPaceMode} onChange={e=>setLyricFillPaceMode(e.target.value as LyricFillPaceMode)}>
+     <option value="auto">Auto (Slow: Letter · Fast: Word)</option>
+     <option value="letter">Slow Mode (Letter by Letter)</option>
+     <option value="word">Fast Mode (Word by Word)</option>
+    </select>
+   </label>
+   <label>Min font size ({minFontSize}px)
+    <input
+     aria-label="Lyrics minimum font size"
+     type="range"
+     min="16"
+     max="72"
+     step="2"
+     value={minFontSize}
+     onChange={e=>onMinFontSizeChange?.(Number(e.target.value))}
+    />
+   </label>
+   <label>Max font size ({maxFontSize}px)
+    <input
+     aria-label="Lyrics maximum font size"
+     type="range"
+     min="32"
+     max="130"
+     step="2"
+     value={maxFontSize}
+     onChange={e=>onMaxFontSizeChange?.(Number(e.target.value))}
+    />
+   </label>
    <label>Visual genre preset<select value={genre} onChange={e=>setGenre(e.target.value)}><option value="">Auto / unknown</option>{['Ambient','Cinematic','Pop','EDM','Rock','Hip-hop','Ballad','Classical'].map(g=><option key={g}>{g}</option>)}</select></label>
    <label>Song delay (sec)<input aria-label="Lyrics delay seconds" type="number" step=".05" min="-30" max="30" value={delay} onChange={e=>onDelayChange(clampLyricDelay(Number(e.target.value)))}/></label>
-   <span>{lines.length} timed lines · {lyricProviderInfo.providerName} · {hasWordTags?'Word-synced':'Line-synced'} · {language} · Delay {formatLyricDelay(delay)}</span>
+   <span>{lines.length} timed lines · {lyricProviderInfo.providerName} · {hasWordTags?'Word-synced':'Line-synced'} · {language} · Font {minFontSize}–{maxFontSize}px · Delay {formatLyricDelay(delay)}</span>
   </div>
 
   {plain&&!lines.length&&<div className="plain-lyrics-fallback">

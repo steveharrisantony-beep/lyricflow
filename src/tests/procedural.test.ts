@@ -9,23 +9,25 @@ const DELETED_SCENES=[
  'fragmented-thoughts','quiet-pages','monochrome-memory','monument-titles','midnight-confession',
  'glass-architecture','ransom-poetry','type-collision','petal-memory','submerged-words',
  'inferno-letterforms','holographic-frequency','pixel-pulse','marker-diary','bubble-pop',
- 'word-playground','sunset-frequency','typographic-vortex','midnight-transit','final-ascension'
+ 'word-playground','sunset-frequency','typographic-vortex','midnight-transit','final-ascension',
+ 'liquid-filigree','crimson-current','silk-waves','molten-contours','layered-contours',
+ 'pearl-resonance','orbital-score','silver-current','white-velocity'
 ];
 
 describe('VoxelWall 2D scene & VoxelVerse lyric style registries',()=>{
- it('removes all 28 legacy 3D themes plus Crimson Impact and Vinyl Groove',()=>{
+ it('removes all 28 legacy 3D themes, Crimson Impact, Vinyl Groove, and 9 duplicate color-swap clones',()=>{
   const activeIds=new Set<string>(TEMPLATES.map(t=>t.id));
   for(const removed of DELETED_SCENES){
    expect(activeIds.has(removed)).toBe(false);
   }
  });
- it('covers all 7 VoxelWall categories (Flow, Contours, Sculptures, Space, Nature, Architecture, Journeys)',()=>{
+ it('covers all 7 VoxelWall categories (Flow, Contours, Sculptures, Space, Nature, Architecture, Journeys) with 23 distinct designs',()=>{
   const categories=VOXELWALL_CATEGORIES.map(c=>c.id);
   expect(categories).toEqual(['flow','contours','sculptures','space','nature','architecture','journeys']);
   for(const cat of categories){
-   expect(TEMPLATES.filter(t=>t.family===cat).length).toBeGreaterThanOrEqual(4);
+   expect(TEMPLATES.filter(t=>t.family===cat).length).toBeGreaterThanOrEqual(3);
   }
-  expect(MOTION_SCENES).toHaveLength(30);
+  expect(MOTION_SCENES).toHaveLength(21);
  });
  it('provides all 19 VoxelVerse lyric animation styles across 4 families',()=>{
   expect(LYRIC_MOTIONS).toHaveLength(19);

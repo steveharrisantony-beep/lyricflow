@@ -1,8 +1,8 @@
 import type Hls from 'hls.js';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Upload, Play, Pause, Volume2, Music2, X, Disc3, RefreshCw, Edit3, CheckCircle2, Clock } from 'lucide-react';
-import { connectLocalAudio, setLocalAudioPlaying, setLocalMediaElement } from './audioSignal';
-import type { TrackInfo } from '../metadata/trackInfo';
+import { connectLocalAudio, setLocalAudioPlaying, setLocalMediaElement, setVirtualMediaTime } from './audioSignal';
+import { extractYouTubeVideoId, type TrackInfo } from '../metadata/trackInfo';
 import { MUSIC_SOURCES, type PlayableSong } from '../music/providers';
 import { resolveTrackFilename } from '../metadata/metadataStore';
 import { clampLyricDelay, formatLyricDelay } from '../lyrics/lyricTiming';
@@ -22,6 +22,7 @@ export interface LocalPlayerHandle {
   play: () => Promise<void>;
   loadRemote: (song: PlayableSong) => Promise<void>;
   seek: (time: number) => void;
+  syncExternalClock: (currentTime: number, totalDuration?: number) => void;
 }
 
 type Props = {
@@ -30,6 +31,8 @@ type Props = {
   onFileChange: (loaded: boolean) => void;
   onTrackChange: (track: TrackInfo | null) => void;
   onDurationChange: (duration: number) => void;
+  onAudioStreamModeChange?: (hasAudioStream: boolean) => void;
+  onVolumeChange?: (volume: number) => void;
   sourceMode: AudioSourceMode | null;
   onOpenSourceSelector: () => void;
   lyricSourceLabel: string;
@@ -49,6 +52,8 @@ function LocalPlayer(
     onFileChange,
     onTrackChange,
     onDurationChange,
+    onAudioStreamModeChange,
+    onVolumeChange,
     sourceMode,
     onOpenSourceSelector,
     lyricSourceLabel,
@@ -78,6 +83,30 @@ function LocalPlayer(
   const [error, setError] = useState('');
   const [remote, setRemote] = useState(false);
   const [inlineOnlineOpen, setInlineOnlineOpen] = useState(false);
+  const [youtubeOnlyClock, setYoutubeOnlyClock] = useState(false);
+  const ytClockRef = useRef(0);
+
+  // Advance playback clock when playing a YouTube video directly without a separate audio stream
+  useEffect(() => {
+    if (!youtubeOnlyClock || !active) return;
+    let lastTick = performance.now();
+    const id = window.setInterval(() => {
+      const now = performance.now();
+      const dt = Math.max(0, (now - lastTick) / 1000);
+      lastTick = now;
+      const maxDur = duration > 0 ? duration : 600;
+      const next = Math.min(maxDur, ytClockRef.current + dt);
+      ytClockRef.current = next;
+      setTime(next);
+      onTimeChange(next);
+      setVirtualMediaTime(next);
+      if (duration > 0 && next >= duration) {
+        setActive(false);
+        onActiveChange(false);
+      }
+    }, 80);
+    return () => window.clearInterval(id);
+  }, [youtubeOnlyClock, active, duration, onTimeChange, onActiveChange]);
 
   const loadRemote = async (song: PlayableSong) => {
     const player = audioRef.current;
@@ -87,6 +116,9 @@ function LocalPlayer(
     hlsRef.current = null;
     player.pause();
     setLocalAudioPlaying(false);
+    setYoutubeOnlyClock(false);
+    setVirtualMediaTime(null);
+    ytClockRef.current = 0;
     if (urlRef.current) {
       URL.revokeObjectURL(urlRef.current);
       urlRef.current = null;
@@ -100,6 +132,7 @@ function LocalPlayer(
     setTime(0);
     setDuration(song.duration);
     setError('');
+    const ytId = song.youtubeVideoId || extractYouTubeVideoId(song) || undefined;
     const audioSourceLabel = song.audioSource || MUSIC_SOURCES[song.provider] || 'Online Stream';
     const nextTrack: TrackInfo = {
       ...song,
@@ -107,6 +140,8 @@ function LocalPlayer(
       provider: song.provider,
       audioSource: audioSourceLabel,
       sourceUrl: song.sourceUrl,
+      youtubeVideoId: ytId,
+      videoTitle: song.videoTitle || (ytId ? song.title : undefined),
       confidence: 1,
     };
     setCurrentTrack(nextTrack);
@@ -114,6 +149,16 @@ function LocalPlayer(
     onFileChange(true);
     onTimeChange(0);
     setInlineOnlineOpen(false);
+
+    if (song.format === 'youtube') {
+      setYoutubeOnlyClock(true);
+      onAudioStreamModeChange?.(false);
+      setVirtualMediaTime(0);
+      setActive(true);
+      onActiveChange(true);
+      return;
+    }
+
     try {
       await initialize();
       if (epoch !== loadEpoch.current) return;
@@ -153,9 +198,19 @@ function LocalPlayer(
       }
       if (epoch !== loadEpoch.current) return;
       player.volume = volume / 100;
+      onAudioStreamModeChange?.(true);
       await player.play();
     } catch {
       if (epoch !== loadEpoch.current) return;
+      if (ytId) {
+        // Fallback smoothly to YouTube embedded video playback if audio proxy stream failed
+        setYoutubeOnlyClock(true);
+        onAudioStreamModeChange?.(false);
+        setVirtualMediaTime(0);
+        setActive(true);
+        onActiveChange(true);
+        return;
+      }
       setError('This source could not play in your browser. Try another result or a local file.');
       throw Error('Playback failed. The source may be unavailable or block browser audio access.');
     }
@@ -181,6 +236,12 @@ function LocalPlayer(
   };
 
   const play = async () => {
+    if (youtubeOnlyClock) {
+      setError('');
+      setActive(true);
+      onActiveChange(true);
+      return;
+    }
     const element = audioRef.current;
     if (!element || !element.src) return;
     try {
@@ -189,6 +250,34 @@ function LocalPlayer(
       await element.play();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Audio playback was blocked. Tap Play again.');
+    }
+  };
+
+  const pausePlayback = () => {
+    if (youtubeOnlyClock) {
+      setActive(false);
+      onActiveChange(false);
+      return;
+    }
+    audioRef.current?.pause();
+    setLocalAudioPlaying(false);
+    onActiveChange(false);
+  };
+
+  const seekPlayback = (nextTime: number) => {
+    const clamped = Math.max(0, duration > 0 ? Math.min(duration, nextTime) : nextTime);
+    if (youtubeOnlyClock) {
+      ytClockRef.current = clamped;
+      setTime(clamped);
+      onTimeChange(clamped);
+      setVirtualMediaTime(clamped);
+      return;
+    }
+    const player = audioRef.current;
+    if (player && Number.isFinite(player.duration)) {
+      player.currentTime = Math.max(0, Math.min(player.duration, nextTime));
+      onTimeChange(player.currentTime);
+      setTime(player.currentTime);
     }
   };
 
@@ -204,6 +293,9 @@ function LocalPlayer(
     hlsRef.current?.destroy();
     hlsRef.current = null;
     player.pause();
+    setYoutubeOnlyClock(false);
+    setVirtualMediaTime(null);
+    onAudioStreamModeChange?.(true);
     setLocalAudioPlaying(false);
     onActiveChange(false);
     setActive(false);
@@ -240,6 +332,8 @@ function LocalPlayer(
       URL.revokeObjectURL(urlRef.current);
       urlRef.current = null;
     }
+    setYoutubeOnlyClock(false);
+    setVirtualMediaTime(null);
     setLocalAudioPlaying(false);
     setLocalMediaElement(null);
     setCurrentTrack(null);
@@ -255,28 +349,33 @@ function LocalPlayer(
     setError('');
   };
 
+  const syncExternalClock = (currentTime: number, totalDuration?: number) => {
+    if (!youtubeOnlyClock) return;
+    if (typeof totalDuration === 'number' && Number.isFinite(totalDuration) && totalDuration > 0 && Math.abs(totalDuration - duration) > 1) {
+      setDuration(totalDuration);
+      setCurrentTrack(prev => (prev ? { ...prev, duration: totalDuration } : prev));
+      onDurationChange(totalDuration);
+    }
+    if (Number.isFinite(currentTime) && currentTime >= 0) {
+      ytClockRef.current = currentTime;
+      setTime(currentTime);
+      onTimeChange(currentTime);
+      setVirtualMediaTime(currentTime);
+    }
+  };
+
   useImperativeHandle(
     ref,
     () => ({
       chooseFile: () => fileRef.current?.click(),
-      pause: () => {
-        audioRef.current?.pause();
-        setLocalAudioPlaying(false);
-        onActiveChange(false);
-      },
+      pause: pausePlayback,
       stop,
       play,
       loadRemote,
-      seek: (nextTime: number) => {
-        const player = audioRef.current;
-        if (player && Number.isFinite(player.duration)) {
-          player.currentTime = Math.max(0, Math.min(player.duration, nextTime));
-          onTimeChange(player.currentTime);
-          setTime(player.currentTime);
-        }
-      },
+      seek: seekPlayback,
+      syncExternalClock,
     }),
-    [onActiveChange]
+    [youtubeOnlyClock, duration, onActiveChange, onTimeChange, onDurationChange]
   );
 
   useEffect(
@@ -284,6 +383,7 @@ function LocalPlayer(
       ++loadEpoch.current;
       hlsRef.current?.destroy();
       audioRef.current?.pause();
+      setVirtualMediaTime(null);
       setLocalAudioPlaying(false);
       setLocalMediaElement(null);
       connectLocalAudio(null);
@@ -325,7 +425,11 @@ function LocalPlayer(
           setActive(false);
           onActiveChange(false);
         }}
-        onError={() => setError('This audio format could not be decoded by the browser.')}
+        onError={() => {
+          if (!youtubeOnlyClock) {
+            setError('This audio format could not be decoded by the browser.');
+          }
+        }}
       />
       <input
         className="visually-hidden"
@@ -349,18 +453,18 @@ function LocalPlayer(
             <div>
               <b>PLAYER DETAILS</b>
               <small>
-                Audio Source:{' '}
+                Source:{' '}
                 {currentTrack
                   ? describeAudioSource(currentTrack, Boolean(name)).detail
                   : remote || sourceMode === 'online'
-                    ? 'Built-in Online Player (Stash Engine)'
+                    ? 'Built-in Online Player (JioSaavn & YouTube)'
                     : 'Local Audio Upload'}
               </small>
             </div>
           </div>
           <div className="player-heading-actions">
             <button type="button" className="upload-button" onClick={onOpenSourceSelector}>
-              <RefreshCw size={14} /> Switch Audio Source
+              <RefreshCw size={14} /> Switch Source
             </button>
           </div>
         </div>
@@ -371,7 +475,7 @@ function LocalPlayer(
             className="player-round"
             disabled={!name}
             aria-label={active ? 'Pause track' : 'Play track'}
-            onClick={() => (active ? audioRef.current?.pause() : void play())}
+            onClick={() => (active ? pausePlayback() : void play())}
           >
             {active ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
           </button>
@@ -387,7 +491,7 @@ function LocalPlayer(
             onClick={() => setInlineOnlineOpen(v => !v)}
           >
             <Disc3 size={16} />
-            {inlineOnlineOpen ? 'Hide Stash Online Player' : 'Search Online Songs (Stash)'}
+            {inlineOnlineOpen ? 'Hide Online Player' : 'Search JioSaavn & YouTube'}
           </button>
 
           <label className="volume-label" style={{ marginLeft: 'auto' }}>
@@ -401,6 +505,7 @@ function LocalPlayer(
               onChange={e => {
                 const n = Number(e.target.value);
                 setVolume(n);
+                onVolumeChange?.(n);
                 if (audioRef.current) audioRef.current.volume = n / 100;
               }}
             />
@@ -434,7 +539,7 @@ function LocalPlayer(
             <span className="heading-icon">♪</span>
             <div>
               <b>SONG DETAILS</b>
-              <small>Track metadata &amp; automatic Stash / Apple Music word-synced lyrics status</small>
+              <small>Track metadata &amp; automatic Apple Music / LRCLIB synced lyrics status</small>
             </div>
           </div>
           <button
@@ -459,7 +564,9 @@ function LocalPlayer(
           <div className="song-meta-main">
             <strong>{currentTrack?.title || name || 'No track loaded yet'}</strong>
             <span>
-              {currentTrack?.artist ? `Artist: ${currentTrack.artist}` : 'Select a local file or search a song in Stash Online Player'}
+              {currentTrack?.artist
+                ? `Artist: ${currentTrack.artist}`
+                : 'Select a local file or search a song in JioSaavn / YouTube'}
               {currentTrack?.album ? ` · Album: ${currentTrack.album}` : ''}
               {duration > 0 ? ` · Duration: ${format(duration)}` : ''}
             </span>
@@ -513,13 +620,7 @@ function LocalPlayer(
             step=".1"
             disabled={!name}
             value={Math.min(time, Number.isFinite(duration) && duration > 0 ? duration : 0)}
-            onChange={e => {
-              if (audioRef.current) {
-                audioRef.current.currentTime = Number(e.target.value);
-                onTimeChange(Number(e.target.value));
-                setTime(Number(e.target.value));
-              }
-            }}
+            onChange={e => seekPlayback(Number(e.target.value))}
           />
           <span className="timebar-clock">{format(duration)}</span>
         </div>

@@ -1,12 +1,22 @@
 import {providerRequest} from '../network/request';
+import {extractYouTubeVideoId} from '../metadata/trackInfo';
+
 export const MUSIC_SOURCES={ytmusic:'YouTube Music',soundcloud:'SoundCloud',jiosaavn:'JioSaavn',audius:'Audius',resolver:'YouTube'} as const;
+
+/** Only JioSaavn and YouTube are exposed in the built-in online player UI */
+export const BUILTIN_PLAYER_SOURCES={
+ jiosaavn:'JioSaavn',
+ resolver:'YouTube'
+} as const;
+
 /** Search metadata and resolve playable sources separately, as in a native player. */
 export interface SongResult {
  id:string;title:string;artist:string;album:string;duration:number;
  provider:keyof typeof MUSIC_SOURCES;sourceUrl:string;artwork?:string;
  directStreamUrl?:string;audioSource?:string;
+ youtubeVideoId?:string;videoTitle?:string;
 }
-export interface PlayableSong extends SongResult {streamUrl:string;format?:'hls'|'audio'}
+export interface PlayableSong extends SongResult {streamUrl:string;format?:'hls'|'audio'|'youtube'}
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object';
 const string=(v:unknown)=>typeof v==='string'?v:'';
 export function resolverBase(value:string){
@@ -25,10 +35,15 @@ export function parseSongs(value:unknown,provider:SongResult['provider']):SongRe
   const art=record(item.artwork)?item.artwork:{};
   const duration=typeof item.duration==='number'&&Number.isFinite(item.duration)?Math.max(0,item.duration):0;
   const resolvedProv=(Object.hasOwn(MUSIC_SOURCES,string(item.provider))?string(item.provider):provider) as SongResult['provider'];
-  return [{id:string(item.id),title:string(item.title),artist:string(item.artist)||string(user.name),album:string(item.album),duration,provider:resolvedProv,
-   sourceUrl:provider==='audius'&&string(item.permalink)?'https://audius.co'+string(item.permalink):string(item.sourceUrl),artwork:string(art['480x480'])||string(art['150x150'])||string(item.artwork)||undefined,
+  const id=string(item.id);
+  const sourceUrl=provider==='audius'&&string(item.permalink)?'https://audius.co'+string(item.permalink):string(item.sourceUrl);
+  const ytId=string(item.youtubeVideoId)||extractYouTubeVideoId({id,provider:resolvedProv,sourceUrl})||undefined;
+  return [{id,title:string(item.title),artist:string(item.artist)||string(user.name),album:string(item.album),duration,provider:resolvedProv,
+   sourceUrl,artwork:string(art['480x480'])||string(art['150x150'])||string(item.artwork)||undefined,
    directStreamUrl:string(item.directStreamUrl)||undefined,
-   audioSource:string(item.audioSource)||undefined}];
+   audioSource:string(item.audioSource)||undefined,
+   youtubeVideoId:ytId,
+   videoTitle:string(item.videoTitle)||(ytId?string(item.title):undefined)}];
  });
 }
 async function json(url:string,signal?:AbortSignal){
@@ -43,21 +58,32 @@ export async function searchSongs(query:string,provider:SongResult['provider'],b
  return parseSongs(await json(url,signal),provider);
 }
 export async function resolveSong(song:SongResult,base:string,signal?:AbortSignal):Promise<PlayableSong>{
- if(song.directStreamUrl)return {...song,streamUrl:song.directStreamUrl,format:'audio',audioSource:song.audioSource||MUSIC_SOURCES[song.provider]};
+ const ytId=song.youtubeVideoId||extractYouTubeVideoId(song)||undefined;
+ if(song.directStreamUrl)return {...song,youtubeVideoId:ytId,streamUrl:song.directStreamUrl,format:'audio',audioSource:song.audioSource||MUSIC_SOURCES[song.provider]};
  if(song.provider==='audius'&&!song.id.startsWith('audius_'))return {...song,streamUrl:'https://api.audius.co/v1/tracks/'+encodeURIComponent(song.id)+'/stream?app_name=LyricFlow',audioSource:song.audioSource||'Audius (Direct Stream)'};
  const root=resolverBase(base);
  const data=await json(root+'/resolve/'+encodeURIComponent(song.id),signal);
  if(!record(data)||typeof data.streamPath!=='string'||!/^\/audio\/[\w-]+$/.test(data.streamPath))throw Error('Invalid music resolver response.');
  const meta=record(data.track)?parseSongs({data:[data.track]},song.provider)[0]:null;
  const audioSource=string(data.audioSource)||meta?.audioSource||song.audioSource||MUSIC_SOURCES[song.provider];
- return {...song,...meta,artist:meta?.artist||song.artist,title:meta?.title||song.title,streamUrl:root+data.streamPath,format:data.format==='hls'?'hls':'audio',audioSource};
+ const resolvedYtId=string(data.youtubeVideoId)||meta?.youtubeVideoId||ytId;
+ const format:PlayableSong['format']=data.format==='hls'?'hls':data.format==='youtube'?'youtube':'audio';
+ return {
+  ...song,
+  ...meta,
+  artist:meta?.artist||song.artist,
+  title:meta?.title||song.title,
+  videoTitle:meta?.videoTitle||song.videoTitle||(resolvedYtId?song.title:undefined),
+  youtubeVideoId:resolvedYtId,
+  streamUrl:root+data.streamPath,
+  format,
+  audioSource
+ };
 }
 
 /**
- * Stash-inspired multi-catalog full-track search:
- * Queries the built-in Express /music resolver for JioSaavn (320kbps AAC),
- * YouTube Music, SoundCloud (full non-snipped tracks), Audius, and YouTube.
- * Never falls back to 30-second preview clips.
+ * Built-in Online Player search:
+ * Queries the Express /music resolver for JioSaavn (320kbps AAC) and YouTube Video/Audio.
  */
 export async function searchStashCatalog(
  query:string,
@@ -68,7 +94,6 @@ export async function searchStashCatalog(
  if(query.trim().length<2)return [];
  const effectiveBase=base.trim()||(typeof location!=='undefined'?`${location.origin}/music`:'');
 
- // 1. Try connected resolver or built-in /music server endpoint first for all sources
  if(effectiveBase){
   try{
    const res=await providerRequest(
@@ -83,12 +108,6 @@ export async function searchStashCatalog(
   }catch(e){
    if(signal?.aborted)throw e;
   }
- }
-
- // 2. Direct Audius full-track fallback if Audius tab was selected and server is unreachable
- if(provider==='audius'){
-  const audiusSongs=await searchSongs(query,'audius','',signal);
-  return audiusSongs.filter(s=>s.duration===0||s.duration>=45);
  }
 
  return [];

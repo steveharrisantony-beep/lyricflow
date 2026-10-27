@@ -10,9 +10,9 @@ describe('visual architecture',()=>{
   expect(visualSystemFor('color-riot')).toBe('geometry');
   expect(visualSystemFor('holographic-tide')).toBe('motion2d');
  });
- it('routes all other 30 VoxelWall scene IDs through the 2D motion engine',()=>{
+ it('routes all other 21 VoxelWall scene IDs through the 2D motion engine',()=>{
   const remaining=TEMPLATES.filter(t=>!['signal-chamber','color-riot'].includes(t.id));
-  expect(remaining).toHaveLength(30);
+  expect(remaining).toHaveLength(21);
   expect(remaining.every(t=>visualSystemFor(t.id)==='motion2d')).toBe(true);
  });
  it('provides a non-allocating stable 64-band analyzer interface',()=>{

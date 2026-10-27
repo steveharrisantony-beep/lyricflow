@@ -30,6 +30,7 @@ function AudioSourceHub(
  const stop=()=>{
   connectExternalAudio(null);
  };
+
  useImperativeHandle(ref,()=>({stop}),[]);
 
  useEffect(()=>{
@@ -57,9 +58,9 @@ function AudioSourceHub(
    <div ref={modalRef} className="source-modal" role="dialog" aria-modal="true" aria-label="Choose audio source">
     <div className="source-modal-head">
      <div>
-      <span>STEP 2 · AUDIO SOURCE</span>
-      <h2>Choose your audio source</h2>
-      <small>Select Local Audio Upload or stream from the Built-in Stash Online Player</small>
+      <span>AUDIO &amp; VIDEO SOURCE</span>
+      <h2>Choose your source</h2>
+      <small>Select Local Audio Upload or stream from the Built-in Player (JioSaavn &amp; YouTube Video)</small>
      </div>
      <button type="button" aria-label="Close audio sources" className="source-close" onClick={onClose} title="Close window">
       <X size={20}/>
@@ -91,9 +92,9 @@ function AudioSourceHub(
        <span className="audio-source-icon"><Disc3 size={22}/></span>
        {activeMode==='online'&&<span className="source-active-label"><CheckCircle2 size={14}/> Active</span>}
       </div>
-      <strong>Built-in Online Player (Stash)</strong>
-      <p>Search and stream songs online from JioSaavn, YouTube Music, Audius, and SoundCloud with Apple Music word-synced lyrics.</p>
-      <span className="source-option-cta">Search &amp; stream online <ChevronRight size={16}/></span>
+      <strong>Built-in Player (JioSaavn &amp; YouTube)</strong>
+      <p>Stream 320kbps AAC songs from JioSaavn or play YouTube videos as your stage background with VoxelVerse lyrics overlaid.</p>
+      <span className="source-option-cta">Search JioSaavn &amp; YouTube <ChevronRight size={16}/></span>
      </button>
     </div>
 
@@ -102,7 +103,7 @@ function AudioSourceHub(
     </div>}
 
     <div className="source-modal-foot">
-     <span>Tip: You can also search and switch songs directly from the main player bar below the visualizer.</span>
+     <span>Tip: When playing from YouTube, you can switch between the YouTube video background and built-in themes anytime.</span>
      <button type="button" className="source-primary" onClick={onClose}>Close Window</button>
     </div>
    </div>

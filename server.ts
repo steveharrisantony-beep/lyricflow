@@ -36,8 +36,9 @@ interface TrackMetadata {
 
 interface StreamCacheEntry {
   url: string;
-  format: 'audio' | 'hls';
+  format: 'audio' | 'hls' | 'youtube';
   audioSource?: string;
+  youtubeVideoId?: string;
   track?: TrackMetadata;
   createdAt: number;
 }
@@ -621,6 +622,95 @@ async function searchYouTubeMusic(
   provider: 'ytmusic' | 'youtube',
   limit = 12
 ): Promise<TrackMetadata[]> {
+  // When searching YouTube (video mode), query www.youtube.com/youtubei/v1/search first
+  // so we get real YouTube videos with full titles (including "Lyric Video", "Lyrical", "Lyrics") and 11-char videoIds
+  if (provider === 'youtube') {
+    try {
+      const ytWebRes = await fetch('https://www.youtube.com/youtubei/v1/search?prettyPrint=false', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': USER_AGENT,
+          Origin: 'https://www.youtube.com',
+        },
+        body: JSON.stringify({
+          context: {
+            client: {
+              clientName: 'WEB',
+              clientVersion: '2.20250219.01.00',
+              hl: 'en',
+              gl: 'US',
+            },
+          },
+          query: query.trim(),
+        }),
+        signal: AbortSignal.timeout(9000),
+      });
+      if (ytWebRes.ok) {
+        const rawWeb = await ytWebRes.json();
+        const webTracks: TrackMetadata[] = [];
+        const seenWebIds = new Set<string>();
+        const walkWeb = (node: unknown) => {
+          if (!node || typeof node !== 'object' || webTracks.length >= limit) return;
+          if (Array.isArray(node)) {
+            for (const child of node) walkWeb(child);
+            return;
+          }
+          const rec = node as Record<string, unknown>;
+          if (rec.videoRenderer && typeof rec.videoRenderer === 'object') {
+            const vr = rec.videoRenderer as Record<string, unknown>;
+            const videoId = String(vr.videoId || '').trim();
+            if (/^[a-zA-Z0-9_-]{11}$/.test(videoId) && !seenWebIds.has(videoId)) {
+              const titleRuns = Array.isArray((vr.title as Record<string, unknown>)?.runs)
+                ? ((vr.title as Record<string, unknown>).runs as Array<Record<string, unknown>>)
+                : [];
+              const rawTitle = decodeHtmlEntities(
+                titleRuns.map(r => String(r?.text || '')).join('').trim()
+              );
+              const ownerRuns = Array.isArray((vr.ownerText as Record<string, unknown>)?.runs)
+                ? ((vr.ownerText as Record<string, unknown>).runs as Array<Record<string, unknown>>)
+                : Array.isArray((vr.longBylineText as Record<string, unknown>)?.runs)
+                  ? ((vr.longBylineText as Record<string, unknown>).runs as Array<Record<string, unknown>>)
+                  : [];
+              const channelName = decodeHtmlEntities(
+                String(ownerRuns[0]?.text || 'YouTube').replace(/\s*[-–]\s*Topic$/i, '').trim()
+              );
+              const lengthText = String(
+                (vr.lengthText as Record<string, unknown>)?.simpleText || ''
+              );
+              const duration = parseDurationText(lengthText);
+              if (rawTitle && (duration === 0 || duration >= 45)) {
+                seenWebIds.add(videoId);
+                const trackId = `yt_${videoId}`;
+                const meta: TrackMetadata = {
+                  id: trackId,
+                  rawId: videoId,
+                  provider: 'youtube',
+                  title: rawTitle,
+                  artist: channelName,
+                  album: '',
+                  duration,
+                  videoType: 'OMV',
+                  sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
+                  artwork: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+                };
+                setTrackMetaCache(trackId, meta);
+                webTracks.push(meta);
+              }
+            }
+          }
+          for (const val of Object.values(rec)) walkWeb(val);
+        };
+        walkWeb(rawWeb);
+        if (webTracks.length > 0) {
+          return webTracks.slice(0, limit);
+        }
+      }
+    } catch {
+      // Fall through to YouTube Music search
+    }
+  }
+
   try {
     const body: Record<string, unknown> = {
       context: {
@@ -750,6 +840,9 @@ async function searchYouTubeMusic(
     // Fall through to JioSaavn backup search
   }
 
+  if (provider === 'youtube') {
+    return [];
+  }
   const saavnFallback = await searchJioSaavn(query, limit);
   return saavnFallback.map(t => ({ ...t, provider }));
 }
@@ -759,7 +852,7 @@ async function resolveByMetadataMatch(
 ): Promise<{ url: string; format: 'audio' | 'hls'; streamSource: string } | null> {
   const query = `${meta.title} ${meta.artist}`.trim();
 
-  // 1. Try JioSaavn 320kbps full-track catalog (with Indian IP header + Stash JioSaavnMatcher scoring)
+  // Only match verified JioSaavn 320kbps full-track studio recordings
   try {
     const saavnCandidates = await searchJioSaavn(query, 15);
     if (saavnCandidates.length > 0) {
@@ -768,52 +861,14 @@ async function resolveByMetadataMatch(
         .sort((a, b) => b.score - a.score);
 
       for (const candidate of scored.slice(0, 3)) {
-        if (candidate.score >= 50 && candidate.cand.encryptedMediaUrl) {
+        if (candidate.score >= 65 && candidate.cand.encryptedMediaUrl) {
           const streamUrl = await resolveJioSaavnStreamUrl(candidate.cand.encryptedMediaUrl);
           if (streamUrl) return { url: streamUrl, format: 'audio', streamSource: 'JioSaavn 320kbps AAC' };
         }
       }
     }
   } catch {
-    // Continue to SoundCloud full-track fallback
-  }
-
-  // 2. Try SoundCloud full-length track match (strictly non-snipped >= 45s & verified score)
-  try {
-    const scCandidates = await searchSoundCloud(query, 12);
-    if (scCandidates.length > 0) {
-      const scoredSc = scCandidates
-        .map(cand => ({ cand, score: scoreCandidateMatch(meta, cand) }))
-        .sort((a, b) => b.score - a.score);
-
-      const bestSc = scoredSc[0];
-      if (bestSc && bestSc.score >= 35) {
-        const scStream = await resolveSoundCloudStream(bestSc.cand);
-        if (scStream) return { ...scStream, streamSource: 'SoundCloud Full Stream' };
-      }
-    }
-  } catch {
-    // Continue to Audius fallback
-  }
-
-  // 3. Try Audius full-length stream match if verified score
-  try {
-    const audiusCandidates = await searchAudius(query, 8);
-    if (audiusCandidates.length > 0) {
-      const scoredAudius = audiusCandidates
-        .map(cand => ({ cand, score: scoreCandidateMatch(meta, cand) }))
-        .sort((a, b) => b.score - a.score);
-      const bestAudius = scoredAudius[0];
-      if (bestAudius && bestAudius.score >= 40) {
-        return {
-          url: `https://api.audius.co/v1/tracks/${encodeURIComponent(bestAudius.cand.rawId)}/stream?app_name=LyricFlow`,
-          format: 'audio',
-          streamSource: 'Audius Direct Stream',
-        };
-      }
-    }
-  } catch {
-    // No match
+    // Ignore JioSaavn lookup error
   }
 
   return null;
@@ -1578,11 +1633,17 @@ async function startServer() {
           id: t.id,
           provider: t.provider === 'youtube' ? 'resolver' : t.provider,
           title: t.title,
+          videoTitle: t.title,
           artist: t.artist,
           album: t.album,
           duration: t.duration,
           sourceUrl: t.sourceUrl,
           artwork: t.artwork,
+          youtubeVideoId:
+            (t.provider === 'youtube' || t.provider === 'ytmusic') &&
+            /^[a-zA-Z0-9_-]{11}$/.test(t.rawId)
+              ? t.rawId
+              : undefined,
           audioSource:
             t.provider === 'jiosaavn'
               ? 'JioSaavn (320kbps AAC)'
@@ -1592,7 +1653,7 @@ async function startServer() {
                   ? 'SoundCloud (Full Stream)'
                   : t.provider === 'audius'
                     ? 'Audius (Direct Stream)'
-                    : 'YouTube',
+                    : 'YouTube Video',
         })),
       });
     } catch (err) {
@@ -1616,6 +1677,7 @@ async function startServer() {
           streamPath: `/audio/${rawTrackId}`,
           format: existingStream.format,
           audioSource: existingStream.audioSource,
+          youtubeVideoId: existingStream.youtubeVideoId,
           track: existingStream.track,
         });
         return;
@@ -1624,6 +1686,20 @@ async function startServer() {
       let meta = trackMetaCache.get(rawTrackId);
       if (!meta && rawTrackId.startsWith('saavn_')) {
         meta = (await fetchJioSaavnTrackById(rawTrackId.slice('saavn_'.length))) || undefined;
+      }
+      if (!meta && rawTrackId.startsWith('yt_') && /^[a-zA-Z0-9_-]{11}$/.test(rawTrackId.slice(3))) {
+        const vid = rawTrackId.slice(3);
+        meta = {
+          id: rawTrackId,
+          rawId: vid,
+          provider: 'youtube',
+          title: 'YouTube Video',
+          artist: 'YouTube',
+          album: '',
+          duration: 0,
+          sourceUrl: `https://www.youtube.com/watch?v=${vid}`,
+          artwork: `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+        };
       }
       if (!meta && rawTrackId.startsWith('sc_')) {
         meta = {
@@ -1655,8 +1731,13 @@ async function startServer() {
         return;
       }
 
-      let resolvedStream: { url: string; format: 'audio' | 'hls'; streamSource?: string } | null = null;
+      let resolvedStream: { url: string; format: 'audio' | 'hls' | 'youtube'; streamSource?: string } | null = null;
       let audioSourceLabel = 'Online Stream';
+      const ytVideoId =
+        (meta.provider === 'youtube' || meta.provider === 'ytmusic') &&
+        /^[a-zA-Z0-9_-]{11}$/.test(meta.rawId)
+          ? meta.rawId
+          : undefined;
 
       if (meta.provider === 'jiosaavn') {
         const encUrl =
@@ -1682,19 +1763,34 @@ async function startServer() {
           streamSource: 'Audius Direct Stream',
         };
         audioSourceLabel = 'Audius (Direct Stream)';
-      } else if (meta.provider === 'ytmusic' || meta.provider === 'youtube') {
+      } else if (meta.provider === 'youtube') {
+        if (ytVideoId) {
+          resolvedStream = {
+            url: `https://www.youtube.com/watch?v=${ytVideoId}`,
+            format: 'youtube',
+            streamSource: 'YouTube Embedded Video',
+          };
+          audioSourceLabel = 'YouTube Video';
+        }
+      } else if (meta.provider === 'ytmusic') {
         const matched = await resolveByMetadataMatch(meta);
         if (matched) {
           resolvedStream = matched;
-          const catalogLabel = meta.provider === 'ytmusic' ? 'YouTube Music' : 'YouTube';
-          audioSourceLabel = `${catalogLabel} · ${matched.streamSource}`;
+          audioSourceLabel = `YouTube Music · ${matched.streamSource}`;
+        } else if (ytVideoId) {
+          resolvedStream = {
+            url: `https://www.youtube.com/watch?v=${ytVideoId}`,
+            format: 'youtube',
+            streamSource: 'YouTube Embedded Video',
+          };
+          audioSourceLabel = 'YouTube Video';
         }
       }
 
       if (!resolvedStream) {
         res.status(404).json({
           detail:
-            'Exact studio recording stream unavailable for this track. Try the JioSaavn or SoundCloud tab for direct catalog streams.',
+            'Exact studio recording stream unavailable for this track. Try the JioSaavn or YouTube tab.',
         });
         return;
       }
@@ -1708,6 +1804,7 @@ async function startServer() {
         url: resolvedStream.url,
         format: resolvedStream.format,
         audioSource: audioSourceLabel,
+        youtubeVideoId: ytVideoId,
         track: enrichedTrack,
         createdAt: Date.now(),
       });
@@ -1716,15 +1813,18 @@ async function startServer() {
         streamPath: `/audio/${rawTrackId}`,
         format: resolvedStream.format,
         audioSource: audioSourceLabel,
+        youtubeVideoId: ytVideoId,
         track: {
           id: meta.id,
           provider: meta.provider === 'youtube' ? 'resolver' : meta.provider,
           title: meta.title,
+          videoTitle: meta.title,
           artist: meta.artist,
           album: meta.album,
           duration: meta.duration,
           sourceUrl: meta.sourceUrl,
           artwork: meta.artwork,
+          youtubeVideoId: ytVideoId,
           audioSource: audioSourceLabel,
         },
       });

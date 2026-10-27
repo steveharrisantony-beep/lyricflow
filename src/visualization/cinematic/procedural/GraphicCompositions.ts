@@ -14,12 +14,6 @@ const fract=(x:number)=>x-Math.floor(x);
 const hash=(n:number)=>fract(Math.sin(n*127.1+13.27)*43758.5453);
 export type GraphicAudio=Pulse & {bands?:Float32Array};
 
-function fillRound(c:CanvasRenderingContext2D,x:number,y:number,w:number,h:number,r:number,color:string){
- c.fillStyle=color;
- c.beginPath();
- c.roundRect(x,y,w,h,Math.min(r,Math.abs(w)/2,Math.abs(h)/2));
- c.fill();
-}
 function hex(c:CanvasRenderingContext2D,x:number,y:number,r:number,rotation=0){
  c.beginPath();
  for(let i=0;i<6;i++){
@@ -82,7 +76,8 @@ export class GraphicCompositions {
   motionBlur:number,
   intensity:number,
   demo=false,
-  reduced=false
+  reduced=false,
+  palette?:{background:string;foreground:string;accent:string}
  ){
   if(this.lastMode!==mode){this.reset();this.lastMode=mode}
   const effectiveTime=reduced?time*.14:time;
@@ -91,8 +86,8 @@ export class GraphicCompositions {
    c.clearRect(0,0,w,h);
    this.hasDrawn=true;
   }
-  if(mode==='spectrum')this.spectrum(c,w,h,effectiveTime,p,motionBlur,intensity,reduced);
-  else this.geometry(c,w,h,effectiveTime,p,motionBlur,intensity,reduced);
+  if(mode==='spectrum')this.spectrum(c,w,h,effectiveTime,p,motionBlur,intensity,reduced,palette);
+  else this.geometry(c,w,h,effectiveTime,p,motionBlur,intensity,reduced,palette);
  }
 
  private spectrum(
@@ -103,13 +98,16 @@ export class GraphicCompositions {
   p:GraphicAudio,
   blur:number,
   intensity:number,
-  reduced:boolean
+  reduced:boolean,
+  palette?:{background:string;foreground:string;accent:string}
  ){
   const baseline=h*.65,center=w*.5,u=Math.min(w,h);
+  const bgCol=palette?.background||'#080b16';
+  const accCol=palette?.accent||'#ff6e59';
   const dark=c.createLinearGradient(0,0,w,h);
-  dark.addColorStop(0,'#080b16');
-  dark.addColorStop(.52,'#120824');
-  dark.addColorStop(1,'#02030a');
+  dark.addColorStop(0,bgCol);
+  dark.addColorStop(.52,accCol+'22');
+  dark.addColorStop(1,bgCol);
   c.globalAlpha=1-blur*.006;
   c.fillStyle=dark;
   c.fillRect(0,0,w,h);
@@ -117,8 +115,8 @@ export class GraphicCompositions {
 
   const r=h*.9;
   const ambient=c.createRadialGradient(center,baseline*.92,0,center,baseline,r);
-  ambient.addColorStop(0,rgb('245,58,108',.26+.16*p.bass+this.beatGlow*.08));
-  ambient.addColorStop(.48,'rgba(121,48,165,.09)');
+  ambient.addColorStop(0,accCol+'44');
+  ambient.addColorStop(.48,accCol+'18');
   ambient.addColorStop(1,'rgba(5,7,18,0)');
   c.fillStyle=ambient;
   c.fillRect(0,0,w,h);
@@ -255,12 +253,16 @@ export class GraphicCompositions {
   p:GraphicAudio,
   blur:number,
   intensity:number,
-  reduced:boolean
+  reduced:boolean,
+  palette?:{background:string;foreground:string;accent:string}
  ){
+  const bgCol=palette?.background||'#f9e9bc';
+  const fgCol=palette?.foreground||'#292b47';
+  const accCol=palette?.accent||'#eb604a';
   const bg=c.createLinearGradient(0,0,w,h);
-  bg.addColorStop(0,'#f9e9bc');
-  bg.addColorStop(.53,'#f6d9ac');
-  bg.addColorStop(1,'#f9d0bc');
+  bg.addColorStop(0,bgCol);
+  bg.addColorStop(.53,bgCol);
+  bg.addColorStop(1,accCol+'28');
   c.globalAlpha=1-blur*.006;
   c.fillStyle=bg;
   c.fillRect(0,0,w,h);
@@ -272,11 +274,11 @@ export class GraphicCompositions {
   c.save();
   c.translate(w*.52,h*.48);
   c.rotate(-.075+Math.sin(t*.065)*.028*(reduced?.1:1));
-  c.fillStyle='#292b47';
+  c.fillStyle=fgCol+'cc';
   c.fillRect(-w*.65,-h*.48,w*.48,h*.65);
-  c.fillStyle='#eb604a';
+  c.fillStyle=accCol;
   c.fillRect(w*.12,-h*.55,w*.54,h*.56);
-  c.fillStyle='#48b7ab';
+  c.fillStyle=fgCol+'66';
   c.fillRect(-w*.33,h*.25,w*.8,h*.55);
   c.restore();
 
@@ -354,20 +356,6 @@ export class GraphicCompositions {
    }
    c.restore();
   }
-
-  // Editorial calibration marks
-  c.save();
-  c.strokeStyle='rgba(34,40,70,.26)';
-  c.lineWidth=1.1;
-  for(let k=0;k<6;k++){
-   const x=w*(.085+.024*k);
-   c.beginPath();c.moveTo(x,h*.12);c.lineTo(x,h*.20);c.stroke();
-  }
-  for(let k=0;k<4;k++){
-   const y=h*(.82+k*.022);
-   c.beginPath();c.moveTo(w*.08,y);c.lineTo(w*.28,y);c.stroke();
-  }
-  fillRound(c,w*.88,h*.12,w*.042,3.5,1,'#282b45');
-  c.restore();
  }
 }
+

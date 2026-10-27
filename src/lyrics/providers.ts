@@ -95,11 +95,7 @@ export async function resolveStashLyricsChain(
  signal?:AbortSignal
 ):Promise<StashResolvedLyrics|null>{
  if(track.title.trim().length<2)return null;
- const cleaned:TrackInfo={
-  ...track,
-  title:cleanLyricMetadata(track.title),
-  artist:cleanLyricMetadata(track.artist)
- };
+ const cleaned:TrackInfo=normalizeTrackForLyricsLookup(track);
 
  let fallbackPlainResult: { plain: string; source: string; sourceUrl?: string } | null = null;
 
@@ -193,7 +189,43 @@ export async function resolveStashLyricsChain(
  };
 }
 
+export function normalizeTrackForLyricsLookup(track:TrackInfo):TrackInfo{
+ let rawTitle=cleanLyricMetadata(track.title);
+ let rawArtist=cleanLyricMetadata(track.artist);
+ if(track.provider==='resolver'||track.youtubeVideoId){
+  const pipeParts=rawTitle.split('|').map(s=>s.trim()).filter(Boolean);
+  if(pipeParts.length>1){
+   rawTitle=cleanLyricMetadata(pipeParts[0]);
+  }
+  const dashMatch=rawTitle.match(/^(.+?)\s+[-–—]\s+(.+)$/);
+  if(dashMatch){
+   const left=cleanLyricMetadata(dashMatch[1]);
+   const right=cleanLyricMetadata(dashMatch[2]);
+   if(left.length>=2&&right.length>=2){
+    rawArtist=left;
+    rawTitle=right;
+   }
+  }else{
+   const colonMatch=rawTitle.match(/^(.+?):\s+(.+)$/);
+   if(colonMatch&&colonMatch[2].trim().length>=2){
+    rawTitle=cleanLyricMetadata(colonMatch[2]);
+   }
+  }
+ }
+ return {
+  ...track,
+  title:rawTitle,
+  artist:rawArtist
+ };
+}
+
 /** Remove upload packaging only; preserve live/remix/acoustic/version identity. */
 export function cleanLyricMetadata(value:string){
- return value.replace(/\s*[-–]\s*Topic$/i,'').replace(/\s*[([](?:official(?: music)? (?:video|audio)|lyrics?|lyric video|audio|visuali[sz]er)[)\]]/gi,'').trim();
+ return value
+  .replace(/\s*[-–]\s*Topic$/i,'')
+  .replace(/\s*[([](?:official(?: music)? (?:video|audio)|lyrics?|lyric video|lyrical(?: video)?|full (?:song|video)|audio|visuali[sz]er|4k|hd|hq)[)\]]/gi,'')
+  .replace(/\b(?:official(?: music)? video|lyric video|lyrical video)\b/gi,'')
+  .replace(/\s+/g,' ')
+  .trim();
 }
+

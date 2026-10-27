@@ -1,43 +1,90 @@
 import {analyzeLyricWords} from './wordEmphasis';
 import {analyzeSections,planAt,type Mood,type ScenePlan} from './sceneDirector';
 import {makeEstimatedWords,type TimedLine,type TimedWord} from './lrc';
+
 export type LyricMood=Mood;
-export type LyricCue={time:number;end:number;text:string;romanized:string;mood:Mood;words:TimedWord[];timing:'sourced'|'estimated'};
+export type LyricCue={
+ time:number;
+ end:number;
+ text:string;
+ romanized:string;
+ mood:Mood;
+ words:TimedWord[];
+ timing:'sourced'|'estimated';
+};
+
 let cues:LyricCue[]=[];
 let sections:ScenePlan[]=[];
 let offset=0;
 let display:'original'|'romanized'|'both'='original';
 let genrePreset='';
 let revision=0;
-let analyzedKey='';let emphasis=analyzeLyricWords([]);
+let analyzedKey='';
+let emphasis=analyzeLyricWords([]);
+
 /** Read-only snapshot for the cinematic scheduler; rebuilt only after lyric edits. */
 export function getLyricTimelineSnapshot(){
  return {revision,cues,sections,genre:genrePreset,emphasis};
 }
+
 export function setLyricTimeline(lines:LyricCue[],timingOffset=0,mode:typeof display='original',genre=''){
  const key=lines.map(l=>l.text+'\t'+l.romanized).join('\n');
  if(key!==analyzedKey){emphasis=analyzeLyricWords(lines);analyzedKey=key}
  cues=lines;offset=timingOffset;display=mode;genrePreset=genre;revision++;
  sections=analyzeSections(lines.map(l=>({time:l.time,text:l.text})),genre);
 }
+
 export function getLyricState(time:number){
  const position=time+offset;
  let index=-1;
  for(let i=0;i<cues.length;i++){if(cues[i].time<=position)index=i;else break}
  const candidate=index>=0?cues[index]:null;
- const cue=candidate&&position<candidate.end?candidate:null;
+ const cue=candidate&&position>=candidate.time&&position<candidate.end?candidate:null;
  return {cue,next:cues[index+1]||null,mode:display,position,index,plan:planAt(sections,position),hasLyrics:cues.length>0};
 }
+
 export function inferMood(text:string):Mood{
  const plans=analyzeSections([{time:0,text}]);
  return plans[0]?.mood||'abstract';
 }
+
+/**
+ * Compute the natural vocal end timestamp of a lyric line so that previous lyrics
+ * are never held on screen during instrumental music breaks or vocal pauses.
+ */
+export function computeNaturalLineEnd(line:TimedLine,nextLineTime?:number):number{
+ const nextStart=nextLineTime!==undefined?nextLineTime:Infinity;
+ const trimmed=(line.text||'').trim();
+ if(!trimmed)return line.time;
+ const hasSourcedWords=Boolean(line.words&&line.words.length>0&&line.words.some(w=>w.timing==='sourced'));
+ if(hasSourcedWords&&line.words){
+  const lastWordEnd=line.words[line.words.length-1].end;
+  return Math.max(line.time+0.15,Math.min(nextStart,lastWordEnd+0.45));
+ }
+ const wordCount=trimmed.split(/\s+/).filter(Boolean).length;
+ const naturalSpan=Math.min(4.8,Math.max(2.0,wordCount*0.52+0.9));
+ return Math.max(line.time+0.15,Math.min(nextStart,line.time+naturalSpan));
+}
+
 export function buildCues(original:TimedLine[],romanized:TimedLine[],genre=''):LyricCue[]{
- const plans=analyzeSections(original.map(l=>({time:l.time,text:l.text})),genre);
- return original.map((line,i)=>{
-  const end=Math.max(line.time+.15,original[i+1]?.time??line.time+4);
-  const words=line.words?.length?line.words:makeEstimatedWords(line.text,line.time,end);
-  return {time:line.time,end,text:line.text,romanized:romanized[i]?.text||'',mood:planAt(plans,line.time)?.mood||'abstract',
-   words,timing:line.words?.length?'sourced':'estimated'};
- });
+ const plans=analyzeSections(original.filter(l=>l.text.trim().length>0).map(l=>({time:l.time,text:l.text})),genre);
+ const out:LyricCue[]=[];
+ for(let i=0;i<original.length;i++){
+  const line=original[i];
+  if(!line.text.trim())continue;
+  const nextTime=original[i+1]?.time;
+  const end=computeNaturalLineEnd(line,nextTime);
+  const hasSourced=Boolean(line.words&&line.words.length>0&&line.words.some(w=>w.timing==='sourced'));
+  const words=hasSourced&&line.words?line.words:makeEstimatedWords(line.text,line.time,end);
+  out.push({
+   time:line.time,
+   end,
+   text:line.text,
+   romanized:romanized[i]?.text||'',
+   mood:planAt(plans,line.time)?.mood||'abstract',
+   words,
+   timing:hasSourced?'sourced':'estimated'
+  });
+ }
+ return out;
 }

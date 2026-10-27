@@ -1,9 +1,9 @@
 import type {LyricCue} from '../../lyrics/lyricTimeline';
 import {wordEmphasis,type WordEmphasis} from '../../lyrics/wordEmphasis';
 import {hasDistinctRomanized} from '../../romanization/romanize';
-import {byId,TEMPLATES,type DirectedScene,type FontPack} from './catalog';
+import {byId,resolveThemePalette,TEMPLATES,type DirectedScene,type FontPack} from './catalog';
 import {applySceneFont} from './fonts';
-import {contrastRatio,paintLyric,readableInk} from './contrast';
+import {paintLyric,readableChromaticInk,readableInk} from './contrast';
 import {makeLyricProjection,STILL_CAMERA,type ProjectPoint} from './cameraRig';
 
 /**
@@ -38,6 +38,7 @@ export const LYRIC_MOTIONS=[
 
 export type LyricMotion=typeof LYRIC_MOTIONS[number];
 export type VoxelVerseFamily='signature'|'spatial'|'kinetic'|'editorial';
+export type LyricFillPaceMode='auto'|'letter'|'word';
 
 export interface VoxelVerseStyleMeta {
  id:LyricMotion;
@@ -156,6 +157,52 @@ export function lyricWordHit(cue:LyricCue|null,time:number,emphasis:WordEmphasis
  return hit;
 }
 
+/**
+ * NEW LYRIC COLOUR MECHANISM:
+ * 1. Computes a single uniform base line colour (`baseColor`) based strictly on the active background.
+ * 2. Computes a single high-contrast sung/active fill colour (`sungColor`) based on the active background & accent.
+ * 3. Never assigns random colours to individual words based on `importance` or noisy sub-pixel sampling.
+ */
+export function computeBackgroundAdaptiveLyricColors(
+ backgroundHex:string,
+ foregroundHex:string,
+ accentHex:string,
+ customAccentOverride?:string
+):{baseColor:string;sungColor:string}{
+ const baseColor=readableInk(backgroundHex,foregroundHex);
+ const targetAccent=customAccentOverride&&/^#[0-9a-f]{6}$/i.test(customAccentOverride)
+  ?customAccentOverride
+  :accentHex;
+ let sungColor=readableChromaticInk(backgroundHex,targetAccent);
+ if(sungColor.toLowerCase()===baseColor.toLowerCase()){
+  sungColor=readableChromaticInk(backgroundHex,'#72efdd');
+ }
+ return {baseColor,sungColor};
+}
+
+/**
+ * Determine whether a word-synced lyric line should fill letter-by-letter (slow songs)
+ * or word-by-word (fast-paced songs).
+ */
+export function resolveLyricFillPace(
+ runs:readonly {start:number;end:number;text:string}[],
+ bpm=0,
+ paceMode:LyricFillPaceMode='auto'
+):'letter'|'word'{
+ if(paceMode==='letter')return 'letter';
+ if(paceMode==='word')return 'word';
+ if(runs.length===0)return 'word';
+ const firstStart=runs[0].start;
+ const lastEnd=runs[runs.length-1].end;
+ const span=Math.max(0.25,lastEnd-firstStart);
+ const wordsPerSec=runs.length/span;
+ const avgWordDur=runs.reduce((sum,r)=>sum+Math.max(0.05,r.end-r.start),0)/runs.length;
+ if(bpm>=112)return 'word';
+ if(bpm>0&&bpm<=96&&wordsPerSec<2.8)return 'letter';
+ if(wordsPerSec<2.35&&avgWordDur>=0.38)return 'letter';
+ return 'word';
+}
+
 export interface KineticArgs {
  c:CanvasRenderingContext2D;
  scene:DirectedScene;
@@ -170,6 +217,12 @@ export interface KineticArgs {
  project?:ProjectPoint;
  animated?:boolean;
  enabledMotions?:readonly LyricMotion[];
+ paletteId?:string;
+ customAccentColor?:string;
+ bpm?:number;
+ fillPaceMode?:LyricFillPaceMode;
+ minFontSize?:number;
+ maxFontSize?:number;
 }
 
 export interface KineticResult {
@@ -180,7 +233,9 @@ export interface KineticResult {
  font:FontPack;
  text:string;
  rows?:number;
+ baseColor?:string;
  activeColor?:string;
+ fillPace?:'letter'|'word'|'line';
 }
 
 export interface WordPlacement {
@@ -255,7 +310,10 @@ export function buildWordRows(
  return placements;
 }
 
-/** Draw VoxelVerse style-specific vector embellishments, capsules, stickers, prisms, halos, and emblems. */
+/**
+ * Draw VoxelVerse style-specific vector embellishments without coloring random words.
+ * When `hasWordSync` is false, no individual word is highlighted or given word-sync bars.
+ */
 function drawWordPlotterAccents(
  c:CanvasRenderingContext2D,
  halfW:number,
@@ -264,7 +322,6 @@ function drawWordPlotterAccents(
  isActive:boolean,
  isSung:boolean,
  hit:number,
- importance:number,
  accent:string,
  ink:string,
  energy:number,
@@ -275,8 +332,10 @@ function drawWordPlotterAccents(
  if(typeof c.beginPath!=='function'||typeof c.fillRect!=='function')return;
  c.save();
 
+ const showAccent=hasWordSync&&isActive;
+
  // 1. Portal / Broadside / Mosaic framing plates
- if(motion==='portal'&&(isActive||importance>0)){
+ if(motion==='portal'&&showAccent){
   const padX=halfW*0.22+12,padY=halfH*0.32+8;
   c.strokeStyle=accent;
   c.lineWidth=Math.max(1.8,halfH*0.07);
@@ -288,7 +347,7 @@ function drawWordPlotterAccents(
   }else{
    c.strokeRect(-halfW-padX,-halfH-padY,(halfW+padX)*2,(halfH+padY)*2);
   }
- }else if(motion==='broadside'&&(isActive||importance>0)){
+ }else if(motion==='broadside'&&showAccent){
   const padX=halfW*0.18+10,padY=halfH*0.26+6;
   c.fillStyle=accent;
   c.globalAlpha=0.14+0.12*hit;
@@ -299,14 +358,14 @@ function drawWordPlotterAccents(
   c.strokeRect(-halfW-padX,-halfH-padY,(halfW+padX)*2,(halfH+padY)*2);
  }else if(motion==='mosaic'){
   const padX=halfW*0.14+6,padY=halfH*0.22+5;
-  c.strokeStyle=isActive?accent:ink;
+  c.strokeStyle=showAccent?accent:ink;
   c.lineWidth=1.1;
-  c.globalAlpha=isActive?0.55:0.18;
+  c.globalAlpha=showAccent?0.55:0.18;
   c.strokeRect(-halfW-padX,-halfH-padY,(halfW+padX)*2,(halfH+padY)*2);
  }
 
- // 2. Halo / Orbit luminous rings around active or emphasized words
- if((motion==='halo'||motion==='orbit')&&(isActive||importance>0)&&typeof c.arc==='function'){
+ // 2. Halo / Orbit luminous rings around active spoken word
+ if((motion==='halo'||motion==='orbit')&&showAccent&&typeof c.arc==='function'){
   c.strokeStyle=accent;
   c.lineWidth=Math.max(1.4,halfH*0.05);
   c.globalAlpha=0.45+0.35*hit;
@@ -316,7 +375,7 @@ function drawWordPlotterAccents(
  }
 
  // 3. Echo / Prism dimensional contour offset frames
- if((motion==='echo'||motion==='prism')&&(isActive||importance>0)&&energy>0.05){
+ if((motion==='echo'||motion==='prism')&&showAccent&&energy>0.05){
   for(let layer=1;layer<=2;layer++){
    const off=layer*(motion==='prism'?4.5:7.5)*(1+hit*0.5);
    c.strokeStyle=layer===1?accent:ink;
@@ -327,7 +386,7 @@ function drawWordPlotterAccents(
  }
 
  // 4. Visual / Fisheye-Visual / Carnival / Fable semantic lyric icon & star-sticker emblems
- if((motion==='visual'||motion==='fisheye-visual'||motion==='carnival'||motion==='fable')&&(isActive||importance>0)){
+ if((motion==='visual'||motion==='fisheye-visual'||motion==='carnival'||motion==='fable')&&showAccent){
   const r=Math.max(6,halfH*0.28);
   const cx=halfW+r*0.9,cy=-halfH*0.72;
   c.fillStyle=accent;
@@ -341,7 +400,6 @@ function drawWordPlotterAccents(
    c.arc(cx+r*.3,cy,r*.35,0,Math.PI*2);
    c.fill();
   }else if(typeof c.moveTo==='function'&&typeof c.lineTo==='function'){
-   // 4-point VoxelVerse star sticker / emblem
    c.beginPath();
    for(let i=0;i<8;i++){
     const a=(i*Math.PI)/4;
@@ -354,7 +412,7 @@ function drawWordPlotterAccents(
   }
  }
 
- // 5. Active word luminous backing plate & precision corner brackets (when word-synced)
+ // 5. Active word luminous backing plate & precision corner brackets (ONLY when word-synced)
  if(hasWordSync&&isActive&&energy>0.05&&motion!=='portal'){
   const padX=halfW*0.16+8;
   const padY=halfH*0.24+6;
@@ -376,25 +434,18 @@ function drawWordPlotterAccents(
  }
 
  // 6. Karaoke word-level progress sweep bar ONLY when real word-sync timestamps are present
- if(hasWordSync&&(isActive||(isSung&&importance>0))){
+ if(hasWordSync&&(isActive||isSung)){
   const barY=halfH*0.78;
-  const barH=Math.max(2.2,halfH*(importance>0?0.10:0.065));
+  const barH=Math.max(2.2,halfH*0.075);
   c.fillStyle=ink;
   c.globalAlpha=0.18;
   c.fillRect(-halfW,barY,halfW*2,barH);
   const fillW=halfW*2*clamp(isActive?wordProgress:1,0.08,1);
-  c.fillStyle=importance>0||isActive?accent:ink;
-  c.globalAlpha=isActive?0.92:0.58;
+  c.fillStyle=accent;
+  c.globalAlpha=isActive?0.92:0.62;
   c.fillRect(-halfW,barY,fillW,barH);
  }
 
- // 7. Hook word overline marker
- if(importance>0){
-  const topY=-halfH*0.86;
-  c.fillStyle=accent;
-  c.globalAlpha=isSung?0.85:0.42;
-  c.fillRect(-halfW*0.45,topY,halfW*0.9,Math.max(2,halfH*0.06));
- }
  c.restore();
 }
 
@@ -456,6 +507,71 @@ export const LYRIC_COLOR_PALETTE=[
  '#ff9f43'
 ] as const;
 
+/**
+ * Paint a word on the canvas using the new lyric colour mechanism:
+ * - If `hasWordSync` is false (line-synced only): paint the whole word in `baseColor` (uniform across the entire line).
+ * - If `hasWordSync` is true and `fillPace === 'word'` (fast-paced song): paint the whole word in `sungColor` once spoken (`time >= word.start`), else `baseColor`.
+ * - If `hasWordSync` is true and `fillPace === 'letter'` (slow song):
+ *   - Before `word.start`: paint whole word in `baseColor`.
+ *   - After `word.end`: paint whole word in `sungColor`.
+ *   - During `[word.start, word.end)`: change the colour of letters one by one from `baseColor` to `sungColor` as each letter is said!
+ */
+function paintWordWithSequentialColor(
+ c:CanvasRenderingContext2D,
+ wordText:string,
+ maxWidth:number,
+ hasWordSync:boolean,
+ fillPace:'letter'|'word'|'line',
+ wordProgress:number,
+ isSpokenStart:boolean,
+ isSpokenEnd:boolean,
+ baseColor:string,
+ sungColor:string,
+ backgroundHex:string
+){
+ if(!hasWordSync||fillPace==='line'){
+  paintLyric(c,wordText,0,0,maxWidth,baseColor,backgroundHex);
+  return;
+ }
+ if(fillPace==='word'){
+  const col=isSpokenStart?sungColor:baseColor;
+  paintLyric(c,wordText,0,0,maxWidth,col,backgroundHex);
+  return;
+ }
+ // Slow song: letter-by-letter color transition as each letter is said
+ if(!isSpokenStart||wordProgress<=0){
+  paintLyric(c,wordText,0,0,maxWidth,baseColor,backgroundHex);
+  return;
+ }
+ if(isSpokenEnd||wordProgress>=1){
+  paintLyric(c,wordText,0,0,maxWidth,sungColor,backgroundHex);
+  return;
+ }
+ const chars=Array.from(wordText);
+ if(chars.length<=1){
+  paintLyric(c,wordText,0,0,maxWidth,sungColor,backgroundHex);
+  return;
+ }
+ const sungLetters=Math.max(1,Math.min(chars.length,Math.ceil(wordProgress*chars.length)));
+ if(sungLetters>=chars.length){
+  paintLyric(c,wordText,0,0,maxWidth,sungColor,backgroundHex);
+  return;
+ }
+ // Measure character advances and paint each letter in its sequential color
+ const totalW=c.measureText(wordText).width;
+ let cursorX=-totalW/2;
+ const prevAlign=c.textAlign;
+ c.textAlign='left';
+ for(let i=0;i<chars.length;i++){
+  const ch=chars[i];
+  const chW=c.measureText(ch).width;
+  const letterCol=i<sungLetters?sungColor:baseColor;
+  paintLyric(c,ch,cursorX,0,chW*1.5,letterCol,backgroundHex);
+  cursorX+=chW;
+ }
+ c.textAlign=prevAlign;
+}
+
 /** One continuous phrase, each word painted on a projected world plane with VoxelVerse choreography. */
 export function drawKineticLyrics({
  c,
@@ -470,12 +586,19 @@ export function drawKineticLyrics({
  emphasis,
  project=makeLyricProjection(w,h,STILL_CAMERA),
  animated=true,
- enabledMotions
+ enabledMotions,
+ paletteId,
+ customAccentColor,
+ bpm=0,
+ fillPaceMode='auto',
+ minFontSize=26,
+ maxFontSize=88
 }:KineticArgs):KineticResult{
  const motion=lyricMotionFor(scene,cue.text,enabledMotions);
  const font=lyricFontFor(scene,cue.text);
  const runs=lyricRuns(cue,mode,emphasis);
- const theme=byId[scene.id]||TEMPLATES[0];
+ const baseTemplate=byId[scene.id]||TEMPLATES[0];
+ const theme=resolveThemePalette(baseTemplate.id,paletteId);
  const unit=Math.min(w,h);
  const energy=reduced||!animated?0:clamp(intensity,0,1.25);
  const age=Math.max(0,time-cue.time);
@@ -483,10 +606,13 @@ export function drawKineticLyrics({
  const progress=clamp(age/duration);
  const hasWordSync=cue.timing==='sourced';
 
- const baseline=Math.min(118,unit*(runs.length<=3?0.175:runs.length<=6?0.142:runs.length<=10?0.118:0.102));
+ const safeMinFont=clamp(Math.min(minFontSize,maxFontSize),16,120);
+ const safeMaxFont=clamp(Math.max(minFontSize,maxFontSize),safeMinFont,140);
+ const rawBaseline=unit*(runs.length<=3?0.175:runs.length<=6?0.142:runs.length<=10?0.118:0.102);
+ const baseline=clamp(rawBaseline,safeMinFont,safeMaxFont);
  const space=baseline*0.28;
  const widths=runs.map(word=>{
-  applySceneFont(c,font,baseline*(1+word.importance*0.26),word.text);
+  applySceneFont(c,font,baseline,word.text);
   return c.measureText(word.text).width;
  });
 
@@ -495,22 +621,26 @@ export function drawKineticLyrics({
  const widestRow=placements.reduce((m,p)=>Math.max(m,p.rowWidth),1);
  const heightCap=totalRowsCount>2?Math.min(1,0.72/(totalRowsCount*0.24)):1;
  const fit=Math.min(heightCap,w*0.80/Math.max(1,widestRow));
- const size=baseline*fit;
+ const size=clamp(baseline*fit,safeMinFont,safeMaxFont);
 
  const origin=project(0,0,0),one=project(1,0,0);
  const pixelsPerWorld=Math.max(10,Math.hypot(one.x-origin.x,one.y-origin.y));
 
- const primaryInk=readableInk(theme.background,theme.foreground);
- const candidateColors=[theme.accent,...LYRIC_COLOR_PALETTE];
- const validAccents=candidateColors.filter(
-  color=>contrastRatio(theme.background,color)>=3.2&&color.toLowerCase()!==primaryInk.toLowerCase()
+ // NEW LYRIC COLOUR MECHANISM:
+ // 1. Entire line starts as a single uniform `baseColor` based on the background.
+ // 2. `sungColor` is only applied sequentially (letter-by-letter for slow songs, word-by-word for fast songs)
+ //    ONLY when real word-sync data (`hasWordSync`) is present.
+ const {baseColor,sungColor}=computeBackgroundAdaptiveLyricColors(
+  theme.background,
+  theme.foreground,
+  theme.accent,
+  customAccentColor
  );
- const pool=validAccents.length>0?validAccents:[theme.accent,primaryInk];
- const phraseIdx=hash(scene.id+'|'+cue.text+'|'+Math.round(cue.time*2))%pool.length;
- const phraseColor=pool[phraseIdx]||primaryInk;
- const highlightColor=pool[(phraseIdx+1)%pool.length]||phraseColor;
+ const fillPace:'letter'|'word'|'line'=hasWordSync
+  ?resolveLyricFillPace(runs,bpm,fillPaceMode)
+  :'line';
 
- drawStagePlotterFrame(c,w,h,progress,phraseColor,primaryInk,energy,motion);
+ drawStagePlotterFrame(c,w,h,progress,sungColor,baseColor,energy,motion);
 
  // 3D Plane orientation across the 19 VoxelVerse styles
  const yaw=energy*(
@@ -551,18 +681,19 @@ export function drawKineticLyrics({
 
  for(const item of placements){
   const {word,width,row,totalRows,rowX}=item;
-  const wordDuration=hasWordSync?Math.max(0.08,word.end-word.start):duration;
+  const wordDuration=hasWordSync?Math.max(0.05,word.end-word.start):duration;
   const wordAge=hasWordSync?time-word.start:age;
-  const wordProgress=hasWordSync?clamp(wordAge/wordDuration,0,1):progress;
-  const isSung=hasWordSync?wordAge>=0:age>=0;
-  const isActive=hasWordSync?(wordAge>=0&&time<=word.end+0.08):false;
+  const wordProgress=hasWordSync?clamp(wordAge/wordDuration,0,1):0;
+  const isSpokenStart=hasWordSync?time>=word.start:false;
+  const isSpokenEnd=hasWordSync?time>=word.end:false;
+  const isActive=hasWordSync?(time>=word.start&&time<word.end):false;
 
-  const hit=wordAge>=0?Math.exp(-wordAge*(hasWordSync?8.5:6.0)):0;
-  const spring=wordAge>=0?Math.exp(-wordAge*7.5)*Math.cos(wordAge*24):0;
+  const hit=hasWordSync&&wordAge>=0?Math.exp(-wordAge*8.5):0;
+  const spring=hasWordSync&&wordAge>=0?Math.exp(-wordAge*7.5)*Math.cos(wordAge*24):0;
   const preWait=hasWordSync&&wordAge<0?clamp(-wordAge/0.45,0,1):0;
   const enter=energy*Math.exp(-age*12);
   const stagger=energy*Math.exp(-Math.max(0,age-(hasWordSync?word.index*0.045:row*0.055))*14);
-  const impulse=hit*energy*(0.06+word.importance*0.14);
+  const impulse=hit*energy*0.12;
 
   const baseRowY=((totalRows-1)*0.5-row)*rowSpacingWorld;
   let x=(rowX*fit)/pixelsPerWorld;
@@ -574,7 +705,7 @@ export function drawKineticLyrics({
 
   switch(motion){
   case 'ship':
-   z=(word.importance*0.55+hit*0.95)*energy-enter*0.8-preWait*0.45*energy;
+   z=(hit*0.95)*energy-enter*0.8-preWait*0.45*energy;
    stretchX=1+impulse*0.65;
    stretchY=1+impulse*0.65;
    break;
@@ -598,9 +729,9 @@ export function drawKineticLyrics({
    const theta=word.index*0.65+progress*Math.PI*1.6;
    x+=Math.cos(theta)*0.16*energy;
    y+=Math.sin(theta)*0.14*energy;
-   z=(0.45+word.importance*0.45+hit*0.7)*energy;
-   stretchX=1+(0.12+word.importance*0.16)*energy;
-   stretchY=1+(0.12+word.importance*0.16)*energy;
+   z=(0.45+hit*0.7)*energy;
+   stretchX=1+0.14*energy;
+   stretchY=1+0.14*energy;
    break;
   }
   case 'cascade': {
@@ -611,7 +742,7 @@ export function drawKineticLyrics({
    break;
   }
   case 'prism':
-   z=(hit*0.72+word.importance*0.45)*energy;
+   z=(hit*0.72)*energy;
    wordShear=0.10*Math.sin(progress*Math.PI*2+word.index)*energy;
    stretchX=1+impulse*0.55;
    stretchY=1+impulse*0.55;
@@ -644,7 +775,7 @@ export function drawKineticLyrics({
    stretchY=1+hit*0.18*energy;
    break;
   case 'halo':
-   z=(hit*0.68+word.importance*0.4)*energy;
+   z=(hit*0.68)*energy;
    stretchX=1+impulse*0.6;
    stretchY=1+impulse*0.6;
    break;
@@ -654,7 +785,7 @@ export function drawKineticLyrics({
    stretchY=1+hit*0.18*energy;
    break;
   case 'hinge':
-   z=(word.importance*0.45+hit*0.72)*energy-enter*0.55;
+   z=(hit*0.72)*energy-enter*0.55;
    wordShear=(row%2===0?1:-1)*0.14*energy*(1-hit*0.5);
    break;
   case 'fable':
@@ -662,10 +793,10 @@ export function drawKineticLyrics({
    z=hit*0.46*energy;
    break;
   case 'carnival': {
-   const slam=enter*0.32+hit*(0.24+word.importance*0.18)*energy;
+   const slam=enter*0.32+hit*0.28*energy;
    stretchX=1+slam;
    stretchY=1+slam*1.12;
-   z=hit*(0.82+word.importance*0.5)*energy;
+   z=hit*0.85*energy;
    break;
   }
   case 'broadside':
@@ -705,9 +836,9 @@ export function drawKineticLyrics({
    );
    c.textAlign='center';
    c.textBaseline='middle';
-   const wordSize=size*(1+word.importance*0.26+(isActive?0.06*energy:0));
+   const wordSize=size*(1+(isActive?0.05*energy:0));
    applySceneFont(c,font,wordSize,word.text);
-   const measuredW=width*fit*(1+(isActive?0.05*energy:0));
+   const measuredW=width*fit*(1+(isActive?0.04*energy:0));
 
    drawWordPlotterAccents(
     c,
@@ -715,25 +846,30 @@ export function drawKineticLyrics({
     wordSize*0.52,
     wordProgress,
     isActive,
-    isSung,
+    isSpokenEnd,
     hit,
-    word.importance,
-    highlightColor,
-    primaryInk,
+    sungColor,
+    baseColor,
     energy,
     motion,
     hasWordSync,
     word.text
    );
 
-   const color=
-    word.importance>0||isActive
-     ?highlightColor
-     :hasWordSync
-     ?(isSung?phraseColor:primaryInk)
-     :phraseColor;
+   paintWordWithSequentialColor(
+    c,
+    word.text,
+    measuredW*1.08,
+    hasWordSync,
+    fillPace,
+    wordProgress,
+    isSpokenStart,
+    isSpokenEnd,
+    baseColor,
+    sungColor,
+    theme.background
+   );
 
-   paintLyric(c,word.text,0,0,measuredW*1.08,color);
    c.restore();
    drawn++;
    if(word.importance>0)highlights++;
@@ -747,6 +883,8 @@ export function drawKineticLyrics({
   font,
   text:runs.map(word=>word.text).join(' '),
   rows:totalRowsCount,
-  activeColor:phraseColor
+  baseColor,
+  activeColor:sungColor,
+  fillPace
  };
 }

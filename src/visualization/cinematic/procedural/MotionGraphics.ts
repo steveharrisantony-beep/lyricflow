@@ -1,4 +1,4 @@
-import {byId,TEMPLATES,type SceneId} from '../catalog';
+import {byId,resolveThemePalette,TEMPLATES,type SceneId} from '../catalog';
 import type {Pulse} from '../paint';
 
 export const MOTION_SCENES:readonly SceneId[]=TEMPLATES
@@ -8,9 +8,8 @@ export const MOTION_SCENES:readonly SceneId[]=TEMPLATES
 const TAU=Math.PI*2;
 
 /**
- * VoxelWall-inspired (https://voxelwall.app/wallpapers) music-reactive live backgrounds
- * across all 7 categories: Flow, Contours, Sculptures, Space, Nature, Architecture, and Journeys.
- * Every scene responds to real-time bass, midrange, treble, beat, and onset envelopes.
+ * 21 genuinely distinct VoxelWall 2D music-reactive live backgrounds across 7 categories.
+ * Every single theme ID has its own unique procedural geometry and honours the active colour palette.
  */
 export function drawMotionGraphics(
  c:CanvasRenderingContext2D,
@@ -20,11 +19,13 @@ export function drawMotionGraphics(
  p:Pulse,
  id:SceneId,
  intensity:number,
- reduced:boolean
+ reduced:boolean,
+ paletteId?:string
 ){
- const theme=byId[id]||TEMPLATES[0];
+ const baseTheme=byId[id]||TEMPLATES[0];
+ const theme=resolveThemePalette(baseTheme.id,paletteId);
  const u=Math.min(w,h),k=intensity*(reduced?.12:1);
- const bass=p.bass*k,mid=p.mids*k,high=p.treble*k,hit=p.beat*k,onset=(p.onset??0)*k;
+ const bass=p.bass*k,mid=p.mids*k,high=p.treble*k,hit=p.beat*k;
  const t=time*(reduced?.1:1);
 
  c.save();
@@ -67,31 +68,26 @@ export function drawMotionGraphics(
  c.strokeStyle=theme.accent;
 
  switch(id){
- // ==================== FLOW ====================
- case 'holographic-tide':
- case 'liquid-filigree':
- case 'crimson-current':
- case 'silk-waves':
- case 'ribbon-dance': {
-  const ribbonCount=id==='holographic-tide'?16:id==='liquid-filigree'?18:id==='silk-waves'?12:15;
-  const freq1=id==='liquid-filigree'?2.2:id==='crimson-current'?1.5:1.3;
+ // ==================== FLOW (3 UNIQUE DESIGNS) ====================
+ case 'holographic-tide': {
+  const ribbonCount=16;
   for(let i=0;i<ribbonCount;i++){
    const yBase=h*(.08+i*(.84/(ribbonCount-1)));
    c.beginPath();
    for(let x=-12;x<=w+12;x+=10){
     const nx=x/w;
-    const wave1=Math.sin(nx*TAU*freq1+t*.52+i*.48)*u*(.042+bass*.16);
+    const wave1=Math.sin(nx*TAU*1.35+t*.52+i*.48)*u*(.042+bass*.16);
     const wave2=Math.cos(nx*TAU*3.2-t*.74+i*.32)*u*(.018+high*.058);
     const y=yBase+wave1+wave2;
     if(x===-12)c.moveTo(x,y);else c.lineTo(x,y);
    }
    c.strokeStyle=i%3===0?theme.accent+'cc':i%2?theme.accent+'77':theme.foreground+'44';
-   c.lineWidth=u*(id==='silk-waves'?.020:id==='crimson-current'?.014:.0058)*(1+mid*.85);
+   c.lineWidth=u*.0062*(1+mid*.85);
    c.stroke();
    if(i%3===0){
     const nodeX=w*((.16+i*.11+t*.05)%0.84+0.08);
     const nx=nodeX/w;
-    const nodeY=yBase+Math.sin(nx*TAU*freq1+t*.52+i*.48)*u*(.042+bass*.16);
+    const nodeY=yBase+Math.sin(nx*TAU*1.35+t*.52+i*.48)*u*(.042+bass*.16);
     circle(nodeX,nodeY,u*(.007+hit*.016),theme.accent);
    }
   }
@@ -123,7 +119,36 @@ export function drawMotionGraphics(
   break;
  }
 
- // ==================== CONTOURS ====================
+ case 'ribbon-dance': {
+  // Parametric Lissajous figure-8 harmonic weave & pendulum silk loops
+  c.save();
+  c.translate(w*.5,h*.5);
+  const loops=7;
+  for(let l=0;l<loops;l++){
+   const phase=l*.42+t*.38;
+   const rx=w*(.24+l*.022+bass*.06);
+   const ry=h*(.16+l*.025+mid*.05);
+   c.beginPath();
+   for(let step=0;step<=120;step++){
+    const a=(step/120)*TAU;
+    const x=Math.sin(a*2+phase)*rx;
+    const y=Math.sin(a*3-phase*.7)*ry;
+    if(step===0)c.moveTo(x,y);else c.lineTo(x,y);
+   }
+   c.closePath();
+   c.strokeStyle=l%2===0?theme.accent+'bb':theme.foreground+'55';
+   c.lineWidth=u*(.0035+(l===0?hit*.006:0));
+   c.stroke();
+   const orbAngle=t*(.6+l*.08)+l;
+   const ox=Math.sin(orbAngle*2+phase)*rx;
+   const oy=Math.sin(orbAngle*3-phase*.7)*ry;
+   circle(ox,oy,u*(.008+high*.014),l%2===0?theme.accent:theme.foreground);
+  }
+  c.restore();
+  break;
+ }
+
+ // ==================== CONTOURS (3 UNIQUE DESIGNS) ====================
  case 'chroma-moire-voids': {
   const shift=u*(.04+bass*.09);
   const centers=[
@@ -140,12 +165,9 @@ export function drawMotionGraphics(
   break;
  }
 
- case 'cobalt-contours':
- case 'molten-contours':
- case 'layered-contours':
- case 'contour-flow': {
-  const rings=id==='molten-contours'?24:20;
-  const lobes=id==='cobalt-contours'?4:id==='layered-contours'?5:3;
+ case 'cobalt-contours': {
+  const rings=21;
+  const lobes=4;
   for(let i=0;i<rings;i++){
    c.beginPath();
    for(let j=0;j<=120;j++){
@@ -165,7 +187,30 @@ export function drawMotionGraphics(
   break;
  }
 
- // ==================== SCULPTURES ====================
+ case 'contour-flow': {
+  // Isobaric pulsar horizon ridgelines (stacked elevation scanlines)
+  const ridges=18;
+  const leftX=w*.10,rightX=w*.90,spanW=rightX-leftX;
+  for(let r=0;r<ridges;r++){
+   const baseY=h*(.18+r*(.68/(ridges-1)));
+   c.beginPath();
+   for(let s=0;s<=64;s++){
+    const frac=s/64;
+    const x=leftX+frac*spanW;
+    const envelope=Math.exp(-Math.pow((frac-.5)*3.1,2));
+    const ridgeWave=Math.abs(Math.sin(frac*TAU*3.5+t*1.1+r*.55))*u*(.045+bass*.14)*envelope
+     +Math.cos(frac*TAU*8-t*1.6+r)*u*.012*high*envelope;
+    const y=baseY-ridgeWave;
+    if(s===0)c.moveTo(x,y);else c.lineTo(x,y);
+   }
+   c.strokeStyle=r%3===0?theme.accent:theme.foreground+'88';
+   c.lineWidth=r%3===0?2.2+hit*1.5:1.2;
+   c.stroke();
+  }
+  break;
+ }
+
+ // ==================== SCULPTURES (3 UNIQUE DESIGNS) ====================
  case 'crystal-resonance': {
   c.save();
   c.translate(w*.5,h*.5);
@@ -190,11 +235,10 @@ export function drawMotionGraphics(
   break;
  }
 
- case 'pearl-resonance':
  case 'tidal-bloom': {
   c.save();
   c.translate(w*.5,h*.5);
-  const petals=id==='tidal-bloom'?14:10;
+  const petals=14;
   for(let layer=4;layer>=1;layer--){
    const baseR=u*(.08*layer+bass*.07);
    for(let i=0;i<petals;i++){
@@ -229,7 +273,7 @@ export function drawMotionGraphics(
    c.shadowColor='rgba(18,22,34,0.28)';
    c.shadowBlur=u*.032;
    c.shadowOffsetY=u*.014;
-   c.fillStyle=i%3===0?theme.accent:i%3===1?'#d5c8ae':'#6e9896';
+   c.fillStyle=i%3===0?theme.accent:i%3===1?theme.foreground+'33':theme.accent+'66';
    const rw=u*(.46+bass*.22),rh=u*(.16+hit*.09);
    c.fillRect(-rw*.5,-rh*.5,rw,rh);
    c.strokeStyle=theme.foreground+'55';
@@ -242,9 +286,8 @@ export function drawMotionGraphics(
   break;
  }
 
- // ==================== SPACE ====================
- case 'celestial-orbit':
- case 'orbital-score': {
+ // ==================== SPACE (4 UNIQUE DESIGNS) ====================
+ case 'celestial-orbit': {
   c.save();
   c.translate(w*.5,h*.5);
   const outerR=u*(.42+bass*.04);
@@ -349,7 +392,7 @@ export function drawMotionGraphics(
   break;
  }
 
- // ==================== NATURE ====================
+ // ==================== NATURE (3 UNIQUE DESIGNS) ====================
  case 'aurora-field': {
   const curtains=7;
   for(let cIdx=0;cIdx<curtains;cIdx++){
@@ -369,7 +412,6 @@ export function drawMotionGraphics(
   break;
  }
 
- case 'silver-current':
  case 'glow-lagoon': {
   const swells=16;
   for(let i=0;i<swells;i++){
@@ -386,7 +428,6 @@ export function drawMotionGraphics(
    c.lineWidth=1.4+(i/swells)*2.4+mid*2;
    c.stroke();
   }
-  // Bioluminescent spores
   for(let s=0;s<28;s++){
    const sx=w*((s*19/28+t*.02)%1);
    const sy=h*(.25+((s*13)%65)/100)+Math.sin(t*1.2+s)*u*.03;
@@ -401,12 +442,12 @@ export function drawMotionGraphics(
    const x=i*w/(cols-1),step=u*.019;
    const harmonic=.5+.5*Math.sin(i*1.9+t*.7);
    const stem=h*(.08+harmonic*.14+bass*.22+(i%3===0?mid*.1:0));
-   c.fillStyle=i%2?'#457c69':theme.accent;
+   c.fillStyle=i%2?theme.foreground+'55':theme.accent;
    c.fillRect(x,h-stem,step,stem);
    const bloom=step*(2.1+high*3.2+hit*1.2);
-   c.fillStyle=i%3?'#d9e78a':'#ef9d93';
+   c.fillStyle=i%3?theme.accent:theme.foreground;
    c.fillRect(x-bloom/2+step/2,h-stem-bloom,bloom,bloom);
-   c.fillStyle=theme.foreground;
+   c.fillStyle=theme.background;
    c.fillRect(x-step*.3,h-stem-bloom*.65,step*1.6,step*1.6);
    if(i%2===0){
     const sy=h*(.12+((i*17)%60)/100)+Math.sin(t*.55+i)*u*(.04+mid*.08);
@@ -417,7 +458,7 @@ export function drawMotionGraphics(
   break;
  }
 
- // ==================== ARCHITECTURE ====================
+ // ==================== ARCHITECTURE (3 MOTION2D + 1 SPECTRUM) ====================
  case 'neon-metal-matrix': {
   const cols=18,rows=10;
   const cellW=w*.84/cols,cellH=h*.76/rows;
@@ -441,9 +482,9 @@ export function drawMotionGraphics(
  }
 
  case 'bauhaus-beat': {
-  circle(w*.14,h*.22,u*(.20+bass*.11),'#d94c2e');
+  circle(w*.14,h*.22,u*(.20+bass*.11),theme.accent);
   circle(w*.14,h*.22,u*(.25+hit*.08),theme.foreground+'66',true);
-  circle(w*.88,h*.80,u*(.21+hit*.09),'#315e81');
+  circle(w*.88,h*.80,u*(.21+hit*.09),theme.foreground+'55');
   c.save();
   c.translate(w*.5,h*.5);
   c.rotate(-0.32+Math.sin(t*.15)*.04);
@@ -453,16 +494,16 @@ export function drawMotionGraphics(
   c.save();
   c.translate(w*.84,h*.20);
   c.rotate(t*.12+mid*.45);
-  c.fillStyle='#d9aa35';
+  c.fillStyle=theme.accent+'bb';
   const sq=u*(.26+bass*.06);
   c.fillRect(-sq*.5,-sq*.5,sq,sq);
-  c.strokeStyle='#222728';
+  c.strokeStyle=theme.foreground;
   c.lineWidth=u*.006;
   c.strokeRect(-sq*.36,-sq*.36,sq*.72,sq*.72);
   c.restore();
   for(let i=0;i<16;i++){
    const barH=h*(.06+((i*7)%5)*.022+high*.14+bass*(i%2?.08:0));
-   c.fillStyle=i%4===0?'#d94c2e':'#222728';
+   c.fillStyle=i%4===0?theme.accent:theme.foreground;
    c.fillRect(w*.05+i*u*.024,h*.90-barH,u*.014,barH);
   }
   break;
@@ -484,9 +525,8 @@ export function drawMotionGraphics(
   break;
  }
 
- // ==================== JOURNEYS ====================
- case 'chromatic-drive':
- case 'white-velocity': {
+ // ==================== JOURNEYS (2 MOTION2D + 1 GEOMETRY) ====================
+ case 'chromatic-drive': {
   const horizon=h*.46;
   circle(w*.5,horizon,u*(.16+bass*.06),theme.accent+'55');
   circle(w*.5,horizon,u*(.21+hit*.05),theme.accent,true);
@@ -529,13 +569,6 @@ export function drawMotionGraphics(
  }
  }
 
- // Beat-reactive HUD corner brackets & edge telemetry bars
- const pulseBar=u*(.055+hit*.14+onset*.08);
- c.globalAlpha=.28+hit*.68;
- c.fillStyle=theme.accent;
- c.fillRect(w*.045,h*.05,pulseBar,Math.max(2.5,u*.0045));
- c.fillRect(w*.045,h*.05,Math.max(2.5,u*.0045),u*(.035+bass*.06));
- c.fillRect(w*.955-pulseBar,h*.945,pulseBar,Math.max(2.5,u*.0045));
- c.fillRect(w*.955-Math.max(2.5,u*.0045),h*.945-u*(.035+bass*.06),Math.max(2.5,u*.0045),u*(.035+bass*.06));
  c.restore();
 }
+

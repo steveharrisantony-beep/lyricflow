@@ -63,8 +63,8 @@ describe('narrative audio mapping',()=>{
  });
  it('uses explicit lyric imagery before scene mood fallbacks',()=>{
   expect(selectMotif('Rain falling down','warm','holographic-tide')).toBe('rain');
-  expect(selectMotif('I love you','fire','molten-contours')).toBe('heart');
-  expect(selectMotif('Every star is shining','memory','pearl-resonance')).toBe('stars');
+  expect(selectMotif('I love you','fire','cobalt-contours')).toBe('heart');
+  expect(selectMotif('Every star is shining','memory','crystal-resonance')).toBe('stars');
  });
 });
 describe('spatial typography',()=>{

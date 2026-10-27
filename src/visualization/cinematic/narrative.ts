@@ -25,7 +25,6 @@ const basedOnMood:Record<Mood,Motif>={
  warm:'heart',solitude:'moon',celebration:'sound',abstract:'geometry'
 };
 const familyFallback:Partial<Record<SceneId,Motif>>={
- 'silver-current':'ocean',
  'holographic-tide':'ocean',
  'glow-lagoon':'ocean',
  'celestial-orbit':'stars',
@@ -34,13 +33,12 @@ const familyFallback:Partial<Record<SceneId,Motif>>={
  'signal-chamber':'city',
  'tidal-bloom':'flower',
  'pixel-garden':'flower',
- 'molten-contours':'fire',
- 'crimson-current':'fire',
+ 'cobalt-contours':'fire',
+ 'contour-flow':'mountain',
  'chromatic-drive':'road',
  'origami-flight':'bird',
  'aurora-field':'moon',
- 'pearl-resonance':'memory',
- 'layered-contours':'mountain'
+ 'crystal-resonance':'memory'
 };
 export function selectMotif(text:string,mood:Mood,scene:SceneId):Motif {
  for(const [motif,test]of keywords)if(test.test(text))return motif;

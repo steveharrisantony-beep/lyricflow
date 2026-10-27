@@ -1,5 +1,5 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
-import {parseSongs,resolveSong,searchSongs,resolverBase,type SongResult} from '../music/providers';
+import {BUILTIN_PLAYER_SOURCES,parseSongs,resolveSong,searchSongs,resolverBase,type SongResult} from '../music/providers';
 import {isAutomaticLyricMatch,resolveAutomaticLyrics} from '../lyrics/providers';
 import {convertTtmlToEnhancedLrc,convertStructuredAppleJsonToLrc} from '../lyrics/appleLyrics';
 import {describeLyricProvider,describeAudioSource,splitLyricIntoBalancedLines} from '../lyrics/ManualLyrics';
@@ -10,12 +10,21 @@ import {romanizeText,hasDistinctRomanized} from '../romanization/romanize';
 import {buildCues} from '../lyrics/lyricTimeline';
 import {getAudioSensitivity,getSpectrumSensitivity,setSpectrumSensitivity,spectrumResponse} from '../audio/audioSignal';
 import {motionChannel,objectDrive} from '../visualization/cinematic/procedural/audioMotion';
-import type {TrackInfo,TrackCandidate} from '../metadata/trackInfo';
+import {extractYouTubeVideoId,isLyricVideoTrack,type TrackInfo,type TrackCandidate} from '../metadata/trackInfo';
 const track:TrackInfo={title:'Original rain',artist:'Test Artist',album:'Demo',duration:180,source:'provider',confidence:1};
 const candidate:TrackCandidate={id:1,title:track.title,artist:track.artist,album:track.album,duration:180,hasSynced:true,hasWordSync:false,instrumental:false,url:'https://lrclib.net/api/get/1',confidence:1};
 const song:SongResult={id:'abcdefghijk',title:track.title,artist:track.artist,album:'',duration:180,provider:'resolver',sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk'};
 afterEach(()=>{vi.unstubAllGlobals();setSpectrumSensitivity(.35)});
 describe('music source boundaries',()=>{
+ it('exposes only JioSaavn and YouTube in the built-in online player UI and detects YouTube video IDs & lyric videos',()=>{
+  expect(Object.keys(BUILTIN_PLAYER_SOURCES)).toEqual(['jiosaavn','resolver']);
+  expect(extractYouTubeVideoId(song)).toBe('abcdefghijk');
+  expect(extractYouTubeVideoId({id:'yt_dQw4w9WgXcQ',provider:'resolver',sourceUrl:''})).toBe('dQw4w9WgXcQ');
+  expect(isLyricVideoTrack({title:'Shape of You (Official Lyric Video)'})).toBe(true);
+  expect(isLyricVideoTrack({title:'Kesariya - Lyrical | Brahmastra'})).toBe(true);
+  expect(isLyricVideoTrack({title:'Blinding Lights (Lyrics)'})).toBe(true);
+  expect(isLyricVideoTrack({title:'Blinding Lights (Official Music Video)'})).toBe(false);
+ });
  it('rejects malformed candidates and gated Audius tracks',()=>{
   const songs=parseSongs({data:[null,{id:'x',title:'Paid',is_stream_gated:true},{id:'a',title:'Rain',duration:9,user:{name:'Artist'}}]},'audius');
   expect(songs).toHaveLength(1);expect(songs[0].artist).toBe('Artist');
@@ -42,6 +51,7 @@ describe('music source boundaries',()=>{
   const resolved=await resolveSong(song,'https://resolver.example');
   expect(resolved.streamUrl).toBe('https://resolver.example/audio/abcdefghijk');expect(resolved.artist).toBe('Verified Artist');
   expect(resolved.audioSource).toBe('YouTube · JioSaavn 320kbps AAC');
+  expect(resolved.youtubeVideoId).toBe('abcdefghijk');
  });
 });
 describe('automatic lyric recording matching & Apple Music TTML word-sync',()=>{
@@ -96,7 +106,7 @@ describe('automatic lyric recording matching & Apple Music TTML word-sync',()=>{
   });
   expect(describeAudioSource({...track,provider:'ytmusic',audioSource:'YouTube Music · JioSaavn 320kbps AAC'},true).providerName).toBe('YouTube Music');
  });
- it('restricts scheduled themes, kinetic motions, and camera views to user-enabled subsets',()=>{
+ it('restricts scheduled themes, kinetic motions, and camera view to user-enabled subsets and Front view',()=>{
   const cues=buildCues([{time:0,text:'Rain falls down'},{time:15,text:'Fire burns bright'}],[]);
   const schedule=buildCinematicSchedule([],cues,'pop','test-key',['holographic-tide','celestial-orbit']);
   expect(schedule.length).toBeGreaterThan(0);
@@ -105,10 +115,10 @@ describe('automatic lyric recording matching & Apple Music TTML word-sync',()=>{
   for(let i=0;i<25;i++){
    const motion=lyricMotionFor({...scene,variation:i},'Line '+i,['ship','elastic']);
    expect(['ship','elastic']).toContain(motion);
-   const cam=resolveActiveCameraView('Automatic',['Orbit','Top'],i*5,i);
-   expect(['Orbit','Top']).toContain(cam);
+   const cam=resolveActiveCameraView();
+   expect(cam).toBe('Front');
   }
-  expect(resolveActiveCameraView('Side',['Front','Orbit'],10,0)).toBe('Front');
+  expect(resolveActiveCameraView()).toBe('Front');
  });
  it('splits long lyrics into multiple balanced rows and transliterates Indic scripts',()=>{
   const longLine='Walking through the neon city lights under the pouring midnight rain until the morning sun';
@@ -138,4 +148,3 @@ describe('independent spectrum gain and instrument roles',()=>{
   expect(objectDrive('bass',1,0,0,1)).toBe(1);expect(objectDrive('treble',0,0,1,0)).toBe(1);
  });
 });
-

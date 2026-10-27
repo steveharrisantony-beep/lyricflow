@@ -153,6 +153,11 @@ export interface UserPreferencesData {
   enabledScenes: SceneId[];
   enabledKineticMotions: LyricMotion[];
   enabledCameraViews: CameraView[];
+  cameraShakeEnabled: boolean;
+  cameraShakeSensitivity: number;
+  lyricMinFontSize: number;
+  lyricMaxFontSize: number;
+  themePalettes: Record<string, string>;
 }
 
 export interface SongDelayRecord {
@@ -182,10 +187,15 @@ export const DEFAULT_USER_PREFERENCES: UserPreferencesData = {
   autoScenes: true,
   spatialTypography: true,
   narrativeObjects: false,
-  cameraMode: 'Automatic',
+  cameraMode: 'Front',
   enabledScenes: [...ALL_SCENE_IDS],
   enabledKineticMotions: [...ALL_KINETIC_MOTIONS],
-  enabledCameraViews: [...ALL_CAMERA_VIEWS],
+  enabledCameraViews: ['Front'],
+  cameraShakeEnabled: true,
+  cameraShakeSensitivity: 50,
+  lyricMinFontSize: 26,
+  lyricMaxFontSize: 88,
+  themePalettes: {},
 };
 
 const clampNum = (v: unknown, min: number, max: number, fallback: number) => {
@@ -201,15 +211,20 @@ export function sanitizePreferences(raw: Partial<UserPreferencesData> | null | u
   const validMotions = Array.isArray(raw.enabledKineticMotions)
     ? raw.enabledKineticMotions.filter((m): m is LyricMotion => ALL_KINETIC_MOTIONS.includes(m as LyricMotion)).slice(0, ALL_KINETIC_MOTIONS.length)
     : [];
-  const validCameraViews = Array.isArray(raw.enabledCameraViews)
-    ? raw.enabledCameraViews.filter((v): v is CameraView => ALL_CAMERA_VIEWS.includes(v as CameraView)).slice(0, 4)
-    : [];
   const quality: Quality = raw.quality === 'High' || raw.quality === 'Balanced' || raw.quality === 'Performance'
     ? raw.quality
     : 'Balanced';
-  const cameraMode: CameraMode = raw.cameraMode === 'Automatic' || raw.cameraMode === 'Front' || raw.cameraMode === 'Orbit' || raw.cameraMode === 'Side' || raw.cameraMode === 'Top'
-    ? raw.cameraMode
-    : 'Automatic';
+  const cameraMode: CameraMode = 'Front';
+  const cleanPalettes: Record<string, string> = {};
+  if (raw.themePalettes && typeof raw.themePalettes === 'object') {
+    for (const [k, v] of Object.entries(raw.themePalettes)) {
+      if (ALL_SCENE_IDS.includes(k as SceneId) && typeof v === 'string' && v.length <= 48) {
+        cleanPalettes[k] = v;
+      }
+    }
+  }
+  const minFont = clampNum(raw.lyricMinFontSize, 16, 72, DEFAULT_USER_PREFERENCES.lyricMinFontSize);
+  const maxFont = Math.max(minFont, clampNum(raw.lyricMaxFontSize, 32, 130, DEFAULT_USER_PREFERENCES.lyricMaxFontSize));
 
   return {
     intensity: clampNum(raw.intensity, 0, 100, DEFAULT_USER_PREFERENCES.intensity),
@@ -224,7 +239,12 @@ export function sanitizePreferences(raw: Partial<UserPreferencesData> | null | u
     cameraMode,
     enabledScenes: validScenes.length > 0 ? validScenes : [...ALL_SCENE_IDS],
     enabledKineticMotions: validMotions.length > 0 ? validMotions : [...ALL_KINETIC_MOTIONS],
-    enabledCameraViews: validCameraViews.length > 0 ? validCameraViews : [...ALL_CAMERA_VIEWS],
+    enabledCameraViews: ['Front'],
+    cameraShakeEnabled: typeof raw.cameraShakeEnabled === 'boolean' ? raw.cameraShakeEnabled : DEFAULT_USER_PREFERENCES.cameraShakeEnabled,
+    cameraShakeSensitivity: clampNum(raw.cameraShakeSensitivity, 0, 100, DEFAULT_USER_PREFERENCES.cameraShakeSensitivity),
+    lyricMinFontSize: minFont,
+    lyricMaxFontSize: maxFont,
+    themePalettes: cleanPalettes,
   };
 }
 
