@@ -54,3 +54,22 @@ it('holds the first frame while a positive delay is pending and resumes on the a
   await act(async()=>root.render(<CinematicStage {...base} playbackTime={3} videoDelaySeconds={3}/>));
   expect(send.mock.calls.some(args=>JSON.parse(String(args[0])).func==='playVideo')).toBe(true);
 });
+
+it('keeps an unsaved signed video delay while a background mapping catches up',async()=>{
+  const {default:CorrectionControls}=await import('../firebase/CorrectionControls');
+  const track={title:'Song',artist:'Author',album:'Studio',duration:200,source:'manual' as const,confidence:1,provider:'local' as const};
+  const correction=makeCorrection(correctionContext(track,'video')!,{youtubeVideoId:'abcdefghijk',videoDelaySeconds:2});
+  const empty={key:'',context:null,correction:null,source:'automatic',save:vi.fn(),reset:vi.fn(),error:''};
+  const video={...empty,correction,source:'personal'},choose=vi.fn();
+  const render=(mappedDelay:number)=><CorrectionControls user={null} track={track} delay={empty} lyrics={empty} video={video} mappedVideo={{youtubeVideoId:'abcdefghijk',delaySeconds:mappedDelay}} canChangeVideo onVideoChange={choose}/>;
+  await act(async()=>root.render(render(0)));
+  const input=host.querySelector<HTMLInputElement>('input[aria-label="Video delay seconds"]')!;
+  await act(async()=>{
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'-2');
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+  });
+  await act(async()=>root.render(render(2)));
+  expect(input.value).toBe('-2');
+  await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  expect(choose).toHaveBeenCalledWith('abcdefghijk',-2);
+});

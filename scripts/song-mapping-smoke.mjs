@@ -40,10 +40,13 @@ try{
  await page.getByRole('button',{name:'Save background video',exact:true}).click();
  await page.getByLabel('Video delay seconds',{exact:true}).fill('-2');
  await page.getByRole('button',{name:'Save background video',exact:true}).click();
+ await page.waitForFunction(()=>Object.values(JSON.parse(localStorage.getItem('lyricflow.v3.guest.songMappings')||'{}')).some(m=>m.video?.delaySeconds===-2));
  await page.getByRole('button',{name:'Custom Edit / Change Lyrics',exact:true}).click();
  await page.getByLabel('Import LRC or TTML file').setInputFiles({name:'test-song.lrc',mimeType:'text/plain',buffer:Buffer.from('[00:01]Original test lyric\n[00:03]Another original line')});
  await page.waitForFunction(()=>document.querySelector('.lyrics-editor textarea')?.value.includes('Original test lyric'));
+ await page.waitForFunction(()=>Object.values(JSON.parse(localStorage.getItem('lyricflow.v3.guest.songMappings')||'{}')).some(m=>m.lyrics?.sourceFile?.revision));
  await page.getByLabel('Lyrics delay seconds',{exact:true}).fill('-1.25');
+ assert.equal(await page.getByLabel('Lyrics delay seconds',{exact:true}).inputValue(),'-1.25');
  await page.waitForFunction(()=>Object.values(JSON.parse(localStorage.getItem('lyricflow.v3.guest.songMappings')||'{}')).some(m=>m.lyrics?.delaySeconds===-1.25&&m.video?.youtubeVideoId==='abcdefghijk'&&m.video.delaySeconds===-2));
  assert.equal(await page.locator('audio').getAttribute('src'),originalAudio);
  const frame=page.frames().find(f=>f.url().includes('youtube.com/embed/'));
@@ -52,4 +55,4 @@ try{
  assert.equal(await frame.evaluate(()=>window.commands.some(c=>c.func==='unMute')),false);
  assert.deepEqual(errors,[]);
  console.log('PASS: JioSaavn audio retained; both exact video queries; selected video stays muted; separate signed delays and source/video mappings saved.');
-}finally{await browser.close();server.kill();}
+}catch(error){console.error('Mapping diagnostics',await page.evaluate(()=>({mappings:localStorage.getItem('lyricflow.v3.guest.songMappings'),corrections:localStorage.getItem('lyricflow.v3.guest.corrections')})));throw error;}finally{await browser.close();server.kill();}

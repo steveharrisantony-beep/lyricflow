@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { User } from './firebaseClient';
 import type { useCorrection } from './useCorrection';
 import { submitCorrection } from './correctionStore';
@@ -12,11 +12,15 @@ export default function CorrectionControls({ user, track, delay, lyrics, video, 
 }) {
   const [videoInput, setVideoInput] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false);
   const [videoDelay, setVideoDelay] = useState('0');
+  const editing = useRef(false);
   const originalVideoId = extractYouTubeVideoId(track) || '';
+  const savedVideoId = video.correction?.youtubeVideoId || mappedVideo?.youtubeVideoId || originalVideoId;
+  const savedVideoDelay = video.correction?.videoDelaySeconds ?? mappedVideo?.delaySeconds ?? 0;
   useEffect(() => {
-    setVideoInput(video.correction?.youtubeVideoId || mappedVideo?.youtubeVideoId || originalVideoId);
-    setVideoDelay(String(video.correction?.videoDelaySeconds ?? mappedVideo?.delaySeconds ?? 0));
-  }, [video.correction?.youtubeVideoId, video.correction?.videoDelaySeconds, mappedVideo?.youtubeVideoId, mappedVideo?.delaySeconds, originalVideoId]);
+    if (editing.current) return;
+    setVideoInput(savedVideoId);
+    setVideoDelay(String(savedVideoDelay));
+  }, [savedVideoId, savedVideoDelay]);
   if (!track) return null;
   const submit = async (correction: Correction | null) => {
     if (!correction) return;
@@ -44,10 +48,11 @@ export default function CorrectionControls({ user, track, delay, lyrics, video, 
       if (!id) { setMessage('Enter a valid YouTube watch/share URL or video ID.'); return; }
       const seconds = Number(videoDelay);
       if (!videoDelay.trim() || !Number.isFinite(seconds) || Math.abs(seconds) > 300) { setMessage('Video delay must be between −300 and +300 seconds.'); return; }
+      editing.current = false;
       onVideoChange(id, seconds); setMessage('Background video saved for you. Your audio source is unchanged.');
     }}>
-      <label>Correct background video<input value={videoInput} onChange={e => setVideoInput(e.target.value)} placeholder="YouTube URL or video ID" disabled={!canChangeVideo} /></label>
-      <label>Video delay (seconds)<input aria-label="Video delay seconds" type="number" min="-300" max="300" step="0.05" value={videoDelay} onChange={e => setVideoDelay(e.target.value)} disabled={!canChangeVideo} /></label>
+      <label>Correct background video<input value={videoInput} onChange={e => { editing.current = true; setVideoInput(e.target.value); }} placeholder="YouTube URL or video ID" disabled={!canChangeVideo} /></label>
+      <label>Video delay (seconds)<input aria-label="Video delay seconds" type="number" min="-300" max="300" step="0.05" value={videoDelay} onChange={e => { editing.current = true; setVideoDelay(e.target.value); }} disabled={!canChangeVideo} /></label>
       <button type="submit" disabled={!canChangeVideo || !videoInput.trim()}>Save background video</button>
     </form>
     <p>Positive delay shows the video later; negative delay advances it. Lyrics delay is independent.</p>

@@ -1,4 +1,4 @@
-import {useEffect,useMemo,useRef,useState} from 'react';
+import {useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import type {TrackInfo} from '../metadata/trackInfo';
 import {detectLanguage,romanizeText,hasDistinctRomanized} from '../romanization/romanize';
 import {parseLRC,type TimedWord} from './lrc';
@@ -307,7 +307,7 @@ export default function ManualLyrics({
   return useState(initial);
  }
 
- useEffect(()=>{onLyricContentChange?.(raw,sourceUrl,source)},[raw,sourceUrl,source,onLyricContentChange]);
+ useLayoutEffect(()=>{onLyricContentChange?.(raw,sourceUrl,source)},[raw,sourceUrl,source,onLyricContentChange]);
  const lines=useMemo(()=>parseLRC(raw),[raw]);
  const romanLines=useMemo(()=>parseLRC(roman),[roman]);
  const language=useMemo(()=>detectLanguage(raw||plain),[raw,plain]);
