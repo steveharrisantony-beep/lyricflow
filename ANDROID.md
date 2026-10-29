@@ -102,3 +102,9 @@ file selection, microphone grant/denial and stop, and online catalog/lyrics/vide
 
 Upstream source snapshot: `steveharrisantony-beep/lyricflow` at
 `736facf6753bde219aa7b8aad8a9cb4c16b7e510`.
+
+The automatic browser workflow checks the current production UI, local audio,
+lyric import and signed delay, bundled fonts, portrait layout and page errors.
+Older `smoke:*` scripts contain assertions for the previous 40-scene interface;
+they are retained in the separate **Legacy visual smoke (manual)** workflow and
+are not represented as passing checks of the current 23-theme UI.

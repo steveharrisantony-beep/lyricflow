@@ -1,40 +1,20 @@
-name: Browser smoke test
+name: Browser packaging smoke test
 on:
   push:
     branches: [main]
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   chromium:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
       - run: npm ci --no-audit --no-fund
-      - name: Install synthetic audio test dependency
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - name: Start LyricFlow
-        run: |
-          npm run dev -- --host 127.0.0.1 > vite-server.log 2>&1 &
-          echo $! > vite-server.pid
-      - name: Browser test
-        env:
-          LYRICFLOW_QA_QUALITY: Performance
-        run: |
-          sleep 5
-          npm run smoke
-          npm run smoke:music
-          npm run smoke:kinetic
-          npm run smoke:motion
-          npm run smoke:hls
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: smoke-diagnostics
-          path: |
-            lyricflow-smoke-failure.png
-            vite-server.log
-          if-no-files-found: ignore
+      - run: npm run build
+      - name: Verify the current packaged web application
+        run: node scripts/android-web-smoke.mjs
