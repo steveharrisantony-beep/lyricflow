@@ -317,3 +317,6 @@ npm run build
   [https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
 - **Cloud Firestore Security Rules Documentation**:  
   [https://firebase.google.com/docs/firestore/security/get-started](https://firebase.google.com/docs/firestore/security/get-started)
+
+
+The automatic browser smoke workflow tests the current production UI, including guest account controls, personal timing correction and login-gated submission. The older visual smoke scripts are retained in **Legacy visual smoke (manual)**; they target earlier UI layouts and are not claimed as current acceptance checks.
