@@ -1,0 +1,70 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - name: Install native runtime build tools
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
+      - name: Install JavaScript dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Check application logic
+        run: npm test
+      - name: Build and copy bundled web application
+        run: npm run android:sync
+      - name: Test bundled on-device backend
+        run: npm run test:backend
+      - name: Build installable debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+      - name: Name the APK
+        run: |
+          mkdir -p artifacts
+          cp android/app/build/outputs/apk/debug/app-debug.apk artifacts/LyricFlow-Android-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LyricFlow-Android-debug
+          path: artifacts/LyricFlow-Android-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Verify embedded backend on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: cd android && ./gradlew --no-daemon connectedDebugAndroidTest
+      - name: Upload device test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-device-test-reports
+          path: android/app/build/reports/androidTests/
+          if-no-files-found: ignore

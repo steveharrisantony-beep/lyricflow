@@ -1,0 +1,6 @@
+fastapi>=0.115,<1
+uvicorn>=0.34,<1
+httpx[socks]>=0.28,<1
+yt-dlp[default]>=2026.1.1
+
+ytmusicapi>=1.11,<2

@@ -1,0 +1,646 @@
+import { parseLRC, type TimedLine, type TimedWord } from './lrc';
+
+export type LyricEngineOption = 'lyricflow' | 'apple' | 'lrclib' | 'youtube';
+
+export const LYRIC_ENGINE_OPTIONS: readonly {
+  id: LyricEngineOption;
+  label: string;
+  shortLabel: string;
+  badge: string;
+  description: string;
+}[] = [
+  {
+    id: 'lyricflow',
+    label: '1. LyricFlow Engine (YouTube Subtitles + Apple Word-Sync)',
+    shortLabel: 'LyricFlow Engine',
+    badge: 'Hybrid Word-Sync',
+    description:
+      'Aligns Apple Music word-by-word sync timestamps onto YouTube video subtitles & SponsorBlock music timeline',
+  },
+  {
+    id: 'apple',
+    label: '2. Apple Library (Word-by-Word TTML)',
+    shortLabel: 'Apple Library',
+    badge: 'Word-by-Word TTML',
+    description: 'Direct Apple Music word-by-word & syllable-synced lyrics',
+  },
+  {
+    id: 'lrclib',
+    label: '3. LRC Library (LRCLIB Timed LRC)',
+    shortLabel: 'LRC Library',
+    badge: 'Timed LRC',
+    description: 'Community-timed LRC recordings matched by song title and duration',
+  },
+  {
+    id: 'youtube',
+    label: '4. YouTube Subtitles (Video Captions)',
+    shortLabel: 'YouTube Subtitles',
+    badge: 'Video Captions',
+    description: 'Direct line-by-line closed captions extracted from the YouTube video',
+  },
+] as const;
+
+const formatLrcTag = (seconds: number, bracket: '[' | '<' = '['): string => {
+  const safe = Math.max(0, Number.isFinite(seconds) ? seconds : 0);
+  const mins = Math.floor(safe / 60);
+  const secs = (safe % 60).toFixed(2).padStart(5, '0');
+  const close = bracket === '[' ? ']' : '>';
+  return `${bracket}${String(mins).padStart(2, '0')}:${secs}${close}`;
+};
+
+/**
+ * Clean noisy YouTube video titles for lyrics lookup:
+ * 1. Deletes all words starting with `@` (e.g. `@SaiAbhyankkar`).
+ * 2. Deletes everything from the first bracket `(`, `[`, `{` onwards (including brackets and everything after it).
+ * 3. Deletes everything from the first pipe `|` or `//` onwards.
+ * 4. Removes common upload tags ("Official Video", "Music Video", "Lyric Video", "4K", "Full Video", etc.).
+ * 5. Strips leading/trailing separators (`-`, `–`, `—`, `:`) and extracts the core song name.
+ *
+ * Example:
+ * "@SaiAbhyankkar - Aasa Kooda (Music Video) | Thejo Bharathwaj | Preity Mukhundhan | Sai Smriti"
+ * -> "Aasa Kooda"
+ */
+export interface YouTubeSubtitleTrackItem {
+  id: string;
+  languageCode: string;
+  label: string;
+  lrc: string;
+  lineCount: number;
+}
+
+/**
+ * Clean noisy YouTube video titles for lyrics lookup:
+ * 1. Strips invisible directional/zero-width Unicode characters (\u202a, \u202c, etc.).
+ * 2. Deletes all words starting with `@` (e.g. `@SaiAbhyankkar`).
+ * 3. Deletes everything from the first bracket `(`, `[`, `{` onwards (including brackets and everything after it).
+ * 4. Deletes everything from the first pipe `|` or `//` onwards.
+ * 5. Removes descriptor words ("Lyrical", "Lyrics", "Sing Along", "Official Video", "Music Video", "Video Song", "4K", etc.).
+ * 6. Extracts the true song name when separated by `-` (preserving `Song - Artist | Credits` as `Song`, while handling `ChannelArtist - Song`).
+ *
+ * Examples:
+ * - "@SaiAbhyankkar - Aasa Kooda (Music Video) | Thejo Bharathwaj | Preity Mukhundhan | Sai Smriti" -> "Aasa Kooda"
+ * - "Punchiri - Eechuu | Suhas | Chris Wayne | Steel | Loopd | Official Music Video" -> "Punchiri"
+ * - "Punchiri - Sing Along | Eechuu | Suhas | Chris Wayne | Steel | Loopd | Malayalam Song" -> "Punchiri"
+ * - "Veezha Veera Lyrical (Tamil) | OM | Dhanush | Mammootty | Sai Pallavi | Rajkumar | Sai Abhyankkar" -> "Veezha Veera"
+ */
+export function cleanYouTubeTitleForLyrics(rawTitle: string, channelHint = ''): string {
+  if (!rawTitle) return '';
+  const strippedUnicode = rawTitle.replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g, '');
+
+  // Check if the raw title has pipe-separated credits after a dash: e.g. "Punchiri - Eechuu | Suhas | Chris Wayne"
+  const withoutHandles = strippedUnicode.replace(/(?:^|\s)@\S+/g, ' ').trim();
+  const firstBracketIdx = withoutHandles.search(/[([{]/);
+  const preBracket = firstBracketIdx >= 0 ? withoutHandles.slice(0, firstBracketIdx) : withoutHandles;
+  const hasPipeCreditsAfterDash = /^[^|]+?\s+[-–—]\s+[^|]+?\s*\|/.test(preBracket);
+
+  let text = withoutHandles
+    // Delete everything from the first opening bracket (, [, { including the bracket and everything after it
+    .replace(/\s*[([{][\s\S]*$/, '')
+    // Delete everything from the first | or // onwards if present before any bracket
+    .replace(/\s*(?:\||\/\/)[\s\S]*$/, '')
+    // Remove upload/format descriptor suffixes ("Lyrical", "Lyrics", "Sing Along", "Official Video", "Music Video", etc.)
+    .replace(
+      /\b(?:official\s*(?:music\s*)?(?:video|audio|lyric(?:al)?(?:\s*video)?)|music\s*video|lyric(?:al)?(?:\s*video|\s*song)?|lyrics(?:\s*video|\s*song)?|sing\s*along(?:\s*video)?|full\s*(?:video|song|audio)|video\s*song|audio\s*song|karaoke(?:\s*version)?|visualizer|promo|teaser|trailer|jukebox|4k|8k|hd|hq)\b[\s\S]*$/i,
+      ''
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Strip leading/trailing dashes, colons, bullets, and quotes
+  text = text.replace(/^[\s\-–—:|•·"'“”‘’]+|[\s\-–—:|•·"'“”‘’]+$/g, '').trim();
+
+  const dashParts = text
+    .split(/\s+[-–—]\s+/)
+    .map(p =>
+      p
+        .replace(
+          /\b(?:official\s*(?:music\s*)?(?:video|audio)|music\s*video|lyric(?:al)?(?:\s*video|\s*song)?|lyrics|sing\s*along|full\s*(?:video|song)|video\s*song|audio\s*song|4k|8k|hd|hq)\b[\s\S]*$/i,
+          ''
+        )
+        .replace(/^[\s\-–—:|•·"'“”‘’]+|[\s\-–—:|•·"'“”‘’]+$/g, '')
+        .trim()
+    )
+    .filter(Boolean);
+
+  if (dashParts.length >= 2) {
+    const candidateLeft = dashParts[0];
+    const candidateRight = dashParts[1];
+    const normChannel = normalizeComparisonText(channelHint.replace(/\b(?:vevo|official|music|records|topic)\b/gi, ''));
+    const normLeft = normalizeComparisonText(candidateLeft);
+    const normRight = normalizeComparisonText(candidateRight);
+
+    // If the right segment is followed by pipe-separated credits ("Song - Artist1 | Artist2 | Artist3"),
+    // then the left segment is definitively the song title!
+    if (hasPipeCreditsAfterDash && candidateLeft.length >= 2) {
+      return candidateLeft;
+    }
+
+    // If the left segment matches the channel/artist name (e.g. "Ed Sheeran - Shape of You" on Ed Sheeran's channel),
+    // then the right segment is the song title.
+    if (
+      normChannel.length >= 3 &&
+      normLeft.length >= 3 &&
+      (normChannel.includes(normLeft) || normLeft.includes(normChannel)) &&
+      candidateRight.length >= 2
+    ) {
+      return candidateRight;
+    }
+
+    // If the right segment matches the channel/artist name, the left segment is the song title.
+    if (
+      normChannel.length >= 3 &&
+      normRight.length >= 3 &&
+      (normChannel.includes(normRight) || normRight.includes(normChannel)) &&
+      candidateLeft.length >= 2
+    ) {
+      return candidateLeft;
+    }
+
+    // Default: in "Song - Artist" titles (like "Punchiri - Eechuu"), left is the song name unless left is a generic prefix
+    if (/^(?:track\s*\d+|song|video|audio|ost|bgm|official)$/i.test(candidateLeft) && candidateRight.length >= 2) {
+      return candidateRight;
+    }
+    return candidateLeft;
+  }
+
+  return text || rawTitle.trim();
+}
+
+export function normalizeComparisonText(text: string): string {
+  return text
+    .toLocaleLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const CONTEXT_STOPWORDS = new Set([
+  'official',
+  'music',
+  'video',
+  'lyrical',
+  'lyrics',
+  'lyric',
+  'song',
+  'audio',
+  'full',
+  'single',
+  'original',
+  'motion',
+  'picture',
+  'soundtrack',
+  'from',
+  'feat',
+  'ft',
+  'featuring',
+  'prod',
+  'version',
+  'remastered',
+  'hd',
+  'hq',
+  '4k',
+  '8k',
+  'the',
+  'and',
+]);
+
+/**
+ * Post-search candidate scorer:
+ * Even when we do not send author/artist or album names in the initial search query (for YouTube videos),
+ * once the library returns multiple candidate options (each containing title, artist/author, album, and duration),
+ * we match those candidate details against the full raw song title / metadata context and choose the one
+ * with the maximum match rate. Returns -1 if the candidate title does not match the song title.
+ */
+export function scoreCandidateAgainstRawMetadata(
+  candidate: {
+    title: string;
+    artist?: string;
+    album?: string;
+    duration?: number;
+    hasWordSync?: boolean;
+    hasSynced?: boolean;
+  },
+  context: {
+    cleanTitle: string;
+    rawTitle?: string;
+    artistHint?: string;
+    albumHint?: string;
+    duration?: number;
+    isYouTube?: boolean;
+  }
+): number {
+  const cleanTarget = normalizeComparisonText(context.cleanTitle);
+  const cleanCandTitle = normalizeComparisonText(
+    cleanYouTubeTitleForLyrics(candidate.title || '') || candidate.title || ''
+  );
+  const rawCandTitle = normalizeComparisonText(candidate.title || '');
+  if (!cleanTarget || !cleanCandTitle) return -1;
+
+  // Reject mismatched version tags (e.g. remix, slowed, lofi, karaoke, instrumental when original wasn't)
+  const rawTargetFull = normalizeComparisonText(`${context.rawTitle || context.cleanTitle}`);
+  const versionTags = ['remix', 'slowed', 'reverb', 'sped up', 'nightcore', 'karaoke', 'instrumental', '8d', 'lofi'];
+  for (const tag of versionTags) {
+    const inTarget = rawTargetFull.includes(tag);
+    const inCand = rawCandTitle.includes(tag);
+    if (inTarget !== inCand) return -1;
+  }
+
+  // 1. Title Match Rate (0..55 pts) — Mandatory gate so wrong lyrics are never selected
+  const titleSim = computeLyricLineSimilarity(cleanTarget, cleanCandTitle);
+  let score = 0;
+  if (cleanCandTitle === cleanTarget || rawCandTitle === cleanTarget) {
+    score += 55;
+  } else if (
+    cleanCandTitle.startsWith(cleanTarget + ' ') ||
+    rawCandTitle.startsWith(cleanTarget + ' ')
+  ) {
+    score += 44;
+  } else if (titleSim >= 0.72) {
+    score += Math.round(titleSim * 45);
+  } else {
+    // Reject unrelated song titles!
+    return -1;
+  }
+
+  // 2. Match Candidate Author/Artist & Album against the full raw video title + channel/artist/album hints (0..45 pts)
+  const contextString = normalizeComparisonText(
+    `${context.rawTitle || context.cleanTitle} ${context.artistHint || ''} ${context.albumHint || ''}`
+  );
+  const contextCompact = contextString.replace(/\s+/g, '');
+  const contextTokens = new Set(
+    contextString.split(' ').filter(w => w.length >= 2 && !CONTEXT_STOPWORDS.has(w))
+  );
+  const titleTokens = new Set(cleanTarget.split(' ').filter(Boolean));
+
+  const candArtistNorm = normalizeComparisonText(candidate.artist || '');
+  if (candArtistNorm) {
+    const artistTokens = candArtistNorm
+      .split(' ')
+      .filter(w => w.length >= 2 && !CONTEXT_STOPWORDS.has(w) && !titleTokens.has(w));
+    if (artistTokens.length > 0) {
+      let matchedArtistTokens = 0;
+      for (const token of artistTokens) {
+        if (contextTokens.has(token) || (token.length >= 4 && contextCompact.includes(token))) {
+          matchedArtistTokens++;
+        }
+      }
+      // Also check if the joined artist name (like @SaiAbhyankkar -> saiabhyankkar) is in contextCompact
+      const joinedArtist = artistTokens.join('');
+      if (joinedArtist.length >= 5 && contextCompact.includes(joinedArtist)) {
+        matchedArtistTokens = artistTokens.length;
+      }
+      if (matchedArtistTokens > 0) {
+        const ratio = matchedArtistTokens / artistTokens.length;
+        score += 15 + Math.round(ratio * 22);
+      } else if (!context.isYouTube && context.artistHint) {
+        score -= 20;
+      }
+    }
+  }
+
+  const candAlbumNorm = normalizeComparisonText(candidate.album || '');
+  if (candAlbumNorm) {
+    const albumTokens = candAlbumNorm
+      .split(' ')
+      .filter(w => w.length >= 2 && !CONTEXT_STOPWORDS.has(w) && !titleTokens.has(w));
+    if (albumTokens.length > 0) {
+      let matchedAlbumTokens = 0;
+      for (const token of albumTokens) {
+        if (contextTokens.has(token) || (token.length >= 4 && contextCompact.includes(token))) {
+          matchedAlbumTokens++;
+        }
+      }
+      if (matchedAlbumTokens > 0) {
+        const ratio = matchedAlbumTokens / albumTokens.length;
+        score += 8 + Math.round(ratio * 12);
+      }
+    }
+  }
+
+  // 3. Duration compatibility & closeness (0..20 pts)
+  const targetDur = Number(context.duration || 0);
+  const candDur = Number(candidate.duration || 0);
+  if (targetDur > 0 && candDur > 0) {
+    const diff = Math.abs(targetDur - candDur);
+    if (!context.isYouTube) {
+      if (diff <= 2) score += 20;
+      else if (diff <= 5) score += 15;
+      else if (diff <= 10) score += 8;
+      else if (diff > 20) score -= 25;
+    } else {
+      // YouTube videos are often equal to or longer than studio audio
+      if (diff <= 4) score += 18;
+      else if (diff <= 12) score += 14;
+      else if (candDur <= targetDur + 15 && candDur >= targetDur - 90) score += 9;
+      else if (candDur > targetDur + 45) score -= 18;
+    }
+  }
+
+  // 4. Sync quality tie-breaker
+  if (candidate.hasWordSync) score += 6;
+  else if (candidate.hasSynced) score += 3;
+
+  return score;
+}
+
+/**
+ * Compute similarity [0, 1] between an Apple lyric line and a YouTube subtitle line
+ * using combined word-token overlap and character bigram Dice coefficient.
+ */
+export function computeLyricLineSimilarity(lineA: string, lineB: string): number {
+  const a = normalizeComparisonText(lineA);
+  const b = normalizeComparisonText(lineB);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+
+  const wordsA = a.split(' ').filter(Boolean);
+  const wordsB = b.split(' ').filter(Boolean);
+  const setA = new Set(wordsA);
+  const setB = new Set(wordsB);
+  let commonWords = 0;
+  for (const w of setA) {
+    if (setB.has(w)) commonWords++;
+  }
+  const wordScore = (2 * commonWords) / Math.max(1, setA.size + setB.size);
+
+  const compactA = a.replace(/\s+/g, '');
+  const compactB = b.replace(/\s+/g, '');
+  if (compactA.length < 2 || compactB.length < 2) return wordScore;
+
+  const bigramsA = new Map<string, number>();
+  for (let i = 0; i < compactA.length - 1; i++) {
+    const bg = compactA.slice(i, i + 2);
+    bigramsA.set(bg, (bigramsA.get(bg) || 0) + 1);
+  }
+  let intersection = 0;
+  for (let i = 0; i < compactB.length - 1; i++) {
+    const bg = compactB.slice(i, i + 2);
+    const count = bigramsA.get(bg) || 0;
+    if (count > 0) {
+      intersection++;
+      bigramsA.set(bg, count - 1);
+    }
+  }
+  const diceScore = (2 * intersection) / (compactA.length - 1 + (compactB.length - 1));
+
+  return Math.max(wordScore, diceScore * 0.85 + wordScore * 0.15);
+}
+
+function serializeAlignedLinesToLrc(lines: readonly TimedLine[], offsetFn: (t: number, lineIdx: number) => number): string {
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const newLineStart = Math.max(0, offsetFn(line.time, i));
+    if (line.words && line.words.length > 0) {
+      const body = line.words
+        .map((w: TimedWord) => {
+          const wStart = Math.max(0, offsetFn(w.start, i));
+          return `${formatLrcTag(wStart, '<')}${w.text}`;
+        })
+        .join(' ');
+      const lastWord = line.words[line.words.length - 1];
+      const lastEnd = Math.max(
+        newLineStart + 0.15,
+        offsetFn(lastWord.end > lastWord.start ? lastWord.end : lastWord.start + 0.35, i)
+      );
+      out.push(`${formatLrcTag(newLineStart, '[')}${body}${formatLrcTag(lastEnd, '<')}`);
+    } else {
+      out.push(`${formatLrcTag(newLineStart, '[')}${line.text}`);
+    }
+  }
+  return out.join('\n');
+}
+
+export interface HybridAlignmentResult {
+  lrc: string;
+  romanizedLrc: string;
+  hasWordSync: boolean;
+  matchedAnchors: number;
+  appliedMedianOffsetSec: number;
+  syncMethod: 'hybrid-line-anchors' | 'hybrid-onset-correlation' | 'sponsorblock-offset' | 'direct-apple';
+}
+
+/**
+ * LyricFlow Engine Hybrid Aligner:
+ * Compares line-by-line YouTube video subtitles with word-by-word Apple Music lyrics,
+ * computes the time offset for each line/phrase (accounting for music video intros, dialogue interludes,
+ * or mid-video pauses), and shifts every word-by-word timestamp from Apple Music accordingly.
+ */
+export function alignAppleWordSyncWithYouTubeSubtitles(
+  appleLrc: string,
+  appleRomanizedLrc: string,
+  youtubeSubtitlesLrc: string,
+  leadingNonMusicOffsetSec = 0
+): HybridAlignmentResult {
+  const appleLines = parseLRC(appleLrc);
+  const romanLines = parseLRC(appleRomanizedLrc);
+  const ytLines = parseLRC(youtubeSubtitlesLrc).filter(
+    l =>
+      l.text.trim().length > 0 &&
+      !/^\[(?:music|applause|laughter|instrumental|intro|outro|silence)\]$/i.test(l.text.trim())
+  );
+
+  const hasWordSync = appleLines.some(l => l.words && l.words.some(w => w.timing === 'sourced'));
+
+  if (appleLines.length === 0) {
+    return {
+      lrc: youtubeSubtitlesLrc,
+      romanizedLrc: '',
+      hasWordSync: false,
+      matchedAnchors: 0,
+      appliedMedianOffsetSec: 0,
+      syncMethod: 'direct-apple',
+    };
+  }
+
+  // Case 1: Both Apple lyrics and YouTube subtitles are available -> compare & align!
+  if (ytLines.length >= 2) {
+    const n = appleLines.length;
+    const m = ytLines.length;
+
+    // Build similarity matrix (checking both original Apple line and Romanized Apple line against YouTube caption)
+    const sim: number[][] = Array.from({ length: n }, () => new Array(m).fill(0));
+    for (let i = 0; i < n; i++) {
+      const aOrig = appleLines[i].text;
+      const aRom = romanLines[i]?.text || '';
+      for (let j = 0; j < m; j++) {
+        // Also check combined adjacent YouTube caption lines in case YouTube split a line in two
+        const yText = ytLines[j].text;
+        const s1 = computeLyricLineSimilarity(aOrig, yText);
+        const s2 = aRom ? computeLyricLineSimilarity(aRom, yText) : 0;
+        let bestS = Math.max(s1, s2);
+        if (j + 1 < m) {
+          const joinedYt = `${yText} ${ytLines[j + 1].text}`;
+          bestS = Math.max(
+            bestS,
+            computeLyricLineSimilarity(aOrig, joinedYt) * 0.94,
+            aRom ? computeLyricLineSimilarity(aRom, joinedYt) * 0.94 : 0
+          );
+        }
+        sim[i][j] = bestS;
+      }
+    }
+
+    // Dynamic Programming for Longest Monotonic Anchor Sequence
+    const THRESHOLD = 0.42;
+    const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+    const choice: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+
+    for (let i = 1; i <= n; i++) {
+      for (let j = 1; j <= m; j++) {
+        let best = dp[i - 1][j];
+        let act = 1; // skip apple line
+        if (dp[i][j - 1] > best) {
+          best = dp[i][j - 1];
+          act = 2; // skip yt line
+        }
+        const s = sim[i - 1][j - 1];
+        if (s >= THRESHOLD) {
+          const matchScore = dp[i - 1][j - 1] + s;
+          if (matchScore >= best) {
+            best = matchScore;
+            act = 3; // match (i-1, j-1)
+          }
+        }
+        dp[i][j] = best;
+        choice[i][j] = act;
+      }
+    }
+
+    const rawAnchors: { appleIdx: number; ytIdx: number; delta: number; similarity: number }[] = [];
+    let ci = n;
+    let cj = m;
+    while (ci > 0 && cj > 0) {
+      const act = choice[ci][cj];
+      if (act === 3) {
+        const aIdx = ci - 1;
+        const yIdx = cj - 1;
+        rawAnchors.push({
+          appleIdx: aIdx,
+          ytIdx: yIdx,
+          delta: ytLines[yIdx].time - appleLines[aIdx].time,
+          similarity: sim[aIdx][yIdx],
+        });
+        ci--;
+        cj--;
+      } else if (act === 1) {
+        ci--;
+      } else {
+        cj--;
+      }
+    }
+    rawAnchors.reverse();
+
+    // Filter out outlier deltas that deviate wildly from local neighborhood median
+    if (rawAnchors.length >= 2) {
+      const sortedDeltas = rawAnchors.map(a => a.delta).sort((a, b) => a - b);
+      const globalMedianDelta = sortedDeltas[Math.floor(sortedDeltas.length / 2)];
+      const cleanAnchors = rawAnchors.filter(a => Math.abs(a.delta - globalMedianDelta) <= 45);
+
+      if (cleanAnchors.length >= 2) {
+        // Compute per-line time offset for every Apple line via piecewise-linear interpolation between anchors
+        const lineDeltas = new Array<number>(n).fill(globalMedianDelta);
+        const firstAnchor = cleanAnchors[0];
+        const lastAnchor = cleanAnchors[cleanAnchors.length - 1];
+
+        for (let i = 0; i <= firstAnchor.appleIdx; i++) {
+          lineDeltas[i] = firstAnchor.delta;
+        }
+        for (let i = lastAnchor.appleIdx; i < n; i++) {
+          lineDeltas[i] = lastAnchor.delta;
+        }
+        for (let k = 0; k < cleanAnchors.length - 1; k++) {
+          const a0 = cleanAnchors[k];
+          const a1 = cleanAnchors[k + 1];
+          const spanIdx = Math.max(1, a1.appleIdx - a0.appleIdx);
+          for (let i = a0.appleIdx; i <= a1.appleIdx; i++) {
+            const frac = (i - a0.appleIdx) / spanIdx;
+            lineDeltas[i] = a0.delta + frac * (a1.delta - a0.delta);
+          }
+        }
+
+        const shiftFn = (t: number, lineIdx: number) => t + (lineDeltas[lineIdx] ?? globalMedianDelta);
+        return {
+          lrc: serializeAlignedLinesToLrc(appleLines, shiftFn),
+          romanizedLrc: romanLines.length ? serializeAlignedLinesToLrc(romanLines, shiftFn) : '',
+          hasWordSync,
+          matchedAnchors: cleanAnchors.length,
+          appliedMedianOffsetSec: Number(globalMedianDelta.toFixed(2)),
+          syncMethod: 'hybrid-line-anchors',
+        };
+      }
+    }
+
+    // Fallback when YouTube subtitles are in a different script/translation than Apple lyrics:
+    // Estimate the time offset by correlating line-onset timestamps between Apple lyrics and YouTube subtitles.
+    let bestShift = 0;
+    let bestCorrelation = -1;
+    const firstYtVocal = ytLines[0].time;
+    const firstAppleVocal = appleLines[0].time;
+    const candidateBaseShift = firstYtVocal - firstAppleVocal;
+
+    // Search candidate shifts in [-15s .. +120s] at 0.25s resolution + around candidateBaseShift
+    const candidates = new Set<number>([0, candidateBaseShift]);
+    if (leadingNonMusicOffsetSec > 0.5) {
+      candidates.add(leadingNonMusicOffsetSec);
+    }
+    for (let s = -15; s <= 120; s += 0.5) {
+      candidates.add(s);
+    }
+
+    for (const shift of candidates) {
+      let score = 0;
+      let yPtr = 0;
+      for (let i = 0; i < n; i++) {
+        const shiftedTime = appleLines[i].time + shift;
+        while (yPtr + 1 < m && Math.abs(ytLines[yPtr + 1].time - shiftedTime) <= Math.abs(ytLines[yPtr].time - shiftedTime)) {
+          yPtr++;
+        }
+        const diff = Math.abs(ytLines[yPtr].time - shiftedTime);
+        if (diff <= 1.8) {
+          score += 1 - diff / 1.8;
+        }
+      }
+      if (score > bestCorrelation) {
+        bestCorrelation = score;
+        bestShift = shift;
+      }
+    }
+
+    if (Math.abs(bestShift) >= 0.4 && bestCorrelation >= Math.min(3, n * 0.2)) {
+      const shiftFn = (t: number) => t + bestShift;
+      return {
+        lrc: serializeAlignedLinesToLrc(appleLines, shiftFn),
+        romanizedLrc: romanLines.length ? serializeAlignedLinesToLrc(romanLines, shiftFn) : '',
+        hasWordSync,
+        matchedAnchors: Math.round(bestCorrelation),
+        appliedMedianOffsetSec: Number(bestShift.toFixed(2)),
+        syncMethod: 'hybrid-onset-correlation',
+      };
+    }
+  }
+
+  // Case 2: No YouTube captions on video, but SponsorBlock identified a non-music intro segment!
+  if (leadingNonMusicOffsetSec >= 1.5 && appleLines[0].time < leadingNonMusicOffsetSec + 2) {
+    const shiftFn = (t: number) => t + leadingNonMusicOffsetSec;
+    return {
+      lrc: serializeAlignedLinesToLrc(appleLines, shiftFn),
+      romanizedLrc: romanLines.length ? serializeAlignedLinesToLrc(romanLines, shiftFn) : '',
+      hasWordSync,
+      matchedAnchors: 0,
+      appliedMedianOffsetSec: Number(leadingNonMusicOffsetSec.toFixed(2)),
+      syncMethod: 'sponsorblock-offset',
+    };
+  }
+
+  return {
+    lrc: appleLrc,
+    romanizedLrc: appleRomanizedLrc,
+    hasWordSync,
+    matchedAnchors: 0,
+    appliedMedianOffsetSec: 0,
+    syncMethod: 'direct-apple',
+  };
+}

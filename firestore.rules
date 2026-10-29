@@ -1,0 +1,129 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net: Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function incoming() {
+      return request.resource.data;
+    }
+    function existing() {
+      return resource.data;
+    }
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidUserPreferences(data) {
+      return data.keys().hasAll([
+        'uid', 'displayName', 'intensity', 'speed', 'sensitivity',
+        'spectrumGain', 'motionBlur', 'quality', 'autoScenes',
+        'spatialTypography', 'narrativeObjects', 'cameraMode',
+        'enabledScenes', 'enabledKineticMotions', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'uid', 'displayName', 'intensity', 'speed', 'sensitivity',
+        'spectrumGain', 'motionBlur', 'quality', 'autoScenes',
+        'spatialTypography', 'narrativeObjects', 'cameraMode',
+        'enabledScenes', 'enabledKineticMotions', 'createdAt', 'updatedAt'
+      ]) &&
+      data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+      data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.uid == request.auth.uid &&
+      data.displayName is string && data.displayName.size() <= 120 &&
+      data.intensity is number && data.intensity >= 0 && data.intensity <= 100 &&
+      data.speed is number && data.speed >= 10 && data.speed <= 100 &&
+      data.sensitivity is number && data.sensitivity >= 0 && data.sensitivity <= 100 &&
+      data.spectrumGain is number && data.spectrumGain >= 0 && data.spectrumGain <= 100 &&
+      data.motionBlur is number && data.motionBlur >= 0 && data.motionBlur <= 80 &&
+      data.quality is string && data.quality.size() <= 20 &&
+      data.quality in ['High', 'Balanced', 'Performance'] &&
+      data.autoScenes is bool &&
+      data.spatialTypography is bool &&
+      data.narrativeObjects is bool &&
+      data.cameraMode is string && data.cameraMode.size() <= 20 &&
+      data.cameraMode in ['Automatic', 'Front', 'Orbit', 'Side', 'Top'] &&
+      data.enabledScenes is list && data.enabledScenes.size() >= 1 && data.enabledScenes.size() <= 64 &&
+      data.enabledScenes[0] is string && data.enabledScenes[0].size() <= 64 &&
+      data.enabledKineticMotions is list && data.enabledKineticMotions.size() >= 1 && data.enabledKineticMotions.size() <= 32 &&
+      data.enabledKineticMotions[0] is string && data.enabledKineticMotions[0].size() <= 32 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidSongDelay(data, songId) {
+      return data.keys().hasAll([
+        'uid', 'songId', 'title', 'artist', 'duration',
+        'delaySeconds', 'customLyricsLrc', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'uid', 'songId', 'title', 'artist', 'duration',
+        'delaySeconds', 'customLyricsLrc', 'createdAt', 'updatedAt'
+      ]) &&
+      data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+      data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.uid == request.auth.uid &&
+      data.songId is string && data.songId.size() >= 1 && data.songId.size() <= 128 &&
+      data.songId.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.songId == songId &&
+      data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+      data.artist is string && data.artist.size() <= 200 &&
+      data.duration is number && data.duration >= 0 && data.duration <= 36000 &&
+      data.delaySeconds is number && data.delaySeconds >= -30 && data.delaySeconds <= 30 &&
+      data.customLyricsLrc is string && data.customLyricsLrc.size() <= 100000 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    match /userPreferences/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow create: if isOwner(userId) && isValidId(userId) &&
+        isValidUserPreferences(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isOwner(userId) && isValidId(userId) &&
+        isValidUserPreferences(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'intensity', 'speed', 'sensitivity',
+          'spectrumGain', 'motionBlur', 'quality', 'autoScenes',
+          'spatialTypography', 'narrativeObjects', 'cameraMode',
+          'enabledScenes', 'enabledKineticMotions', 'updatedAt'
+        ]);
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      match /songDelays/{songId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(songId) &&
+          get(/databases/$(database)/documents/userPreferences/$(userId)).data.uid == request.auth.uid;
+        allow list: if isOwner(userId) && existing().uid == request.auth.uid;
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(songId) &&
+          isValidSongDelay(incoming(), songId) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          get(/databases/$(database)/documents/userPreferences/$(userId)).data.uid == request.auth.uid;
+        allow update: if isOwner(userId) && isValidId(userId) && isValidId(songId) &&
+          isValidSongDelay(incoming(), songId) &&
+          incoming().uid == existing().uid &&
+          incoming().songId == existing().songId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'title', 'artist', 'duration', 'delaySeconds', 'customLyricsLrc', 'updatedAt'
+          ]) &&
+          get(/databases/$(database)/documents/userPreferences/$(userId)).data.uid == request.auth.uid;
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(songId) &&
+          get(/databases/$(database)/documents/userPreferences/$(userId)).data.uid == request.auth.uid;
+      }
+    }
+  }
+}

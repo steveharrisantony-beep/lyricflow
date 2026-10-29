@@ -1,0 +1,180 @@
+{
+  "entities": {
+    "UserPreferences": {
+      "title": "UserPreferences",
+      "description": "Stores user visual settings, enabled 2D/3D theme IDs, and enabled kinetic lyric animation styles.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name.",
+          "minLength": 0,
+          "maxLength": 120
+        },
+        "intensity": {
+          "type": "number",
+          "description": "Visual intensity percentage (0-100)."
+        },
+        "speed": {
+          "type": "number",
+          "description": "Visual speed percentage (10-100)."
+        },
+        "sensitivity": {
+          "type": "number",
+          "description": "Audio sensitivity percentage (0-100)."
+        },
+        "spectrumGain": {
+          "type": "number",
+          "description": "64-band spectrum gain percentage (0-100)."
+        },
+        "motionBlur": {
+          "type": "number",
+          "description": "Motion blur percentage (0-80)."
+        },
+        "quality": {
+          "type": "string",
+          "description": "Rendering quality preset.",
+          "enum": ["High", "Balanced", "Performance"]
+        },
+        "autoScenes": {
+          "type": "boolean",
+          "description": "Whether the cinematic scene director automatically switches scenes."
+        },
+        "spatialTypography": {
+          "type": "boolean",
+          "description": "Whether 3D kinetic lyric choreography is enabled."
+        },
+        "narrativeObjects": {
+          "type": "boolean",
+          "description": "Whether audio-reactive narrative objects are rendered."
+        },
+        "cameraMode": {
+          "type": "string",
+          "description": "Selected camera angle mode.",
+          "enum": ["Automatic", "Front", "Orbit", "Side", "Top"]
+        },
+        "enabledScenes": {
+          "type": "array",
+          "description": "Bounded list of enabled VoxelWall visual theme IDs (1 to 32)."
+        },
+        "enabledKineticMotions": {
+          "type": "array",
+          "description": "Bounded list of enabled VoxelVerse lyric animation styles (1 to 19)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation server timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update server timestamp."
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "intensity",
+        "speed",
+        "sensitivity",
+        "spectrumGain",
+        "motionBlur",
+        "quality",
+        "autoScenes",
+        "spatialTypography",
+        "narrativeObjects",
+        "cameraMode",
+        "enabledScenes",
+        "enabledKineticMotions",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SongDelayPreference": {
+      "title": "SongDelayPreference",
+      "description": "Stores per-song lyric timing delay and optional custom lyric override for a user.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "songId": {
+          "type": "string",
+          "description": "Deterministic song identifier key.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Normalized or display song title.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "artist": {
+          "type": "string",
+          "description": "Song artist name.",
+          "minLength": 0,
+          "maxLength": 200
+        },
+        "duration": {
+          "type": "number",
+          "description": "Recording duration in seconds."
+        },
+        "delaySeconds": {
+          "type": "number",
+          "description": "Lyric delay offset in seconds (-30 to +30)."
+        },
+        "customLyricsLrc": {
+          "type": "string",
+          "description": "Optional user-edited LRC text if default lyrics did not match.",
+          "minLength": 0,
+          "maxLength": 100000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation server timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update server timestamp."
+        }
+      },
+      "required": [
+        "uid",
+        "songId",
+        "title",
+        "artist",
+        "duration",
+        "delaySeconds",
+        "customLyricsLrc",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/userPreferences/{userId}": {
+      "schema": { "$ref": "#/entities/UserPreferences" },
+      "description": "Stores each authenticated user's visualizer settings, enabled themes, and enabled kinetic lyric animations."
+    },
+    "/userPreferences/{userId}/songDelays/{songId}": {
+      "schema": { "$ref": "#/entities/SongDelayPreference" },
+      "description": "Stores per-song lyric timing delays and optional custom lyric overrides owned by the user."
+    }
+  }
+}
