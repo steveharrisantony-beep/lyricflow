@@ -1,0 +1,63 @@
+import { readFile } from 'node:fs/promises';
+import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
+import { doc, getDoc, setDoc, getDocs, collection, deleteDoc, serverTimestamp } from 'firebase/firestore';
+if (!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '')) throw Error('Run against the local Firestore emulator only.');
+const env = await initializeTestEnvironment({ projectId: 'demo-lyricflow', firestore: { rules: await readFile('firestore.rules', 'utf8') } });
+const alice = env.authenticatedContext('alice', { email_verified: true }).firestore();
+const bob = env.authenticatedContext('bob', { email_verified: true }).firestore();
+const unverified = env.authenticatedContext('unverified', { email_verified: false }).firestore();
+const guest = env.unauthenticatedContext().firestore();
+const admin = env.authenticatedContext('developer', { admin: true }).firestore();
+const identity = { provider: 'local', providerId: '', title: 'original test song', artist: 'test artist', album: 'studio', duration: 200 };
+const correction = { recordingKey: 'r3_0123456789abcdef', identity, kind: 'delay', lyricsKey: 'l3_0123456789abcdef', delaySeconds: 2, selection: null, youtubeVideoId: null };
+const id = `${correction.recordingKey}_delay_${correction.lyricsKey}`;
+const proposalId = id + '_0123456789abcdef';
+const pending = { ...correction, proposalKey: '0123456789abcdef', uid: 'alice', status: 'pending', updatedAt: serverTimestamp() };
+const approved = { ...correction, active: true, revision: 1, updatedAt: serverTimestamp() };
+const prefs = {
+  display: {scene:'holographic-tide',reducedMotion:false,youtubeBackgroundMode:'video',videoOverlayOpacity:.45,autoHideYoutubeLyrics:true,playerVolume:85,sponsorBlockEnabled:true,lyricPlacementMode:'auto',lyricColorMode:'auto',lyricFillPaceMode:'auto',lyricDisplayMode:'both'},
+  intensity:65,speed:55,sensitivity:50,spectrumGain:35,motionBlur:30,quality:'Balanced',autoScenes:true,spatialTypography:true,narrativeObjects:false,cameraMode:'Front',enabledScenes:['holographic-tide'],enabledKineticMotions:['ship'],enabledCameraViews:['Front'],cameraShakeEnabled:true,cameraShakeSensitivity:50,lyricMinFontSize:26,lyricMaxFontSize:88,themePalettes:{},
+};
+let checks = 0;
+const yes = async p => { await assertSucceeds(p); checks++; };
+const no = async p => { await assertFails(p); checks++; };
+try {
+  await env.clearFirestore();
+  await yes(setDoc(doc(alice,'profiles/alice'), {preferences:prefs,updatedAt:serverTimestamp()}));
+  await yes(getDoc(doc(alice,'profiles/alice')));
+  await no(getDoc(doc(bob,'profiles/alice')));
+  await no(getDoc(doc(guest,'profiles/alice')));
+  await no(setDoc(doc(alice,'profiles/bob'),{preferences:prefs,updatedAt:serverTimestamp()}));
+  await no(setDoc(doc(alice,'profiles/alice'),{preferences:{...prefs,intensity:500},updatedAt:serverTimestamp()}));
+  await no(setDoc(doc(alice,'profiles/alice'),{preferences:prefs,admin:true,updatedAt:serverTimestamp()}));
+  await yes(setDoc(doc(unverified,'profiles/unverified'), {preferences:prefs,updatedAt:serverTimestamp()}));
+  await yes(setDoc(doc(alice,`profiles/alice/corrections/${id}`), {...correction,updatedAt:serverTimestamp()}));
+  await no(getDoc(doc(bob,`profiles/alice/corrections/${id}`)));
+  await no(setDoc(doc(alice,`profiles/alice/corrections/${id}`), {...correction,delaySeconds:31,updatedAt:serverTimestamp()}));
+  await yes(setDoc(doc(alice,'profiles/alice/customLyrics/r3_0123456789abcdef'), {identity,text:'Original test words',updatedAt:serverTimestamp()}));
+  await no(getDoc(doc(guest,'profiles/alice/customLyrics/r3_0123456789abcdef')));
+  await no(getDoc(doc(bob,'profiles/alice/customLyrics/r3_0123456789abcdef')));
+  await yes(setDoc(doc(alice,`correctionSubmissions/alice/items/${proposalId}`),pending));
+  await yes(setDoc(doc(alice,`correctionSubmissions/alice/items/${proposalId}`),{...pending,delaySeconds:3}));
+  await no(setDoc(doc(unverified,`correctionSubmissions/unverified/items/${proposalId}`),{...pending,uid:'unverified'}));
+  await no(getDoc(doc(guest,`correctionSubmissions/alice/items/${proposalId}`)));
+  await no(getDoc(doc(bob,`correctionSubmissions/alice/items/${proposalId}`)));
+  await no(setDoc(doc(alice,`correctionSubmissions/alice/items/${proposalId}`),{...pending,status:'approved'}));
+  await no(setDoc(doc(alice,`correctionSubmissions/alice/items/${proposalId}`),{...pending,email:'leak@example.com'}));
+  await no(setDoc(doc(alice,`approvedCorrections/${id}`),approved));
+  await no(setDoc(doc(guest,`approvedCorrections/${id}`),approved));
+  await yes(setDoc(doc(admin,`approvedCorrections/${id}`),approved));
+  await yes(getDoc(doc(guest,`approvedCorrections/${id}`)));
+  await no(getDocs(collection(guest,'approvedCorrections')));
+  await no(setDoc(doc(alice,'admins/alice'),{admin:true}));
+  await yes(setDoc(doc(admin,`correctionSubmissions/alice/items/${proposalId}`),{...pending,delaySeconds:3,status:'approved'}));
+  await no(setDoc(doc(alice,`correctionSubmissions/alice/items/${proposalId}`),pending));
+  await yes(deleteDoc(doc(admin,`approvedCorrections/${id}`)));
+  await yes(getDoc(doc(guest,`approvedCorrections/${id}`)));
+  const lyrics = {...correction,kind:'lyrics',lyricsKey:'',delaySeconds:null,selection:{engine:'lrclib',lrclibId:12,subtitleTrackId:null}};
+  await yes(setDoc(doc(alice,`profiles/alice/corrections/${correction.recordingKey}_lyrics_recording`),{...lyrics,updatedAt:serverTimestamp()}));
+  const video = {...correction,kind:'video',lyricsKey:'',delaySeconds:null,youtubeVideoId:'abcdefghijk'};
+  await yes(setDoc(doc(admin,`approvedCorrections/${correction.recordingKey}_video_recording`),{...video,active:true,revision:1,updatedAt:serverTimestamp()}));
+  await no(setDoc(doc(admin,`approvedCorrections/${correction.recordingKey}_video_recording`),{...video,youtubeVideoId:'invalid',active:true,revision:2,updatedAt:serverTimestamp()}));
+  console.log(`${checks} Firestore permission and validation checks passed.`);
+} finally { await env.cleanup(); }

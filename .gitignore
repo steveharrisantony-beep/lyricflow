@@ -9,3 +9,7 @@ firebase-applet-config.json
 __pycache__/
 *.pyc
 lyricflow-smoke-failure.png
+
+# Local Firebase emulator output
+*-debug.log
+.firebase/

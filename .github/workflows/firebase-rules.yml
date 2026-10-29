@@ -1,0 +1,26 @@
+name: Firebase rules checks
+on:
+  push:
+    branches: [main]
+    paths: ['firestore.rules', 'scripts/firestore-rules-check.mjs', 'firebase.json', 'package*.json', '.github/workflows/firebase-rules.yml']
+  pull_request:
+    paths: ['firestore.rules', 'scripts/firestore-rules-check.mjs', 'firebase.json', 'package*.json', '.github/workflows/firebase-rules.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci --no-audit --no-fund
+      - run: npx --yes firebase-tools@14.22.0 emulators:exec --project demo-lyricflow --only firestore 'npm run test:rules'

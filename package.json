@@ -15,7 +15,8 @@
     "smoke:music": "node scripts/music-smoke.mjs",
     "smoke:motion": "node scripts/motion-smoke.mjs",
     "smoke:hls": "node scripts/hls-smoke.mjs",
-    "smoke:kinetic": "node scripts/kinetic-smoke.mjs"
+    "smoke:kinetic": "node scripts/kinetic-smoke.mjs",
+    "test:rules": "node scripts/firestore-rules-check.mjs"
   },
   "dependencies": {
     "@fontsource/abril-fatface": "^5.2.0",
@@ -62,6 +63,7 @@
     "vite": "latest"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
     "@types/express": "^5.0.6",
     "@types/react": "latest",
     "@types/react-dom": "latest",

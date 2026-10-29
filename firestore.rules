@@ -125,5 +125,114 @@ service cloud.firestore {
           get(/databases/$(database)/documents/userPreferences/$(userId)).data.uid == request.auth.uid;
       }
     }
+
+    // v3: account-private state and public, explicitly approved corrections.
+    function profileOwner(uid) { return request.auth != null && request.auth.uid == uid; }
+    function developer() {
+      return request.auth != null && (request.auth.token.get('admin', false) == true ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+    // Role documents are provisioned ONLY through the Firebase console/Admin SDK.
+    match /admins/{uid} { allow read, write: if false; }
+    function validIdentity(v) {
+      return v is map && v.keys().hasOnly(['provider','providerId','title','artist','album','duration']) &&
+        v.keys().hasAll(['provider','providerId','title','artist','album','duration']) &&
+        v.provider is string && v.provider.size() <= 32 &&
+        v.providerId is string && v.providerId.size() <= 256 &&
+        v.title is string && v.title.size() >= 1 && v.title.size() <= 200 &&
+        v.artist is string && v.artist.size() <= 200 && v.album is string && v.album.size() <= 200 &&
+        v.duration is int && v.duration >= 0 && v.duration <= 36000;
+    }
+    function validSelection(s) {
+      return s is map && s.keys().hasOnly(['engine','lrclibId','subtitleTrackId']) &&
+        s.keys().hasAll(['engine','lrclibId','subtitleTrackId']) &&
+        s.engine in ['lyricflow','apple','lrclib','youtube'] &&
+        (s.lrclibId == null || (s.engine == 'lrclib' && s.lrclibId is int && s.lrclibId > 0)) &&
+        (s.subtitleTrackId == null || (s.subtitleTrackId is string && s.subtitleTrackId.size() <= 256));
+    }
+    function validCorrection(c, id) {
+      return c.keys().hasAll(['recordingKey','identity','kind','lyricsKey','delaySeconds','selection','youtubeVideoId']) &&
+        c.recordingKey is string && c.recordingKey.matches('^r3_[a-f0-9]{16}$') && validIdentity(c.identity) &&
+        c.lyricsKey is string && c.kind in ['delay','lyrics','video'] &&
+        id == c.recordingKey + '_' + c.kind + '_' + (c.lyricsKey == '' ? 'recording' : c.lyricsKey) &&
+        ((c.kind == 'delay' && c.lyricsKey.matches('^l3_[a-f0-9]{16}$') &&
+          c.delaySeconds is number && c.delaySeconds >= -30 && c.delaySeconds <= 30 && c.selection == null && c.youtubeVideoId == null) ||
+         (c.kind == 'lyrics' && c.lyricsKey == '' && c.delaySeconds == null && validSelection(c.selection) && c.youtubeVideoId == null) ||
+         (c.kind == 'video' && c.lyricsKey == '' && c.delaySeconds == null && c.selection == null &&
+          c.youtubeVideoId is string && c.youtubeVideoId.matches('^[a-zA-Z0-9_-]{11}$')));
+    }
+    function correctionFields() { return ['recordingKey','identity','kind','lyricsKey','delaySeconds','selection','youtubeVideoId']; }
+    function validDisplay(d) {
+      return d is map && d.keys().hasOnly(['scene','reducedMotion','youtubeBackgroundMode','videoOverlayOpacity','autoHideYoutubeLyrics','playerVolume','sponsorBlockEnabled','lyricPlacementMode','lyricColorMode','lyricFillPaceMode','lyricDisplayMode']) &&
+        d.keys().hasAll(['scene','reducedMotion','youtubeBackgroundMode','videoOverlayOpacity','autoHideYoutubeLyrics','playerVolume','sponsorBlockEnabled','lyricPlacementMode','lyricColorMode','lyricFillPaceMode','lyricDisplayMode']) &&
+        d.scene is string && d.scene.size() <= 64 && d.reducedMotion is bool && d.youtubeBackgroundMode in ['video','theme'] &&
+        d.videoOverlayOpacity is number && d.videoOverlayOpacity >= 0 && d.videoOverlayOpacity <= 1 && d.autoHideYoutubeLyrics is bool &&
+        d.playerVolume is number && d.playerVolume >= 0 && d.playerVolume <= 100 && d.sponsorBlockEnabled is bool &&
+        d.lyricPlacementMode in ['auto','alternating','left','right','bottom-right','bottom-left','top-left','diagonal','center'] &&
+        d.lyricColorMode in ['auto','cyan','rose','gold','emerald','violet','coral','white'] &&
+        d.lyricFillPaceMode in ['auto','letter','word'] && d.lyricDisplayMode in ['original','romanized','both'];
+    }
+    function validProfile(p) {
+      return p is map && p.keys().hasOnly(['display','intensity','speed','sensitivity','spectrumGain','motionBlur','quality','autoScenes','spatialTypography','narrativeObjects','cameraMode','enabledScenes','enabledKineticMotions','enabledCameraViews','cameraShakeEnabled','cameraShakeSensitivity','lyricMinFontSize','lyricMaxFontSize','themePalettes']) &&
+        p.keys().hasAll(['display','intensity','speed','sensitivity','spectrumGain','motionBlur','quality','autoScenes','spatialTypography','narrativeObjects','cameraMode','enabledScenes','enabledKineticMotions','enabledCameraViews','cameraShakeEnabled','cameraShakeSensitivity','lyricMinFontSize','lyricMaxFontSize','themePalettes']) &&
+        validDisplay(p.display) && p.intensity is number && p.intensity >= 0 && p.intensity <= 100 &&
+        p.speed is number && p.speed >= 10 && p.speed <= 100 && p.sensitivity is number && p.sensitivity >= 0 && p.sensitivity <= 100 &&
+        p.spectrumGain is number && p.spectrumGain >= 0 && p.spectrumGain <= 100 && p.motionBlur is number && p.motionBlur >= 0 && p.motionBlur <= 80 &&
+        p.quality in ['High','Balanced','Performance'] && p.autoScenes is bool && p.spatialTypography is bool && p.narrativeObjects == false &&
+        p.cameraMode == 'Front' && p.enabledScenes is list && p.enabledScenes.size() >= 1 && p.enabledScenes.size() <= 64 &&
+        p.enabledKineticMotions is list && p.enabledKineticMotions.size() >= 1 && p.enabledKineticMotions.size() <= 32 &&
+        p.enabledCameraViews == ['Front'] && p.cameraShakeEnabled is bool &&
+        p.cameraShakeSensitivity is number && p.cameraShakeSensitivity >= 0 && p.cameraShakeSensitivity <= 100 &&
+        p.lyricMinFontSize is number && p.lyricMinFontSize >= 16 && p.lyricMinFontSize <= 72 &&
+        p.lyricMaxFontSize is number && p.lyricMaxFontSize >= p.lyricMinFontSize && p.lyricMaxFontSize >= 32 && p.lyricMaxFontSize <= 130 &&
+        p.themePalettes is map && p.themePalettes.size() <= 64;
+    }
+    match /profiles/{uid} {
+      allow get: if profileOwner(uid);
+      allow create, update: if profileOwner(uid) && request.resource.data.keys().hasOnly(['preferences','updatedAt']) &&
+        validProfile(request.resource.data.preferences) && request.resource.data.updatedAt == request.time;
+      allow delete: if profileOwner(uid);
+      match /corrections/{id} {
+        allow read, delete: if profileOwner(uid);
+        allow create, update: if profileOwner(uid) && request.resource.data.keys().hasOnly(correctionFields().concat(['updatedAt'])) &&
+          validCorrection(request.resource.data, id) && request.resource.data.updatedAt == request.time;
+      }
+      match /customLyrics/{id} {
+        allow read, delete: if profileOwner(uid);
+        allow create, update: if profileOwner(uid) && id.matches('^r3_[a-f0-9]{16}$') &&
+          request.resource.data.keys().hasOnly(['identity','text','updatedAt']) && validIdentity(request.resource.data.identity) &&
+          request.resource.data.text is string && request.resource.data.text.size() <= 100000 && request.resource.data.updatedAt == request.time;
+      }
+    }
+    match /approvedCorrections/{id} {
+      // Readable without sign-in, but never writable by ordinary users.
+      allow get: if true;
+      allow list: if developer();
+      allow create, update: if developer() && request.resource.data.keys().hasOnly(correctionFields().concat(['active','revision','updatedAt'])) &&
+        validCorrection(request.resource.data, id) && request.resource.data.active is bool &&
+        request.resource.data.revision is int && request.resource.data.revision >= 1 && request.resource.data.updatedAt == request.time;
+      allow delete: if developer();
+    }
+    function correctionDocumentId(c) { return c.recordingKey + '_' + c.kind + '_' + (c.lyricsKey == '' ? 'recording' : c.lyricsKey); }
+    function validProposal(c, id) {
+      return c.proposalKey is string && c.proposalKey.matches('^[a-f0-9]{16}$') &&
+        id == correctionDocumentId(c) + '_' + c.proposalKey && validCorrection(c, correctionDocumentId(c));
+    }
+    match /correctionSubmissions/{uid}/items/{id} {
+      allow read: if profileOwner(uid) || developer();
+      allow create: if profileOwner(uid) && request.auth.token.email_verified == true &&
+        request.resource.data.keys().hasOnly(correctionFields().concat(['proposalKey','uid','status','updatedAt'])) &&
+        validProposal(request.resource.data, id) && request.resource.data.identity.duration > 0 &&
+        request.resource.data.identity.artist.size() > 0 && request.resource.data.uid == uid &&
+        request.resource.data.status == 'pending' && request.resource.data.updatedAt == request.time;
+      allow update: if request.resource.data.updatedAt == request.time &&
+        ((profileOwner(uid) && request.auth.token.email_verified == true && resource.data.status == 'pending' &&
+          request.resource.data.keys().hasOnly(correctionFields().concat(['proposalKey','uid','status','updatedAt'])) &&
+          validProposal(request.resource.data, id) && request.resource.data.uid == uid &&
+          request.resource.data.status == 'pending' && request.resource.data.identity == resource.data.identity) ||
+         (developer() && request.resource.data.status in ['approved','rejected'] &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updatedAt'])));
+      allow delete: if developer();
+    }
   }
 }
