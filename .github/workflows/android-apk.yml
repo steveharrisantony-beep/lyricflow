@@ -65,7 +65,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          script: cd android && ./gradlew --no-daemon connectedDebugAndroidTest
+          script: cd android && ./gradlew --no-daemon :app:connectedDebugAndroidTest
       - name: Upload device test reports
         if: always()
         uses: actions/upload-artifact@v4
