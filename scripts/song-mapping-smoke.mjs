@@ -1,0 +1,55 @@
+import { chromium } from 'playwright';
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
+const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','5175','--strictPort'],{stdio:'ignore'});
+let ready=false;for(let i=0;i<100;i++){try{if((await fetch('http://127.0.0.1:5175')).ok){ready=true;break;}}catch{}await delay(100);}
+if(!ready){server.kill();throw Error('Preview failed to start');}
+const browser=await chromium.launch({...process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{channel:'chrome'},headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--use-angle=swiftshader']});
+const page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+const rate=8000,frames=rate*200,wav=Buffer.alloc(44+frames*2);wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVE',8);wav.write('fmt ',12);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(rate,24);wav.writeUInt32LE(rate*2,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(frames*2,40);for(let n=0;n<frames;n++)wav.writeInt16LE(Math.round(Math.sin(n*2*Math.PI*220/rate)*4000),44+n*2);
+const song={id:'saavn_fixture',title:'Test Song',artist:'Test Author',album:'Test',duration:200,provider:'jiosaavn',sourceUrl:'https://www.jiosaavn.com/song/test',audioSource:'JioSaavn'};
+const video={...song,id:'yt_abcdefghijk',provider:'resolver',youtubeVideoId:'abcdefghijk',sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk'};
+let lastQuery='';
+await page.route('**/music/**',r=>r.fulfill({status:404,json:{detail:'Fixture has no automatic lyrics'}}));
+await page.route('https://lrclib.net/**',r=>r.fulfill({json:[]}));
+await page.route('**/music/search**',route=>{const p=new URL(route.request().url()).searchParams;lastQuery=p.get('q')||'';return route.fulfill({json:{data:[p.get('provider')==='youtube'?video:song]}});});
+await page.route('**/music/resolve/**',route=>route.fulfill({json:{streamPath:'/audio/jiofixture',format:'audio',audioSource:'JioSaavn',track:song}}));
+await page.route('**/music/audio/jiofixture',route=>route.fulfill({contentType:'audio/wav',body:wav}));
+await page.route('https://www.youtube.com/**',route=>route.fulfill({contentType:'text/html',body:`<script>window.commands=[];addEventListener('message',event=>{try{const d=JSON.parse(event.data);if(d.func)commands.push(d);if(d.event==='listening')parent.postMessage(JSON.stringify({event:'onReady'}),'*')}catch{}})</script>`}));
+try{
+ await page.goto('http://127.0.0.1:5175');
+ await page.getByRole('button',{name:'Search JioSaavn & YouTube',exact:true}).click();
+ await page.getByLabel('Search songs',{exact:true}).fill('Test Song');
+ await page.locator('.song-search-form button[type=submit]').click();
+ await page.locator('.song-result').first().getByRole('button',{name:'Play now Test Song',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('audio')?.currentTime>.1);
+ const originalAudio=await page.locator('audio').getAttribute('src');
+ await page.getByRole('button',{name:'Find YouTube video background',exact:true}).click();
+ assert.equal(lastQuery,'Test Song Test Author music video');
+ await page.getByRole('button',{name:'Use muted background',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('iframe')?.src.includes('abcdefghijk'));
+ assert.ok((await page.locator('iframe').getAttribute('src')).includes('mute=1'));
+ assert.equal(await page.locator('audio').getAttribute('src'),originalAudio);
+ await page.getByLabel('Preferred YouTube background',{exact:true}).selectOption('lyrics');
+ await page.getByRole('button',{name:'Change YouTube background',exact:true}).click();
+ assert.equal(lastQuery,'Test Song Test Author lyrics video');
+ await page.getByRole('button',{name:'Use muted background',exact:true}).click();
+ await page.locator('.correction-controls summary').click();
+ await page.getByLabel('Video delay seconds',{exact:true}).fill('2');
+ await page.getByRole('button',{name:'Save background video',exact:true}).click();
+ await page.getByLabel('Video delay seconds',{exact:true}).fill('-2');
+ await page.getByRole('button',{name:'Save background video',exact:true}).click();
+ await page.getByRole('button',{name:'Custom Edit / Change Lyrics',exact:true}).click();
+ await page.getByLabel('Import LRC or TTML file').setInputFiles({name:'test-song.lrc',mimeType:'text/plain',buffer:Buffer.from('[00:01]Original test lyric\n[00:03]Another original line')});
+ await page.waitForFunction(()=>document.querySelector('.lyrics-editor textarea')?.value.includes('Original test lyric'));
+ await page.getByLabel('Lyrics delay seconds',{exact:true}).fill('-1.25');
+ await page.waitForFunction(()=>Object.values(JSON.parse(localStorage.getItem('lyricflow.v3.guest.songMappings')||'{}')).some(m=>m.lyrics?.delaySeconds===-1.25&&m.video?.youtubeVideoId==='abcdefghijk'&&m.video.delaySeconds===-2));
+ assert.equal(await page.locator('audio').getAttribute('src'),originalAudio);
+ const frame=page.frames().find(f=>f.url().includes('youtube.com/embed/'));
+ assert.ok(frame);
+ await frame.waitForFunction(()=>window.commands?.some(c=>c.func==='mute'));
+ assert.equal(await frame.evaluate(()=>window.commands.some(c=>c.func==='unMute')),false);
+ assert.deepEqual(errors,[]);
+ console.log('PASS: JioSaavn audio retained; both exact video queries; selected video stays muted; separate signed delays and source/video mappings saved.');
+}finally{await browser.close();server.kill();}

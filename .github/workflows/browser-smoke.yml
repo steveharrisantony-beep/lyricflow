@@ -17,4 +17,6 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run build
       - name: Verify the current packaged web application
-        run: node scripts/android-web-smoke.mjs
+        run: |
+          node scripts/android-web-smoke.mjs
+          node scripts/song-mapping-smoke.mjs

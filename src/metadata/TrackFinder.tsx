@@ -1,4 +1,4 @@
-import type {LyricsSelection} from '../firebase/correctionModel';
+import type {LyricsSourceReference, LyricsSelection} from '../firebase/correctionModel';
 import {useEffect,useRef,useState} from 'react';
 import type {TrackInfo, TrackCandidate} from '../metadata/trackInfo';
 import {lrclibProvider,retrievePermittedLyrics,resolveStashLyricsChain} from '../lyrics/providers';
@@ -14,6 +14,7 @@ import {
 export default function TrackFinder({
  track,
  preferredSelection,
+ preferredSourceFile,
  onSelectionChange,
  savedCustomLrc,
  customEditOpen,
@@ -30,6 +31,7 @@ export default function TrackFinder({
 }:{
  track:TrackInfo|null;
  preferredSelection?:LyricsSelection|null;
+ preferredSourceFile?:LyricsSourceReference|null;
  onSelectionChange?:(selection:LyricsSelection)=>void;
  savedCustomLrc?:string;
  customEditOpen?:boolean;
@@ -129,6 +131,7 @@ export default function TrackFinder({
     .then(resolved=>{
      if(controller.signal.aborted)return;
      if(resolved){
+      if(preferredSourceFile?.url && resolved.sourceUrl !== preferredSourceFile.url){ updateStatus('The saved lyrics source file is unavailable. Select another source explicitly.'); return; }
       const nextEngines=resolved.availableEngines||['lyricflow'];
       const nextSubTracks=resolved.subtitleTracks||[];
       setAvailableEngines(nextEngines);
@@ -171,7 +174,7 @@ export default function TrackFinder({
    clearTimeout(timer);
    controller.abort();
   };
- },[key,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,preferredSelection?.lrclibId,Math.round(leadingNonMusicOffsetSec)]);
+ },[key,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,preferredSelection?.lrclibId,preferredSourceFile?.url,Math.round(leadingNonMusicOffsetSec)]);
 
  const canSearch=Boolean(track&&track.title.trim().length>=2);
 

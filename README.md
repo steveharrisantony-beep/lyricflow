@@ -329,3 +329,6 @@ npm run build
   [https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
 - **Cloud Firestore Security Rules Documentation**:  
   [https://firebase.google.com/docs/firestore/security/get-started](https://firebase.google.com/docs/firestore/security/get-started)
+
+
+Per-song mappings now use title, artist/author and duration and retain a lyrics source file reference plus its signed delay, and a YouTube video ID plus its independent signed delay. Separate audio (including JioSaavn) can continue while a selected YouTube background stays muted. The saved music-video/lyrical-video preference changes the exact search query; see [Firebase setup](FIREBASE_SETUP.md).

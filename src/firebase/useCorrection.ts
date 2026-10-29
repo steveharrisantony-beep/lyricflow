@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { correctionContext, makeCorrection, type Correction, type CorrectionKind } from './correctionModel';
+import { correctionContext, makeCorrection, type Correction, type CorrectionKind, type LyricsSourceReference } from './correctionModel';
 import { watchCorrection, savePersonalCorrection, removePersonalCorrection } from './correctionStore';
 import type { TrackInfo } from '../metadata/trackInfo';
 
-export function useCorrection(track: TrackInfo | null, kind: CorrectionKind, uid: string | null, lyricsKey = '') {
-  const serialized = JSON.stringify(correctionContext(track, kind, lyricsKey));
+export function useCorrection(track: TrackInfo | null, kind: CorrectionKind, uid: string | null, lyricsKey = '', lyricsSource: LyricsSourceReference | null = null) {
+  const serialized = JSON.stringify(correctionContext(track, kind, lyricsKey, lyricsSource));
   const context = useMemo(() => JSON.parse(serialized) as ReturnType<typeof correctionContext>, [serialized]);
   const [state, setState] = useState<{ key: string; correction: Correction | null; source: string }>({ key: '', correction: null, source: 'automatic' });
   const [error, setError] = useState('');

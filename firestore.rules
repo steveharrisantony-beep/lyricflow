@@ -150,22 +150,27 @@ service cloud.firestore {
         (s.lrclibId == null || (s.engine == 'lrclib' && s.lrclibId is int && s.lrclibId > 0)) &&
         (s.subtitleTrackId == null || (s.subtitleTrackId is string && s.subtitleTrackId.size() <= 256));
     }
+    function validLyricsSource(f, revision) {
+      return f is map && f.keys().hasOnly(['name','url','revision']) && f.keys().hasAll(['name','url','revision']) &&
+        f.name is string && f.name.size() <= 256 && f.url is string && f.url.size() <= 2048 &&
+        f.revision is string && f.revision.matches('^l3_[a-f0-9]{16}$') && f.revision == revision;
+    }
     function validCorrection(c, id) {
-      return c.keys().hasAll(['recordingKey','identity','kind','lyricsKey','delaySeconds','selection','youtubeVideoId']) &&
-        c.recordingKey is string && c.recordingKey.matches('^r3_[a-f0-9]{16}$') && validIdentity(c.identity) &&
+      return c.keys().hasAll(['recordingKey','identity','kind','lyricsKey','delaySeconds','selection','youtubeVideoId','videoDelaySeconds','lyricsSource']) &&
+        c.recordingKey is string && c.recordingKey.matches('^r[34]_[a-f0-9]{16}$') && validIdentity(c.identity) &&
         c.lyricsKey is string && c.kind in ['delay','lyrics','video'] &&
         id == c.recordingKey + '_' + c.kind + '_' + (c.lyricsKey == '' ? 'recording' : c.lyricsKey) &&
         ((c.kind == 'delay' && c.lyricsKey.matches('^l3_[a-f0-9]{16}$') &&
-          c.delaySeconds is number && c.delaySeconds >= -30 && c.delaySeconds <= 30 && c.selection == null && c.youtubeVideoId == null) ||
-         (c.kind == 'lyrics' && c.lyricsKey == '' && c.delaySeconds == null && validSelection(c.selection) && c.youtubeVideoId == null) ||
+          c.delaySeconds is number && c.delaySeconds >= -30 && c.delaySeconds <= 30 && c.selection == null && c.youtubeVideoId == null && c.videoDelaySeconds == null && validLyricsSource(c.lyricsSource, c.lyricsKey)) ||
+         (c.kind == 'lyrics' && c.lyricsKey == '' && c.delaySeconds == null && validSelection(c.selection) && c.youtubeVideoId == null && c.videoDelaySeconds == null && c.lyricsSource == null) ||
          (c.kind == 'video' && c.lyricsKey == '' && c.delaySeconds == null && c.selection == null &&
-          c.youtubeVideoId is string && c.youtubeVideoId.matches('^[a-zA-Z0-9_-]{11}$')));
+          c.youtubeVideoId is string && c.youtubeVideoId.matches('^[a-zA-Z0-9_-]{11}$') && c.lyricsSource == null && c.videoDelaySeconds is number && c.videoDelaySeconds >= -300 && c.videoDelaySeconds <= 300));
     }
-    function correctionFields() { return ['recordingKey','identity','kind','lyricsKey','delaySeconds','selection','youtubeVideoId']; }
+    function correctionFields() { return ['recordingKey','identity','kind','lyricsKey','delaySeconds','selection','youtubeVideoId','videoDelaySeconds','lyricsSource']; }
     function validDisplay(d) {
-      return d is map && d.keys().hasOnly(['scene','reducedMotion','youtubeBackgroundMode','videoOverlayOpacity','autoHideYoutubeLyrics','playerVolume','sponsorBlockEnabled','lyricPlacementMode','lyricColorMode','lyricFillPaceMode','lyricDisplayMode']) &&
-        d.keys().hasAll(['scene','reducedMotion','youtubeBackgroundMode','videoOverlayOpacity','autoHideYoutubeLyrics','playerVolume','sponsorBlockEnabled','lyricPlacementMode','lyricColorMode','lyricFillPaceMode','lyricDisplayMode']) &&
-        d.scene is string && d.scene.size() <= 64 && d.reducedMotion is bool && d.youtubeBackgroundMode in ['video','theme'] &&
+      return d is map && d.keys().hasOnly(['preferredVideoType','scene','reducedMotion','youtubeBackgroundMode','videoOverlayOpacity','autoHideYoutubeLyrics','playerVolume','sponsorBlockEnabled','lyricPlacementMode','lyricColorMode','lyricFillPaceMode','lyricDisplayMode']) &&
+        d.keys().hasAll(['preferredVideoType','scene','reducedMotion','youtubeBackgroundMode','videoOverlayOpacity','autoHideYoutubeLyrics','playerVolume','sponsorBlockEnabled','lyricPlacementMode','lyricColorMode','lyricFillPaceMode','lyricDisplayMode']) &&
+        d.preferredVideoType in ['music','lyrics'] && d.scene is string && d.scene.size() <= 64 && d.reducedMotion is bool && d.youtubeBackgroundMode in ['video','theme'] &&
         d.videoOverlayOpacity is number && d.videoOverlayOpacity >= 0 && d.videoOverlayOpacity <= 1 && d.autoHideYoutubeLyrics is bool &&
         d.playerVolume is number && d.playerVolume >= 0 && d.playerVolume <= 100 && d.sponsorBlockEnabled is bool &&
         d.lyricPlacementMode in ['auto','alternating','left','right','bottom-right','bottom-left','top-left','diagonal','center'] &&
@@ -199,7 +204,7 @@ service cloud.firestore {
       }
       match /customLyrics/{id} {
         allow read, delete: if profileOwner(uid);
-        allow create, update: if profileOwner(uid) && id.matches('^r3_[a-f0-9]{16}$') &&
+        allow create, update: if profileOwner(uid) && id.matches('^r[34]_[a-f0-9]{16}$') &&
           request.resource.data.keys().hasOnly(['identity','text','updatedAt']) && validIdentity(request.resource.data.identity) &&
           request.resource.data.text is string && request.resource.data.text.size() <= 100000 && request.resource.data.updatedAt == request.time;
       }
@@ -212,6 +217,29 @@ service cloud.firestore {
         validCorrection(request.resource.data, id) && request.resource.data.active is bool &&
         request.resource.data.revision is int && request.resource.data.revision >= 1 && request.resource.data.updatedAt == request.time;
       allow delete: if developer();
+    }
+    function validSongMapping(m) {
+      let l = m.get('lyrics', null);
+      let v = m.get('video', null);
+      return validIdentity(m.identity) &&
+        (l == null || (l is map && l.keys().hasOnly(['sourceFile','selection','delaySeconds']) &&
+          validLyricsSource(l.sourceFile, l.sourceFile.revision) && (l.selection == null || validSelection(l.selection)) &&
+          l.delaySeconds is number && l.delaySeconds >= -30 && l.delaySeconds <= 30)) &&
+        (v == null || (v is map && v.keys().hasOnly(['youtubeVideoId','delaySeconds']) &&
+          v.youtubeVideoId is string && v.youtubeVideoId.matches('^[a-zA-Z0-9_-]{11}$') &&
+          v.delaySeconds is number && v.delaySeconds >= -300 && v.delaySeconds <= 300));
+    }
+    match /profiles/{uid}/songMappings/{id} {
+      allow read, delete: if profileOwner(uid);
+      allow create, update: if profileOwner(uid) && id.matches('^r4_[a-f0-9]{16}$') &&
+        request.resource.data.keys().hasOnly(['identity','lyrics','video','updatedAt']) && validSongMapping(request.resource.data) && request.resource.data.updatedAt == request.time;
+    }
+    match /songMappings/{id} {
+      allow get: if true;
+      allow list, delete: if developer();
+      allow create, update: if developer() && id.matches('^r4_[a-f0-9]{16}$') &&
+        request.resource.data.keys().hasOnly(['identity','lyrics','video','active','revision','updatedAt']) && validSongMapping(request.resource.data) &&
+        request.resource.data.active is bool && request.resource.data.revision is int && request.resource.data.revision >= 1 && request.resource.data.updatedAt == request.time;
     }
     function correctionDocumentId(c) { return c.recordingKey + '_' + c.kind + '_' + (c.lyricsKey == '' ? 'recording' : c.lyricsKey); }
     function validProposal(c, id) {

@@ -73,7 +73,9 @@ import {
 } from 'lucide-react';
 
 import AccountControls from './auth/AccountControls';
+import YouTubeBackgroundPicker from './music/YouTubeBackgroundPicker';
 import CorrectionControls from './firebase/CorrectionControls';
+import { useSongMapping, importGuestSongMappings } from './firebase/songMappings';
 import { useCorrection } from './firebase/useCorrection';
 import { usePrivateLyrics, legacySongDelay, importGuestCustomLyrics } from './firebase/usePrivateLyrics';
 import { lyricFingerprint, type LyricsSelection } from './firebase/correctionModel';
@@ -126,6 +128,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const [themePalettes, setThemePalettes] = useState<Record<string, string>>(initialPrefs.themePalettes);
 
   // YouTube video background, black overlay opacity, SponsorBlock & embedded lyric auto-hide state
+  const [preferredVideoType, setPreferredVideoType] = useState(initialPrefs.display.preferredVideoType);
   const [youtubeBackgroundMode, setYoutubeBackgroundMode] = useState<YouTubeBackgroundMode>(initialPrefs.display.youtubeBackgroundMode);
   const [videoOverlayOpacity, setVideoOverlayOpacity] = useState<number>(initialPrefs.display.videoOverlayOpacity);
   const [autoHideYoutubeLyrics, setAutoHideYoutubeLyrics] = useState<boolean>(initialPrefs.display.autoHideYoutubeLyrics);
@@ -168,22 +171,23 @@ export default function App({ user = null }: { user?: User | null }) {
   const [localLoaded, setLocalLoaded] = useState(false);
   const [localTrack, setLocalTrack] = useState<TrackInfo | null>(null);
   const [incoming, setIncoming] = useState<IncomingLyrics | null>(null);
-  const [activeLyrics, setActiveLyrics] = useState({ recordingKey: '', lyricsKey: '' });
+  const [activeLyrics, setActiveLyrics] = useState({ recordingKey: '', lyricsKey: '', name: '', url: '' });
   const [fileEpoch, setFileEpoch] = useState(0);
   const [performance, setPerformance] = useState(false);
 
+  const songMapping = useSongMapping(localTrack, uid);
   const lyricsFix = useCorrection(localTrack, 'lyrics', uid);
   const videoFix = useCorrection(localTrack, 'video', uid);
   const recordingKey = lyricsFix.context?.recordingKey || '';
   const lyricsKey = activeLyrics.recordingKey === recordingKey ? activeLyrics.lyricsKey : '';
-  const onLyricContentChange = useCallback((original: string, sourceUrl: string) => {
-    setActiveLyrics({ recordingKey, lyricsKey: lyricFingerprint(original, sourceUrl) });
+  const onLyricContentChange = useCallback((original: string, sourceUrl: string, sourceName: string) => {
+    setActiveLyrics({ recordingKey, lyricsKey: lyricFingerprint(original, sourceUrl), name: sourceName.slice(0, 256), url: sourceUrl });
   }, [recordingKey]);
-  const delayFix = useCorrection(localTrack, 'delay', uid, lyricsKey);
+  const delayFix = useCorrection(localTrack, 'delay', uid, lyricsKey, lyricsKey ? { name: activeLyrics.name, url: activeLyrics.url, revision: lyricsKey } : null);
   const privateLyrics = usePrivateLyrics(localTrack, uid);
   const legacyDelay = !uid ? legacySongDelay(localTrack) : null;
   const savedCustomLrc = privateLyrics.hasOverride ? privateLyrics.text : legacyDelay?.customLyricsLrc || '';
-  const lyricDelay = delayFix.correction?.delaySeconds ?? 0;
+  const lyricDelay = delayFix.correction?.delaySeconds ?? (songMapping.lyrics?.sourceFile.revision === lyricsKey ? songMapping.lyrics.delaySeconds : 0);
   const delaySavedStatus = delayFix.error || (delayFix.source === 'personal'
     ? `Your ${formatLyricDelay(lyricDelay)} correction · ${user ? 'account sync enabled' : 'saved on device'}`
     : delayFix.source === 'approved' ? `Community-approved ${formatLyricDelay(lyricDelay)} correction`
@@ -197,8 +201,8 @@ export default function App({ user = null }: { user?: User | null }) {
       }
     }
   }, [uid, recordingKey, lyricsKey, delayFix.source]);
-  const effectiveLyricsEngine = lyricsFix.correction?.selection?.engine || lyricEngineOption;
-  const effectiveSubtitleTrackId = lyricsFix.correction?.selection?.subtitleTrackId || selectedSubtitleTrackId;
+  const effectiveLyricsEngine = lyricsFix.correction?.selection?.engine || songMapping.lyrics?.selection?.engine || lyricEngineOption;
+  const effectiveSubtitleTrackId = lyricsFix.correction?.selection?.subtitleTrackId || songMapping.lyrics?.selection?.subtitleTrackId || selectedSubtitleTrackId;
 
   const applyPreferences = useCallback((prefs: UserPreferencesData) => {
     setIntensity(prefs.intensity); setSpeed(prefs.speed); setSensitivity(prefs.sensitivity);
@@ -209,6 +213,7 @@ export default function App({ user = null }: { user?: User | null }) {
     setLyricMinFontSize(prefs.lyricMinFontSize); setLyricMaxFontSize(prefs.lyricMaxFontSize);
     setThemePalettes(prefs.themePalettes);
     const d = prefs.display;
+    setPreferredVideoType(d.preferredVideoType);
     setScene(d.scene); setReducedMotion(d.reducedMotion); setYoutubeBackgroundMode(d.youtubeBackgroundMode);
     setVideoOverlayOpacity(d.videoOverlayOpacity); setAutoHideYoutubeLyrics(d.autoHideYoutubeLyrics);
     setPlayerVolume(d.playerVolume); setSponsorBlockEnabled(d.sponsorBlockEnabled);
@@ -226,7 +231,7 @@ export default function App({ user = null }: { user?: User | null }) {
   // Debounce network writes; nothing is sent from the visualizer render loop.
   useEffect(() => {
     const prefs: UserPreferencesData = {
-      display: { scene, reducedMotion, youtubeBackgroundMode, videoOverlayOpacity, autoHideYoutubeLyrics, playerVolume,
+      display: { preferredVideoType, scene, reducedMotion, youtubeBackgroundMode, videoOverlayOpacity, autoHideYoutubeLyrics, playerVolume,
         sponsorBlockEnabled, lyricPlacementMode, lyricColorMode, lyricFillPaceMode, lyricDisplayMode },
       intensity, speed, sensitivity, spectrumGain: spectrumSensitivity, motionBlur, quality,
       autoScenes, spatialTypography, narrativeObjects: false, cameraMode: 'Front', enabledScenes,
@@ -246,7 +251,7 @@ export default function App({ user = null }: { user?: User | null }) {
     return () => window.clearTimeout(timer);
   }, [intensity, speed, sensitivity, spectrumSensitivity, motionBlur, quality, autoScenes, spatialTypography,
     enabledScenes, enabledKineticMotions, cameraShakeEnabled, cameraShakeSensitivity, lyricMinFontSize,
-    lyricMaxFontSize, themePalettes, uid, cloudReady, scene, reducedMotion, youtubeBackgroundMode, videoOverlayOpacity,
+    lyricMaxFontSize, themePalettes, uid, cloudReady, preferredVideoType, scene, reducedMotion, youtubeBackgroundMode, videoOverlayOpacity,
     autoHideYoutubeLyrics, playerVolume, sponsorBlockEnabled, lyricPlacementMode, lyricColorMode, lyricFillPaceMode, lyricDisplayMode]);
 
   const selectLyrics = (selection: LyricsSelection) => { privateLyrics.save(''); lyricsFix.save({ selection }); };
@@ -439,7 +444,8 @@ export default function App({ user = null }: { user?: User | null }) {
   const customLyricAccentHex =
     lyricColorMode !== 'auto' ? LYRIC_COLOR_MAP[lyricColorMode].main : undefined;
 
-  const activeYoutubeVideoId = (hasSeparateAudioStream ? videoFix.correction?.youtubeVideoId : null) || extractYouTubeVideoId(localTrack);
+  const activeYoutubeVideoId = (hasSeparateAudioStream ? videoFix.correction?.youtubeVideoId || songMapping.video?.youtubeVideoId : null) || extractYouTubeVideoId(localTrack);
+  const videoDelaySeconds = hasSeparateAudioStream ? videoFix.correction?.videoDelaySeconds ?? songMapping.video?.delaySeconds ?? 0 : 0;
   const isLyricVideoDetected = Boolean(activeYoutubeVideoId && !videoFix.correction && isLyricVideoTrack(localTrack));
   const hideStageLyricsForVideo = Boolean(
     activeYoutubeVideoId &&
@@ -447,6 +453,17 @@ export default function App({ user = null }: { user?: User | null }) {
       autoHideYoutubeLyrics &&
       isLyricVideoDetected
   );
+  useEffect(() => {
+    if (!localTrack || !lyricsKey) return;
+    const sourceFile = { name: activeLyrics.name, url: activeLyrics.url, revision: lyricsKey };
+    const candidateId = activeLyrics.url.match(/lrclib\.net\/api\/get\/(\d+)/)?.[1];
+    const selection = lyricsFix.correction?.selection || (candidateId ? { engine: 'lrclib' as const, lrclibId: Number(candidateId), subtitleTrackId: null }
+      : { engine: effectiveLyricsEngine, lrclibId: null, subtitleTrackId: effectiveSubtitleTrackId || null });
+    songMapping.savePart('lyrics', { sourceFile, selection, delaySeconds: lyricDelay });
+  }, [recordingKey, lyricsKey, activeLyrics.name, activeLyrics.url, effectiveLyricsEngine, effectiveSubtitleTrackId, lyricDelay]);
+  useEffect(() => {
+    if (localTrack && activeYoutubeVideoId) songMapping.savePart('video', { youtubeVideoId: activeYoutubeVideoId, delaySeconds: videoDelaySeconds });
+  }, [recordingKey, activeYoutubeVideoId, videoDelaySeconds]);
   const activeBassThresholdPct = Math.round(computeBassThreshold(cameraShakeSensitivity) * 100);
 
   return (
@@ -478,7 +495,7 @@ export default function App({ user = null }: { user?: User | null }) {
             try {
               remotePreferences.current = '';
               applyPreferences(loadLocalPreferences(null));
-              if (uid) { importGuestCorrections(uid); importGuestCustomLyrics(uid); }
+              if (uid) { importGuestCorrections(uid); importGuestCustomLyrics(uid); importGuestSongMappings(uid); }
               setSyncStatus('Guest settings and fixes imported into this account');
             } catch { setSyncStatus('Import could not finish · device storage is full or blocked'); }
           }} />
@@ -524,6 +541,7 @@ export default function App({ user = null }: { user?: User | null }) {
           videoOverlayOpacity={videoOverlayOpacity}
           audioPaused={Boolean(localLoaded && !localPlaying)}
           youtubeVideoId={activeYoutubeVideoId}
+          videoDelaySeconds={videoDelaySeconds}
           youtubeBackgroundMode={youtubeBackgroundMode}
           hideStageLyrics={hideStageLyricsForVideo}
           playbackTime={localTime}
@@ -1433,13 +1451,17 @@ export default function App({ user = null }: { user?: User | null }) {
       />
 
       {/* 5. MULTI-ENGINE LYRICS RESOLVER (LYRICFLOW HYBRID / APPLE / LRC / YOUTUBE SUBTITLES) & CUSTOM EDIT */}
-      <CorrectionControls user={user} track={localTrack} delay={delayFix} lyrics={lyricsFix} video={videoFix}
-        canChangeVideo={hasSeparateAudioStream} onVideoChange={id => videoFix.save({ youtubeVideoId: id })} />
+      {localTrack && hasSeparateAudioStream && <YouTubeBackgroundPicker key={'video-picker-' + recordingKey} track={localTrack} activeVideoId={activeYoutubeVideoId} preference={preferredVideoType} onPreferenceChange={setPreferredVideoType}
+        onChoose={id => { videoFix.save({ youtubeVideoId: id, videoDelaySeconds: id === activeYoutubeVideoId ? videoDelaySeconds : 0 }); setYoutubeBackgroundMode('video'); }} />}
+      <CorrectionControls key={'corrections-' + recordingKey} user={user} track={localTrack} delay={{ ...delayFix, reset: () => { songMapping.savePart('lyrics', null); delayFix.reset(); } }} lyrics={{ ...lyricsFix, reset: () => { songMapping.savePart('lyrics', null); lyricsFix.reset(); } }} video={{ ...videoFix, reset: () => { songMapping.savePart('video', null); videoFix.reset(); } }}
+        mappedLyrics={songMapping.lyrics} mappedVideo={songMapping.video} canChangeVideo={hasSeparateAudioStream} onVideoChange={(id, videoDelaySeconds) => videoFix.save({ youtubeVideoId: id, videoDelaySeconds })} />
+      {songMapping.error && <p role="status">{songMapping.error}</p>}
       {privateLyrics.error && <p role="status">{privateLyrics.error}</p>}
       <TrackFinder
         key={'finder-' + (lyricsFix.context?.recordingKey || 'no-track')}
         track={localTrack}
-        preferredSelection={lyricsFix.correction?.selection || null}
+        preferredSelection={lyricsFix.correction?.selection || songMapping.lyrics?.selection || null}
+        preferredSourceFile={lyricsFix.source === 'personal' ? null : songMapping.lyrics?.sourceFile || null}
         onSelectionChange={selectLyrics}
         savedCustomLrc={savedCustomLrc}
         customEditOpen={customEditOpen}

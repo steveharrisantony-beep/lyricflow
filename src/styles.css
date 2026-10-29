@@ -529,3 +529,5 @@ body {
 .correction-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 10px 0; }
 .correction-actions span { flex: 1 1 180px; font-size: .85rem; }
 .account-panel :focus-visible, .correction-controls :focus-visible { outline: 2px solid #6ee7f9; outline-offset: 3px; }
+
+.youtube-background-picker select{display:block;min-height:44px;margin:8px 0;padding:10px;background:#121e2c;color:#eef4ff;border:1px solid #52647a;border-radius:8px;max-width:100%}
