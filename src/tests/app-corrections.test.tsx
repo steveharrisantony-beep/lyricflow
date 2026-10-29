@@ -5,11 +5,17 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 vi.mock('../visualization/cinematic/CinematicStage', () => ({ default: () => null, CAMERA_VIEWS: ['Front'] }));
 vi.mock('../audio/LocalPlayer', () => ({ default: (props: { onTrackChange: (track: unknown) => void; onFileChange: (loaded: boolean) => void; lyricDelay: number; onLyricDelayChange: (delay: number) => void }) => <div>
   <button onClick={() => { props.onTrackChange({ title: 'Original test song', artist: 'Test artist', album: 'Studio', duration: 200, provider: 'local', source: 'manual', confidence: 1 }); props.onFileChange(true); }}>Load fixture audio</button>
+  <button onClick={() => { props.onTrackChange({ title: 'Original test song', artist: 'Test artist', album: 'Studio', duration: 200, provider: 'jiosaavn', sourceTrackId: 'saavn_123', source: 'provider', audioSource: 'JioSaavn', confidence: 1 }); props.onFileChange(true); }}>Load JioSaavn fixture</button>
   <output data-testid="delay">{props.lyricDelay}</output>
   <button onClick={() => props.onLyricDelayChange(.5)}>Adjust fixture timing</button>
 </div> }));
+vi.mock('../music/providers', async importOriginal => ({
+  ...await importOriginal<typeof import('../music/providers')>(),
+  searchStashCatalog: vi.fn().mockResolvedValue([{id:'yt_abcdefghijk',title:'Original test song',artist:'Test artist',album:'Studio',duration:200,provider:'resolver',sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk',youtubeVideoId:'abcdefghijk'}]),
+}));
 vi.mock('../metadata/TrackFinder', () => ({ default: () => null }));
 import App from '../App';
+import { searchStashCatalog } from '../music/providers';
 let root: Root, host: HTMLDivElement;
 function click(text: string) {
   const button = [...host.querySelectorAll('button')].find(b => b.textContent === text);
@@ -79,4 +85,28 @@ it('stages an account edit before the first cloud snapshot or debounce, without 
   const pending = JSON.parse(localStorage.getItem('lyricflow.v3.user:accountA.preferencesPending') || 'null');
   expect(pending?.intensity).toBe(80);
   expect(JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!).intensity).toBe(65);
+});
+
+it('finds a music or lyrical YouTube background for JioSaavn and saves both source mappings without changing audio', async () => {
+  await act(async () => click('Load JioSaavn fixture'));
+  await act(async () => click('Find YouTube video background'));
+  expect(searchStashCatalog).toHaveBeenLastCalledWith('Original test song Test artist music video', 'resolver', '', expect.any(AbortSignal));
+  const select = host.querySelector<HTMLSelectElement>('select[aria-label="Preferred YouTube background"]')!;
+  await act(async () => { select.value = 'lyrics'; select.dispatchEvent(new Event('change',{bubbles:true})); });
+  await act(async () => click('Find YouTube video background'));
+  expect(searchStashCatalog).toHaveBeenLastCalledWith('Original test song Test artist lyrics video', 'resolver', '', expect.any(AbortSignal));
+  await act(async () => click('Use muted background'));
+  expect(host.textContent).toContain('Source: JioSaavn');
+  await act(async () => click('Custom Edit (If Lyrics Mismatch)'));
+  const area = host.querySelector<HTMLTextAreaElement>('textarea')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(area,'[00:01]Original test words');
+    area.dispatchEvent(new Event('input',{bubbles:true}));
+  });
+  await act(async () => click('Adjust fixture timing'));
+  const maps = Object.values(JSON.parse(localStorage.getItem('lyricflow.v3.guest.songMappings') || '{}')) as {identity:{title:string;artist:string;duration:number};lyrics:{sourceFile:{revision:string};delaySeconds:number};video:{youtubeVideoId:string;delaySeconds:number}}[];
+  expect(maps).toHaveLength(1);
+  expect(maps[0]).toMatchObject({identity:{title:'original test song',artist:'test artist',duration:200},lyrics:{delaySeconds:.5},video:{youtubeVideoId:'abcdefghijk',delaySeconds:0}});
+  expect(maps[0].lyrics.sourceFile.revision).toMatch(/^l3_/);
+  expect(JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!).display.preferredVideoType).toBe('lyrics');
 });

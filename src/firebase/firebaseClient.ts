@@ -66,6 +66,7 @@ export async function resetPassword(email: string) {
 export async function verifyEmail() { if (auth?.currentUser) await sendEmailVerification(auth.currentUser); }
 export async function signOutUser() { if (auth) await signOut(auth); }
 export interface DisplayPreferences {
+  preferredVideoType: 'music' | 'lyrics';
   scene: SceneId; reducedMotion: boolean; youtubeBackgroundMode: 'video' | 'theme';
   videoOverlayOpacity: number; autoHideYoutubeLyrics: boolean; playerVolume: number; sponsorBlockEnabled: boolean;
   lyricPlacementMode: 'auto' | 'alternating' | 'left' | 'right' | 'bottom-right' | 'bottom-left' | 'top-left' | 'diagonal' | 'center';
@@ -73,7 +74,7 @@ export interface DisplayPreferences {
   lyricFillPaceMode: 'auto' | 'letter' | 'word'; lyricDisplayMode: 'original' | 'romanized' | 'both';
 }
 export const DEFAULT_DISPLAY_PREFERENCES: DisplayPreferences = {
-  scene: 'holographic-tide', reducedMotion: false, youtubeBackgroundMode: 'video', videoOverlayOpacity: .45,
+  preferredVideoType: 'music', scene: 'holographic-tide', reducedMotion: false, youtubeBackgroundMode: 'video', videoOverlayOpacity: .45,
   autoHideYoutubeLyrics: true, playerVolume: 85, sponsorBlockEnabled: true, lyricPlacementMode: 'auto',
   lyricColorMode: 'auto', lyricFillPaceMode: 'auto', lyricDisplayMode: 'both',
 };
@@ -147,6 +148,7 @@ function sanitizeDisplay(raw: Partial<DisplayPreferences> | null | undefined): D
   const r = raw || {};
   const oneOf = <T extends string>(value: T | undefined, options: readonly T[], fallback: T) => value && options.includes(value) ? value : fallback;
   return {
+    preferredVideoType: oneOf(r.preferredVideoType, ['music','lyrics'], 'music'),
     scene: oneOf(r.scene, ALL_SCENE_IDS, DEFAULT_DISPLAY_PREFERENCES.scene),
     reducedMotion: typeof r.reducedMotion === 'boolean' ? r.reducedMotion : false,
     youtubeBackgroundMode: oneOf(r.youtubeBackgroundMode, ['video', 'theme'], 'video'),

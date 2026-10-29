@@ -18,4 +18,6 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run build
       - name: Verify production UI, guest storage and corrections
-        run: node scripts/web-smoke.mjs
+        run: |
+          node scripts/web-smoke.mjs
+          node scripts/song-mapping-smoke.mjs

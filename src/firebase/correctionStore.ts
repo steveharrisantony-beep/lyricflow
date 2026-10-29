@@ -2,7 +2,7 @@ import { doc, onSnapshot, setDoc, deleteDoc, serverTimestamp } from 'firebase/fi
 import type { User } from 'firebase/auth';
 import { db } from './firebaseClient';
 import { readDevice, writeDevice, scopedKey } from './deviceStore';
-import { correctionKey, fingerprint, validCorrection, chooseCorrection, type Correction, type CorrectionContext } from './correctionModel';
+import { correctionKey, fingerprint, upgradeCachedCorrection, validCorrection, chooseCorrection, type Correction, type CorrectionContext } from './correctionModel';
 
 type Entry = { value: Correction; dirty: boolean; removed?: boolean };
 type Cache = Record<string, Entry>;
@@ -43,6 +43,14 @@ export function removePersonalCorrection(uid: string | null, context: Correction
 export function watchCorrection(context: CorrectionContext, uid: string | null,
   next: (result: ReturnType<typeof chooseCorrection>) => void, error: (message: string) => void) {
   const id = correctionKey(context), cacheKey = personalKey(uid);
+  const cache = readDevice<Cache>(cacheKey, {});
+  if (!cache[id]) {
+    const candidates = Object.values(cache).filter(entry => !entry.removed)
+      .map(entry => upgradeCachedCorrection(entry.value, context)).filter((value): value is Correction => Boolean(value));
+    if (candidates.length && candidates.every(value => JSON.stringify(value) === JSON.stringify(candidates[0]))) {
+      updateCache(cacheKey, id, { value: candidates[0], dirty: Boolean(uid) });
+    }
+  }
   const emit = () => {
     const p = readDevice<Cache>(cacheKey, {})[id], a = readDevice<Cache>(PUBLIC_CACHE, {})[id];
     next(chooseCorrection(p && !p.removed ? validCorrection(p.value, context) : null, a ? validCorrection(a.value, context) : null));

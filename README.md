@@ -320,3 +320,6 @@ npm run build
 
 
 The automatic browser smoke workflow tests the current production UI, including guest account controls, personal timing correction and login-gated submission. The older visual smoke scripts are retained in **Legacy visual smoke (manual)**; they target earlier UI layouts and are not claimed as current acceptance checks.
+
+
+Per-song mappings now use title, artist/author and duration and retain a lyrics source file reference plus its signed delay, and a YouTube video ID plus its independent signed delay. Separate audio (including JioSaavn) can continue while a selected YouTube background stays muted. The saved music-video/lyrical-video preference changes the exact search query; see [Firebase setup](FIREBASE_SETUP.md).

@@ -1,3 +1,4 @@
+import {videoSyncTarget} from '../../audio/videoTiming';
 import {setLyricBackdrop} from './contrast';
 import {drawMotionGraphics,MOTION_SCENES} from './procedural/MotionGraphics';
 import {drawSceneTransition,transitionProgress,sceneEntryPose} from './transitions';
@@ -36,6 +37,7 @@ export interface CinematicProps{
  videoOverlayOpacity?:number;
  audioPaused?:boolean;
  youtubeVideoId?:string|null;
+ videoDelaySeconds?:number;
  youtubeBackgroundMode?:YouTubeBackgroundMode;
  hideStageLyrics?:boolean;
  playbackTime?:number;
@@ -411,6 +413,8 @@ export default function CinematicStage(props:CinematicProps){
  const ytWrapRef=useRef<HTMLDivElement>(null);
  const ytIframeRef=useRef<HTMLIFrameElement>(null);
  const lastSyncTimeRef=useRef<number>(0);
+ const lastVideoMappingRef=useRef('');
+ const videoWaitingRef=useRef(false);
  const ytReadyRef=useRef<boolean>(false);
  const ytEndedFiredRef=useRef<boolean>(false);
  const latestPropsRef=useRef(props);
@@ -431,7 +435,9 @@ export default function CinematicStage(props:CinematicProps){
    sendYouTubeCommand(iframe,'unMute');
    sendYouTubeCommand(iframe,'setVolume',[cur.playerVolume??85]);
   }
-  if(cur.audioPaused){
+  const target=videoSyncTarget(cur.playbackTime??0,cur.videoDelaySeconds,Boolean(cur.hasSeparateAudioStream));
+  if(cur.hasSeparateAudioStream)sendYouTubeCommand(iframe,'seekTo',[target.time,true]);
+  if(cur.audioPaused||target.waiting){
    sendYouTubeCommand(iframe,'pauseVideo');
   }else{
    sendYouTubeCommand(iframe,'playVideo');
@@ -477,7 +483,7 @@ export default function CinematicStage(props:CinematicProps){
    }else if(evt==='onStateChange'&&typeof data.info==='number'){
     if(data.info===0&&!ytEndedFiredRef.current){
      ytEndedFiredRef.current=true;
-     latestPropsRef.current.onYoutubeEnded?.();
+     if(!latestPropsRef.current.hasSeparateAudioStream)latestPropsRef.current.onYoutubeEnded?.();
     }else if(data.info===1){
      ytEndedFiredRef.current=false;
     }
@@ -492,10 +498,10 @@ export default function CinematicStage(props:CinematicProps){
     const dur=typeof info.duration==='number'&&Number.isFinite(info.duration)&&info.duration>0?info.duration:undefined;
     if(ct!==undefined){
      lastSyncTimeRef.current=ct;
-     latestPropsRef.current.onYoutubeTimeUpdate?.(ct,dur);
+     if(!latestPropsRef.current.hasSeparateAudioStream)latestPropsRef.current.onYoutubeTimeUpdate?.(ct,dur);
      if(dur&&dur>15&&ct>=dur-0.45&&!ytEndedFiredRef.current){
       ytEndedFiredRef.current=true;
-      latestPropsRef.current.onYoutubeEnded?.();
+      if(!latestPropsRef.current.hasSeparateAudioStream)latestPropsRef.current.onYoutubeEnded?.();
      }else if(ct<3){
       ytEndedFiredRef.current=false;
      }
@@ -503,7 +509,7 @@ export default function CinematicStage(props:CinematicProps){
     const pState=typeof info.playerState==='number'?info.playerState:undefined;
     if(pState===0&&!ytEndedFiredRef.current){
      ytEndedFiredRef.current=true;
-     latestPropsRef.current.onYoutubeEnded?.();
+     if(!latestPropsRef.current.hasSeparateAudioStream)latestPropsRef.current.onYoutubeEnded?.();
     }else if((pState===-1||pState===5)&&!latestPropsRef.current.audioPaused){
      syncYtPlayerState();
     }
@@ -526,40 +532,37 @@ export default function CinematicStage(props:CinematicProps){
   };
  },[ytId]);
 
- // Keep YouTube iframe synchronized with play/pause, mute/volume, and seek time
+ // Video timing is independent of the audio clock and lyric timing.
  useEffect(()=>{
-  if(!ytId||!ytIframeRef.current)return;
-  if(props.audioPaused){
-   sendYouTubeCommand(ytIframeRef.current,'pauseVideo');
-  }else{
-   sendYouTubeCommand(ytIframeRef.current,'playVideo');
-  }
- },[ytId,props.audioPaused]);
-
- useEffect(()=>{
-  if(!ytId||!ytIframeRef.current)return;
+  if(!ytId||!ytIframeRef.current||typeof props.playbackTime!=='number')return;
+  const target=videoSyncTarget(props.playbackTime,props.videoDelaySeconds,Boolean(props.hasSeparateAudioStream));
+  const mapping=ytId+'|'+(props.hasSeparateAudioStream?props.videoDelaySeconds??0:0)+'|'+Boolean(props.hasSeparateAudioStream);
+  const changed=mapping!==lastVideoMappingRef.current;
+  const resumed=videoWaitingRef.current&&!target.waiting;
+  lastVideoMappingRef.current=mapping;
+  videoWaitingRef.current=target.waiting;
   if(props.hasSeparateAudioStream){
    sendYouTubeCommand(ytIframeRef.current,'mute');
+   if(changed||resumed||Math.abs(target.time-lastSyncTimeRef.current)>.75){
+    sendYouTubeCommand(ytIframeRef.current,'seekTo',[target.time,true]);
+    lastSyncTimeRef.current=target.time;
+   }
   }else{
    sendYouTubeCommand(ytIframeRef.current,'unMute');
    sendYouTubeCommand(ytIframeRef.current,'setVolume',[props.playerVolume??85]);
+   if(Math.abs(target.time-lastSyncTimeRef.current)>1.5){
+    sendYouTubeCommand(ytIframeRef.current,'seekTo',[target.time,true]);
+    lastSyncTimeRef.current=target.time;
+   }
   }
- },[ytId,props.hasSeparateAudioStream,props.playerVolume]);
-
- useEffect(()=>{
-  if(!ytId||!ytIframeRef.current||typeof props.playbackTime!=='number')return;
-  const diff=Math.abs(props.playbackTime-lastSyncTimeRef.current);
-  lastSyncTimeRef.current=props.playbackTime;
-  if(diff>1.5){
-   sendYouTubeCommand(ytIframeRef.current,'seekTo',[props.playbackTime,true]);
-  }
- },[ytId,props.playbackTime]);
+  sendYouTubeCommand(ytIframeRef.current,props.audioPaused||target.waiting?'pauseVideo':'playVideo');
+ },[ytId,props.playbackTime,props.videoDelaySeconds,props.hasSeparateAudioStream,props.audioPaused,props.playerVolume]);
 
  const originParam=typeof window!=='undefined'&&window.location?.origin
   ?`&origin=${encodeURIComponent(window.location.origin)}&widget_referrer=${encodeURIComponent(window.location.origin)}`
   :'';
  const embedSrc=ytId
-  ?`https://www.youtube.com/embed/${encodeURIComponent(ytId)}?autoplay=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&enablejsapi=1${originParam}`
+  ?`https://www.youtube.com/embed/${encodeURIComponent(ytId)}?autoplay=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&enablejsapi=1${props.hasSeparateAudioStream?'&mute=1':''}${originParam}`
   :'';
 
  return <div className="cinematic-stack" ref={host}>

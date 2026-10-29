@@ -5,11 +5,12 @@ export type LyricsSelection = { engine: 'lyricflow' | 'apple' | 'lrclib' | 'yout
 export interface RecordingIdentity {
   provider: string; providerId: string; title: string; artist: string; album: string; duration: number;
 }
+export interface LyricsSourceReference { name: string; url: string; revision: string; }
 export interface CorrectionContext {
-  recordingKey: string; identity: RecordingIdentity; kind: CorrectionKind; lyricsKey: string;
+  recordingKey: string; identity: RecordingIdentity; kind: CorrectionKind; lyricsKey: string; lyricsSource: LyricsSourceReference | null;
 }
 export interface Correction extends CorrectionContext {
-  delaySeconds: number | null; selection: LyricsSelection | null; youtubeVideoId: string | null;
+  delaySeconds: number | null; selection: LyricsSelection | null; youtubeVideoId: string | null; videoDelaySeconds: number | null;
 }
 
 // Keep version words (live, remix, remaster) and native scripts. Never strip them.
@@ -30,10 +31,13 @@ export function recordingIdentity(track: TrackInfo | null): RecordingIdentity | 
     duration: Math.max(0, Math.round(track.duration || 0)),
   };
 }
-export function correctionContext(track: TrackInfo | null, kind: CorrectionKind, lyricsKey = ''): CorrectionContext | null {
+export function correctionContext(track: TrackInfo | null, kind: CorrectionKind, lyricsKey = '', lyricsSource: LyricsSourceReference | null = null): CorrectionContext | null {
   const identity = recordingIdentity(track);
   if (!identity || (kind === 'delay' && !lyricsKey)) return null;
-  return { identity, recordingKey: 'r3_' + fingerprint(JSON.stringify(identity)), kind, lyricsKey: kind === 'delay' ? lyricsKey : '' };
+  // Catalog IDs and album labels are metadata, not matching requirements.
+  const match = { title: identity.title, artist: identity.artist, duration: identity.duration };
+  return { identity, recordingKey: 'r4_' + fingerprint(JSON.stringify(match)), kind, lyricsKey: kind === 'delay' ? lyricsKey : '',
+    lyricsSource: kind === 'delay' ? lyricsSource || { name: 'Timed lyrics', url: '', revision: lyricsKey } : null };
 }
 export function correctionKey(context: CorrectionContext): string {
   return `${context.recordingKey}_${context.kind}_${context.lyricsKey || 'recording'}`;
@@ -43,18 +47,22 @@ export function lyricFingerprint(original: string, sourceUrl = ''): string {
 }
 export function sameContext(a: CorrectionContext, b: CorrectionContext): boolean {
   return a.recordingKey === b.recordingKey && a.kind === b.kind && a.lyricsKey === b.lyricsKey
-    && (['provider', 'providerId', 'title', 'artist', 'album', 'duration'] as const).every(k => a.identity[k] === b.identity[k]);
+    && (['title', 'artist', 'duration'] as const).every(k => a.identity[k] === b.identity[k]);
 }
 export function validCorrection(raw: unknown, context: CorrectionContext): Correction | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Correction;
   if (!r.identity || !sameContext(r, context)) return null;
-  const base = { ...context, delaySeconds: null, selection: null, youtubeVideoId: null };
+  const base = { ...context, delaySeconds: null, selection: null, youtubeVideoId: null, videoDelaySeconds: null };
   if (r.kind === 'delay' && typeof r.delaySeconds === 'number' && Number.isFinite(r.delaySeconds) && Math.abs(r.delaySeconds) <= 30) {
-    return { ...base, delaySeconds: r.delaySeconds };
+    const source = r.lyricsSource || context.lyricsSource;
+    if (!source || typeof source.name !== 'string' || source.name.length > 256 || typeof source.url !== 'string' || source.url.length > 2048 || source.revision !== context.lyricsKey || source.url !== context.lyricsSource?.url) return null;
+    return { ...base, lyricsSource: { ...source }, delaySeconds: r.delaySeconds };
   }
   if (r.kind === 'video' && typeof r.youtubeVideoId === 'string' && /^[\w-]{11}$/.test(r.youtubeVideoId)) {
-    return { ...base, youtubeVideoId: r.youtubeVideoId };
+    const delay = r.videoDelaySeconds ?? 0;
+    if (typeof delay !== 'number' || !Number.isFinite(delay) || Math.abs(delay) > 300) return null;
+    return { ...base, youtubeVideoId: r.youtubeVideoId, videoDelaySeconds: delay };
   }
   if (r.kind === 'lyrics' && r.selection && ['lyricflow', 'apple', 'lrclib', 'youtube'].includes(r.selection.engine)) {
     const s = r.selection;
@@ -65,11 +73,18 @@ export function validCorrection(raw: unknown, context: CorrectionContext): Corre
   return null;
 }
 export function makeCorrection(context: CorrectionContext, value: Partial<Correction>): Correction {
-  const correction = validCorrection({ ...context, delaySeconds: null, selection: null, youtubeVideoId: null, ...value }, context);
+  const correction = validCorrection({ ...context, delaySeconds: null, selection: null, youtubeVideoId: null, videoDelaySeconds: null, ...value }, context);
   if (!correction) throw new Error('Invalid correction.');
   return correction;
 }
 export function chooseCorrection(personal: Correction | null, approved: Correction | null) {
   return personal ? { correction: personal, source: 'personal' as const }
     : approved ? { correction: approved, source: 'approved' as const } : { correction: null, source: 'automatic' as const };
+}
+
+/** Cached v3 personal fixes can be upgraded once the exact lyrics revision is known. */
+export function upgradeCachedCorrection(raw: Correction, context: CorrectionContext): Correction | null {
+  if (!raw.recordingKey?.startsWith('r3_') || raw.kind !== context.kind || raw.lyricsKey !== context.lyricsKey || !raw.identity) return null;
+  if (!(['title','artist','duration'] as const).every(k => raw.identity[k] === context.identity[k])) return null;
+  return validCorrection({ ...raw, ...context, videoDelaySeconds: raw.kind === 'video' ? raw.videoDelaySeconds ?? 0 : null }, context);
 }

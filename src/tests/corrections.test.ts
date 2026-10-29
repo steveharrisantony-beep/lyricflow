@@ -23,10 +23,11 @@ function snapshot(value: unknown, fromCache = false) { return { exists: () => va
 
 beforeEach(() => { localStorage.clear(); fake.listeners.clear(); fake.set.mockReset().mockResolvedValue(undefined); fake.remove.mockReset().mockResolvedValue(undefined); });
 describe('safe correction matching', () => {
-  it('separates recordings, albums, durations, providers and lyrics revisions', () => {
-    for (const change of [{ title: 'Song (Live)' }, { album: 'Live' }, { duration: 260 }, { provider: 'jiosaavn' as const }, { sourceTrackId: 'another-recording' }]) {
+  it('separates recordings, durations and lyrics revisions while sharing catalog matches', () => {
+    for (const change of [{ title: 'Song (Live)' }, { duration: 260 }]) {
       expect(correctionContext({ ...track, ...change }, 'delay', ctx.lyricsKey)?.recordingKey).not.toBe(ctx.recordingKey);
     }
+    expect(correctionContext({ ...track, provider: 'jiosaavn', album: 'Different catalog label' }, 'delay', ctx.lyricsKey)?.recordingKey).toBe(ctx.recordingKey);
     const revised = correctionContext(track, 'delay', lyricFingerprint('[00:02]Original test words'))!;
     expect(validCorrection(approved, revised)).toBeNull();
     expect(chooseCorrection(personal, approved).correction?.delaySeconds).toBe(0);

@@ -9,13 +9,13 @@ const unverified = env.authenticatedContext('unverified', { email_verified: fals
 const guest = env.unauthenticatedContext().firestore();
 const admin = env.authenticatedContext('developer', { admin: true }).firestore();
 const identity = { provider: 'local', providerId: '', title: 'original test song', artist: 'test artist', album: 'studio', duration: 200 };
-const correction = { recordingKey: 'r3_0123456789abcdef', identity, kind: 'delay', lyricsKey: 'l3_0123456789abcdef', delaySeconds: 2, selection: null, youtubeVideoId: null };
+const correction = { recordingKey: 'r4_0123456789abcdef', identity, kind: 'delay', lyricsKey: 'l3_0123456789abcdef', delaySeconds: 2, selection: null, youtubeVideoId: null, videoDelaySeconds: null, lyricsSource: {name:'LRCLIB test file',url:'https://lrclib.net/api/get/12',revision:'l3_0123456789abcdef'} };
 const id = `${correction.recordingKey}_delay_${correction.lyricsKey}`;
 const proposalId = id + '_0123456789abcdef';
 const pending = { ...correction, proposalKey: '0123456789abcdef', uid: 'alice', status: 'pending', updatedAt: serverTimestamp() };
 const approved = { ...correction, active: true, revision: 1, updatedAt: serverTimestamp() };
 const prefs = {
-  display: {scene:'holographic-tide',reducedMotion:false,youtubeBackgroundMode:'video',videoOverlayOpacity:.45,autoHideYoutubeLyrics:true,playerVolume:85,sponsorBlockEnabled:true,lyricPlacementMode:'auto',lyricColorMode:'auto',lyricFillPaceMode:'auto',lyricDisplayMode:'both'},
+  display: {preferredVideoType:'music',scene:'holographic-tide',reducedMotion:false,youtubeBackgroundMode:'video',videoOverlayOpacity:.45,autoHideYoutubeLyrics:true,playerVolume:85,sponsorBlockEnabled:true,lyricPlacementMode:'auto',lyricColorMode:'auto',lyricFillPaceMode:'auto',lyricDisplayMode:'both'},
   intensity:65,speed:55,sensitivity:50,spectrumGain:35,motionBlur:30,quality:'Balanced',autoScenes:true,spatialTypography:true,narrativeObjects:false,cameraMode:'Front',enabledScenes:['holographic-tide'],enabledKineticMotions:['ship'],enabledCameraViews:['Front'],cameraShakeEnabled:true,cameraShakeSensitivity:50,lyricMinFontSize:26,lyricMaxFontSize:88,themePalettes:{},
 };
 let checks = 0;
@@ -54,10 +54,17 @@ try {
   await no(setDoc(doc(alice,`correctionSubmissions/alice/items/${proposalId}`),pending));
   await yes(deleteDoc(doc(admin,`approvedCorrections/${id}`)));
   await yes(getDoc(doc(guest,`approvedCorrections/${id}`)));
-  const lyrics = {...correction,kind:'lyrics',lyricsKey:'',delaySeconds:null,selection:{engine:'lrclib',lrclibId:12,subtitleTrackId:null}};
+  const lyrics = {...correction,kind:'lyrics',lyricsKey:'',lyricsSource:null,delaySeconds:null,selection:{engine:'lrclib',lrclibId:12,subtitleTrackId:null}};
   await yes(setDoc(doc(alice,`profiles/alice/corrections/${correction.recordingKey}_lyrics_recording`),{...lyrics,updatedAt:serverTimestamp()}));
-  const video = {...correction,kind:'video',lyricsKey:'',delaySeconds:null,youtubeVideoId:'abcdefghijk'};
+  const video = {...correction,kind:'video',lyricsKey:'',lyricsSource:null,delaySeconds:null,youtubeVideoId:'abcdefghijk',videoDelaySeconds:-2.5};
   await yes(setDoc(doc(admin,`approvedCorrections/${correction.recordingKey}_video_recording`),{...video,active:true,revision:1,updatedAt:serverTimestamp()}));
   await no(setDoc(doc(admin,`approvedCorrections/${correction.recordingKey}_video_recording`),{...video,youtubeVideoId:'invalid',active:true,revision:2,updatedAt:serverTimestamp()}));
+  const mapping = {identity,lyrics:{sourceFile:correction.lyricsSource,selection:{engine:'lrclib',lrclibId:12,subtitleTrackId:null},delaySeconds:-1.25},video:{youtubeVideoId:'abcdefghijk',delaySeconds:2.5},updatedAt:serverTimestamp()};
+  await yes(setDoc(doc(alice,'profiles/alice/songMappings/r4_0123456789abcdef'),mapping));
+  await no(getDoc(doc(bob,'profiles/alice/songMappings/r4_0123456789abcdef')));
+  await no(setDoc(doc(alice,'songMappings/r4_0123456789abcdef'),{...mapping,active:true,revision:1}));
+  await yes(setDoc(doc(admin,'songMappings/r4_0123456789abcdef'),{...mapping,active:true,revision:1}));
+  await yes(getDoc(doc(guest,'songMappings/r4_0123456789abcdef')));
+  await no(setDoc(doc(admin,'songMappings/r4_0123456789abcdef'),{...mapping,video:{youtubeVideoId:'bad',delaySeconds:2},active:true,revision:2}));
   console.log(`${checks} Firestore permission and validation checks passed.`);
 } finally { await env.cleanup(); }

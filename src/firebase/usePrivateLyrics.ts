@@ -22,6 +22,14 @@ export function usePrivateLyrics(track: TrackInfo | null, uid: string | null) {
   useEffect(() => {
     if (!id || !context) return;
     let stopped = false;
+    const initial = readDevice<Record<string, Custom>>(cacheKey, {});
+    if (!initial[id]) {
+      const matches = Object.entries(initial).filter(([key, value]) => key.startsWith('r3_') && value.identity &&
+        value.identity.title === context.identity.title && value.identity.artist === context.identity.artist && value.identity.duration === context.identity.duration);
+      if (matches.length && matches.every(([, value]) => value.text === matches[0][1].text)) {
+        initial[id] = { ...matches[0][1], identity: context.identity, dirty: Boolean(uid) }; writeDevice(cacheKey, initial);
+      }
+    }
     const read = () => readDevice<Record<string, Custom>>(cacheKey, {})[id];
     const emit = () => { if (!stopped) setState({ id, text: read()?.text || '', exists: Boolean(read()) }); };
     const sync = () => {
