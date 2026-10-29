@@ -28,6 +28,9 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
       - name: Install native runtime build tools
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
       - name: Install JavaScript dependencies
@@ -53,6 +56,8 @@ jobs:
           path: artifacts/LyricFlow-Android-debug.apk
           if-no-files-found: error
           retention-days: 30
+      - name: Enable emulator hardware acceleration
+        run: sudo chmod a+rw /dev/kvm
       - name: Verify embedded backend on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
