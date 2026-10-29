@@ -11,8 +11,6 @@ export type LyricCue={
  mood:Mood;
  words:TimedWord[];
  timing:'sourced'|'estimated';
- duetSide?:'left'|'right';
- duetGroupKey?:string;
 };
 
 let cues:LyricCue[]=[];
@@ -111,20 +109,6 @@ export function buildCues(original:TimedLine[],romanized:TimedLine[],genre=''):L
    words,
    timing:hasSourced?'sourced':'estimated'
   });
- }
- // Lock simultaneous dual-singer pairs so if one side finishes first, neither side changes
- // position, animation, or color until the line on the second side is finished.
- for(let i=0;i<out.length-1;i++){
-  if(out[i].end>out[i+1].time+0.12){
-   const sharedEnd=Math.max(out[i].end,out[i+1].end);
-   const groupKey=out[i].duetGroupKey||`duet:${out[i].time.toFixed(2)}:${out[i].text}`;
-   out[i].end=sharedEnd;
-   out[i+1].end=sharedEnd;
-   if(!out[i].duetSide)out[i].duetSide='left';
-   out[i+1].duetSide=out[i].duetSide==='left'?'right':'left';
-   out[i].duetGroupKey=groupKey;
-   out[i+1].duetGroupKey=groupKey;
-  }
  }
  return out;
 }
