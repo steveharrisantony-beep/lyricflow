@@ -666,7 +666,8 @@ export function drawKineticLyrics({
  const unit=Math.min(w,h);
  const energy=reduced||!animated?0:clamp(intensity,0,1.25);
  const age=Math.max(0,time-cue.time);
- const duration=Math.max(.18,cue.end-cue.time);
+ const vocalEnd=duetSide&&runs.length>0?Math.max(cue.time+0.18,runs[runs.length-1].end):cue.end;
+ const duration=Math.max(.18,vocalEnd-cue.time);
  const progress=clamp(age/duration);
  const hasWordSync=cue.timing==='sourced';
  const activePlacement:Exclude<LyricPlacementMode,'auto'>=duetSide

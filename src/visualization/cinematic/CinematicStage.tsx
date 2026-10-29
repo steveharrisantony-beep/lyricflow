@@ -183,8 +183,8 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
     scene=candidateScene;
     lockHolder._lockedCueKey='';
     lockHolder._lockedScene=candidateScene;
-   }else if(activeCueNow){
-    const cueKey=`${activeCueNow.time.toFixed(2)}:${activeCueNow.text}`;
+    }else if(activeCueNow){
+    const cueKey=activeCueNow.duetGroupKey||`${activeCueNow.time.toFixed(2)}:${activeCueNow.text}`;
     if(lockHolder._lockedCueKey===cueKey&&lockHolder._lockedScene){
      scene=lockHolder._lockedScene;
     }else{
@@ -296,7 +296,8 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
    if(activeCue){
     const project=makeLyricProjection(w,h,cameraFrame);
     const activePaletteId=config.themePalettes?.[scene.id];
-    const isDuet=Boolean(secondaryCue);
+    const isDuet=Boolean(secondaryCue||activeCue.duetSide);
+    const primaryDuetSide=activeCue.duetSide??(secondaryCue?'left':undefined);
     const result=drawKineticLyrics({
      c:textCtx,
      scene,
@@ -319,9 +320,10 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      maxFontSize:config.lyricMaxFontSize,
      forceLightText:useYtVideoBg,
      placementMode:config.lyricPlacementMode??'auto',
-     duetSide:isDuet?'left':undefined
+     duetSide:primaryDuetSide
     });
     if(secondaryCue){
+     const secondaryDuetSide=secondaryCue.duetSide??(primaryDuetSide==='right'?'left':'right');
      const rightResult=drawKineticLyrics({
       c:textCtx,
       scene,
@@ -344,7 +346,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
       maxFontSize:config.lyricMaxFontSize,
       forceLightText:useYtVideoBg,
       placementMode:config.lyricPlacementMode??'auto',
-      duetSide:'right'
+      duetSide:secondaryDuetSide
      });
      element.dataset.lyricLayout=config.spatialTypography?result.motion:'classic';
      element.dataset.lyricPlacement='duet-split';
@@ -356,7 +358,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      element.dataset.lyricFillPace=result.fillPace||'line';
     }else{
      element.dataset.lyricLayout=config.spatialTypography?result.motion:'classic';
-     element.dataset.lyricPlacement=result.placement||'center';
+     element.dataset.lyricPlacement=isDuet?'duet-split':(result.placement||'center');
      element.dataset.lyricText=result.text;element.dataset.lyricWords=String(result.words);element.dataset.lyricDraws=String(result.drawn);
      element.dataset.lyricHighlights=String(result.highlights);element.dataset.lyricFont=result.font;
      element.dataset.lyricFillPace=result.fillPace||'line';

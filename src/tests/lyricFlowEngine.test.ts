@@ -113,13 +113,13 @@ describe('YouTube metadata cleaning & 4-Engine LyricFlow Engine', () => {
     expect(nonMatchingTitle.confidence).toBe(0);
   });
 
-  it('supports simultaneous dual-singer cues on two sides when two vocalists sing at the same time', () => {
+  it('supports simultaneous dual-singer cues on two sides and holds both sides until the second singer finishes', () => {
     const ttml = [
       '<tt xmlns:ttm="http://www.w3.org/ns/ttml#metadata">',
       '<body><div>',
-      '<p begin="00:10.00" end="00:15.00" ttm:agent="v1">',
-      '<span begin="00:10.00" end="00:12.00">Hold</span> <span begin="00:12.00" end="00:14.80">the line</span>',
-      '<span ttm:role="x-bg"><span begin="00:11.00" end="00:12.50">(Stay</span> <span begin="00:12.50" end="00:14.60">with me)</span></span>',
+      '<p begin="00:10.00" end="00:13.00" ttm:agent="v1">',
+      '<span begin="00:10.00" end="00:11.50">Hold</span> <span begin="00:11.50" end="00:12.80">the line</span>',
+      '<span ttm:role="x-bg"><span begin="00:10.80" end="00:12.50">(Stay</span> <span begin="00:12.50" end="00:15.20">with me tonight)</span></span>',
       '</p>',
       '</div></body></tt>',
     ].join('');
@@ -131,9 +131,20 @@ describe('YouTube metadata cleaning & 4-Engine LyricFlow Engine', () => {
     const cues = buildCues(parsed, []);
     setLyricTimeline(cues, 0, 'original');
 
-    const stateAtOverlap = getLyricState(12.2);
-    expect(stateAtOverlap.cue?.text).toBe('Hold the line');
-    expect(stateAtOverlap.secondaryCue?.text).toBe('Stay with me');
+    // Both cues share the same duetGroupKey and extended end time (until the second side finishes)
+    expect(cues[0].duetSide).toBe('left');
+    expect(cues[1].duetSide).toBe('right');
+    expect(cues[0].duetGroupKey).toBeTruthy();
+    expect(cues[0].duetGroupKey).toBe(cues[1].duetGroupKey);
+    expect(cues[0].end).toBeCloseTo(cues[1].end, 2);
+
+    // At 14.2s, Singer 1 (left) has already finished singing (at 12.8s), while Singer 2 (right) is still singing (until 15.2s).
+    // Both cues must remain active in their locked left/right positions until Singer 2 finishes!
+    const stateAfterFirstFinishes = getLyricState(14.2);
+    expect(stateAfterFirstFinishes.cue?.text).toBe('Hold the line');
+    expect(stateAfterFirstFinishes.cue?.duetSide).toBe('left');
+    expect(stateAfterFirstFinishes.secondaryCue?.text).toBe('Stay with me tonight');
+    expect(stateAfterFirstFinishes.secondaryCue?.duetSide).toBe('right');
   });
 
   it('snaps scheduled scene boundaries so neither background nor lyric animation style changes in the middle of a line', () => {

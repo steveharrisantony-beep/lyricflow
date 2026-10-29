@@ -90,12 +90,14 @@ function setLyricsCache(key: string, data: ServerLyricsResponse) {
 
 function decodeHtmlEntities(text: string): string {
   return text
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>');
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0*39;/g, "'")
+    .replace(/&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#(\d+);/g, (_m, dec) => String.fromCodePoint(Number(dec)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&amp;/gi, '&');
 }
 
 function parseDurationText(value: string): number {
@@ -1904,6 +1906,45 @@ async function startServer() {
   const parseSubtitlesToLrc = (rawText: string): string => {
     const trimmed = rawText.trim();
     if (!trimmed) return '';
+    // 1. WebVTT (WEBVTT) format
+    if (/^WEBVTT\b/i.test(trimmed) || /\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}[.,]\d{3}/.test(trimmed)) {
+      const vttLines: string[] = [];
+      const blocks = trimmed.replace(/\r\n/g, '\n').split(/\n{2,}/);
+      for (const block of blocks) {
+        const bLines = block
+          .split('\n')
+          .map(l => l.trim())
+          .filter(Boolean);
+        if (bLines.length === 0) continue;
+        const timeIdx = bLines.findIndex(l =>
+          /(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{3})\s*-->\s*(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{3})/.test(l)
+        );
+        if (timeIdx < 0) continue;
+        const tm = bLines[timeIdx].match(
+          /(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{3})\s*-->/
+        );
+        if (!tm) continue;
+        const hours = tm[1] ? Number(tm[1]) : 0;
+        const mins = Number(tm[2]);
+        const secs = Number(tm[3]);
+        const ms = Number(tm[4]);
+        const startSec = hours * 3600 + mins * 60 + secs + ms / 1000;
+        const textBody = decodeHtmlEntities(
+          bLines
+            .slice(timeIdx + 1)
+            .join(' ')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+        )
+          .replace(/^[♪♫♬\s]+|[♪♫♬\s]+$/g, '')
+          .trim();
+        if (!textBody || /^\[(?:music|applause|silence|♪|♫|♬|\s)+\]$/i.test(textBody)) continue;
+        vttLines.push(`${formatLrcSec(startSec)}${textBody}`);
+      }
+      if (vttLines.length > 0) return vttLines.join('\n');
+    }
+    // 2. JSON3 format
     if (trimmed.startsWith('{')) {
       try {
         const json = JSON.parse(trimmed) as {
@@ -1932,6 +1973,7 @@ async function startServer() {
         // Fallback to XML
       }
     }
+    // 3. YouTube TimedText XML (<text start="..."> or <p t="...">)
     const lines: string[] = [];
     for (const m of trimmed.matchAll(/<text\b[^>]*\bstart=["']([\d.]+)["'][^>]*>([\s\S]*?)<\/text>/gi)) {
       const startSec = Number(m[1]);
@@ -1949,6 +1991,171 @@ async function startServer() {
       if (Number.isFinite(startSec) && content) lines.push(`${formatLrcSec(startSec)}${content}`);
     }
     return lines.join('\n');
+  };
+
+  let cachedNadekoCookie = '';
+  let cachedNadekoCookieAt = 0;
+
+  const fetchNadekoCreatorSubtitles = async (
+    videoId: string
+  ): Promise<
+    Array<{
+      id: string;
+      languageCode: string;
+      label: string;
+      lrc: string;
+      lineCount: number;
+    }>
+  > => {
+    const firefoxUa =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0';
+    const baseHosts = ['https://inv.nadeko.net', 'https://invidious.nerdvpn.de', 'https://yewtu.be'];
+
+    for (const host of baseHosts) {
+      try {
+        // Step 1: Query /api/v1/captions/:videoId for language codes and labels
+        const langByLabel = new Map<string, string>();
+        try {
+          const capListRes = await fetch(`${host}/api/v1/captions/${encodeURIComponent(videoId)}`, {
+            headers: { 'User-Agent': firefoxUa, Accept: 'application/json' },
+            signal: AbortSignal.timeout(4500),
+          });
+          if (capListRes.ok) {
+            const capData = (await capListRes.json()) as {
+              captions?: Array<{ label?: string; languageCode?: string; url?: string }>;
+            };
+            if (Array.isArray(capData.captions)) {
+              for (const c of capData.captions) {
+                if (c?.label && c?.languageCode) {
+                  langByLabel.set(c.label.trim(), c.languageCode.trim());
+                }
+              }
+            }
+          }
+        } catch {
+          // Proceed to embed page even if captions JSON fails
+        }
+
+        // Step 2: Fetch /embed/:videoId (automatically solving meta-refresh challenge if 418 returned)
+        const embedUrl = `${host}/embed/${encodeURIComponent(videoId)}`;
+        const useCookie =
+          host === 'https://inv.nadeko.net' &&
+          cachedNadekoCookie &&
+          Date.now() - cachedNadekoCookieAt < 25 * 60_000
+            ? cachedNadekoCookie
+            : '';
+
+        let embedRes = await fetch(embedUrl, {
+          headers: {
+            'User-Agent': firefoxUa,
+            ...(useCookie ? { Cookie: useCookie } : {}),
+          },
+          signal: AbortSignal.timeout(5000),
+        });
+
+        let activeCookie = useCookie;
+        if (embedRes.status === 418 || embedRes.status === 403) {
+          const challengeHtml = await embedRes.text();
+          const refreshMatch = challengeHtml.match(/url=([^"'>\s]+)/i);
+          if (refreshMatch?.[1]) {
+            const rawRefreshPath = refreshMatch[1].replace(/&amp;/g, '&');
+            const verifyUrl = rawRefreshPath.startsWith('http')
+              ? rawRefreshPath
+              : `${host}${rawRefreshPath.startsWith('/') ? '' : '/'}${rawRefreshPath}`;
+            const verifyRes = await fetch(verifyUrl, {
+              headers: { 'User-Agent': firefoxUa, Referer: embedUrl },
+              redirect: 'manual',
+              signal: AbortSignal.timeout(5000),
+            });
+            const setCookies =
+              typeof verifyRes.headers.getSetCookie === 'function'
+                ? verifyRes.headers.getSetCookie()
+                : [verifyRes.headers.get('set-cookie') || ''].filter(Boolean);
+            const joinedCookie = setCookies
+              .map(c => c.split(';')[0].trim())
+              .filter(Boolean)
+              .join('; ');
+            if (joinedCookie) {
+              activeCookie = joinedCookie;
+              if (host === 'https://inv.nadeko.net') {
+                cachedNadekoCookie = joinedCookie;
+                cachedNadekoCookieAt = Date.now();
+              }
+              embedRes = await fetch(embedUrl, {
+                headers: { 'User-Agent': firefoxUa, Cookie: activeCookie },
+                signal: AbortSignal.timeout(5000),
+              });
+            }
+          }
+        }
+
+        if (!embedRes.ok) continue;
+        const embedHtml = await embedRes.text();
+        const trackTags = [...embedHtml.matchAll(/<track\b[^>]*>/gi)].map(m => m[0]);
+        if (trackTags.length === 0) continue;
+
+        const creatorTrackTargets: Array<{ src: string; label: string; languageCode: string }> = [];
+        for (const tag of trackTags) {
+          const srcMatch = tag.match(/\bsrc=["']([^"']+)["']/i);
+          const labelMatch = tag.match(/\blabel=["']([^"']+)["']/i);
+          const srclangMatch = tag.match(/\bsrclang=["']([^"']+)["']/i);
+          if (!srcMatch?.[1]) continue;
+          const label = decodeHtmlEntities((labelMatch?.[1] || 'Subtitles').trim());
+          // Exclude auto-generated tracks; prefer only creator-uploaded captions
+          if (/auto-generated|automatic/i.test(label)) continue;
+          const rawSrc = decodeHtmlEntities(srcMatch[1].trim());
+          const fullSrc = rawSrc.startsWith('http')
+            ? rawSrc
+            : `${host}${rawSrc.startsWith('/') ? '' : '/'}${rawSrc}`;
+          const languageCode =
+            srclangMatch?.[1]?.trim() ||
+            langByLabel.get(label) ||
+            label.slice(0, 2).toLowerCase();
+          creatorTrackTargets.push({ src: fullSrc, label, languageCode });
+        }
+
+        if (creatorTrackTargets.length === 0) {
+          return [];
+        }
+
+        const fetched = await Promise.all(
+          creatorTrackTargets.slice(0, 6).map(async (target, idx) => {
+            try {
+              const vttRes = await fetch(target.src, {
+                headers: {
+                  'User-Agent': firefoxUa,
+                  ...(activeCookie ? { Cookie: activeCookie } : {}),
+                },
+                signal: AbortSignal.timeout(5000),
+              });
+              if (!vttRes.ok) return null;
+              const body = await vttRes.text();
+              const lrc = parseSubtitlesToLrc(body);
+              if (!lrc || !lrc.includes('[')) return null;
+              const lineCount = lrc.split('\n').filter(line => line.trim().startsWith('[')).length;
+              if (lineCount < 2) return null;
+              return {
+                id: `${target.languageCode}-${idx}`,
+                languageCode: target.languageCode,
+                label: target.label,
+                lrc,
+                lineCount,
+              };
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        const valid = fetched.filter(
+          (t): t is NonNullable<typeof t> => t !== null
+        );
+        if (valid.length > 0) return valid;
+      } catch {
+        continue;
+      }
+    }
+    return [];
   };
 
   const fetchYouTubeSubtitlesLrc = async (videoId: string): Promise<ServerLyricsResponse | null> => {
@@ -1974,7 +2181,7 @@ async function startServer() {
           'Accept-Language': 'en-US,en;q=0.9',
           Cookie: 'CONSENT=YES+cb',
         },
-        signal: AbortSignal.timeout(5500),
+        signal: AbortSignal.timeout(4500),
       });
       if (wRes.ok) {
         const html = await wRes.text();
@@ -2012,11 +2219,6 @@ async function startServer() {
         clientVersion: '20.03.02',
         ua: 'com.google.ios.youtube/20.03.02 (iPhone16,2; U; CPU iOS 18_2 like Mac OS X)',
       },
-      {
-        clientName: 'WEB',
-        clientVersion: '2.20250219.01.00',
-        ua: USER_AGENT,
-      },
     ];
 
     for (const c of clients) {
@@ -2042,7 +2244,7 @@ async function startServer() {
             videoId,
             context: { client: clientContext },
           }),
-          signal: AbortSignal.timeout(5000),
+          signal: AbortSignal.timeout(3500),
         });
         if (!pRes.ok) continue;
         const pJson = (await pRes.json()) as {
@@ -2069,10 +2271,6 @@ async function startServer() {
       const isAsr = t.kind === 'asr' || String(t.vssId || '').startsWith('a.');
       return !isAsr;
     });
-
-    if (creatorTracks.length === 0) {
-      return null;
-    }
 
     const extractTrackLabel = (tr: CapTrack, idx: number): string => {
       const rawName =
@@ -2101,7 +2299,7 @@ async function startServer() {
               'Accept-Language': 'en-US,en;q=0.9',
               Cookie: 'CONSENT=YES+cb',
             },
-            signal: AbortSignal.timeout(4500),
+            signal: AbortSignal.timeout(4000),
           });
           if (!r.ok) continue;
           const body = await r.text();
@@ -2117,7 +2315,7 @@ async function startServer() {
       return '';
     };
 
-    const collectedTracks: Array<{
+    let collectedTracks: Array<{
       id: string;
       languageCode: string;
       label: string;
@@ -2133,6 +2331,7 @@ async function startServer() {
       if (lineCount < 2) continue;
       const languageCode = String(tr.languageCode || `track-${i + 1}`);
       const label = extractTrackLabel(tr, i);
+      if (/auto-generated|automatic/i.test(label)) continue;
       const id = String(tr.vssId || `${languageCode}-${i}`);
       collectedTracks.push({
         id,
@@ -2141,6 +2340,12 @@ async function startServer() {
         lrc,
         lineCount,
       });
+    }
+
+    // Fallback for Cloud Run / datacenter IPs where direct youtubei/v1/player returns LOGIN_REQUIRED:
+    // Fetch creator-uploaded WebVTT subtitles via Companion signed caption tracks
+    if (collectedTracks.length === 0) {
+      collectedTracks = await fetchNadekoCreatorSubtitles(videoId);
     }
 
     if (collectedTracks.length === 0) {
