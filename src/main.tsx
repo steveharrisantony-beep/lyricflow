@@ -17,7 +17,7 @@ import '@fontsource/space-grotesk/600.css';
 import '@fontsource/space-grotesk/700.css';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './App';
+import AccountRoot from './auth/AccountRoot';
 import './styles.css';
 import {initializeEmbeddedBackend} from './network/embeddedBackend';
 
@@ -29,5 +29,5 @@ document.body.prepend(startup);
 void initializeEmbeddedBackend().then(() => startup.remove()).catch(error => {
   startup.textContent = (error instanceof Error ? error.message : 'On-device music service unavailable.') + ' Local audio and manual lyrics remain available.';
 }).finally(() => {
-  createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);
+  createRoot(document.getElementById('root')!).render(<React.StrictMode><AccountRoot /></React.StrictMode>);
 });

@@ -1,3 +1,4 @@
+import {scopedKey, readDevice} from '../firebase/deviceStore';
 import type {TrackInfo} from '../metadata/trackInfo';
 import {normalizeTrack} from '../metadata/trackInfo';
 const KEY='lyricflow.userLyrics.v1';
@@ -14,7 +15,7 @@ function valid(x:unknown):x is LibraryEntry {
  typeof v.updated==='number'&&Number.isFinite(v.updated);
 }
 export function listUserLyrics():LibraryEntry[]{
- try{const arr:unknown=JSON.parse(localStorage.getItem(KEY)||'[]');
+ try{const arr:unknown=JSON.parse(JSON.stringify(readDevice(scopedKey(KEY), scopedKey(KEY).includes('.guest.') ? readDevice(KEY, []) : [])));
   return Array.isArray(arr)?arr.filter(valid).slice(0,100):[];
  }catch{return []}
 }
@@ -29,8 +30,8 @@ export function saveUserLyrics(entry:Omit<LibraryEntry,'id'|'updated'>){
  const id=normalizeTrack(entry.title)+'--'+normalizeTrack(entry.artist);
  if(!id||id==='--')throw new Error('Invalid song metadata.');
  const next=[...listUserLyrics().filter(e=>e.id!==id),{...entry,id,updated:Date.now()}];
- try{localStorage.setItem(KEY,JSON.stringify(next.slice(-100)))}catch{throw new Error('Local storage is full or blocked.')}
+ try{localStorage.setItem(scopedKey(KEY),JSON.stringify(next.slice(-100)))}catch{throw new Error('Local storage is full or blocked.')}
 }
 export function deleteUserLyrics(id:string){
- try{localStorage.setItem(KEY,JSON.stringify(listUserLyrics().filter(e=>e.id!==id)))}catch{throw new Error('Local browser storage unavailable.')}
+ try{localStorage.setItem(scopedKey(KEY),JSON.stringify(listUserLyrics().filter(e=>e.id!==id)))}catch{throw new Error('Local browser storage unavailable.')}
 }

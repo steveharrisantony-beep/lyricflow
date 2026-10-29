@@ -53,6 +53,7 @@ type Props = {
   onDurationChange: (duration: number) => void;
   onAudioStreamModeChange?: (hasAudioStream: boolean) => void;
   onVolumeChange?: (volume: number) => void;
+  preferredVolume?: number;
   sourceMode: AudioSourceMode | null;
   onOpenSourceSelector: () => void;
   lyricSourceLabel: string;
@@ -83,6 +84,7 @@ function LocalPlayer(
     onDurationChange,
     onAudioStreamModeChange,
     onVolumeChange,
+    preferredVolume,
     sourceMode,
     onOpenSourceSelector,
     lyricSourceLabel,
@@ -117,7 +119,12 @@ function LocalPlayer(
   const [active, setActive] = useState(false);
   const [duration, setDuration] = useState(0);
   const [time, setTime] = useState(0);
-  const [volume, setVolume] = useState(85);
+  const [volume, setVolume] = useState(preferredVolume ?? 85);
+  useEffect(() => {
+    if (preferredVolume === undefined) return;
+    setVolume(preferredVolume);
+    if (audioRef.current) audioRef.current.volume = preferredVolume / 100;
+  }, [preferredVolume]);
   const [error, setError] = useState('');
   const [remote, setRemote] = useState(false);
   const [inlineOnlineOpen, setInlineOnlineOpen] = useState(false);
@@ -288,6 +295,7 @@ function LocalPlayer(
       ...song,
       source: 'provider',
       provider: song.provider,
+      sourceTrackId: song.id,
       audioSource: audioSourceLabel,
       sourceUrl: song.sourceUrl,
       youtubeVideoId: ytId,

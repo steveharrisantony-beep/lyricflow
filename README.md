@@ -1,5 +1,7 @@
 # LyricFlow Android
 
+**Account sync and guest-readable approved corrections:** see [Firebase setup](FIREBASE_SETUP.md). The dashboard is deferred; publication remains manual.
+
 Capacitor Android packaging of [LyricFlow](https://github.com/steveharrisantony-beep/lyricflow).
 
 **[Download/build an APK on your tablet: Android setup guide](ANDROID.md)**
@@ -218,12 +220,13 @@ LyricFlow dynamically probes and displays **only the Lyrics Engine options that 
 
 ## 9. Profile Persistence & Security Architecture
 
-- **Instant Local Device Persistence (`src/firebase/firebaseClient.ts`)**:
-  - Launches directly into the LyricFlow studio without login friction and automatically persists visual intensity, speed, audio sensitivity, spectrum gain, motion blur, quality preset, enabled VoxelWall themes (`1–23`), enabled VoxelVerse lyric styles (`1–19`), lyric min/max font sizes, bass camera shake preferences, and per-song lyric delays in `localStorage`.
-- **Secret-Free GitHub Policy (`.gitignore` & `.env.example`)**:
-  - No API keys or secrets are stored in tracked files (`firebase-applet-config.json` and `.env.local` are listed in `.gitignore`).
-- **Hardened Firestore Security Rules (`firestore.rules`)**:
-  - Default-deny catch-all, strict owner UID + `email_verified` enforcement, exact schema key whitelisting (`hasAll` / `hasOnly`), bounded list sizes, and immutable `uid`/`createdAt` invariants ready for future cloud sync.
+Guest mode launches directly and saves preferences and fixes in a versioned device namespace. Each account has a separate namespace. Optional Firebase login synchronizes theme/display settings, font sizes, camera shake, volume, per-recording lyrics selections, exact-lyrics-version delays and saved custom overrides across web and Android. Firestore offline persistence queues changes where supported; pending device records can retry after reconnect. Guest import is explicit.
+
+Approved timing, lyrics-provider and background-video corrections are readable without login. Personal overrides always win. Verified users can submit a proposal; submissions are private and never auto-publish. The dashboard is deferred, with manual review/publication through the Firebase Console documented in [FIREBASE_SETUP.md](FIREBASE_SETUP.md). Background-video replacement preserves the existing separate audio stream and is unavailable when the YouTube player itself supplies audio.
+
+`firestore.rules` denies access by default, separates private profiles from public approvals, validates correction schemas and bounds, and restricts publishing to developer roles provisioned through trusted administration. Public config is supplied at build time; no Admin SDK private key belongs in the browser or APK. The original `userPreferences` v2 records/rules remain for compatibility; the v3 schema lives under `profiles` and `approvedCorrections`.
+
+Set up the shared project using the browser-only [Firebase setup guide](FIREBASE_SETUP.md). Email/password works on both bundles; Google popup login is web-only until native Google sign-in is configured. Web Google users can add a password to their existing account for Android. Without Firebase config, local guest mode continues to work.
 
 ---
 
@@ -232,7 +235,7 @@ LyricFlow dynamically probes and displays **only the Lyrics Engine options that 
 ```text
 ├── server.ts                                      # Express + Vite server (/music/lyrics, /music/yt-subtitles, /music/sponsorblock)
 ├── firestore.rules                                # Hardened Cloud Firestore security rules
-├── firebase-blueprint.json                        # Firestore schema blueprint
+├── firebase-blueprint.json                        # Legacy v2 blueprint (v3: FIREBASE_SETUP.md)
 ├── src/
 │   ├── App.tsx                                    # Main studio interface, VoxelWall & VoxelVerse controls
 │   ├── audio/

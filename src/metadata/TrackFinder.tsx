@@ -1,3 +1,4 @@
+import type {LyricsSelection} from '../firebase/correctionModel';
 import {useEffect,useRef,useState} from 'react';
 import type {TrackInfo, TrackCandidate} from '../metadata/trackInfo';
 import {lrclibProvider,retrievePermittedLyrics,resolveStashLyricsChain} from '../lyrics/providers';
@@ -12,6 +13,8 @@ import {
 
 export default function TrackFinder({
  track,
+ preferredSelection,
+ onSelectionChange,
  savedCustomLrc,
  customEditOpen,
  lyricEngineOption='lyricflow',
@@ -26,6 +29,8 @@ export default function TrackFinder({
  onStatusChange
 }:{
  track:TrackInfo|null;
+ preferredSelection?:LyricsSelection|null;
+ onSelectionChange?:(selection:LyricsSelection)=>void;
  savedCustomLrc?:string;
  customEditOpen?:boolean;
  lyricEngineOption?:LyricEngineOption;
@@ -86,7 +91,7 @@ export default function TrackFinder({
   const saved=findUserLyrics(track).filter(
    entry=>entry.original&&entry.title.toLowerCase()===track.title.toLowerCase()
   );
-  if(saved.length>=1){
+  if(saved.length>=1&&!preferredSelection){
    latestLyrics.current({
     original:saved[0].original,
     romanized:saved[0].romanized,
@@ -110,12 +115,16 @@ export default function TrackFinder({
      ?`[${engineLabel}] Searching lyrics for "${cleanedYtTitle}" (artist/album skipped for YouTube)…`
      :`[${engineLabel}] Searching synced lyrics for "${track.title}"…`
    );
-   void resolveStashLyricsChain(
-    track,
-    controller.signal,
-    lyricEngineOption,
-    leadingNonMusicOffsetSec,
-    selectedSubtitleTrackId
+   const selectedId=preferredSelection?.lrclibId;
+   const resolvePreferred=async()=>{
+    if(selectedId){
+     const lyric=await retrievePermittedLyrics({id:selectedId,title:track.title,artist:track.artist,album:track.album,duration:track.duration,instrumental:false,hasSynced:true,hasWordSync:false,url:`https://lrclib.net/api/get/${selectedId}`,confidence:1},controller.signal);
+     if(!lyric.synced&&!lyric.plain)throw new Error('Saved lyrics selection is unavailable. Use default lyrics selection or choose another match.');
+     return {original:lyric.synced,romanized:'',plain:lyric.plain,source:lyric.source,sourceUrl:lyric.sourceUrl,hasWordSync:lyric.synced.includes('<'),candidates:[],availableEngines:['lrclib' as LyricEngineOption],subtitleTracks:[] as YouTubeSubtitleTrackItem[]};
+    }
+    return resolveStashLyricsChain(track,controller.signal,lyricEngineOption,leadingNonMusicOffsetSec,selectedSubtitleTrackId);
+   };
+   void resolvePreferred(
    )
     .then(resolved=>{
      if(controller.signal.aborted)return;
@@ -162,7 +171,7 @@ export default function TrackFinder({
    clearTimeout(timer);
    controller.abort();
   };
- },[key,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,Math.round(leadingNonMusicOffsetSec)]);
+ },[key,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,preferredSelection?.lrclibId,Math.round(leadingNonMusicOffsetSec)]);
 
  const canSearch=Boolean(track&&track.title.trim().length>=2);
 
@@ -233,6 +242,7 @@ export default function TrackFinder({
     sourceUrl:lyric.sourceUrl,
     hasWordSync:lyric.synced.includes('<')
    });
+   onSelectionChange?.({engine:'lrclib',lrclibId:c.id,subtitleTrackId:null});
    updateStatus(lyric.synced?'Alternative timed lyrics loaded.':'Plain lyrics loaded — click "Create approximate timestamps" below.');
   }catch(e){
    if(!controller.signal.aborted)updateStatus(e instanceof Error?e.message:'Unable to load lyrics.');
@@ -266,7 +276,7 @@ export default function TrackFinder({
       <button
        key={opt.id}
        type="button"
-       onClick={()=>onLyricEngineOptionChange(opt.id)}
+       onClick={()=>{onSelectionChange?.({engine:opt.id,lrclibId:null,subtitleTrackId:null});onLyricEngineOptionChange(opt.id);}}
        style={{
         textAlign:'left',
         padding:'8px 10px',

@@ -23,3 +23,7 @@ android/capacitor-cordova-android-plugins/
 *.keystore
 *.apk
 *.aab
+
+# Local Firebase emulator output
+*-debug.log
+.firebase/

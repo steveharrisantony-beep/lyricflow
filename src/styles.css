@@ -515,3 +515,17 @@ body {
 }
 
 .device-service-status{position:relative;z-index:1000006;margin:0;padding:16px;background:#13202c;color:#ebf2f6;font:600 14px/1.5 system-ui,sans-serif;text-align:center}
+
+/* Account sync and corrections remain outside the canvas/render loop. */
+.account-controls { position: relative; }
+.account-panel { position: absolute; right: 0; top: 44px; width: min(360px, 85vw); max-height: 75vh; overflow: auto; z-index: 100; padding: 18px; border-radius: 16px; background: #121820; color: #eef4ff; border: 1px solid #405067; box-shadow: 0 18px 60px #0009; }
+.account-panel p, .correction-controls p { font-size: .82rem; color: #b8c8db; line-height: 1.5; }
+.account-panel form, .correction-controls form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.account-panel label, .correction-controls label { display: grid; gap: 6px; font-size: .8rem; flex: 1 1 180px; }
+.account-panel input, .correction-controls input { min-width: 0; width: 100%; background: #080d14; border: 1px solid #52647a; border-radius: 8px; padding: 11px; color: #fff; }
+.account-panel button, .correction-controls button { min-height: 44px; padding: 10px 12px; margin: 4px 0; border: 1px solid #49617a; border-radius: 8px; background: #1b2d3f; color: #eef4ff; cursor: pointer; }
+.account-panel button:disabled, .correction-controls button:disabled { opacity: .45; cursor: default; }
+.correction-controls summary { cursor: pointer; padding: 10px 0; font-weight: 700; min-height: 44px; }
+.correction-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 10px 0; }
+.correction-actions span { flex: 1 1 180px; font-size: .85rem; }
+.account-panel :focus-visible, .correction-controls :focus-visible { outline: 2px solid #6ee7f9; outline-offset: 3px; }

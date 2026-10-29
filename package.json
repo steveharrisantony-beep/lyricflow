@@ -20,7 +20,8 @@
     "android:open": "cap open android",
     "android:apk": "npm run android:sync && node scripts/android-apk.mjs",
     "build:backend": "node scripts/build-embedded-backend.mjs",
-    "test:backend": "node scripts/test-embedded-backend.mjs"
+    "test:backend": "node scripts/test-embedded-backend.mjs",
+    "test:rules": "node scripts/firestore-rules-check.mjs"
   },
   "dependencies": {
     "@capacitor/android": "8.6.0",
@@ -78,7 +79,8 @@
     "esbuild": "0.28.2",
     "playwright": "^1.58.0",
     "tsx": "^4.23.15",
-    "vitest": "^5.0.4"
+    "vitest": "^5.0.4",
+    "@firebase/rules-unit-testing": "^6.0.0"
   },
   "engines": {
     "node": ">=22"

@@ -1,143 +1,84 @@
-import { initializeApp, type FirebaseApp } from 'firebase/app';
+import { initializeApp } from 'firebase/app';
 import {
-  getAuth,
-  GoogleAuthProvider,
-  signInWithPopup,
-  signOut as firebaseSignOut,
-  onAuthStateChanged as firebaseOnAuthStateChanged,
-  type Auth,
-  type User,
-  type NextOrObserver,
-  type Unsubscribe,
+  getAuth, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword,
+  createUserWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification,
+  signOut, onAuthStateChanged, linkWithCredential, EmailAuthProvider, connectAuthEmulator, type User,
 } from 'firebase/auth';
 import {
-  getFirestore,
-  doc,
-  getDoc,
-  getDocFromServer,
-  setDoc,
-  updateDoc,
-  serverTimestamp,
-  type Firestore,
+  initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache,
+  doc, onSnapshot, setDoc, serverTimestamp, connectFirestoreEmulator, type Firestore,
 } from 'firebase/firestore';
 import { TEMPLATES, type SceneId } from '../visualization/cinematic/catalog';
 import { LYRIC_MOTIONS, type LyricMotion } from '../visualization/cinematic/kineticTypography';
 import { CAMERA_VIEWS, type Quality, type CameraMode, type CameraView } from '../visualization/cinematic/CinematicStage';
-import type { TrackInfo } from '../metadata/trackInfo';
-import { normalizeTrack } from '../metadata/trackInfo';
+import { readDevice, writeDevice, scopedKey } from './deviceStore';
 
-const env = ((import.meta as unknown as { env?: Record<string, string | undefined> }).env) ?? {};
-
-const resolvedFirebaseConfig = {
-  apiKey: (env.VITE_FIREBASE_API_KEY || '').trim(),
-  projectId: (env.VITE_FIREBASE_PROJECT_ID || '').trim(),
-  appId: (env.VITE_FIREBASE_APP_ID || '').trim(),
-  authDomain: (env.VITE_FIREBASE_AUTH_DOMAIN || '').trim(),
-  firestoreDatabaseId: (env.VITE_FIREBASE_DATABASE_ID || '').trim(),
-  storageBucket: (env.VITE_FIREBASE_STORAGE_BUCKET || '').trim(),
-  messagingSenderId: (env.VITE_FIREBASE_MESSAGING_SENDER_ID || '').trim(),
+const env = import.meta.env || {};
+const config = {
+  apiKey: env.VITE_FIREBASE_API_KEY || '', projectId: env.VITE_FIREBASE_PROJECT_ID || '',
+  appId: env.VITE_FIREBASE_APP_ID || '', authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || '',
 };
-
-export const isFirebaseConfigured = Boolean(resolvedFirebaseConfig.apiKey && resolvedFirebaseConfig.projectId);
-
-let appInstance: FirebaseApp | null = null;
-let dbInstance: Firestore | null = null;
-let authInstance: Auth | null = null;
-
-if (isFirebaseConfigured) {
+export const isFirebaseConfigured = Boolean(config.apiKey && config.projectId && config.appId);
+const app = isFirebaseConfigured ? initializeApp(config) : null;
+export const auth = app ? getAuth(app) : null;
+let firestore: Firestore | null = null;
+if (app) {
+  const databaseId = env.VITE_FIREBASE_DATABASE_ID || '(default)';
   try {
-    appInstance = initializeApp(resolvedFirebaseConfig);
-    dbInstance = resolvedFirebaseConfig.firestoreDatabaseId
-      ? getFirestore(appInstance, resolvedFirebaseConfig.firestoreDatabaseId)
-      : getFirestore(appInstance);
-    authInstance = getAuth(appInstance);
-  } catch (err) {
-    console.warn('Firebase initialization skipped; running in local storage mode.', err);
-    appInstance = null;
-    dbInstance = null;
-    authInstance = null;
+    firestore = initializeFirestore(app, {
+      localCache: typeof indexedDB !== 'undefined'
+        ? persistentLocalCache({ tabManager: persistentMultipleTabManager() }) : memoryLocalCache(),
+    }, databaseId);
+  } catch {
+    firestore = initializeFirestore(app, { localCache: memoryLocalCache() }, databaseId);
   }
 }
-
-export const db = dbInstance;
-export const auth = authInstance;
-
-export function onAuthStateChanged(
-  authObj: Auth | null,
-  nextOrObserver: NextOrObserver<User>
-): Unsubscribe {
-  if (!authObj) {
-    if (typeof nextOrObserver === 'function') {
-      nextOrObserver(null);
-    } else if (nextOrObserver && typeof nextOrObserver.next === 'function') {
-      nextOrObserver.next(null);
-    }
-    return () => {};
-  }
-  return firebaseOnAuthStateChanged(authObj, nextOrObserver);
+export const db = firestore;
+// Explicit, demo-project-only switch for automated tests. Production never redirects.
+if (env.VITE_FIREBASE_EMULATORS === 'true' && config.projectId.startsWith('demo-') && auth && db) {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+  connectFirestoreEmulator(db, '127.0.0.1', 8080);
 }
-
-export enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
+export { onAuthStateChanged, type User };
+export const isNativeApp = () => Boolean((window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.());
+export async function signInWithGoogle() {
+  if (!auth) throw new Error('Cloud sync is not configured yet. Your device settings still work.');
+  if (isNativeApp()) throw new Error('Use email sign-in in the Android app. Native Google sign-in has not been configured.');
+  return (await signInWithPopup(auth, new GoogleAuthProvider())).user;
 }
-
-export interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  };
+export async function emailSignIn(email: string, password: string, create = false) {
+  if (!auth) throw new Error('Cloud sync is not configured yet.');
+  const result = create ? await createUserWithEmailAndPassword(auth, email, password)
+    : await signInWithEmailAndPassword(auth, email, password);
+  if (create) await sendEmailVerification(result.user);
+  return result.user;
 }
-
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
-  const currentUser = auth?.currentUser;
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: currentUser?.uid,
-      email: currentUser?.email,
-      emailVerified: currentUser?.emailVerified,
-      isAnonymous: currentUser?.isAnonymous,
-      tenantId: currentUser?.tenantId,
-      providerInfo: currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || []
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+export async function addAccountPassword(password: string) {
+  const user = auth?.currentUser;
+  if (!user?.email) throw new Error('Sign in first.');
+  if (password.length < 6) throw new Error('Use a password with at least 6 characters.');
+  await linkWithCredential(user, EmailAuthProvider.credential(user.email, password));
 }
-
-async function testConnection() {
-  if (!db) return;
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
-    }
-  }
+export async function resetPassword(email: string) {
+  if (!auth || !email.trim()) throw new Error('Enter your account email first.');
+  await sendPasswordResetEmail(auth, email.trim());
 }
-void testConnection();
-
+export async function verifyEmail() { if (auth?.currentUser) await sendEmailVerification(auth.currentUser); }
+export async function signOutUser() { if (auth) await signOut(auth); }
+export interface DisplayPreferences {
+  scene: SceneId; reducedMotion: boolean; youtubeBackgroundMode: 'video' | 'theme';
+  videoOverlayOpacity: number; autoHideYoutubeLyrics: boolean; playerVolume: number; sponsorBlockEnabled: boolean;
+  lyricPlacementMode: 'auto' | 'alternating' | 'left' | 'right' | 'bottom-right' | 'bottom-left' | 'top-left' | 'diagonal' | 'center';
+  lyricColorMode: 'auto' | 'cyan' | 'rose' | 'gold' | 'emerald' | 'violet' | 'coral' | 'white';
+  lyricFillPaceMode: 'auto' | 'letter' | 'word'; lyricDisplayMode: 'original' | 'romanized' | 'both';
+}
+export const DEFAULT_DISPLAY_PREFERENCES: DisplayPreferences = {
+  scene: 'holographic-tide', reducedMotion: false, youtubeBackgroundMode: 'video', videoOverlayOpacity: .45,
+  autoHideYoutubeLyrics: true, playerVolume: 85, sponsorBlockEnabled: true, lyricPlacementMode: 'auto',
+  lyricColorMode: 'auto', lyricFillPaceMode: 'auto', lyricDisplayMode: 'both',
+};
 export interface UserPreferencesData {
+  display: DisplayPreferences;
   intensity: number;
   speed: number;
   sensitivity: number;
@@ -167,15 +108,16 @@ export interface SongDelayRecord {
   customLyricsLrc: string;
 }
 
-const LOCAL_PREFS_KEY = 'lyricflow.userPreferences.v2';
-const LOCAL_DELAYS_KEY = 'lyricflow.songDelays.v2';
-const LOCAL_SESSION_KEY = 'lyricflow.sessionMode.v2';
+export const LEGACY_PREFS_KEY = 'lyricflow.userPreferences.v2';
+export const LEGACY_DELAYS_KEY = 'lyricflow.songDelays.v2';
+
 
 export const ALL_SCENE_IDS: SceneId[] = TEMPLATES.map(t => t.id);
 export const ALL_KINETIC_MOTIONS: LyricMotion[] = [...LYRIC_MOTIONS];
 export const ALL_CAMERA_VIEWS: CameraView[] = [...CAMERA_VIEWS];
 
 export const DEFAULT_USER_PREFERENCES: UserPreferencesData = {
+  display: { ...DEFAULT_DISPLAY_PREFERENCES },
   intensity: 65,
   speed: 55,
   sensitivity: 50,
@@ -201,6 +143,23 @@ const clampNum = (v: unknown, min: number, max: number, fallback: number) => {
   return Math.max(min, Math.min(max, n));
 };
 
+function sanitizeDisplay(raw: Partial<DisplayPreferences> | null | undefined): DisplayPreferences {
+  const r = raw || {};
+  const oneOf = <T extends string>(value: T | undefined, options: readonly T[], fallback: T) => value && options.includes(value) ? value : fallback;
+  return {
+    scene: oneOf(r.scene, ALL_SCENE_IDS, DEFAULT_DISPLAY_PREFERENCES.scene),
+    reducedMotion: typeof r.reducedMotion === 'boolean' ? r.reducedMotion : false,
+    youtubeBackgroundMode: oneOf(r.youtubeBackgroundMode, ['video', 'theme'], 'video'),
+    videoOverlayOpacity: clampNum(r.videoOverlayOpacity, 0, 1, .45),
+    autoHideYoutubeLyrics: typeof r.autoHideYoutubeLyrics === 'boolean' ? r.autoHideYoutubeLyrics : true,
+    playerVolume: clampNum(r.playerVolume, 0, 100, 85),
+    sponsorBlockEnabled: typeof r.sponsorBlockEnabled === 'boolean' ? r.sponsorBlockEnabled : true,
+    lyricPlacementMode: oneOf(r.lyricPlacementMode, ['auto','alternating','left','right','bottom-right','bottom-left','top-left','diagonal','center'], 'auto'),
+    lyricColorMode: oneOf(r.lyricColorMode, ['auto','cyan','rose','gold','emerald','violet','coral','white'], 'auto'),
+    lyricFillPaceMode: oneOf(r.lyricFillPaceMode, ['auto','letter','word'], 'auto'),
+    lyricDisplayMode: oneOf(r.lyricDisplayMode, ['original','romanized','both'], 'both'),
+  };
+}
 export function sanitizePreferences(raw: Partial<UserPreferencesData> | null | undefined): UserPreferencesData {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_USER_PREFERENCES };
   const validScenes = Array.isArray(raw.enabledScenes)
@@ -225,6 +184,7 @@ export function sanitizePreferences(raw: Partial<UserPreferencesData> | null | u
   const maxFont = Math.max(minFont, clampNum(raw.lyricMaxFontSize, 32, 130, DEFAULT_USER_PREFERENCES.lyricMaxFontSize));
 
   return {
+    display: sanitizeDisplay(raw.display),
     intensity: clampNum(raw.intensity, 0, 100, DEFAULT_USER_PREFERENCES.intensity),
     speed: clampNum(raw.speed, 10, 100, DEFAULT_USER_PREFERENCES.speed),
     sensitivity: clampNum(raw.sensitivity, 0, 100, DEFAULT_USER_PREFERENCES.sensitivity),
@@ -246,270 +206,38 @@ export function sanitizePreferences(raw: Partial<UserPreferencesData> | null | u
   };
 }
 
-export function loadLocalPreferences(): UserPreferencesData {
-  try {
-    const raw = localStorage.getItem(LOCAL_PREFS_KEY);
-    if (!raw) return { ...DEFAULT_USER_PREFERENCES };
-    return sanitizePreferences(JSON.parse(raw));
-  } catch {
-    return { ...DEFAULT_USER_PREFERENCES };
-  }
+
+export function loadLocalPreferences(uid: string | null = null): UserPreferencesData {
+  const legacy = uid ? null : readDevice<Partial<UserPreferencesData> | null>(LEGACY_PREFS_KEY, null);
+  return sanitizePreferences(readDevice(scopedKey('preferences', uid), legacy));
 }
-
-export function saveLocalPreferences(prefs: UserPreferencesData): void {
-  try {
-    localStorage.setItem(LOCAL_PREFS_KEY, JSON.stringify(sanitizePreferences(prefs)));
-  } catch {
-    // Ignore storage quota errors
-  }
+export function saveLocalPreferences(prefs: UserPreferencesData, uid: string | null = null): void {
+  writeDevice(scopedKey('preferences', uid), sanitizePreferences(prefs));
 }
-
-export function computeSongKey(track: TrackInfo | null): string {
-  if (!track || !track.title.trim()) return '';
-  const normTitle = normalizeTrack(track.title) || track.title.toLowerCase().trim();
-  const normArtist = normalizeTrack(track.artist || '') || 'unknown';
-  const raw = `${normTitle}|${normArtist}`;
-  let h1 = 0x811c9dc5;
-  let h2 = 0x01000193;
-  for (let i = 0; i < raw.length; i++) {
-    const ch = raw.charCodeAt(i);
-    h1 = Math.imul(h1 ^ ch, 16777619) >>> 0;
-    h2 = Math.imul(h2 ^ (ch + i), 2246822519) >>> 0;
-  }
-  const slug = normTitle.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 36) || 'track';
-  return `song_${slug}_${h1.toString(16)}_${h2.toString(16)}`.slice(0, 96);
-}
-
-function readLocalDelaysMap(): Record<string, SongDelayRecord> {
-  try {
-    const raw = localStorage.getItem(LOCAL_DELAYS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-export function loadLocalSongDelay(track: TrackInfo | null): SongDelayRecord | null {
-  const key = computeSongKey(track);
-  if (!key) return null;
-  const map = readLocalDelaysMap();
-  return map[key] || null;
-}
-
-export function saveLocalSongDelay(record: SongDelayRecord): void {
-  try {
-    const map = readLocalDelaysMap();
-    map[record.songId] = record;
-    localStorage.setItem(LOCAL_DELAYS_KEY, JSON.stringify(map));
-  } catch {
-    // Ignore storage errors
-  }
-}
-
-export function getSavedSessionMode(): 'google' | 'guest' | null {
-  try {
-    const mode = localStorage.getItem(LOCAL_SESSION_KEY);
-    return mode === 'google' || mode === 'guest' ? mode : null;
-  } catch {
-    return null;
-  }
-}
-
-export function setSavedSessionMode(mode: 'google' | 'guest' | null): void {
-  try {
-    if (!mode) localStorage.removeItem(LOCAL_SESSION_KEY);
-    else localStorage.setItem(LOCAL_SESSION_KEY, mode);
-  } catch {
-    // Ignore storage errors
-  }
-}
-
-export async function signInWithGoogle(): Promise<User> {
-  if (!auth) {
-    throw new Error(
-      'Google Cloud Sign-In requires VITE_FIREBASE_API_KEY in your local .env file. Please continue as Guest or set VITE_FIREBASE_API_KEY.'
-    );
-  }
-  const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: 'select_account' });
-  const result = await signInWithPopup(auth, provider);
-  setSavedSessionMode('google');
-  return result.user;
-}
-
-export async function signOutUser(): Promise<void> {
-  setSavedSessionMode(null);
-  if (auth?.currentUser) {
-    await firebaseSignOut(auth);
-  }
-}
-
-export { type User };
-
-export async function fetchCloudPreferences(user: User): Promise<UserPreferencesData> {
-  if (!db) return loadLocalPreferences();
-  const path = `userPreferences/${user.uid}`;
-  const ref = doc(db, 'userPreferences', user.uid);
-  try {
-    const snap = await getDoc(ref);
-    if (snap.exists()) {
-      const sanitized = sanitizePreferences(snap.data() as Partial<UserPreferencesData>);
-      saveLocalPreferences(sanitized);
-      return sanitized;
-    }
-    const initial = loadLocalPreferences();
-    await saveCloudPreferences(user, initial, true);
-    return initial;
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, path);
-  }
-}
-
-export async function saveCloudPreferences(
-  user: User,
-  prefs: UserPreferencesData,
-  isCreate = false
-): Promise<void> {
+export async function saveCloudPreferences(user: User, prefs: UserPreferencesData): Promise<void> {
+  saveLocalPreferences(prefs, user.uid);
+  if (!db) return;
   const clean = sanitizePreferences(prefs);
-  saveLocalPreferences(clean);
-  if (!db || !user.emailVerified) return;
-  const path = `userPreferences/${user.uid}`;
-  const ref = doc(db, 'userPreferences', user.uid);
-  const displayName = (user.displayName || user.email || 'LyricFlow User').slice(0, 120);
-
-  try {
-    if (!isCreate) {
-      const existing = await getDoc(ref);
-      if (existing.exists()) {
-        await updateDoc(ref, {
-          displayName,
-          intensity: clean.intensity,
-          speed: clean.speed,
-          sensitivity: clean.sensitivity,
-          spectrumGain: clean.spectrumGain,
-          motionBlur: clean.motionBlur,
-          quality: clean.quality,
-          autoScenes: clean.autoScenes,
-          spatialTypography: clean.spatialTypography,
-          narrativeObjects: clean.narrativeObjects,
-          cameraMode: clean.cameraMode,
-          enabledScenes: clean.enabledScenes,
-          enabledKineticMotions: clean.enabledKineticMotions,
-          updatedAt: serverTimestamp(),
-        });
-        return;
-      }
-    }
-    await setDoc(ref, {
-      uid: user.uid,
-      displayName,
-      intensity: clean.intensity,
-      speed: clean.speed,
-      sensitivity: clean.sensitivity,
-      spectrumGain: clean.spectrumGain,
-      motionBlur: clean.motionBlur,
-      quality: clean.quality,
-      autoScenes: clean.autoScenes,
-      spatialTypography: clean.spatialTypography,
-      narrativeObjects: clean.narrativeObjects,
-      cameraMode: clean.cameraMode,
-      enabledScenes: clean.enabledScenes,
-      enabledKineticMotions: clean.enabledKineticMotions,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-  } catch (error) {
-    handleFirestoreError(error, isCreate ? OperationType.CREATE : OperationType.WRITE, path);
-  }
+  const pendingKey = scopedKey('preferencesPending', user.uid);
+  writeDevice(pendingKey, clean);
+  await setDoc(doc(db, 'profiles', user.uid), { preferences: clean, updatedAt: serverTimestamp() });
+  if (JSON.stringify(readDevice(pendingKey, null)) === JSON.stringify(clean)) localStorage.removeItem(pendingKey);
 }
-
-export async function fetchSongDelayPreference(
-  user: User | null,
-  track: TrackInfo | null
-): Promise<SongDelayRecord | null> {
-  const local = loadLocalSongDelay(track);
-  const songId = computeSongKey(track);
-  if (!db || !songId || !user || !user.emailVerified) return local;
-
-  const path = `userPreferences/${user.uid}/songDelays/${songId}`;
-  const ref = doc(db, 'userPreferences', user.uid, 'songDelays', songId);
-  try {
-    const snap = await getDoc(ref);
-    if (!snap.exists()) return local;
-    const data = snap.data();
-    const record: SongDelayRecord = {
-      songId,
-      title: typeof data.title === 'string' ? data.title : track?.title || 'Untitled',
-      artist: typeof data.artist === 'string' ? data.artist : track?.artist || '',
-      duration: typeof data.duration === 'number' ? data.duration : track?.duration || 0,
-      delaySeconds: clampNum(data.delaySeconds, -30, 30, 0),
-      customLyricsLrc: typeof data.customLyricsLrc === 'string' ? data.customLyricsLrc : '',
-    };
-    saveLocalSongDelay(record);
-    return record;
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, path);
-  }
-}
-
-export async function saveSongDelayPreference(
-  user: User | null,
-  track: TrackInfo | null,
-  delaySeconds: number,
-  customLyricsLrc?: string
-): Promise<SongDelayRecord | null> {
-  const songId = computeSongKey(track);
-  if (!track || !songId) return null;
-  const previous = loadLocalSongDelay(track);
-  const record: SongDelayRecord = {
-    songId,
-    title: (track.title.trim() || 'Untitled').slice(0, 200),
-    artist: (track.artist || '').trim().slice(0, 200),
-    duration: clampNum(Math.round(track.duration || 0), 0, 36000, 0),
-    delaySeconds: clampNum(Number(delaySeconds.toFixed(2)), -30, 30, 0),
-    customLyricsLrc: (customLyricsLrc !== undefined ? customLyricsLrc : previous?.customLyricsLrc || '').slice(0, 100000),
-  };
-  saveLocalSongDelay(record);
-
-  if (!db || !user || !user.emailVerified) return record;
-
-  // Ensure parent userPreferences document exists before writing subcollection
-  const parentRef = doc(db, 'userPreferences', user.uid);
-  const parentSnap = await getDoc(parentRef);
-  if (!parentSnap.exists()) {
-    await saveCloudPreferences(user, loadLocalPreferences(), true);
-  }
-
-  const path = `userPreferences/${user.uid}/songDelays/${songId}`;
-  const ref = doc(db, 'userPreferences', user.uid, 'songDelays', songId);
-  try {
-    const existing = await getDoc(ref);
-    if (existing.exists()) {
-      await updateDoc(ref, {
-        title: record.title,
-        artist: record.artist,
-        duration: record.duration,
-        delaySeconds: record.delaySeconds,
-        customLyricsLrc: record.customLyricsLrc,
-        updatedAt: serverTimestamp(),
-      });
-    } else {
-      await setDoc(ref, {
-        uid: user.uid,
-        songId: record.songId,
-        title: record.title,
-        artist: record.artist,
-        duration: record.duration,
-        delaySeconds: record.delaySeconds,
-        customLyricsLrc: record.customLyricsLrc,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+export function watchCloudPreferences(user: User, next: (prefs: UserPreferencesData) => void, status: (message: string) => void) {
+  if (!db) return () => {};
+  const pendingKey = scopedKey('preferencesPending', user.uid);
+  const pending = readDevice<UserPreferencesData | null>(pendingKey, null);
+  if (pending) void saveCloudPreferences(user, pending).catch(() => status('Saved on device · cloud sync needs attention'));
+  return onSnapshot(doc(db, 'profiles', user.uid), { includeMetadataChanges: true }, snapshot => {
+    if (readDevice(pendingKey, null) && !snapshot.metadata.hasPendingWrites) return;
+    if (snapshot.exists()) {
+      const prefs = sanitizePreferences(snapshot.data().preferences);
+      saveLocalPreferences(prefs, user.uid);
+      next(prefs);
+    } else if (!snapshot.metadata.fromCache) {
+      next(loadLocalPreferences(user.uid));
     }
-    return record;
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
-  }
+    status(snapshot.metadata.hasPendingWrites ? 'Saved on device · waiting to sync'
+      : snapshot.metadata.fromCache ? 'Offline · using saved settings' : 'Account settings synced');
+  }, () => status('Saved on device · cloud sync unavailable'));
 }
