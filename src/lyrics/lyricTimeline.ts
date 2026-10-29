@@ -11,6 +11,8 @@ export type LyricCue={
  mood:Mood;
  words:TimedWord[];
  timing:'sourced'|'estimated';
+ duetSide?:'left'|'right';
+ duetGroupKey?:string;
 };
 
 let cues:LyricCue[]=[];
@@ -37,10 +39,29 @@ export function setLyricTimeline(lines:LyricCue[],timingOffset=0,mode:typeof dis
 export function getLyricState(time:number){
  const position=time+offset;
  let index=-1;
- for(let i=0;i<cues.length;i++){if(cues[i].time<=position)index=i;else break}
- const candidate=index>=0?cues[index]:null;
- const cue=candidate&&position>=candidate.time&&position<candidate.end?candidate:null;
- return {cue,next:cues[index+1]||null,mode:display,position,index,plan:planAt(sections,position),hasLyrics:cues.length>0};
+ const activeCues:LyricCue[]=[];
+ for(let i=0;i<cues.length;i++){
+  if(cues[i].time<=position){
+   index=i;
+   if(position<cues[i].end){
+    activeCues.push(cues[i]);
+   }
+  }else{
+   break;
+  }
+ }
+ const cue=activeCues[0]||null;
+ const secondaryCue=activeCues.length>1?activeCues[1]:null;
+ return {
+  cue,
+  secondaryCue,
+  next:cues[index+1]||null,
+  mode:display,
+  position,
+  index,
+  plan:planAt(sections,position),
+  hasLyrics:cues.length>0
+ };
 }
 
 export function inferMood(text:string):Mood{
@@ -51,6 +72,7 @@ export function inferMood(text:string):Mood{
 /**
  * Compute the natural vocal end timestamp of a lyric line so that previous lyrics
  * are never held on screen during instrumental music breaks or vocal pauses.
+ * Preserves overlapping word-synced durations when two singers sing simultaneously.
  */
 export function computeNaturalLineEnd(line:TimedLine,nextLineTime?:number):number{
  const nextStart=nextLineTime!==undefined?nextLineTime:Infinity;
@@ -59,6 +81,10 @@ export function computeNaturalLineEnd(line:TimedLine,nextLineTime?:number):numbe
  const hasSourcedWords=Boolean(line.words&&line.words.length>0&&line.words.some(w=>w.timing==='sourced'));
  if(hasSourcedWords&&line.words){
   const lastWordEnd=line.words[line.words.length-1].end;
+  // If sourced words explicitly continue past nextStart, two vocalists are singing simultaneously
+  if(Number.isFinite(nextStart)&&lastWordEnd>nextStart+0.15){
+   return Math.max(line.time+0.15,lastWordEnd+0.3);
+  }
   return Math.max(line.time+0.15,Math.min(nextStart,lastWordEnd+0.45));
  }
  const wordCount=trimmed.split(/\s+/).filter(Boolean).length;
@@ -85,6 +111,20 @@ export function buildCues(original:TimedLine[],romanized:TimedLine[],genre=''):L
    words,
    timing:hasSourced?'sourced':'estimated'
   });
+ }
+ // Lock simultaneous dual-singer pairs so if one side finishes first, neither side changes
+ // position, animation, or color until the line on the second side is finished.
+ for(let i=0;i<out.length-1;i++){
+  if(out[i].end>out[i+1].time+0.12){
+   const sharedEnd=Math.max(out[i].end,out[i+1].end);
+   const groupKey=out[i].duetGroupKey||`duet:${out[i].time.toFixed(2)}:${out[i].text}`;
+   out[i].end=sharedEnd;
+   out[i+1].end=sharedEnd;
+   if(!out[i].duetSide)out[i].duetSide='left';
+   out[i+1].duetSide=out[i].duetSide==='left'?'right':'left';
+   out[i].duetGroupKey=groupKey;
+   out[i+1].duetGroupKey=groupKey;
+  }
  }
  return out;
 }

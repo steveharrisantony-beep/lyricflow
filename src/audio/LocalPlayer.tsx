@@ -1,6 +1,6 @@
 import type Hls from 'hls.js';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Upload, Play, Pause, Volume2, Music2, X, Disc3, RefreshCw, Edit3, CheckCircle2, Clock } from 'lucide-react';
+import { Upload, Play, Pause, Volume2, Music2, X, Disc3, RefreshCw, Edit3, CheckCircle2, Clock, ListMusic, ArrowUp, ArrowDown, SkipForward, ShieldCheck, Trash2 } from 'lucide-react';
 import { connectLocalAudio, setLocalAudioPlaying, setLocalMediaElement, setVirtualMediaTime } from './audioSignal';
 import { extractYouTubeVideoId, type TrackInfo } from '../metadata/trackInfo';
 import { MUSIC_SOURCES, type PlayableSong } from '../music/providers';
@@ -9,11 +9,29 @@ import { clampLyricDelay, formatLyricDelay } from '../lyrics/lyricTiming';
 import { describeAudioSource, describeLyricProvider } from '../lyrics/ManualLyrics';
 import type { AudioSourceMode } from './AudioSourceHub';
 import SongSearch from '../music/SongSearch';
+import {
+  fetchSponsorBlockSegments,
+  findActiveSkipSegment,
+  computeLeadingNonMusicOffset,
+  formatSegmentCategory,
+  type SponsorBlockSegment,
+} from '../music/sponsorBlock';
+import {
+  LYRIC_ENGINE_OPTIONS,
+  cleanYouTubeTitleForLyrics,
+  type LyricEngineOption,
+  type YouTubeSubtitleTrackItem,
+} from '../lyrics/lyricFlowEngine';
 
 const format = (seconds: number) =>
   Number.isFinite(seconds) && seconds >= 0
     ? `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`
     : '0:00';
+
+export interface QueuedSongItem {
+  queueId: string;
+  song: PlayableSong;
+}
 
 export interface LocalPlayerHandle {
   chooseFile: () => void;
@@ -21,6 +39,8 @@ export interface LocalPlayerHandle {
   stop: () => void;
   play: () => Promise<void>;
   loadRemote: (song: PlayableSong) => Promise<void>;
+  addToQueue: (song: PlayableSong) => void;
+  playNextFromQueue: () => boolean;
   seek: (time: number) => void;
   syncExternalClock: (currentTime: number, totalDuration?: number) => void;
 }
@@ -43,6 +63,15 @@ type Props = {
   lyricDelay: number;
   onLyricDelayChange: (delay: number) => void;
   delaySavedStatus: string;
+  lyricEngineOption?: LyricEngineOption;
+  onLyricEngineOptionChange?: (option: LyricEngineOption) => void;
+  availableLyricEngines?: LyricEngineOption[];
+  youtubeSubtitleTracks?: YouTubeSubtitleTrackItem[];
+  selectedSubtitleTrackId?: string;
+  onSelectSubtitleTrackId?: (id: string) => void;
+  sponsorBlockEnabled?: boolean;
+  onSponsorBlockEnabledChange?: (enabled: boolean) => void;
+  onSponsorBlockOffsetChange?: (leadingOffsetSec: number) => void;
 };
 
 function LocalPlayer(
@@ -64,6 +93,15 @@ function LocalPlayer(
     lyricDelay,
     onLyricDelayChange,
     delaySavedStatus,
+    lyricEngineOption = 'lyricflow',
+    onLyricEngineOptionChange,
+    availableLyricEngines = [],
+    youtubeSubtitleTracks = [],
+    selectedSubtitleTrackId,
+    onSelectSubtitleTrackId,
+    sponsorBlockEnabled = true,
+    onSponsorBlockEnabledChange,
+    onSponsorBlockOffsetChange,
   }: Props,
   ref: React.Ref<LocalPlayerHandle>
 ) {
@@ -85,6 +123,102 @@ function LocalPlayer(
   const [inlineOnlineOpen, setInlineOnlineOpen] = useState(false);
   const [youtubeOnlyClock, setYoutubeOnlyClock] = useState(false);
   const ytClockRef = useRef(0);
+  const lastUiTimeUpdateRef = useRef(0);
+
+  // Song Queue (Q) state
+  const [queue, setQueue] = useState<QueuedSongItem[]>([]);
+  const queueRef = useRef<QueuedSongItem[]>([]);
+  queueRef.current = queue;
+  const [dragQueueIndex, setDragQueueIndex] = useState<number | null>(null);
+
+  // SponsorBlock state
+  const [sponsorSegments, setSponsorSegments] = useState<SponsorBlockSegment[]>([]);
+  const sponsorSegmentsRef = useRef<SponsorBlockSegment[]>([]);
+  sponsorSegmentsRef.current = sponsorSegments;
+  const [sponsorNotice, setSponsorNotice] = useState('');
+  const lastSkippedUuidRef = useRef<string>('');
+  const sponsorEnabledRef = useRef(sponsorBlockEnabled);
+  sponsorEnabledRef.current = sponsorBlockEnabled;
+
+  const addSongToQueue = (song: PlayableSong) => {
+    const item: QueuedSongItem = {
+      queueId: `${song.provider}-${song.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      song,
+    };
+    setQueue(prev => [...prev, item]);
+    if (!currentTrack && !name) {
+      void loadRemote(song);
+    }
+  };
+
+  const moveQueueItem = (fromIndex: number, toIndex: number) => {
+    setQueue(prev => {
+      if (fromIndex < 0 || fromIndex >= prev.length || toIndex < 0 || toIndex >= prev.length || fromIndex === toIndex) {
+        return prev;
+      }
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  };
+
+  const removeQueueItem = (queueId: string) => {
+    setQueue(prev => prev.filter(item => item.queueId !== queueId));
+  };
+
+  const playQueueItemNow = (index: number) => {
+    const target = queueRef.current[index];
+    if (!target) return;
+    setQueue(prev => prev.filter((_, idx) => idx !== index));
+    void loadRemote(target.song);
+  };
+
+  const playNextFromQueue = (): boolean => {
+    const currentQ = queueRef.current;
+    if (currentQ.length === 0) return false;
+    const [nextItem, ...rest] = currentQ;
+    setQueue(rest);
+    void loadRemote(nextItem.song);
+    return true;
+  };
+
+  useEffect(() => {
+    const ytId = currentTrack?.youtubeVideoId || currentTrack?.videoId;
+    setSponsorSegments([]);
+    setSponsorNotice('');
+    lastSkippedUuidRef.current = '';
+    if (!ytId) {
+      onSponsorBlockOffsetChange?.(0);
+      return;
+    }
+    const controller = new AbortController();
+    void fetchSponsorBlockSegments(ytId, controller.signal).then(segments => {
+      if (controller.signal.aborted) return;
+      setSponsorSegments(segments);
+      const leadingOffset = computeLeadingNonMusicOffset(segments);
+      onSponsorBlockOffsetChange?.(leadingOffset);
+      if (segments.length > 0) {
+        const categories = Array.from(new Set(segments.map(s => formatSegmentCategory(s.category)))).join(', ');
+        setSponsorNotice(`SponsorBlock ready: ${segments.length} segment(s) (${categories})`);
+      }
+    });
+    return () => controller.abort();
+  }, [currentTrack?.youtubeVideoId, currentTrack?.videoId]);
+
+  const checkAndApplySponsorBlockSkip = (currentSec: number): number | null => {
+    if (!sponsorEnabledRef.current || sponsorSegmentsRef.current.length === 0) return null;
+    const activeSeg = findActiveSkipSegment(sponsorSegmentsRef.current, currentSec);
+    if (!activeSeg || lastSkippedUuidRef.current === activeSeg.uuid) return null;
+    lastSkippedUuidRef.current = activeSeg.uuid;
+    const segStart = activeSeg.start ?? activeSeg.segment[0];
+    const segEnd = activeSeg.end ?? activeSeg.segment[1];
+    const targetSec = Math.max(currentSec + 0.2, segEnd);
+    setSponsorNotice(
+      `Skipped ${formatSegmentCategory(activeSeg.category)} (${format(segStart)} → ${format(segEnd)})`
+    );
+    return targetSec;
+  };
 
   // Advance playback clock when playing a YouTube video directly without a separate audio stream
   useEffect(() => {
@@ -95,16 +229,32 @@ function LocalPlayer(
       const dt = Math.max(0, (now - lastTick) / 1000);
       lastTick = now;
       const maxDur = duration > 0 ? duration : 600;
-      const next = Math.min(maxDur, ytClockRef.current + dt);
-      ytClockRef.current = next;
-      setTime(next);
-      onTimeChange(next);
-      setVirtualMediaTime(next);
-      if (duration > 0 && next >= duration) {
-        setActive(false);
-        onActiveChange(false);
+      let next = Math.min(maxDur, ytClockRef.current + dt);
+
+      const skipTarget = checkAndApplySponsorBlockSkip(next);
+      if (skipTarget !== null) {
+        next = Math.min(maxDur, skipTarget);
+        ytClockRef.current = next;
+        setTime(next);
+        onTimeChange(next);
+        setVirtualMediaTime(next);
+        return;
       }
-    }, 80);
+
+      ytClockRef.current = next;
+      setVirtualMediaTime(next);
+      if (now - lastUiTimeUpdateRef.current >= 220 || (duration > 0 && next >= duration)) {
+        lastUiTimeUpdateRef.current = now;
+        setTime(next);
+        onTimeChange(next);
+      }
+      if (duration > 0 && next >= duration) {
+        if (!playNextFromQueue()) {
+          setActive(false);
+          onActiveChange(false);
+        }
+      }
+    }, 90);
     return () => window.clearInterval(id);
   }, [youtubeOnlyClock, active, duration, onTimeChange, onActiveChange]);
 
@@ -141,6 +291,7 @@ function LocalPlayer(
       audioSource: audioSourceLabel,
       sourceUrl: song.sourceUrl,
       youtubeVideoId: ytId,
+      videoId: ytId,
       videoTitle: song.videoTitle || (ytId ? song.title : undefined),
       confidence: 1,
     };
@@ -372,6 +523,8 @@ function LocalPlayer(
       stop,
       play,
       loadRemote,
+      addToQueue: addSongToQueue,
+      playNextFromQueue,
       seek: seekPlayback,
       syncExternalClock,
     }),
@@ -391,6 +544,10 @@ function LocalPlayer(
       void ctxRef.current?.close();
     },
     []
+  );
+
+  const isYouTubeTrack = Boolean(
+    currentTrack?.youtubeVideoId || currentTrack?.videoId || currentTrack?.provider === 'resolver'
   );
 
   return (
@@ -539,7 +696,7 @@ function LocalPlayer(
             <span className="heading-icon">♪</span>
             <div>
               <b>SONG DETAILS</b>
-              <small>Track metadata &amp; automatic Apple Music / LRCLIB synced lyrics status</small>
+              <small>Track metadata, 4-Engine Lyrics Selector &amp; SponsorBlock status</small>
             </div>
           </div>
           <button
@@ -569,6 +726,9 @@ function LocalPlayer(
                 : 'Select a local file or search a song in JioSaavn / YouTube'}
               {currentTrack?.album ? ` · Album: ${currentTrack.album}` : ''}
               {duration > 0 ? ` · Duration: ${format(duration)}` : ''}
+              {isYouTubeTrack && currentTrack?.title
+                ? ` · Cleaned Lyric Query: "${cleanYouTubeTitleForLyrics(currentTrack.videoTitle || currentTrack.title, currentTrack.artist)}"`
+                : ''}
             </span>
             <div className="song-lyric-sync-line">
               <CheckCircle2 size={14} />
@@ -604,8 +764,260 @@ function LocalPlayer(
                 </a>
               )}
             </div>
+
+            {/* Available Lyrics Engine Options per Song (only shown when available) */}
+            {onLyricEngineOptionChange && availableLyricEngines.length > 0 && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: '#94a3b8', marginBottom: 6 }}>
+                  AVAILABLE LYRICS SOURCES ({availableLyricEngines.length}):
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {LYRIC_ENGINE_OPTIONS.filter(opt => availableLyricEngines.includes(opt.id)).map(opt => {
+                    const selected = lyricEngineOption === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => onLyricEngineOptionChange(opt.id)}
+                        title={opt.description}
+                        style={{
+                          padding: '5px 10px',
+                          borderRadius: 6,
+                          fontSize: 12,
+                          fontWeight: selected ? 700 : 500,
+                          border: selected ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.12)',
+                          background: selected ? 'rgba(56,189,248,0.18)' : 'rgba(255,255,255,0.04)',
+                          color: selected ? '#e0f2fe' : '#cbd5e1',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {opt.label} <span style={{ fontSize: 10, opacity: 0.75 }}>({opt.badge})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {youtubeSubtitleTracks.length > 1 && onSelectSubtitleTrackId && (
+                  <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8' }}>
+                      Creator Subtitle Track ({youtubeSubtitleTracks.length}):
+                    </span>
+                    {youtubeSubtitleTracks.map(st => {
+                      const activeSt = (selectedSubtitleTrackId || youtubeSubtitleTracks[0]?.id) === st.id;
+                      return (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => onSelectSubtitleTrackId(st.id)}
+                          style={{
+                            padding: '3px 8px',
+                            borderRadius: 5,
+                            fontSize: 11,
+                            fontWeight: activeSt ? 700 : 500,
+                            border: activeSt ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.12)',
+                            background: activeSt ? 'rgba(56,189,248,0.18)' : 'rgba(255,255,255,0.04)',
+                            color: activeSt ? '#e0f2fe' : '#cbd5e1',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {st.label} ({st.lineCount} lines)
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SponsorBlock Non-Music & Sponsor Auto-Skip */}
+            {isYouTubeTrack && (
+              <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, fontSize: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => onSponsorBlockEnabledChange?.(!sponsorBlockEnabled)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '4px 9px',
+                    borderRadius: 6,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    border: sponsorBlockEnabled ? '1px solid #34d399' : '1px solid rgba(255,255,255,0.14)',
+                    background: sponsorBlockEnabled ? 'rgba(16,185,129,0.16)' : 'rgba(255,255,255,0.04)',
+                    color: sponsorBlockEnabled ? '#a7f3d0' : '#94a3b8',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <ShieldCheck size={13} />
+                  SponsorBlock Auto-Skip: {sponsorBlockEnabled ? 'ON' : 'OFF'}
+                </button>
+                <span style={{ color: '#94a3b8', fontSize: 11 }}>
+                  {sponsorNotice ||
+                    (sponsorSegments.length > 0
+                      ? `${sponsorSegments.length} non-music/sponsor segment(s) detected`
+                      : 'No non-music/sponsor segments reported for this video')}
+                </span>
+              </div>
+            )}
           </div>
         </div>
+      </section>
+
+      {/* 2B. QUEUE (Q) SECTION — Directly Below Current Song Details */}
+      <section className="local-player song-queue-section" aria-label="Song queue">
+        <div className="player-heading">
+          <div className="heading-left">
+            <span className="heading-icon">
+              <ListMusic size={17} />
+            </span>
+            <div>
+              <b>QUEUE (Q) · {queue.length} {queue.length === 1 ? 'SONG' : 'SONGS'} UP NEXT</b>
+              <small>Arrange song order with Up / Down arrows or drag-and-drop; auto-plays when the current song ends</small>
+            </div>
+          </div>
+          <div className="player-heading-actions" style={{ display: 'flex', gap: 6 }}>
+            {queue.length > 0 && (
+              <>
+                <button type="button" className="upload-button" onClick={() => playNextFromQueue()}>
+                  <SkipForward size={14} /> Play Next Now
+                </button>
+                <button
+                  type="button"
+                  className="upload-button"
+                  onClick={() => setQueue([])}
+                  aria-label="Clear song queue"
+                >
+                  <Trash2 size={14} /> Clear Queue
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              className="upload-button"
+              onClick={() => setInlineOnlineOpen(true)}
+            >
+              + Add Songs to Q
+            </button>
+          </div>
+        </div>
+
+        {queue.length === 0 ? (
+          <p className="player-footnote" style={{ margin: '6px 0 2px' }}>
+            Queue (Q) is empty. Search for songs in JioSaavn or YouTube and click <b>+ Queue</b> to line up multiple video songs.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+            {queue.map((item, idx) => (
+              <div
+                key={item.queueId}
+                draggable
+                onDragStart={() => setDragQueueIndex(idx)}
+                onDragOver={e => e.preventDefault()}
+                onDrop={() => {
+                  if (dragQueueIndex !== null && dragQueueIndex !== idx) {
+                    moveQueueItem(dragQueueIndex, idx);
+                  }
+                  setDragQueueIndex(null);
+                }}
+                onDragEnd={() => setDragQueueIndex(null)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  background: dragQueueIndex === idx ? 'rgba(56,189,248,0.14)' : 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: '#38bdf8',
+                    minWidth: 24,
+                    textAlign: 'center',
+                  }}
+                >
+                  #{idx + 1}
+                </span>
+                {item.song.artwork ? (
+                  <img
+                    src={item.song.artwork}
+                    alt=""
+                    style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }}
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <span
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 6,
+                      background: 'rgba(255,255,255,0.06)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    ♪
+                  </span>
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {item.song.title}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {item.song.artist || 'Unknown artist'} · {format(item.song.duration)} · {MUSIC_SOURCES[item.song.provider]}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    className="upload-button"
+                    disabled={idx === 0}
+                    onClick={() => moveQueueItem(idx, idx - 1)}
+                    aria-label={`Move ${item.song.title} up in queue`}
+                    title="Move Up"
+                    style={{ padding: '4px 7px' }}
+                  >
+                    <ArrowUp size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className="upload-button"
+                    disabled={idx === queue.length - 1}
+                    onClick={() => moveQueueItem(idx, idx + 1)}
+                    aria-label={`Move ${item.song.title} down in queue`}
+                    title="Move Down"
+                    style={{ padding: '4px 7px' }}
+                  >
+                    <ArrowDown size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className="source-primary"
+                    onClick={() => playQueueItemNow(idx)}
+                    aria-label={`Play ${item.song.title} now`}
+                    style={{ padding: '4px 9px', fontSize: 11 }}
+                  >
+                    <Play size={12} /> Play
+                  </button>
+                  <button
+                    type="button"
+                    className="player-remove"
+                    onClick={() => removeQueueItem(item.queueId)}
+                    aria-label={`Remove ${item.song.title} from queue`}
+                    title="Remove from Queue"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* 3. TIMEBAR & PER-SONG LYRIC DELAY */}

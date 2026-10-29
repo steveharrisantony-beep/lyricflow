@@ -14,10 +14,11 @@ type Props={
  onSelectMode:(mode:AudioSourceMode)=>void;
  onPickLocal:()=>void;
  onPlaySong:(song:PlayableSong)=>Promise<void>;
+ onAddToQueue?:(song:PlayableSong)=>void;
 };
 
 function AudioSourceHub(
- {open,onClose,activeMode,onSelectMode,onPickLocal,onPlaySong}:Props,
+ {open,onClose,activeMode,onSelectMode,onPickLocal,onPlaySong,onAddToQueue}:Props,
  ref:React.Ref<AudioSourceHubHandle>
 ){
  const [tab,setTab]=useState<AudioSourceMode>(activeMode||'online');
@@ -99,7 +100,10 @@ function AudioSourceHub(
     </div>
 
     {tab==='online'&&<div className="source-online-stage">
-     <SongSearch onPlay={async song=>{onSelectMode('online');await onPlaySong(song);onClose()}}/>
+     <SongSearch
+      onPlay={async song=>{onSelectMode('online');await onPlaySong(song);onClose()}}
+      onAddToQueue={song=>{onSelectMode('online');onAddToQueue?.(song)}}
+     />
     </div>}
 
     <div className="source-modal-foot">

@@ -40,6 +40,29 @@ export type LyricMotion=typeof LYRIC_MOTIONS[number];
 export type VoxelVerseFamily='signature'|'spatial'|'kinetic'|'editorial';
 export type LyricFillPaceMode='auto'|'letter'|'word';
 
+export type LyricPlacementMode=
+ |'auto'
+ |'alternating'
+ |'left'
+ |'right'
+ |'bottom-right'
+ |'bottom-left'
+ |'top-left'
+ |'diagonal'
+ |'center';
+
+export const LYRIC_PLACEMENT_MODES:readonly {id:LyricPlacementMode;label:string;detail:string}[]=[
+ {id:'auto',label:'Dynamic Stage (Auto)',detail:'Cycles Left, Right, Bottom-Right, Bottom-Left, Diagonal & Center with opposing line entries'},
+ {id:'alternating',label:'Alternating Left ↔ Right',detail:'Line 1 enters from Left, Line 2 enters from Right; alternates stage sides'},
+ {id:'left',label:'Left Stage Sweep',detail:'Anchored left with staggered left-to-right kinetic entry'},
+ {id:'right',label:'Right Stage Sweep',detail:'Anchored right with staggered right-to-left kinetic entry'},
+ {id:'bottom-right',label:'Bottom-Right Cinema',detail:'Lower-right cinema placement with rising slide motion'},
+ {id:'bottom-left',label:'Bottom-Left Editorial',detail:'Lower-left placement with lateral & upward entry'},
+ {id:'top-left',label:'Top-Left Headline',detail:'Upper-left editorial placement with cascading entry'},
+ {id:'diagonal',label:'Diagonal Counter-Slide',detail:'Stepped diagonal rows sliding in from opposite sides'},
+ {id:'center',label:'Center Stage',detail:'Centered stage layout with alternating left/right row slide'}
+] as const;
+
 export interface VoxelVerseStyleMeta {
  id:LyricMotion;
  name:string;
@@ -161,14 +184,28 @@ export function lyricWordHit(cue:LyricCue|null,time:number,emphasis:WordEmphasis
  * NEW LYRIC COLOUR MECHANISM:
  * 1. Computes a single uniform base line colour (`baseColor`) based strictly on the active background.
  * 2. Computes a single high-contrast sung/active fill colour (`sungColor`) based on the active background & accent.
- * 3. Never assigns random colours to individual words based on `importance` or noisy sub-pixel sampling.
+ * 3. When `forceLightText` is true (e.g. overlaid on video with dark overlay), enforces crisp light-themed text
+ *    (`#f8fafc` base + high-luminance light accent) so lyrics are always bright and legible over video.
  */
 export function computeBackgroundAdaptiveLyricColors(
  backgroundHex:string,
  foregroundHex:string,
  accentHex:string,
- customAccentOverride?:string
-):{baseColor:string;sungColor:string}{
+ customAccentOverride?:string,
+ forceLightText=false
+):{baseColor:string;sungColor:string;effectiveBgHex:string}{
+ if(forceLightText){
+  const darkVideoBg='#07090e';
+  const baseColor='#f8fafc';
+  const targetAccent=customAccentOverride&&/^#[0-9a-f]{6}$/i.test(customAccentOverride)
+   ?customAccentOverride
+   :'#72efdd';
+  let sungColor=readableChromaticInk(darkVideoBg,targetAccent);
+  if(sungColor.toLowerCase()===baseColor.toLowerCase()){
+   sungColor='#72efdd';
+  }
+  return {baseColor,sungColor,effectiveBgHex:darkVideoBg};
+ }
  const baseColor=readableInk(backgroundHex,foregroundHex);
  const targetAccent=customAccentOverride&&/^#[0-9a-f]{6}$/i.test(customAccentOverride)
   ?customAccentOverride
@@ -177,7 +214,7 @@ export function computeBackgroundAdaptiveLyricColors(
  if(sungColor.toLowerCase()===baseColor.toLowerCase()){
   sungColor=readableChromaticInk(backgroundHex,'#72efdd');
  }
- return {baseColor,sungColor};
+ return {baseColor,sungColor,effectiveBgHex:backgroundHex};
 }
 
 /**
@@ -223,6 +260,9 @@ export interface KineticArgs {
  fillPaceMode?:LyricFillPaceMode;
  minFontSize?:number;
  maxFontSize?:number;
+ forceLightText?:boolean;
+ placementMode?:LyricPlacementMode;
+ duetSide?:'left'|'right';
 }
 
 export interface KineticResult {
@@ -236,6 +276,7 @@ export interface KineticResult {
  baseColor?:string;
  activeColor?:string;
  fillPace?:'letter'|'word'|'line';
+ placement?:Exclude<LyricPlacementMode,'auto'>;
 }
 
 export interface WordPlacement {
@@ -572,6 +613,26 @@ function paintWordWithSequentialColor(
  c.textAlign=prevAlign;
 }
 
+export function resolveCuePlacement(
+ cue:LyricCue,
+ scene:DirectedScene,
+ mode:LyricPlacementMode='auto'
+):Exclude<LyricPlacementMode,'auto'>{
+ if(mode!=='auto')return mode;
+ const cueSeed=hash(cue.text+'|'+Math.round(cue.time*10));
+ const pool:readonly Exclude<LyricPlacementMode,'auto'>[]=[
+  'alternating',
+  'left',
+  'right',
+  'bottom-right',
+  'bottom-left',
+  'diagonal',
+  'top-left',
+  'center'
+ ];
+ return pool[(cueSeed+scene.variation)%pool.length];
+}
+
 /** One continuous phrase, each word painted on a projected world plane with VoxelVerse choreography. */
 export function drawKineticLyrics({
  c,
@@ -592,7 +653,10 @@ export function drawKineticLyrics({
  bpm=0,
  fillPaceMode='auto',
  minFontSize=26,
- maxFontSize=88
+ maxFontSize=88,
+ forceLightText=false,
+ placementMode='auto',
+ duetSide
 }:KineticArgs):KineticResult{
  const motion=lyricMotionFor(scene,cue.text,enabledMotions);
  const font=lyricFontFor(scene,cue.text);
@@ -602,13 +666,19 @@ export function drawKineticLyrics({
  const unit=Math.min(w,h);
  const energy=reduced||!animated?0:clamp(intensity,0,1.25);
  const age=Math.max(0,time-cue.time);
- const duration=Math.max(.18,cue.end-cue.time);
+ const vocalEnd=duetSide&&runs.length>0?Math.max(cue.time+0.18,runs[runs.length-1].end):cue.end;
+ const duration=Math.max(.18,vocalEnd-cue.time);
  const progress=clamp(age/duration);
  const hasWordSync=cue.timing==='sourced';
+ const activePlacement:Exclude<LyricPlacementMode,'auto'>=duetSide
+  ?duetSide
+  :resolveCuePlacement(cue,scene,placementMode);
+ const cueParity=hash(cue.text+'|'+Math.round(cue.time*5))%2;
 
  const safeMinFont=clamp(Math.min(minFontSize,maxFontSize),16,120);
  const safeMaxFont=clamp(Math.max(minFontSize,maxFontSize),safeMinFont,140);
- const rawBaseline=unit*(runs.length<=3?0.175:runs.length<=6?0.142:runs.length<=10?0.118:0.102);
+ const duetScale=duetSide?0.78:1;
+ const rawBaseline=unit*(runs.length<=3?0.175:runs.length<=6?0.142:runs.length<=10?0.118:0.102)*duetScale;
  const baseline=clamp(rawBaseline,safeMinFont,safeMaxFont);
  const space=baseline*0.28;
  const widths=runs.map(word=>{
@@ -616,11 +686,16 @@ export function drawKineticLyrics({
   return c.measureText(word.text).width;
  });
 
- const placements=buildWordRows(runs,widths,space,motion,w*0.72);
+ const maxBoxFraction=duetSide
+  ?0.40
+  :activePlacement==='bottom-right'||activePlacement==='bottom-left'||activePlacement==='top-left'
+  ?0.64
+  :0.72;
+ const placements=buildWordRows(runs,widths,space,motion,w*maxBoxFraction);
  const totalRowsCount=placements[0]?.totalRows||1;
  const widestRow=placements.reduce((m,p)=>Math.max(m,p.rowWidth),1);
  const heightCap=totalRowsCount>2?Math.min(1,0.72/(totalRowsCount*0.24)):1;
- const fit=Math.min(heightCap,w*0.80/Math.max(1,widestRow));
+ const fit=Math.min(heightCap,w*(maxBoxFraction+(duetSide?0.02:0.06))/Math.max(1,widestRow));
  const size=clamp(baseline*fit,safeMinFont,safeMaxFont);
 
  const origin=project(0,0,0),one=project(1,0,0);
@@ -630,17 +705,61 @@ export function drawKineticLyrics({
  // 1. Entire line starts as a single uniform `baseColor` based on the background.
  // 2. `sungColor` is only applied sequentially (letter-by-letter for slow songs, word-by-word for fast songs)
  //    ONLY when real word-sync data (`hasWordSync`) is present.
- const {baseColor,sungColor}=computeBackgroundAdaptiveLyricColors(
+ const effectiveAccentOverride=duetSide==='right'&&!customAccentColor?'#ffd166':customAccentColor;
+ const {baseColor,sungColor,effectiveBgHex}=computeBackgroundAdaptiveLyricColors(
   theme.background,
   theme.foreground,
   theme.accent,
-  customAccentColor
+  effectiveAccentOverride,
+  forceLightText
  );
  const fillPace:'letter'|'word'|'line'=hasWordSync
   ?resolveLyricFillPace(runs,bpm,fillPaceMode)
   :'line';
 
- drawStagePlotterFrame(c,w,h,progress,sungColor,baseColor,energy,motion);
+ if(duetSide!=='right'){
+  drawStagePlotterFrame(c,w,h,progress,sungColor,baseColor,energy,motion);
+ }
+
+ const stageHalfSpanX=(w*0.20)/pixelsPerWorld;
+ const stageHalfSpanY=(h*0.18)/pixelsPerWorld;
+ let stageOffsetX=0;
+ let stageOffsetY=0;
+ if(duetSide==='left'){
+  stageOffsetX=-(w*0.235)/pixelsPerWorld;
+ }else if(duetSide==='right'){
+  stageOffsetX=(w*0.235)/pixelsPerWorld;
+ }else{
+  switch(activePlacement){
+   case 'left':
+    stageOffsetX=-stageHalfSpanX*0.85;
+    break;
+   case 'right':
+    stageOffsetX=stageHalfSpanX*0.85;
+    break;
+   case 'bottom-right':
+    stageOffsetX=stageHalfSpanX*0.78;
+    stageOffsetY=-stageHalfSpanY*0.92;
+    break;
+   case 'bottom-left':
+    stageOffsetX=-stageHalfSpanX*0.78;
+    stageOffsetY=-stageHalfSpanY*0.88;
+    break;
+   case 'top-left':
+    stageOffsetX=-stageHalfSpanX*0.75;
+    stageOffsetY=stageHalfSpanY*0.82;
+    break;
+   case 'alternating':
+    stageOffsetX=(cueParity===0?-1:1)*stageHalfSpanX*0.62;
+    stageOffsetY=(cueParity===0?0.22:-0.32)*stageHalfSpanY;
+    break;
+   case 'diagonal':
+    stageOffsetX=(cueParity===0?-0.35:0.35)*stageHalfSpanX;
+    break;
+   default:
+    break;
+  }
+ }
 
  // 3D Plane orientation across the 19 VoxelVerse styles
  const yaw=energy*(
@@ -680,7 +799,7 @@ export function drawKineticLyrics({
  let drawn=0,highlights=0;
 
  for(const item of placements){
-  const {word,width,row,totalRows,rowX}=item;
+  const {word,width,row,totalRows,rowX,rowWidth}=item;
   const wordDuration=hasWordSync?Math.max(0.05,word.end-word.start):duration;
   const wordAge=hasWordSync?time-word.start:age;
   const wordProgress=hasWordSync?clamp(wordAge/wordDuration,0,1):0;
@@ -695,8 +814,32 @@ export function drawKineticLyrics({
   const stagger=energy*Math.exp(-Math.max(0,age-(hasWordSync?word.index*0.045:row*0.055))*14);
   const impulse=hit*energy*0.12;
 
-  const baseRowY=((totalRows-1)*0.5-row)*rowSpacingWorld;
-  let x=(rowX*fit)/pixelsPerWorld;
+  const rowSlideDecay=energy*Math.exp(-Math.max(0,age-row*0.065)*8.5);
+  const rowDirection=
+   activePlacement==='left'||activePlacement==='bottom-left'||activePlacement==='top-left'
+    ?(row%2===0?-1:-0.55)
+    :activePlacement==='right'||activePlacement==='bottom-right'
+    ?(row%2===0?1:0.55)
+    :((row+cueParity)%2===0?-1:1);
+  const rowSlideX=rowDirection*rowSlideDecay*1.35;
+  const rowSlideY=
+   (activePlacement==='bottom-right'||activePlacement==='bottom-left'?-0.45:activePlacement==='top-left'?0.45:0)*
+   rowSlideDecay;
+
+  const maxRowShift=((widestRow-rowWidth)*0.5*fit)/pixelsPerWorld;
+  const alignShiftX=
+   activePlacement==='left'||activePlacement==='bottom-left'||activePlacement==='top-left'
+    ?-maxRowShift
+    :activePlacement==='right'||activePlacement==='bottom-right'
+    ?maxRowShift
+    :activePlacement==='diagonal'
+    ?(row-(totalRows-1)*0.5)*0.48
+    :activePlacement==='alternating'
+    ?((row+cueParity)%2===0?-0.28:0.28)
+    :0;
+
+  const baseRowY=((totalRows-1)*0.5-row)*rowSpacingWorld+stageOffsetY+rowSlideY;
+  let x=(rowX*fit)/pixelsPerWorld+stageOffsetX+alignShiftX+rowSlideX;
   let y=baseRowY;
   let z=0;
   let stretchX=1;
@@ -867,7 +1010,7 @@ export function drawKineticLyrics({
     isSpokenEnd,
     baseColor,
     sungColor,
-    theme.background
+    effectiveBgHex
    );
 
    c.restore();
@@ -885,6 +1028,7 @@ export function drawKineticLyrics({
   rows:totalRowsCount,
   baseColor,
   activeColor:sungColor,
-  fillPace
+  fillPace,
+  placement:activePlacement
  };
 }

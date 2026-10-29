@@ -1,6 +1,10 @@
 import { providerRequest } from '../network/request';
 import type { TrackInfo } from '../metadata/trackInfo';
 import { cleanLyricMetadata } from './providers';
+import {
+  scoreCandidateAgainstRawMetadata,
+  type YouTubeSubtitleTrackItem,
+} from './lyricFlowEngine';
 
 export interface AppleLyricResult {
   lrc: string;
@@ -9,6 +13,7 @@ export interface AppleLyricResult {
   hasWordSync: boolean;
   source: string;
   sourceUrl?: string;
+  subtitleTracks?: YouTubeSubtitleTrackItem[];
 }
 
 const formatLrcTimestamp = (seconds: number, bracket: '[' | '<' = '['): string => {
@@ -45,8 +50,9 @@ export function parseTtmlTime(value: string | null | undefined): number | null {
  * into enhanced word-synced LRC ([mm:ss.xx]<mm:ss.xx>word <mm:ss.xx>word2).
  * Implements Stash TtmlParser.kt & Spicy Lyrics JoinSplitWords syllable gluing:
  * - Extracts <span ttm:role="x-roman"> romanized lines when present
- * - Unwraps nested <span ttm:role="x-bg"> background vocal containers
- * - Strips non-sung <span ttm:role="x-translation"> / <span ttm:role="x-roman"> metadata spans from main vocal body
+ * - Extracts multi-word <span ttm:role="x-bg"> dual-singer phrases as simultaneous timed lines
+ *   (while unwrapping single-word ad-libs inline)
+ * - Preserves overlapping <p ttm:agent="v1"> / <p ttm:agent="v2"> lines for simultaneous two-side duet display
  * - Glues adjacent syllable spans that have no whitespace between </span> and <span into unified words
  */
 export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; romanizedLrc?: string; hasWordSync: boolean } {
@@ -70,6 +76,47 @@ export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; romanized
   const romanLines: string[] = [];
   let hasWordSync = false;
 
+  const parseLeafTokens = (fragment: string) => {
+    const wordTokens: { text: string; start: number; end: number; trailingSpace: boolean }[] = [];
+    let lastSpanEndIndex = -1;
+    for (const sMatch of fragment.matchAll(leafSpanRegex)) {
+      const sAttrs = sMatch[1] || '';
+      const role = getAttr(sAttrs, 'ttm:role');
+      if (role && role !== 'x-bg') continue;
+
+      const sBegin = parseTtmlTime(getAttr(sAttrs, 'begin'));
+      const sEnd = parseTtmlTime(getAttr(sAttrs, 'end'));
+      const rawContent = decodeEntities(sMatch[2]);
+      const hadLeadingSpace = /^\s/.test(rawContent);
+      const hadTrailingSpace = /\s$/.test(rawContent);
+      const text = rawContent.replace(/\s+/g, ' ').trim();
+
+      const matchStartIndex = sMatch.index ?? 0;
+      const betweenText =
+        lastSpanEndIndex >= 0 ? fragment.slice(lastSpanEndIndex, matchStartIndex) : ' ';
+      const hasGapWhitespace = /\s/.test(betweenText);
+      lastSpanEndIndex = matchStartIndex + sMatch[0].length;
+
+      if (text && sBegin !== null) {
+        const endSec = sEnd !== null && sEnd >= sBegin ? sEnd : sBegin + 0.35;
+        const prev = wordTokens[wordTokens.length - 1];
+        if (prev && !hasGapWhitespace && !prev.trailingSpace && !hadLeadingSpace) {
+          prev.text += text;
+          prev.end = Math.max(prev.end, endSec);
+          prev.trailingSpace = hadTrailingSpace;
+        } else {
+          wordTokens.push({
+            text,
+            start: sBegin,
+            end: endSec,
+            trailingSpace: hadTrailingSpace,
+          });
+        }
+      }
+    }
+    return wordTokens;
+  };
+
   for (const pMatch of ttml.matchAll(pRegex)) {
     const pAttrs = pMatch[1] || '';
     let pInner = pMatch[2] || '';
@@ -88,55 +135,34 @@ export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; romanized
       ''
     );
 
-    // 2. Unwrap outer <span ttm:role="x-bg"> wrappers that contain nested timed <span ...> children
+    // 2. Check for nested <span ttm:role="x-bg"> containers:
+    // If a container has 2+ timed words, emit it as a simultaneous second-singer line;
+    // if it has only 1 word (e.g. "(yeah)"), unwrap it inline into the main line.
+    const secondaryBgLines: string[] = [];
     pInner = pInner.replace(
-      /<span\b[^>]*\bttm:role\s*=\s*["']x-bg["'][^>]*>([\s\S]*?<span\b[\s\S]*?)<\/span>\s*<\/span>/gi,
-      '$1</span>'
+      /<span\b[^>]*\bttm:role\s*=\s*["']x-bg["'][^>]*>([\s\S]*?<span\b[\s\S]*?<\/span>)\s*<\/span>/gi,
+      (_full, innerSpans: string) => {
+        const bgTokens = parseLeafTokens(innerSpans);
+        if (bgTokens.length >= 2) {
+          // Strip outer parentheses on simultaneous secondary vocal phrase for clean two-side display
+          bgTokens[0].text = bgTokens[0].text.replace(/^\(+/, '').trim() || bgTokens[0].text;
+          const lastIdx = bgTokens.length - 1;
+          bgTokens[lastIdx].text = bgTokens[lastIdx].text.replace(/\)+$/, '').trim() || bgTokens[lastIdx].text;
+          const bgStart = bgTokens[0].start;
+          const bgEnd = bgTokens[lastIdx].end;
+          const bgBody = bgTokens
+            .map(w => `${formatLrcTimestamp(w.start, '<')}${w.text}`)
+            .join(' ');
+          secondaryBgLines.push(
+            `${formatLrcTimestamp(bgStart, '[')}${bgBody}${formatLrcTimestamp(bgEnd, '<')}`
+          );
+          return '';
+        }
+        return innerSpans;
+      }
     );
 
-    const wordTokens: { text: string; start: number; end: number; trailingSpace: boolean }[] = [];
-    let lastSpanEndIndex = -1;
-
-    for (const sMatch of pInner.matchAll(leafSpanRegex)) {
-      const sAttrs = sMatch[1] || '';
-      const role = getAttr(sAttrs, 'ttm:role');
-      if (role && role !== 'x-bg') continue;
-
-      const sBegin = parseTtmlTime(getAttr(sAttrs, 'begin'));
-      const sEnd = parseTtmlTime(getAttr(sAttrs, 'end'));
-      const rawContent = decodeEntities(sMatch[2]);
-      const hadLeadingSpace = /^\s/.test(rawContent);
-      const hadTrailingSpace = /\s$/.test(rawContent);
-      const text = rawContent.replace(/\s+/g, ' ').trim();
-
-      const matchStartIndex = sMatch.index ?? 0;
-      const betweenText =
-        lastSpanEndIndex >= 0 ? pInner.slice(lastSpanEndIndex, matchStartIndex) : ' ';
-      const hasGapWhitespace = /\s/.test(betweenText);
-      lastSpanEndIndex = matchStartIndex + sMatch[0].length;
-
-      if (text && sBegin !== null) {
-        const endSec = sEnd !== null && sEnd >= sBegin ? sEnd : sBegin + 0.35;
-        const prev = wordTokens[wordTokens.length - 1];
-        if (
-          prev &&
-          !hasGapWhitespace &&
-          !prev.trailingSpace &&
-          !hadLeadingSpace
-        ) {
-          prev.text += text;
-          prev.end = Math.max(prev.end, endSec);
-          prev.trailingSpace = hadTrailingSpace;
-        } else {
-          wordTokens.push({
-            text,
-            start: sBegin,
-            end: endSec,
-            trailingSpace: hadTrailingSpace,
-          });
-        }
-      }
-    }
+    const wordTokens = parseLeafTokens(pInner);
 
     if (wordTokens.length > 0) {
       hasWordSync = true;
@@ -146,6 +172,9 @@ export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; romanized
         .join(' ');
       const lastEnd = wordTokens[wordTokens.length - 1].end;
       lines.push(`${formatLrcTimestamp(lineStart, '[')}${body}${formatLrcTimestamp(lastEnd, '<')}`);
+      for (const bgLine of secondaryBgLines) {
+        lines.push(bgLine);
+      }
       if (extractedRoman) {
         romanLines.push(`${formatLrcTimestamp(lineStart, '[')}${extractedRoman}`);
       }
@@ -263,32 +292,85 @@ export function convertStructuredAppleJsonToLrc(payload: unknown): { lrc: string
 }
 
 /**
+ * Fetch creator-uploaded YouTube video subtitles / closed captions as line-synced LRC via server endpoint.
+ * Returns all available creator-uploaded subtitle tracks (`subtitleTracks`) when multiple languages/scripts exist.
+ */
+export async function fetchYouTubeSubtitlesForTrack(
+  videoId: string | null | undefined,
+  signal?: AbortSignal
+): Promise<AppleLyricResult | null> {
+  const cleanId = (videoId || '').trim();
+  if (!/^[a-zA-Z0-9_-]{11}$/.test(cleanId)) return null;
+  if (typeof window === 'undefined' || !window.location?.origin) return null;
+
+  try {
+    signal?.throwIfAborted();
+    const res = await fetch(
+      `${window.location.origin}/music/yt-subtitles?videoId=${encodeURIComponent(cleanId)}`,
+      {
+        headers: { Accept: 'application/json' },
+        signal,
+      }
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      lrc?: string;
+      source?: string;
+      sourceUrl?: string;
+      subtitleTracks?: YouTubeSubtitleTrackItem[];
+    };
+    if (typeof data.lrc === 'string' && data.lrc.includes('[')) {
+      return {
+        lrc: data.lrc,
+        hasWordSync: false,
+        source: data.source || 'YouTube Subtitles',
+        sourceUrl: data.sourceUrl || `https://www.youtube.com/watch?v=${cleanId}`,
+        subtitleTracks: Array.isArray(data.subtitleTracks) ? data.subtitleTracks : undefined,
+      };
+    }
+  } catch (err) {
+    if (signal?.aborted) throw err;
+  }
+  return null;
+}
+
+/**
  * Stash-style Apple Music & Multi-Source word-synced lyrics lookup:
  * 1. Queries our server-side Stash lyrics pipeline (/music/lyrics) which resolves:
  *    - lrc.red & Binimum ISRC Word-Synced Apple Music TTML
  *    - iTunes Search API + Paxsenix Apple Music TTML
  *    - Musixmatch RichSync word-synced & synced subtitles
  *    - KuGou synced LRC
- *    - YouTube Music InnerTube lyrics
+ *    - Creator-uploaded YouTube Subtitles
  * 2. Falls back to direct client-side lookup if running in offline/test mode.
  */
 export async function fetchAppleMusicWordSyncedLyrics(
   track: TrackInfo,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  requestedSource: 'all' | 'apple' | 'lrclib' | 'youtube' = 'all'
 ): Promise<AppleLyricResult | null> {
+  const isYt = track.provider === 'resolver' || Boolean(track.youtubeVideoId);
   const title = cleanLyricMetadata(track.title.trim());
-  const artist = cleanLyricMetadata(track.artist.trim());
+  // Skip artist and album names when searching lyrics of songs sourced from YouTube
+  const artist = isYt ? '' : cleanLyricMetadata(track.artist.trim());
   if (title.length < 2) return null;
 
+  const rawOriginalTitle = (track.videoTitle || track.title).trim();
+
   // Step 1: Query our server-side Stash multi-source lyrics endpoint (/music/lyrics)
+  // Pass the full raw original title for YouTube tracks so the server can both clean it for search
+  // AND score returned library candidates' author/album against the full video title.
   if (typeof window !== 'undefined' && window.location?.origin) {
     try {
       signal?.throwIfAborted();
       const params = new URLSearchParams({
-        title,
-        artist,
+        title: isYt ? rawOriginalTitle : title,
+        artist: isYt ? track.artist.trim() : artist,
         duration: String(Math.round(track.duration || 0)),
+        source: requestedSource,
       });
+      if (isYt) params.set('isYouTube', '1');
+      if (track.youtubeVideoId) params.set('videoId', track.youtubeVideoId);
       const serverUrl = `${window.location.origin}/music/lyrics?${params.toString()}`;
       const res = await fetch(serverUrl, {
         headers: { Accept: 'application/json' },
@@ -302,6 +384,7 @@ export async function fetchAppleMusicWordSyncedLyrics(
           source?: string;
           sourceUrl?: string;
           hasWordSync?: boolean;
+          subtitleTracks?: YouTubeSubtitleTrackItem[];
         };
         if (typeof data.ttml === 'string' && data.ttml.includes('<p')) {
           const parsed = convertTtmlToEnhancedLrc(data.ttml);
@@ -321,6 +404,7 @@ export async function fetchAppleMusicWordSyncedLyrics(
             hasWordSync: Boolean(data.hasWordSync || data.lrc.includes('<')),
             source: data.source || 'Stash · Synced Lyrics',
             sourceUrl: data.sourceUrl,
+            subtitleTracks: Array.isArray(data.subtitleTracks) ? data.subtitleTracks : undefined,
           };
         }
         if (typeof data.plain === 'string' && data.plain.trim().length > 10) {
@@ -341,11 +425,11 @@ export async function fetchAppleMusicWordSyncedLyrics(
 
   let appleTrackName = title;
   let appleArtistName = artist;
-  let appleAlbumName = track.album || '';
+  let appleAlbumName = isYt ? '' : track.album || '';
   let appleDuration = track.duration || 0;
   let appleTrackViewUrl = '';
 
-  // Step 2: Canonicalize track against Apple Music / iTunes catalog (same as Stash)
+  // Step 2: Canonicalize track against Apple Music / iTunes catalog and rank against full raw video title
   try {
     const term = [title, artist].filter(Boolean).join(' ');
     const itunesUrl =
@@ -354,18 +438,39 @@ export async function fetchAppleMusicWordSyncedLyrics(
         term,
         media: 'music',
         entity: 'song',
-        limit: '5',
+        limit: '15',
       }).toString();
     const res = await providerRequest(itunesUrl, signal);
     if (res.ok) {
       const data = (await res.json()) as { results?: Array<Record<string, unknown>> };
       const results = Array.isArray(data.results) ? data.results : [];
-      const best = results.find(item => {
-        const durSec = Number(item.trackTimeMillis || 0) / 1000;
-        if (track.duration > 0 && durSec > 0 && Math.abs(track.duration - durSec) > 8) return false;
-        return true;
-      }) || results[0];
+      const scored = results
+        .map(item => {
+          const durSec = Number(item.trackTimeMillis || 0) / 1000;
+          const score = scoreCandidateAgainstRawMetadata(
+            {
+              title: String(item.trackName || ''),
+              artist: String(item.artistName || ''),
+              album: String(item.collectionName || ''),
+              duration: durSec,
+              hasWordSync: true,
+              hasSynced: true,
+            },
+            {
+              cleanTitle: title,
+              rawTitle: rawOriginalTitle,
+              artistHint: track.artist,
+              albumHint: track.album,
+              duration: track.duration,
+              isYouTube: isYt,
+            }
+          );
+          return { item, score };
+        })
+        .filter(x => x.score >= 0.45)
+        .sort((a, b) => b.score - a.score);
 
+      const best = scored[0]?.item;
       if (best) {
         appleTrackName = String(best.trackName || title);
         appleArtistName = String(best.artistName || artist);
@@ -374,6 +479,9 @@ export async function fetchAppleMusicWordSyncedLyrics(
           appleDuration = Math.round(Number(best.trackTimeMillis) / 1000);
         }
         appleTrackViewUrl = String(best.trackViewUrl || '');
+      } else if (results.length > 0) {
+        // iTunes returned candidates, but none matched the cleaned title — abort so wrong lyrics aren't fetched
+        return null;
       }
     }
   } catch {
@@ -428,3 +536,4 @@ export async function fetchAppleMusicWordSyncedLyrics(
 
   return null;
 }
+

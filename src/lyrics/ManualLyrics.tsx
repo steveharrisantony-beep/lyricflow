@@ -135,9 +135,12 @@ export function describeLyricProvider(
 ):LyricProviderBadgeInfo{
  const raw=(source||'').trim();
  let providerName='Automatic Provider';
- if(/apple\s*music|itunes|paxsenix|lrc\.red|binimum/i.test(raw))providerName='Apple Music';
+ if(/lyricflow\s*engine/i.test(raw))providerName='LyricFlow Engine';
+ else if(/youtube\s*subtitles/i.test(raw))providerName='YouTube Subtitles';
+ else if(/apple\s*library/i.test(raw))providerName='Apple Library';
+ else if(/apple\s*music|itunes|paxsenix|lrc\.red|binimum/i.test(raw))providerName='Apple Music';
  else if(/musixmatch/i.test(raw))providerName='MusixMatch';
- else if(/lrclib/i.test(raw))providerName='LRCLIB';
+ else if(/lrclib|lrc\s*library/i.test(raw))providerName='LRC Library';
  else if(/kugou/i.test(raw))providerName='KuGou';
  else if(/youtube\s*music|innertube/i.test(raw))providerName='YouTube Music';
  else if(/local|imported|file/i.test(raw))providerName='Local File';
@@ -160,7 +163,7 @@ export function describeLyricProvider(
  return {
   providerName,
   syncMode,
-  detail:raw||'Automatic (Apple Music / MusixMatch / LRCLIB / Local)'
+  detail:raw||'LyricFlow Engine (YouTube Subtitles + Apple Library Word-Sync)'
  };
 }
 
@@ -423,27 +426,35 @@ export default function ManualLyrics({
  }
 
  const lyricTime=effectiveLyricTime(time,offset,delay);
- let idx=-1;for(let i=0;i<lines.length;i++){if(lines[i].time<=lyricTime)idx=i;else break}
- const candidate=idx>=0?lines[idx]:undefined;
+ const isPausedSession=Boolean(trackLoaded&&!isPlaying);
+ let idx=-1;
+ const activeLineIndices:number[]=[];
+ for(let i=0;i<lines.length;i++){
+  if(lines[i].time<=lyricTime){
+   idx=i;
+   const lEnd=computeNaturalLineEnd(lines[i],lines[i+1]?.time);
+   if(lines[i].text.trim().length>0&&lyricTime<lEnd&&!isPausedSession){
+    activeLineIndices.push(i);
+   }
+  }else{
+   break;
+  }
+ }
+ const primaryIdx=activeLineIndices.length>0?activeLineIndices[0]:idx;
+ const candidate=primaryIdx>=0?lines[primaryIdx]:undefined;
  const next=lines[idx+1];
  const candidateEnd=useMemo(
-  ()=>candidate?computeNaturalLineEnd(candidate,next?.time):0,
-  [candidate,next?.time]
+  ()=>candidate?computeNaturalLineEnd(candidate,lines[primaryIdx+1]?.time):0,
+  [candidate,lines,primaryIdx]
  );
 
  // Do NOT hold previous lyrics during pause or instrumental music breaks!
- const isPausedSession=Boolean(trackLoaded&&!isPlaying);
- const isWithinVocalWindow=Boolean(
-  candidate&&
-  candidate.text.trim().length>0&&
-  lyricTime>=candidate.time&&
-  lyricTime<candidateEnd&&
-  !isPausedSession
- );
- const current=isWithinVocalWindow?candidate:undefined;
- const prevLine=isWithinVocalWindow&&idx>0?lines[idx-1]:undefined;
- const prevRom=idx>0?romanLines[idx-1]?.text:'';
- const rom=idx>=0?romanLines[idx]?.text||'':'';
+ const isWithinVocalWindow=activeLineIndices.length>0;
+ const current=isWithinVocalWindow?lines[activeLineIndices[0]]:undefined;
+ const duetPartnerLine=activeLineIndices.length>1?lines[activeLineIndices[1]]:undefined;
+ const prevLine=isWithinVocalWindow&&activeLineIndices[0]>0?lines[activeLineIndices[0]-1]:undefined;
+ const prevRom=activeLineIndices[0]>0?romanLines[activeLineIndices[0]-1]?.text:'';
+ const rom=activeLineIndices.length>0?romanLines[activeLineIndices[0]]?.text||'':'';
  const nextRom=romanLines[idx+1]?.text||'';
 
  const hasWordTags=useMemo(()=>lines.some(l=>l.words&&l.words.some(w=>w.timing==='sourced')),[lines]);
@@ -701,11 +712,36 @@ export default function ManualLyrics({
       ))}
      </div>
     )}
-    {secondaryLineRows.length>0&&(
+    { secondaryLineRows.length>0&&(
      <div className="spicy-secondary-multiline">
       {secondaryLineRows.map((secRow,sIdx)=>(
        <p key={'sec-'+sIdx} className="romanized">{secRow}</p>
       ))}
+     </div>
+    )}
+    {duetPartnerLine&&(
+     <div
+      className="spicy-duet-split"
+      role="region"
+      aria-label="Simultaneous dual-singer lyrics"
+      style={{
+       display:'grid',
+       gridTemplateColumns:'1fr 1fr',
+       gap:16,
+       marginTop:10,
+       paddingTop:10,
+       borderTop:'1px solid rgba(255,255,255,0.12)',
+       textAlign:'left'
+      }}
+     >
+      <div style={{padding:'6px 10px',borderRadius:8,background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.22)'}}>
+       <div style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:sungAccentColor,marginBottom:4}}>SINGER 1 (LEFT STAGE)</div>
+       <div style={{color:baseLineColor,fontWeight:700,fontSize:'0.95em'}}>{primaryLineText}</div>
+      </div>
+      <div style={{padding:'6px 10px',borderRadius:8,background:'rgba(255,209,102,0.08)',border:'1px solid rgba(255,209,102,0.22)',textAlign:'right'}}>
+       <div style={{fontSize:10,fontWeight:700,letterSpacing:'0.08em',color:'#ffd166',marginBottom:4}}>SINGER 2 (RIGHT STAGE)</div>
+       <div style={{color:baseLineColor,fontWeight:700,fontSize:'0.95em'}}>{duetPartnerLine.text}</div>
+      </div>
      </div>
     )}
    </>:

@@ -14,10 +14,17 @@ import {
 import {
   VOXELVERSE_STYLES,
   VOXELVERSE_FAMILIES,
+  LYRIC_PLACEMENT_MODES,
   type LyricMotion,
   type VoxelVerseFamily,
   type LyricFillPaceMode,
+  type LyricPlacementMode,
 } from './visualization/cinematic/kineticTypography';
+import {
+  LYRIC_ENGINE_OPTIONS,
+  type LyricEngineOption,
+  type YouTubeSubtitleTrackItem,
+} from './lyrics/lyricFlowEngine';
 import { computeBassThreshold } from './visualization/cinematic/cameraRig';
 import { fontLabel } from './visualization/cinematic/fonts';
 import { setAudioSensitivity, getAudioFrequencyBands, setSpectrumSensitivity } from './audio/audioSignal';
@@ -104,13 +111,21 @@ export default function App() {
   const [lyricMaxFontSize, setLyricMaxFontSize] = useState<number>(initialPrefs.lyricMaxFontSize);
   const [themePalettes, setThemePalettes] = useState<Record<string, string>>(initialPrefs.themePalettes);
 
-  // YouTube video background & embedded lyric auto-hide state
+  // YouTube video background, black overlay opacity, SponsorBlock & embedded lyric auto-hide state
   const [youtubeBackgroundMode, setYoutubeBackgroundMode] = useState<YouTubeBackgroundMode>('video');
+  const [videoOverlayOpacity, setVideoOverlayOpacity] = useState<number>(0.45);
   const [autoHideYoutubeLyrics, setAutoHideYoutubeLyrics] = useState<boolean>(true);
   const [hasSeparateAudioStream, setHasSeparateAudioStream] = useState<boolean>(true);
   const [playerVolume, setPlayerVolume] = useState<number>(85);
+  const [sponsorBlockEnabled, setSponsorBlockEnabled] = useState<boolean>(true);
+  const [leadingNonMusicOffsetSec, setLeadingNonMusicOffsetSec] = useState<number>(0);
 
-  // Shared lyric display & color controls (controllable from both Lyric Panel and Cinema Mode)
+  // Shared lyric display, available engine options, subtitle tracks, spatial placement & color controls
+  const [lyricEngineOption, setLyricEngineOption] = useState<LyricEngineOption>('lyricflow');
+  const [availableLyricEngines, setAvailableLyricEngines] = useState<LyricEngineOption[]>([]);
+  const [youtubeSubtitleTracks, setYoutubeSubtitleTracks] = useState<YouTubeSubtitleTrackItem[]>([]);
+  const [selectedSubtitleTrackId, setSelectedSubtitleTrackId] = useState<string | undefined>(undefined);
+  const [lyricPlacementMode, setLyricPlacementMode] = useState<LyricPlacementMode>('auto');
   const [lyricColorMode, setLyricColorMode] = useState<LyricColorMode>('auto');
   const [lyricFillPaceMode, setLyricFillPaceMode] = useState<LyricFillPaceMode>('auto');
   const [lyricDisplayMode, setLyricDisplayMode] = useState<'original' | 'romanized' | 'both'>('both');
@@ -342,7 +357,7 @@ export default function App() {
         flux: numeric('audioFlux'),
         threshold: numeric('audioThreshold'),
       });
-    }, 90);
+    }, 260);
     return () => clearInterval(id);
   }, []);
 
@@ -457,7 +472,7 @@ export default function App() {
               ? 'Demo mode'
               : 'Idle'}{' '}
           <span>·</span>{' '}
-          <small>Lyrics: {incoming?.source || 'Automatic (Apple Music / LRCLIB)'}</small>
+          <small>Lyrics: {incoming?.source || 'LyricFlow Engine (YT Subtitles + Apple Word-Sync)'}</small>
         </div>
         <div className="header-right">
           <button
@@ -498,6 +513,8 @@ export default function App() {
           lyricFillPaceMode={lyricFillPaceMode}
           lyricMinFontSize={lyricMinFontSize}
           lyricMaxFontSize={lyricMaxFontSize}
+          lyricPlacementMode={lyricPlacementMode}
+          videoOverlayOpacity={videoOverlayOpacity}
           audioPaused={Boolean(localLoaded && !localPlaying)}
           youtubeVideoId={activeYoutubeVideoId}
           youtubeBackgroundMode={youtubeBackgroundMode}
@@ -506,6 +523,9 @@ export default function App() {
           hasSeparateAudioStream={hasSeparateAudioStream}
           playerVolume={playerVolume}
           onYoutubeTimeUpdate={(ct, dur) => playerRef.current?.syncExternalClock(ct, dur)}
+          onYoutubeEnded={() => {
+            playerRef.current?.playNextFromQueue();
+          }}
         />
 
         {!performance && (
@@ -644,7 +664,7 @@ export default function App() {
                           YouTube Background Mode:{' '}
                           <b>
                             {youtubeBackgroundMode === 'video'
-                              ? 'YouTube Video'
+                              ? 'YouTube Video (Themes Unloaded)'
                               : 'Built-in Themes'}
                           </b>
                         </span>
@@ -678,6 +698,23 @@ export default function App() {
                           </button>
                         </div>
                       </div>
+                    )}
+
+                    {activeYoutubeVideoId && youtubeBackgroundMode === 'video' && (
+                      <label className="cinema-range">
+                        <span>
+                          Video Black Overlay Opacity <b>{Math.round(videoOverlayOpacity * 100)}%</b>
+                        </span>
+                        <input
+                          aria-label="Cinema video black overlay opacity"
+                          type="range"
+                          min="0"
+                          max="90"
+                          step="5"
+                          value={Math.round(videoOverlayOpacity * 100)}
+                          onChange={e => setVideoOverlayOpacity(Number(e.target.value) / 100)}
+                        />
+                      </label>
                     )}
 
                     <div className="cinema-scene-steppers">
@@ -779,6 +816,57 @@ export default function App() {
                       <span>LYRICS &amp; VOXELVERSE STYLES</span>
                       <small>{enabledKineticMotions.length}/{VOXELVERSE_STYLES.length} ON</small>
                     </div>
+
+                    {availableLyricEngines.length > 0 && (
+                      <label className="cinema-field">
+                        <span>Available Lyrics Engine ({availableLyricEngines.length})</span>
+                        <select
+                          aria-label="Cinema lyrics engine option"
+                          value={lyricEngineOption}
+                          onChange={e => setLyricEngineOption(e.target.value as LyricEngineOption)}
+                        >
+                          {LYRIC_ENGINE_OPTIONS.filter(opt =>
+                            availableLyricEngines.includes(opt.id)
+                          ).map(opt => (
+                            <option key={opt.id} value={opt.id}>
+                              {opt.label} ({opt.badge})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+
+                    {youtubeSubtitleTracks.length > 1 && (
+                      <label className="cinema-field">
+                        <span>Creator Subtitle Track ({youtubeSubtitleTracks.length})</span>
+                        <select
+                          aria-label="Cinema YouTube subtitle track"
+                          value={selectedSubtitleTrackId || youtubeSubtitleTracks[0]?.id || ''}
+                          onChange={e => setSelectedSubtitleTrackId(e.target.value)}
+                        >
+                          {youtubeSubtitleTracks.map(st => (
+                            <option key={st.id} value={st.id}>
+                              {st.label} ({st.lineCount} lines)
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+
+                    <label className="cinema-field">
+                      <span>Stage Placement &amp; Line Entry Motion</span>
+                      <select
+                        aria-label="Cinema lyric stage placement"
+                        value={lyricPlacementMode}
+                        onChange={e => setLyricPlacementMode(e.target.value as LyricPlacementMode)}
+                      >
+                        {LYRIC_PLACEMENT_MODES.map(pm => (
+                          <option key={pm.id} value={pm.id}>
+                            {pm.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
 
                     {activeYoutubeVideoId && (
                       <label className="cinema-check">
@@ -1184,14 +1272,14 @@ export default function App() {
             </span>
             <div>
               <b style={{ display: 'block', fontSize: '0.88rem', letterSpacing: '0.04em' }}>
-                YOUTUBE SOURCE · STAGE BACKGROUND &amp; LYRICS OVERLAY
+                YOUTUBE SOURCE · STAGE BACKGROUND &amp; BLACK OVERLAY CONTROLLER
               </b>
               <small style={{ opacity: 0.8 }}>
                 {youtubeBackgroundMode === 'video'
                   ? hideStageLyricsForVideo
-                    ? 'Playing YouTube video background · Lyric Video detected ("lyrical"/"lyrics") — stage lyrics engine auto-hidden'
-                    : 'Playing YouTube video as background with VoxelVerse lyrics engine on top'
-                  : 'Using Built-in VoxelWall themes as background with VoxelVerse lyrics engine'}
+                    ? 'Playing YouTube video background (Built-in themes unloaded) · Lyric Video detected — stage lyrics auto-hidden'
+                    : `Playing YouTube video background (Built-in themes unloaded) · Light-themed lyrics + ${Math.round(videoOverlayOpacity * 100)}% Black Overlay`
+                  : 'Built-in VoxelWall themes loaded as background with VoxelVerse lyrics engine'}
               </small>
             </div>
           </div>
@@ -1234,6 +1322,33 @@ export default function App() {
               <span style={{ fontSize: '0.74rem', opacity: 0.75 }}>(0: Video · 1: Theme)</span>
             </label>
 
+            {youtubeBackgroundMode === 'video' && (
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                }}
+              >
+                <span>
+                  Black Overlay Opacity:{' '}
+                  <b>{Math.round(videoOverlayOpacity * 100)}%</b>
+                </span>
+                <input
+                  aria-label="Adjust black overlay opacity between lyrics and video"
+                  type="range"
+                  min="0"
+                  max="90"
+                  step="5"
+                  value={Math.round(videoOverlayOpacity * 100)}
+                  onChange={e => setVideoOverlayOpacity(Number(e.target.value) / 100)}
+                  style={{ width: '96px', accentColor: '#38bdf8', cursor: 'pointer' }}
+                />
+              </label>
+            )}
+
             <label
               style={{
                 display: 'flex',
@@ -1260,7 +1375,7 @@ export default function App() {
         </section>
       )}
 
-      {/* 2. PLAYER DETAILS -> 3. SONG DETAILS -> 4. TIMEBAR */}
+      {/* 2. PLAYER DETAILS -> 3. SONG DETAILS -> 3B. QUEUE (Q) -> 4. TIMEBAR */}
       <LocalPlayer
         ref={playerRef}
         sourceMode={sourceMode}
@@ -1273,6 +1388,15 @@ export default function App() {
         lyricDelay={lyricDelay}
         onLyricDelayChange={updateLyricDelay}
         delaySavedStatus={delaySavedStatus}
+        lyricEngineOption={lyricEngineOption}
+        onLyricEngineOptionChange={setLyricEngineOption}
+        availableLyricEngines={availableLyricEngines}
+        youtubeSubtitleTracks={youtubeSubtitleTracks}
+        selectedSubtitleTrackId={selectedSubtitleTrackId}
+        onSelectSubtitleTrackId={setSelectedSubtitleTrackId}
+        sponsorBlockEnabled={sponsorBlockEnabled}
+        onSponsorBlockEnabledChange={setSponsorBlockEnabled}
+        onSponsorBlockOffsetChange={setLeadingNonMusicOffsetSec}
         onAudioStreamModeChange={setHasSeparateAudioStream}
         onVolumeChange={setPlayerVolume}
         onActiveChange={playing => {
@@ -1284,21 +1408,34 @@ export default function App() {
           setLocalLoaded(loaded);
           setFileEpoch(e => e + 1);
           setIncoming(null);
+          setAvailableLyricEngines([]);
+          setYoutubeSubtitleTracks([]);
+          setSelectedSubtitleTrackId(undefined);
         }}
         onTrackChange={track => {
           setLocalTrack(track);
           setIncoming(null);
+          setAvailableLyricEngines([]);
+          setYoutubeSubtitleTracks([]);
+          setSelectedSubtitleTrackId(undefined);
         }}
         onDurationChange={duration =>
           setLocalTrack(p => (p ? { ...p, duration } : p))
         }
       />
 
-      {/* 5. AUTOMATIC APPLE MUSIC / STASH LYRICS & ON-DEMAND CUSTOM EDIT */}
+      {/* 5. MULTI-ENGINE LYRICS RESOLVER (LYRICFLOW HYBRID / APPLE / LRC / YOUTUBE SUBTITLES) & CUSTOM EDIT */}
       <TrackFinder
         track={localTrack}
         savedCustomLrc={savedCustomLrc}
         customEditOpen={customEditOpen}
+        lyricEngineOption={lyricEngineOption}
+        onLyricEngineOptionChange={setLyricEngineOption}
+        selectedSubtitleTrackId={selectedSubtitleTrackId}
+        onSelectSubtitleTrackId={setSelectedSubtitleTrackId}
+        onAvailableLyricEnginesChange={setAvailableLyricEngines}
+        onSubtitleTracksChange={setYoutubeSubtitleTracks}
+        leadingNonMusicOffsetSec={leadingNonMusicOffsetSec}
         onMetadataChange={value => {
           setLocalTrack(value);
           saveTrackCorrection(value);
@@ -1335,7 +1472,7 @@ export default function App() {
         bpm={audioReadout.bpm}
       />
 
-      {/* 6. VOXELVERSE LYRIC STYLES & VOXELWALL BACKGROUND CUSTOMIZER */}
+      {/* 6. VOXELVERSE LYRIC STYLES, SPATIAL PLACEMENTS & VOXELWALL BACKGROUND CUSTOMIZER */}
       <section className="control-panel" aria-label="VoxelWall themes and VoxelVerse lyric animation toggles">
         <div className="control-heading">
           <div className="heading-left">
@@ -1343,9 +1480,9 @@ export default function App() {
               <Sparkles size={16} />
             </span>
             <div>
-              <b>VOXELVERSE LYRIC ANIMATION STYLES ({enabledKineticMotions.length}/{VOXELVERSE_STYLES.length} ACTIVE)</b>
+              <b>VOXELVERSE LYRIC ANIMATION STYLES &amp; STAGE PLACEMENTS ({enabledKineticMotions.length}/{VOXELVERSE_STYLES.length} ACTIVE)</b>
               <small>
-                19 VoxelVerse lyric styles organized into Signature, Spatial, Kinetic, and Editorial families — toggle individual styles ON or OFF
+                19 VoxelVerse lyric styles + 9 dynamic stage placements (Left, Right, Bottom-Right, Alternating Left↔Right, Diagonal &amp; Center)
               </small>
             </div>
           </div>
@@ -1357,6 +1494,46 @@ export default function App() {
             >
               Enable All 19 Styles
             </button>
+          </div>
+        </div>
+
+        {/* Spatial Stage Placement & Line Entry Motion Selector */}
+        <div
+          style={{
+            marginBottom: 14,
+            padding: '10px 14px',
+            borderRadius: 10,
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid rgba(255,255,255,0.08)',
+          }}
+        >
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', color: '#94a3b8', marginBottom: 8 }}>
+            LYRIC STAGE PLACEMENT &amp; DIRECTIONAL LINE ENTRY (LEFT / RIGHT / BOTTOM-RIGHT / ALTERNATING):
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {LYRIC_PLACEMENT_MODES.map(pm => {
+              const activePm = lyricPlacementMode === pm.id;
+              return (
+                <button
+                  key={pm.id}
+                  type="button"
+                  onClick={() => setLyricPlacementMode(pm.id)}
+                  title={pm.detail}
+                  style={{
+                    padding: '6px 11px',
+                    borderRadius: 7,
+                    fontSize: 12,
+                    fontWeight: activePm ? 700 : 500,
+                    border: activePm ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.12)',
+                    background: activePm ? 'rgba(56,189,248,0.18)' : 'rgba(255,255,255,0.03)',
+                    color: activePm ? '#e0f2fe' : '#cbd5e1',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {pm.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -1814,6 +1991,10 @@ export default function App() {
         onPlaySong={async song => {
           setSourceMode('online');
           await playerRef.current?.loadRemote(song);
+        }}
+        onAddToQueue={song => {
+          setSourceMode('online');
+          playerRef.current?.addToQueue(song);
         }}
       />
 

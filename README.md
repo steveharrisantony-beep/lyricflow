@@ -139,21 +139,35 @@ Accessible anytime from the stage bar (**Choose Source**) with a dedicated modal
 
 ---
 
-## 6. Synchronized Lyrics Engine & Provider Attribution
+## 6. Synchronized Lyrics Engine (Dynamic Available Options) & YouTube Metadata Cleaner
 
-When a song loads, `TrackFinder` (`src/metadata/TrackFinder.tsx`) and `providers.ts` (`src/lyrics/providers.ts`) automatically query a multi-tier cascade:
+LyricFlow dynamically probes and displays **only the Lyrics Engine options that are available** for the current song (`src/lyrics/lyricFlowEngine.ts`, `src/metadata/TrackFinder.tsx`, and `src/lyrics/providers.ts`):
 
-1. **Apple Music Syllable/Word-Synced TTML (`src/lyrics/appleLyrics.ts`)**:
-   - Queries Apple Music / iTunes catalog IDs and converts TTML (`<p begin="..." end="...">`, `<span begin="..." end="...">`, `<span ttm:role="x-bg">`, and `<span ttm:role="x-roman">`) or structured syllable JSON into enhanced LRC (`[mm:ss.xx]<mm:ss.xx>Word`).
-   - Automatically glues adjacent multi-syllable spans without trailing whitespace into unified words while preserving syllable timing.
-2. **MusixMatch RichSync & Line-Synced LRC**:
-   - Word-level RichSync and line-synced LRC fallback via the `/api/lyrics/apple` server proxy.
-3. **LRCLIB Exact & Search Matching**:
-   - Strict duration-validated (`±2.5s`) recording match against `lrclib.net/api/get` and `/api/search`.
-4. **KuGou & YouTube Music Transcript Fallback**:
-   - Line-synced LRC decoding from KuGou and timed transcript extraction from YouTube Music.
-5. **Local `.lrc`, `.ttml`, `.xml`, and `.txt` Import**:
-   - Import custom lyric files or edit timestamps on-demand with per-song delay adjustments (`-30s` to `+30s`).
+1. **LyricFlow Engine (`lyricflow` — Hybrid Video-Aligned Sync with Automatic Fallback)**:
+   - Designed specifically to solve music video vs. studio audio duration mismatches.
+   - Collects **creator-uploaded YouTube Subtitles** (line-by-line timed to the exact music video timeline) **AND** **Apple Library** word-by-word TTML/syllable sync (`<mm:ss.xx>`).
+   - Compares each line between the two transcripts (`alignAppleWordSyncWithYouTubeSubtitles`) and shifts/scales every Apple Music word timestamp onto the YouTube video's actual timeline.
+   - **Smart Fallback**: If Apple Library lyrics are not found, LyricFlow Engine automatically falls back to aligning **LRC Library** onto **YouTube Subtitles**, or displaying **YouTube Subtitles** or **LRC Library** directly.
+2. **Apple Library (`apple` — Direct Word-by-Word TTML & Dual-Singer Duets)**:
+   - Direct Apple Music / iTunes catalog syllable & word-synced TTML (`<p begin="..." end="...">`, `<span begin="..." end="...">`, `<span ttm:role="x-roman">`, `<span ttm:role="x-bg">`) converted into enhanced LRC (`[mm:ss.xx]<mm:ss.xx>Word`).
+   - Preserves overlapping dual-singer vocal timestamps (`ttm:agent="v1"` / `"v2"` and multi-word `x-bg` phrases) so when two singers perform simultaneously, both vocal lines render on **Left and Right sides of the stage at the same time**.
+3. **LRC Library (`lrclib` — Direct Timed LRC)**:
+   - Direct duration-aware timed LRC lookup from LRCLIB (`lrclib.net/api/get` & `/api/search`) and KuGou.
+4. **YouTube Subtitles (`youtube` — Creator-Uploaded Video Captions + Multi-Track Selector)**:
+   - Uses the [`jdepoix/youtube-transcript-api`](https://github.com/jdepoix/youtube-transcript-api) architecture (fetching the watch page with `CONSENT=YES+cb`, extracting `INNERTUBE_API_KEY`, and querying the `ANDROID` InnerTube `/youtubei/v1/player` endpoint).
+   - **Creator-Uploaded Captions Only**: Strictly filters out auto-generated ASR captions (`kind !== 'asr'` and `!vssId.startsWith('a.')`) for high accuracy across Tamil, Malayalam, Hindi, Telugu, and international songs.
+   - **Multiple Subtitle Tracks**: When a video includes multiple creator-uploaded subtitle tracks, collects all tracks and provides a track selector in the UI.
+
+### Smart YouTube Metadata Cleaner & Post-Search Candidate Ranking
+- **YouTube Title Sanitization (`cleanYouTubeTitleForLyrics`)**:
+  - Automatically strips `@handle` mentions (e.g., `@SaiAbhyankkar`), standalone suffixes like `Lyrical`, `Lyrics`, `Sing Along`, everything from the first opening bracket `(`, `[`, `{` onwards, and recognizes `Song - Artist1 | Artist2 | Artist3` pipe-credit patterns so the song name before `-` is preserved.
+  - Examples:
+    - `Punchiri - Eechuu | Suhas | Chris Wayne | Steel | Loopd | Official Music Video` → **`Punchiri`** (recognizes `Eechuu` as author/artist).
+    - `Punchiri - Sing Along | Eechuu | Suhas | Chris Wayne | Steel | Loopd | Malayalam Song` → **`Punchiri`**.
+    - `Veezha Veera Lyrical (Tamil) | OM | Dhanush | Mammootty | Sai Pallavi | Rajkumar | Sai Abhyankkar` → **`Veezha Veera`**.
+    - `@SaiAbhyankkar - Aasa Kooda (Music Video) | Thejo Bharathwaj | Preity Mukhundhan | Sai Smriti` → **`Aasa Kooda`**.
+- **Post-Search Candidate Matching Against Full Raw Video Title (`scoreCandidateAgainstRawMetadata`)**:
+  - While author and album names are skipped during the initial search query for YouTube songs, once multiple candidate results are returned from the lyrics library (complete with `artistName` and `albumName`), each candidate's title, artist, and album tokens are scored against the full original YouTube video title (`rawTitle` + `channel`) to choose the candidate with the **maximum match rate** and reject non-matching song titles.
 
 ---
 
@@ -168,18 +182,25 @@ When a song loads, `TrackFinder` (`src/metadata/TrackFinder.tsx`) and `providers
 
 ---
 
-## 8. Camera Views, Smooth Bass Shake, Clean Stage & Contrast Engine
+## 8. Video Performance, Black Overlay, Dual-Singer Split Stage, Line-Locked Transitions, SponsorBlock & Queue (`Q`)
 
+- **Zero-Lag YouTube Video Background (`CinematicStage.tsx`)**:
+  - When the YouTube video background is running, built-in VoxelWall background theme canvases (`cinematic-effects`) and procedural shaders are **completely unloaded** so the video and VoxelVerse lyrics run at a silky-smooth 60 FPS. Built-in themes are only loaded when the **Built-in Themes** toggle is turned on.
+- **Light-Themed Video Lyrics & Adjustable Black Overlay (`0%–90%`)**:
+  - When lyrics are overlaid on a YouTube video, LyricFlow enforces crisp **light-themed text** (`#f8fafc` + high-luminance neon accent) and places a dedicated **Black Overlay** strictly between the YouTube video (`zIndex: 0`) and the lyrics canvas (`zIndex: 2`), with a live opacity slider (`0%` to `90%`).
+- **Simultaneous Dual-Singer Split-Stage Display (`lyricTimeline.ts` & `kineticTypography.ts`)**:
+  - When two singers sing at the same time in Apple Library lyrics, LyricFlow renders Singer 1 on the **Left side (`27%`)** and Singer 2 on the **Right side (`73%`)** simultaneously with independent word-by-word highlighting.
+- **Line-Locked Animation & Background Transitions (`catalog.ts` & `CinematicStage.tsx`)**:
+  - Scene boundaries are snapped to lyric line completion timestamps and locked while any lyric line is active (`activeCueNow`), ensuring background themes and lyric animation styles **never switch in the middle of a line**.
+- **9 Spatial Lyric Stage Placements & Directional Line Animations (`kineticTypography.ts`)**:
+  - Lyrics are no longer restricted to the center of the screen. Choose between **Dynamic Stage (Auto)**, **Alternating Left ↔ Right** (Line 1 enters from Left, Line 2 enters from Right), **Left Stage Sweep**, **Right Stage Sweep**, **Bottom-Right Cinema**, **Bottom-Left Editorial**, **Top-Left Headline**, **Diagonal Counter-Slide**, and **Center Stage**.
+- **SponsorBlock Non-Music & Sponsor Auto-Skip (`src/music/sponsorBlock.ts`)**:
+  - Powered by [SponsorBlockServer (`ajayyy/SponsorBlockServer`)](https://github.com/ajayyy/SponsorBlockServer), automatically detects and skips non-music (`music_offtopic`), `sponsor`, `selfpromo`, `intro`, `outro`, and `interaction` segments in YouTube videos.
+- **Multi-Song Queue (`Q`) with Position Arrangement (`LocalPlayer.tsx` & `SongSearch.tsx`)**:
+  - Every search result in JioSaavn and YouTube provides **Play Now** and **+ Queue** buttons.
+  - The **QUEUE (`Q`)** section sits directly below **SONG DETAILS**, displaying all queued tracks with **Move Up (`↑`)**, **Move Down (`↓`)**, drag-and-drop reordering, **Play Now**, **Clear Queue**, and automatic progression when the current song finishes.
 - **Centered Front Camera View & Smooth Bass-Threshold Camera Shake (`src/visualization/cinematic/cameraRig.ts`)**:
-  - Uses a dedicated, distraction-free **Front** camera view (`CAMERA_VIEWS = ['Front']`) that keeps the stage and lyrics centered.
-  - **Smooth Bass-Driven Shake (`computeBassThreshold`)**: Camera shake is driven strictly by low-end **bass (`p.bass`)**. The **Shake Sensitivity (`0%–100%`)** slider controls the **bass threshold** required to trigger a camera shake (higher sensitivity lowers the bass threshold so moderate bass lines trigger smooth movement; lower sensitivity raises the threshold so only heavy sub-bass drops trigger shake).
-  - Uses critically-damped exponential attack/release smoothing and low-frequency harmonic curves for a fluid, cinematic camera sway without high-frequency jitter.
-- **Clean Uncluttered Stage Corners (`MotionGraphics.ts` & `GraphicCompositions.ts`)**:
-  - All 23 VoxelWall themes render edge-to-edge without corner VU meter overlays, keeping the top-left and bottom-right stage corners completely clean.
-- **Full-Featured Cinema Mode Studio Drawer**:
-  - Clicking **Controls** inside Cinema Mode opens a studio control window (`All`, `Themes`, `Lyrics`, `Camera`, `Engine`) with full control over YouTube video vs. built-in theme backgrounds, auto-hiding lyrics on lyric videos, themes, palettes, VoxelVerse styles, **Lyric Min/Max Font Sizes**, bass shake threshold sensitivity, and audio engine parameters without exiting full-bleed Cinema Mode.
-- **WCAG AA Contrast Enforcement (`src/visualization/cinematic/contrast.ts` & `typography.ts`)**:
-  - Guarantees a minimum `4.5:1` contrast ratio for all foreground and accent lyric inks (`readableInk` and `readableChromaticInk`) across every colour palette of all 23 VoxelWall themes.
+  - Camera shake is driven strictly by low-end **bass (`p.bass`)**, with the **Shake Sensitivity (`0%–100%`)** slider controlling the bass trigger threshold.
 
 ---
 
@@ -197,43 +218,46 @@ When a song loads, `TrackFinder` (`src/metadata/TrackFinder.tsx`) and `providers
 ## 10. Project Structure
 
 ```text
-├── server.ts                                      # Express + Vite full-stack server (/api/music/* & /api/lyrics/*)
+├── server.ts                                      # Express + Vite server (/music/lyrics, /music/yt-subtitles, /music/sponsorblock)
 ├── firestore.rules                                # Hardened Cloud Firestore security rules
 ├── firebase-blueprint.json                        # Firestore schema blueprint
 ├── src/
 │   ├── App.tsx                                    # Main studio interface, VoxelWall & VoxelVerse controls
 │   ├── audio/
-│   │   ├── AudioSourceHub.tsx                     # Modal selector for Stash Online Player vs. Local Upload
-│   │   ├── LocalPlayer.tsx                        # Playback transport, seek bar, & per-song delay controls
+│   │   ├── AudioSourceHub.tsx                     # Modal selector for Online Player vs. Local Upload
+│   │   ├── LocalPlayer.tsx                        # Playback transport, Song Details, Queue (Q), SponsorBlock & delay
 │   │   ├── audioSignal.ts                         # Web Audio graph & 64-band log-scaled analyzer
 │   │   ├── bandEnvelope.ts                        # Adaptive attack/release envelope follower
 │   │   └── beatDetector.ts                        # Spectral-flux onset, beat, & BPM tempo detector
 │   ├── lyrics/
 │   │   ├── ManualLyrics.tsx                       # Synchronized lyric stage, provider badges, & color picker
+│   │   ├── lyricFlowEngine.ts                     # 4-Engine lyrics definitions, YT title cleaner & hybrid word-sync aligner
 │   │   ├── appleLyrics.ts                         # Apple Music TTML & syllable JSON -> Enhanced LRC parser
 │   │   ├── lrc.ts                                 # Line-synced & word-synced (<mm:ss.xx>) LRC parser
 │   │   ├── lyricTimeline.ts                       # Playback cue scheduler & natural line-end calculator
-│   │   ├── providers.ts                           # Multi-provider lyric cascade (Apple/MusixMatch/LRCLIB)
+│   │   ├── providers.ts                           # 4-Engine lyric resolver (LyricFlow / Apple / LRC / YouTube)
 │   │   └── sceneDirector.ts                       # Semantic lyric mood & energy analyzer
 │   ├── metadata/
-│   │   ├── TrackFinder.tsx                        # Automatic track & lyric resolver
-│   │   └── trackInfo.ts                           # Filename & recording metadata normalizer
+│   │   ├── TrackFinder.tsx                        # Automatic 4-engine track & lyric resolver
+│   │   └── trackInfo.ts                           # Filename & YouTube recording metadata normalizer
 │   ├── music/
-│   │   └── providers.ts                           # Stash multi-catalog search & stream resolver
+│   │   ├── SongSearch.tsx                         # JioSaavn & YouTube search with Play Now & + Queue buttons
+│   │   ├── sponsorBlock.ts                        # SponsorBlock API client for skipping non-music & sponsor segments
+│   │   └── providers.ts                           # JioSaavn & YouTube stream resolver
 │   ├── romanization/
 │   │   └── romanize.ts                            # 9-script offline Indic-to-Latin transliterator
 │   ├── visualization/cinematic/
-│   │   ├── CinematicStage.tsx                     # Dual-canvas compositor & Cinema Mode Studio Drawer
+│   │   ├── CinematicStage.tsx                     # Video/Theme compositor, Black Overlay & Cinema Mode Studio Drawer
 │   │   ├── catalog.ts                             # 23 VoxelWall scene templates × 4–5 palettes across 7 categories
-│   │   ├── kineticTypography.ts                   # 19 VoxelVerse styles & sequential letter/word colour fill
-│   │   ├── cameraRig.ts                           # Beat-reactive 3D projection rig with shake toggle & sensitivity
+│   │   ├── kineticTypography.ts                   # 19 VoxelVerse styles, 9 spatial placements & sequential colour fill
+│   │   ├── cameraRig.ts                           # Smooth bass-threshold camera rig with sensitivity control
 │   │   ├── contrast.ts                            # Real-time backdrop luminance sampler & WCAG contrast guard
 │   │   ├── fonts.ts                               # 25 curated display, editorial, & monospace font packs
 │   │   └── procedural/
 │   │       ├── MotionGraphics.ts                  # 21 distinct VoxelWall 2D music-reactive wallpaper painters
 │   │       ├── GraphicCompositions.ts             # 64-band Signal Chamber spectrum & Color Riot hex geometry
 │   │       └── audioMotion.ts                     # Instrument-role channel routing
-│   └── tests/                                     # 10 Vitest test suites covering audio, lyrics, & visuals
+│   └── tests/                                     # Vitest test suites covering audio, lyrics, & visuals
 ```
 
 ---
@@ -277,7 +301,9 @@ npm run build
 - **p(doom) Procedural Audio-Visual System (`mexicat/pdoom-video`)**:  
   [https://github.com/mexicat/pdoom-video](https://github.com/mexicat/pdoom-video) · Local reference review: [`REFERENCE_REVIEW.md`](./REFERENCE_REVIEW.md)
 
-### Streaming & Lyric Synchronization References
+### Streaming, SponsorBlock & Lyric Synchronization References
+- **SponsorBlock Server (`ajayyy/SponsorBlockServer` — Non-Music & Sponsor Segment Skipping)**:  
+  [https://github.com/ajayyy/SponsorBlockServer](https://github.com/ajayyy/SponsorBlockServer)
 - **Stash Audio & Apple Music TTML Architecture (`STASH_RESEARCH.md`)**:  
   Local research notes: [`STASH_RESEARCH.md`](./STASH_RESEARCH.md)
 - **LRCLIB Synchronized Lyrics API**:  

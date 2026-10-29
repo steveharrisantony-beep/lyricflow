@@ -635,7 +635,19 @@ function compareCandidates(a:Template,b:Template,plan:ScenePlan,genre:string,rec
  return grade(b)-grade(a);
 }
 
-/** Pure song-level scheduler. Scene choices are stable when seeking or replaying. */
+/** Snap any internal scene boundary that lands inside an active lyric line to the completion of that line (cue.end). */
+function snapBoundaryToLineEnd(t:number,cues:readonly LyricCue[]):number {
+ let snapped=t;
+ for(let i=0;i<cues.length;i++){
+  const c=cues[i];
+  if(c.time+0.02<snapped&&snapped<c.end-0.02){
+   snapped=c.end;
+  }
+ }
+ return snapped;
+}
+
+/** Pure song-level scheduler. Scene choices are stable when seeking or replaying, and boundaries never cut mid-line. */
 export function buildCinematicSchedule(plans:readonly ScenePlan[],cues:readonly LyricCue[],genre='',songKey='',enabledScenes?:readonly SceneId[]):DirectedScene[]{
  if(!cues.length)return [];
  const g=normalizeGenre(genre);
@@ -648,24 +660,30 @@ export function buildCinematicSchedule(plans:readonly ScenePlan[],cues:readonly 
   start:cues[0].time,end:cues[cues.length-1].end,mood:'abstract',font:'grotesk',
   motion:'drift',camera:'dolly',confidence:.2,palette:0,reason:'fallback',energy:.35
  } as ScenePlan];
+ let runningStart=source[0].start;
  for(let i=0;i<source.length;i++){
   const section=source[i];
-  const end=Math.max(section.start+.4,section.end);
-  const duration=end-section.start;
+  const rawSectionStart=i===0?section.start:Math.max(runningStart,snapBoundaryToLineEnd(section.start,cues));
+  const rawSectionEnd=Math.max(rawSectionStart+.4,i===source.length-1?section.end:snapBoundaryToLineEnd(section.end,cues));
+  const duration=rawSectionEnd-rawSectionStart;
   const n=Math.max(1,Math.ceil(duration/14));
+  let partStart=rawSectionStart;
   for(let part=0;part<n;part++){
-   const start=section.start+duration*part/n;
-   const finish=part===n-1?end:section.start+duration*(part+1)/n;
+   const rawFinish=part===n-1?rawSectionEnd:rawSectionStart+duration*(part+1)/n;
+   const finish=part===n-1?rawSectionEnd:Math.min(rawSectionEnd,Math.max(partStart+0.2,snapBoundaryToLineEnd(rawFinish,cues)));
+   if(finish<=partStart+0.05)continue;
    const seed=stableHash(songKey+':'+i+':'+part);
    const sorted=[...activeTemplates].sort((a,b)=>compareCandidates(a,b,section,g,recent,seed));
    const chosen=sorted[0];
    const variation=seed%5;
    const layout=LAYOUTS[(LAYOUTS.indexOf(chosen.layout)+variation)%LAYOUTS.length];
    const camera=CAMERAS[(CAMERAS.indexOf(chosen.camera)+(seed%3))%CAMERAS.length];
-   result.push({id:chosen.id,start,end:finish,layout,camera,font:chosen.font,
+   result.push({id:chosen.id,start:partStart,end:finish,layout,camera,font:chosen.font,
     transition:chosen.transition,variation,section:i,reason:section.reason});
    recent.push(chosen.id);
+   partStart=finish;
   }
+  runningStart=rawSectionEnd;
  }
  return result;
 }

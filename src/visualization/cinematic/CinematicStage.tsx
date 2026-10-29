@@ -1,7 +1,7 @@
 import {setLyricBackdrop} from './contrast';
 import {drawMotionGraphics,MOTION_SCENES} from './procedural/MotionGraphics';
 import {drawSceneTransition,transitionProgress,sceneEntryPose} from './transitions';
-import {drawKineticLyrics,lyricWordHit,type LyricMotion,type LyricFillPaceMode} from './kineticTypography';
+import {drawKineticLyrics,lyricWordHit,type LyricMotion,type LyricFillPaceMode,type LyricPlacementMode} from './kineticTypography';
 import {MusicCameraRig,makeLyricProjection} from './cameraRig';
 import {getSpectrumSensitivity} from '../../audio/audioSignal';
 import {useEffect,useRef} from 'react';
@@ -32,6 +32,8 @@ export interface CinematicProps{
  lyricFillPaceMode?:LyricFillPaceMode;
  lyricMinFontSize?:number;
  lyricMaxFontSize?:number;
+ lyricPlacementMode?:LyricPlacementMode;
+ videoOverlayOpacity?:number;
  audioPaused?:boolean;
  youtubeVideoId?:string|null;
  youtubeBackgroundMode?:YouTubeBackgroundMode;
@@ -40,6 +42,7 @@ export interface CinematicProps{
  hasSeparateAudioStream?:boolean;
  playerVolume?:number;
  onYoutubeTimeUpdate?:(currentTime:number,duration?:number)=>void;
+ onYoutubeEnded?:()=>void;
 }
 export function resolveActiveCameraView():CameraView{
  return 'Front';
@@ -79,37 +82,46 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
  const currentProps=useRef(props);
  useEffect(()=>{currentProps.current=props},[props]);
  useEffect(()=>{
-  const element=canvas.current,fx=effects.current,wrapper=host.current;
-  if(!element||!fx||!wrapper)return;
+  const element=canvas.current,wrapper=host.current;
+  if(!element||!wrapper)return;
   const textCtx=element.getContext('2d',{alpha:true});
-  const paintCtx=fx.getContext('2d',{alpha:false});
-  if(!textCtx||!paintCtx){element.dataset.rendererError='Canvas 2D unavailable';return}
-  const graphicArt=new GraphicCompositions(),outgoingArt=new GraphicCompositions();
+  if(!textCtx){element.dataset.rendererError='Canvas 2D unavailable';return}
+  // Lazy-instantiate background theme compositions ONLY when built-in themes are active (not during YouTube video background)
+  let graphicArt:GraphicCompositions|null=null;
+  let outgoingArt:GraphicCompositions|null=null;
+  const getGraphicArt=()=>{if(!graphicArt)graphicArt=new GraphicCompositions();return graphicArt};
+  const getOutgoingArt=()=>{if(!outgoingArt)outgoingArt=new GraphicCompositions();return outgoingArt};
+
   const cameraRig=new MusicCameraRig();
   element.dataset.renderer='VOXELWALL 2D ENGINE';
   let raf=0,last=0,elapsed=0,frames=0,fpsTime=0,quality=props.quality,revision=-1,enabledScenesKey='';
   let sequence:DirectedScene[]=[];
-  let w=1,h=1,adaptiveScale=1,slowSeconds=0,fastSeconds=0,modeLast='';
+  let w=1,h=1,adaptiveScale=1,slowSeconds=0,fastSeconds=0,modeLast='',wasYtVideoBg:boolean|null=null;
   const sample=document.createElement('canvas');sample.width=48;sample.height=30;
   const sampleCtx=sample.getContext('2d',{willReadFrequently:true});let sampleAt=-1;
   const outgoing=document.createElement('canvas');
   const outgoingCtx=outgoing.getContext('2d');
   let previousId:SceneId|null=null,outgoingId:SceneId|null=null,transitionStarted=-100;
-  let demoBands=new Float32Array(64);
+  const demoBands=new Float32Array(64);
   const resize=()=>{
    w=Math.max(1,element.clientWidth);h=Math.max(1,element.clientHeight);
    const q=currentProps.current.quality;
+   const useYtBgNow=Boolean(currentProps.current.youtubeVideoId&&(currentProps.current.youtubeBackgroundMode??'video')==='video');
    const ratio=Math.min(window.devicePixelRatio||1,q==='High'?2:q==='Balanced'?1.5:1);
    const limit=q==='Performance'?950_000:q==='Balanced'?1_600_000:2_400_000;
    const dpr=Math.max(.48,Math.min(ratio,Math.sqrt(limit/(w*h)))*adaptiveScale);
-   for(const c of [element,fx]){
-    const pixelRatio=c===element?Math.min(window.devicePixelRatio||1,2):dpr;
-    c.width=Math.max(1,Math.floor(w*pixelRatio));
-    c.height=Math.max(1,Math.floor(h*pixelRatio));
-   }
+   const textRatio=Math.min(window.devicePixelRatio||1,useYtBgNow?1.35:1.75);
+   element.width=Math.max(1,Math.floor(w*textRatio));
+   element.height=Math.max(1,Math.floor(h*textRatio));
    textCtx.setTransform(element.width/w,0,0,element.height/h,0,0);
-   paintCtx.setTransform(fx.width/w,0,0,fx.height/h,0,0);
-   graphicArt.reset();
+   const fx=effects.current;
+   if(fx&&!useYtBgNow){
+    fx.width=Math.max(1,Math.floor(w*dpr));
+    fx.height=Math.max(1,Math.floor(h*dpr));
+    const paintCtx=fx.getContext('2d',{alpha:false});
+    paintCtx?.setTransform(fx.width/w,0,0,fx.height/h,0,0);
+    graphicArt?.reset();
+   }
   };
   const observer=new ResizeObserver(resize);observer.observe(element);resize();
   const pulse:Pulse={...NO_AUDIO};
@@ -119,6 +131,16 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
    const config=currentProps.current;
    const dt=Math.max(0,(last?now-last:16.7)/1000);last=now;
    if(document.hidden||config.paused)return;
+   const useYtVideoBg=Boolean(config.youtubeVideoId&&(config.youtubeBackgroundMode??'video')==='video');
+   if(wasYtVideoBg!==useYtVideoBg){
+    wasYtVideoBg=useYtVideoBg;
+    if(useYtVideoBg){
+     // Unload theme state while YouTube video is active so zero background theme work runs
+     graphicArt?.reset();
+     outgoingArt?.reset();
+    }
+    resize();
+   }
    if(config.quality!==quality){quality=config.quality;
     if(quality==='High')adaptiveScale=1;
     slowSeconds=0;fastSeconds=0;resize();
@@ -128,7 +150,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
    if(now-fpsTime>=1000){
     const fps=frames*1000/(now-fpsTime);
     element.dataset.fps=String(Math.round(fps));
-    if(config.quality!=='High'){
+    if(config.quality!=='High'&&!useYtVideoBg){
      slowSeconds=fps<26?slowSeconds+1:0;
      fastSeconds=fps>51?fastSeconds+1:0;
      if(slowSeconds>=2&&adaptiveScale>.53){
@@ -148,13 +170,36 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
     enabledScenesKey=currentScenesKey;
     const key=snapshot.cues.map(c=>c.text).join('|').slice(0,1500);
     sequence=buildCinematicSchedule(snapshot.sections,snapshot.cues,snapshot.genre,key,config.enabledScenes);
+    (element as unknown as {_lockedCueKey?:string;_lockedScene?:DirectedScene|null})._lockedCueKey='';
+    (element as unknown as {_lockedCueKey?:string;_lockedScene?:DirectedScene|null})._lockedScene=null;
    }
    let lyric=getLyricState(time);
+   const activeCueNow=(config.audioPaused||config.hideStageLyrics)?null:lyric.cue;
    const directed=config.autoScenes&&sequence.length>0?sceneAt(sequence,lyric.position):null;
-   const scene=directed??sceneForAudio(time,config.manualScene,config.autoScenes,config.enabledScenes);
+   const candidateScene=directed??sceneForAudio(time,config.manualScene,config.autoScenes,config.enabledScenes);
+   const lockHolder=element as unknown as {_lockedCueKey?:string;_lockedScene?:DirectedScene|null};
+   let scene:DirectedScene;
+   if(!config.autoScenes){
+    scene=candidateScene;
+    lockHolder._lockedCueKey='';
+    lockHolder._lockedScene=candidateScene;
+    }else if(activeCueNow){
+    const cueKey=activeCueNow.duetGroupKey||`${activeCueNow.time.toFixed(2)}:${activeCueNow.text}`;
+    if(lockHolder._lockedCueKey===cueKey&&lockHolder._lockedScene){
+     scene=lockHolder._lockedScene;
+    }else{
+     lockHolder._lockedCueKey=cueKey;
+     lockHolder._lockedScene=candidateScene;
+     scene=candidateScene;
+    }
+   }else{
+    lockHolder._lockedCueKey='';
+    lockHolder._lockedScene=candidateScene;
+    scene=candidateScene;
+   }
    const measured=readLocalAudio(now),source=getInputSource();
    const isYtPlaying=Boolean(config.youtubeVideoId&&!config.audioPaused);
-   const isDemo=(source==='IDLE'&&config.demo&&mediaTime===null)||isYtPlaying&&source==='IDLE';
+   const isDemo=(source==='IDLE'&&config.demo&&mediaTime===null)||(isYtPlaying&&source==='IDLE');
    const demoBeatPulse=isDemo?Math.pow(Math.max(0,Math.sin(time*Math.PI*2)),18):0;
    const fake=isDemo?.22+.15*Math.sin(time*2.2)+.14*demoBeatPulse:0;
    pulse.loudness=measured?.loudness??fake;
@@ -180,30 +225,31 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
     shakeSensitivity,
     measured?.beatCount??demoBeatCount
    );
-   if(scene.id!==previousId){
-    outgoingId=previousId;previousId=scene.id;transitionStarted=now/1000;
-    if(outgoingId){outgoing.width=fx.width;outgoing.height=fx.height;outgoingArt.reset()}
-   }
-   const transition=outgoingId&&!config.reducedMotion?transitionProgress(now/1000,transitionStarted):1;
-   visualMode=visualSystemFor(scene.id);
-   if(visualMode!==modeLast){modeLast=visualMode;graphicArt.reset()}
-
-   const useYtVideoBg=Boolean(config.youtubeVideoId&&(config.youtubeBackgroundMode??'video')==='video');
 
    if(ytWrapRef.current){
     if(useYtVideoBg){
-     ytWrapRef.current.style.transform=`translate(${cameraFrame.x*w}px,${cameraFrame.y*h}px) rotate(${cameraFrame.roll}rad) scale(${cameraFrame.zoom*1.04})`;
+     if(shakeEnabled&&(Math.abs(cameraFrame.x)>0.0005||Math.abs(cameraFrame.y)>0.0005||Math.abs(cameraFrame.roll)>0.0005)){
+      ytWrapRef.current.style.transform=`translate3d(${(cameraFrame.x*w).toFixed(1)}px,${(cameraFrame.y*h).toFixed(1)}px,0) rotate(${cameraFrame.roll.toFixed(4)}rad) scale(${(cameraFrame.zoom*1.03).toFixed(3)})`;
+     }else{
+      ytWrapRef.current.style.transform='none';
+     }
     }else{
      ytWrapRef.current.style.transform='none';
     }
    }
 
-   if(useYtVideoBg){
-    fx.style.opacity='0';
-    fx.style.visibility='hidden';
-   }else{
-    fx.style.opacity='1';
-    fx.style.visibility='visible';
+   // ONLY load & render procedural background themes when Built-in Themes mode is active (!useYtVideoBg)
+   const fx=effects.current;
+   const paintCtx=!useYtVideoBg&&fx?fx.getContext('2d',{alpha:false}):null;
+   if(!useYtVideoBg&&fx&&paintCtx){
+    if(scene.id!==previousId){
+     outgoingId=previousId;previousId=scene.id;transitionStarted=now/1000;
+     if(outgoingId){outgoing.width=fx.width;outgoing.height=fx.height;getOutgoingArt().reset()}
+    }
+    const transition=outgoingId&&!config.reducedMotion?transitionProgress(now/1000,transitionStarted):1;
+    visualMode=visualSystemFor(scene.id);
+    if(visualMode!==modeLast){modeLast=visualMode;getGraphicArt().reset()}
+
     if(isDemo)for(let i=0;i<64;i++){
      const oscillation=Math.abs(Math.sin(time*2.2+i*.38)*Math.cos(time*.66+i*.25));
      demoBands[i]=getSpectrumSensitivity()*Math.max(.035,oscillation*(.5+.4*Math.max(0,Math.sin(time*3.9-i*.22))));
@@ -221,9 +267,9 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
        transition<1?0:config.motionBlur,factor,Boolean(isDemo),config.reducedMotion,resolvedPal);
      target.restore();
     };
-    if(transition<1&&outgoingId&&outgoingCtx)background(outgoingId,outgoingCtx,outgoingArt,true);
-    background(scene.id,paintCtx,graphicArt);
-    if(sampleCtx&&(elapsed-sampleAt>.2||transition<.04)){
+    if(transition<1&&outgoingId&&outgoingCtx)background(outgoingId,outgoingCtx,getOutgoingArt(),true);
+    background(scene.id,paintCtx,getGraphicArt());
+    if(sampleCtx&&(elapsed-sampleAt>.25||transition<.04)){
      sampleCtx.drawImage(fx,0,0,48,30);
      setLyricBackdrop(textCtx,sampleCtx.getImageData(0,0,48,30));sampleAt=elapsed;
     }
@@ -231,13 +277,13 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
 
    textCtx.setTransform(element.width/w,0,0,element.height/h,0,0);
    textCtx.clearRect(0,0,w,h);
-   const displayTransition=config.reducedMotion?1:transitionProgress(performance.now()/1000,transitionStarted);
+   const displayTransition=useYtVideoBg||config.reducedMotion?1:transitionProgress(performance.now()/1000,transitionStarted);
    if(!useYtVideoBg&&outgoingId&&displayTransition<1&&outgoing.width>0){
     drawSceneTransition(textCtx,outgoing,w,h,displayTransition,scene.transition);
    }
    element.dataset.transition=!useYtVideoBg&&outgoingId&&displayTransition<1?scene.transition:'none';
    const entry=sceneEntryPose(displayTransition,scene.transition);
-   if(!useYtVideoBg){
+   if(!useYtVideoBg&&fx){
     fx.style.transform=`translate(${entry.x*w}px,${entry.y*h}px) rotate(${entry.roll}rad) scale(${entry.scale})`;
    }
    textCtx.save();textCtx.translate(w*.5+entry.x*w,h*.5+entry.y*h);textCtx.rotate(entry.roll);
@@ -246,17 +292,12 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
    lyric=getLyricState(lyricClock);
    // Do not hold previous lyrics during pause, instrumental music gaps, or when hidden for lyric videos
    const activeCue=(config.audioPaused||config.hideStageLyrics)?null:lyric.cue;
+   const secondaryCue=(config.audioPaused||config.hideStageLyrics)?null:lyric.secondaryCue;
    if(activeCue){
-    if(useYtVideoBg){
-     // Subtle contrast vignette behind stage lyrics when overlaid on YouTube video
-     const scrim=textCtx.createRadialGradient(w*.5,h*.5,Math.min(w,h)*.08,w*.5,h*.5,Math.max(w,h)*.65);
-     scrim.addColorStop(0,'rgba(4, 7, 15, 0.42)');
-     scrim.addColorStop(1,'rgba(4, 7, 15, 0.14)');
-     textCtx.fillStyle=scrim;
-     textCtx.fillRect(0,0,w,h);
-    }
     const project=makeLyricProjection(w,h,cameraFrame);
     const activePaletteId=config.themePalettes?.[scene.id];
+    const isDuet=Boolean(secondaryCue||activeCue.duetSide);
+    const primaryDuetSide=activeCue.duetSide??(secondaryCue?'left':undefined);
     const result=drawKineticLyrics({
      c:textCtx,
      scene,
@@ -276,12 +317,52 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      bpm:measured?.bpm||0,
      fillPaceMode:config.lyricFillPaceMode,
      minFontSize:config.lyricMinFontSize,
-     maxFontSize:config.lyricMaxFontSize
+     maxFontSize:config.lyricMaxFontSize,
+     forceLightText:useYtVideoBg,
+     placementMode:config.lyricPlacementMode??'auto',
+     duetSide:primaryDuetSide
     });
-    element.dataset.lyricLayout=config.spatialTypography?result.motion:'classic';
-    element.dataset.lyricText=result.text;element.dataset.lyricWords=String(result.words);element.dataset.lyricDraws=String(result.drawn);
-    element.dataset.lyricHighlights=String(result.highlights);element.dataset.lyricFont=result.font;
-    element.dataset.lyricFillPace=result.fillPace||'line';
+    if(secondaryCue){
+     const secondaryDuetSide=secondaryCue.duetSide??(primaryDuetSide==='right'?'left':'right');
+     const rightResult=drawKineticLyrics({
+      c:textCtx,
+      scene,
+      cue:secondaryCue,
+      time:lyric.position,
+      mode:lyric.mode,
+      w,
+      h,
+      intensity:factor,
+      reduced:config.reducedMotion,
+      emphasis:snapshot.emphasis,
+      project,
+      animated:config.spatialTypography,
+      enabledMotions:config.enabledKineticMotions,
+      paletteId:activePaletteId,
+      customAccentColor:config.customLyricAccentColor,
+      bpm:measured?.bpm||0,
+      fillPaceMode:config.lyricFillPaceMode,
+      minFontSize:config.lyricMinFontSize,
+      maxFontSize:config.lyricMaxFontSize,
+      forceLightText:useYtVideoBg,
+      placementMode:config.lyricPlacementMode??'auto',
+      duetSide:secondaryDuetSide
+     });
+     element.dataset.lyricLayout=config.spatialTypography?result.motion:'classic';
+     element.dataset.lyricPlacement='duet-split';
+     element.dataset.lyricText=`${result.text} | ${rightResult.text}`;
+     element.dataset.lyricWords=String(result.words+rightResult.words);
+     element.dataset.lyricDraws=String(result.drawn+rightResult.drawn);
+     element.dataset.lyricHighlights=String(result.highlights+rightResult.highlights);
+     element.dataset.lyricFont=result.font;
+     element.dataset.lyricFillPace=result.fillPace||'line';
+    }else{
+     element.dataset.lyricLayout=config.spatialTypography?result.motion:'classic';
+     element.dataset.lyricPlacement=isDuet?'duet-split':(result.placement||'center');
+     element.dataset.lyricText=result.text;element.dataset.lyricWords=String(result.words);element.dataset.lyricDraws=String(result.drawn);
+     element.dataset.lyricHighlights=String(result.highlights);element.dataset.lyricFont=result.font;
+     element.dataset.lyricFillPace=result.fillPace||'line';
+    }
    }else{
     if(!snapshot.cues.length&&!useYtVideoBg&&!config.hideStageLyrics){
      drawInstrumentalMark(textCtx,scene,w,h,measured?.loudness??fake);
@@ -331,12 +412,14 @@ export default function CinematicStage(props:CinematicProps){
  const ytIframeRef=useRef<HTMLIFrameElement>(null);
  const lastSyncTimeRef=useRef<number>(0);
  const ytReadyRef=useRef<boolean>(false);
+ const ytEndedFiredRef=useRef<boolean>(false);
  const latestPropsRef=useRef(props);
  latestPropsRef.current=props;
  const {host,canvas,effects}=useCinematicRenderer(props,ytWrapRef);
 
  const ytId=props.youtubeVideoId||null;
  const showYtBg=Boolean(ytId&&(props.youtubeBackgroundMode??'video')==='video');
+ const blackOverlayOpacity=Math.max(0,Math.min(0.92,props.videoOverlayOpacity??0.45));
 
  const syncYtPlayerState=()=>{
   const iframe=ytIframeRef.current;
@@ -358,6 +441,7 @@ export default function CinematicStage(props:CinematicProps){
  // Establish YouTube IFrame API postMessage handshake ("listening") and receive real-time currentTime / duration
  useEffect(()=>{
   ytReadyRef.current=false;
+  ytEndedFiredRef.current=false;
   if(!ytId)return;
 
   const sendListening=()=>{
@@ -375,6 +459,7 @@ export default function CinematicStage(props:CinematicProps){
    }
   };
 
+  let pollId=0;
   const onMessage=(event:MessageEvent)=>{
    if(!ytIframeRef.current||event.source!==ytIframeRef.current.contentWindow)return;
    if(typeof event.data!=='string')return;
@@ -387,11 +472,20 @@ export default function CinematicStage(props:CinematicProps){
    const evt=String(data.event||'');
    if(evt==='onReady'||evt==='initialDelivery'){
     ytReadyRef.current=true;
+    if(pollId)window.clearInterval(pollId);
     syncYtPlayerState();
+   }else if(evt==='onStateChange'&&typeof data.info==='number'){
+    if(data.info===0&&!ytEndedFiredRef.current){
+     ytEndedFiredRef.current=true;
+     latestPropsRef.current.onYoutubeEnded?.();
+    }else if(data.info===1){
+     ytEndedFiredRef.current=false;
+    }
    }else if(evt==='infoDelivery'&&data.info&&typeof data.info==='object'){
     const info=data.info as Record<string,unknown>;
     if(!ytReadyRef.current){
      ytReadyRef.current=true;
+     if(pollId)window.clearInterval(pollId);
      syncYtPlayerState();
     }
     const ct=typeof info.currentTime==='number'&&Number.isFinite(info.currentTime)?info.currentTime:undefined;
@@ -399,25 +493,36 @@ export default function CinematicStage(props:CinematicProps){
     if(ct!==undefined){
      lastSyncTimeRef.current=ct;
      latestPropsRef.current.onYoutubeTimeUpdate?.(ct,dur);
+     if(dur&&dur>15&&ct>=dur-0.45&&!ytEndedFiredRef.current){
+      ytEndedFiredRef.current=true;
+      latestPropsRef.current.onYoutubeEnded?.();
+     }else if(ct<3){
+      ytEndedFiredRef.current=false;
+     }
     }
     const pState=typeof info.playerState==='number'?info.playerState:undefined;
-    if((pState===-1||pState===5)&&!latestPropsRef.current.audioPaused){
+    if(pState===0&&!ytEndedFiredRef.current){
+     ytEndedFiredRef.current=true;
+     latestPropsRef.current.onYoutubeEnded?.();
+    }else if((pState===-1||pState===5)&&!latestPropsRef.current.audioPaused){
      syncYtPlayerState();
     }
    }
   };
 
   window.addEventListener('message',onMessage);
-  const poll=window.setInterval(()=>{
-   sendListening();
-   if(!ytReadyRef.current){
-    syncYtPlayerState();
+  pollId=window.setInterval(()=>{
+   if(ytReadyRef.current){
+    window.clearInterval(pollId);
+    return;
    }
-  },350);
+   sendListening();
+   syncYtPlayerState();
+  },450);
 
   return()=>{
    window.removeEventListener('message',onMessage);
-   window.clearInterval(poll);
+   if(pollId)window.clearInterval(pollId);
   };
  },[ytId]);
 
@@ -454,7 +559,7 @@ export default function CinematicStage(props:CinematicProps){
   ?`&origin=${encodeURIComponent(window.location.origin)}&widget_referrer=${encodeURIComponent(window.location.origin)}`
   :'';
  const embedSrc=ytId
-  ?`https://www.youtube.com/embed/${encodeURIComponent(ytId)}?autoplay=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&loop=1&playlist=${encodeURIComponent(ytId)}&enablejsapi=1${originParam}`
+  ?`https://www.youtube.com/embed/${encodeURIComponent(ytId)}?autoplay=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&enablejsapi=1${originParam}`
   :'';
 
  return <div className="cinematic-stack" ref={host}>
@@ -510,21 +615,37 @@ export default function CinematicStage(props:CinematicProps){
     />
    </div>
   )}
-  <canvas
-   className="cinematic-effects"
-   ref={effects}
-   aria-hidden="true"
-   style={{
-    position:'absolute',
-    inset:0,
-    width:'100%',
-    height:'100%',
-    zIndex:1,
-    opacity:showYtBg?0:1,
-    visibility:showYtBg?'hidden':'visible',
-    pointerEvents:'none'
-   }}
-  />
+  {showYtBg&&(
+   <div
+    className="youtube-video-black-overlay"
+    aria-hidden="true"
+    style={{
+     position:'absolute',
+     inset:0,
+     width:'100%',
+     height:'100%',
+     zIndex:1,
+     background:'#000000',
+     opacity:blackOverlayOpacity,
+     pointerEvents:'none'
+    }}
+   />
+  )}
+  {!showYtBg&&(
+   <canvas
+    className="cinematic-effects"
+    ref={effects}
+    aria-hidden="true"
+    style={{
+     position:'absolute',
+     inset:0,
+     width:'100%',
+     height:'100%',
+     zIndex:1,
+     pointerEvents:'none'
+    }}
+   />
+  )}
   <canvas
    className="visual-canvas cinematic-canvas"
    ref={canvas}

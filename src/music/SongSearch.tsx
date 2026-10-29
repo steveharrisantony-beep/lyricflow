@@ -1,18 +1,26 @@
 import {useEffect,useRef,useState} from 'react';
-import {Search,Play,ExternalLink,Disc3,Video} from 'lucide-react';
+import {Search,Play,ExternalLink,Disc3,Video,ListPlus,Check} from 'lucide-react';
 import {BUILTIN_PLAYER_SOURCES,MUSIC_SOURCES,searchStashCatalog,resolveSong,resolverBase,type SongResult,type PlayableSong} from './providers';
 import {isLyricVideoTrack} from '../metadata/trackInfo';
+import {cleanYouTubeTitleForLyrics} from '../lyrics/lyricFlowEngine';
 
 const initialBase=()=>{try{return resolverBase(localStorage.getItem('lyricflow.resolver')||import.meta.env.VITE_MUSIC_RESOLVER||'')}catch{return ''}};
 
-export default function SongSearch({onPlay}:{onPlay:(song:PlayableSong)=>Promise<void>}){
+export default function SongSearch({
+ onPlay,
+ onAddToQueue
+}:{
+ onPlay:(song:PlayableSong)=>Promise<void>;
+ onAddToQueue?:(song:PlayableSong)=>void;
+}){
  const [query,setQuery]=useState(''),[base,setBase]=useState(initialBase);
  const [provider,setProvider]=useState<keyof typeof BUILTIN_PLAYER_SOURCES>('jiosaavn');
  const [songs,setSongs]=useState<SongResult[]>([]),[busy,setBusy]=useState(false),[playing,setPlaying]=useState('');
+ const [queuing,setQueuing]=useState(''),[queuedIds,setQueuedIds]=useState<Record<string,boolean>>({});
  const [message,setMessage]=useState(''),[settings,setSettings]=useState(false);
  const request=useRef<AbortController|null>(null);
  useEffect(()=>()=>request.current?.abort(),[]);
- const cancel=()=>{request.current?.abort();request.current=null;setBusy(false);setPlaying('');setSongs([]);setMessage('')};
+ const cancel=()=>{request.current?.abort();request.current=null;setBusy(false);setPlaying('');setQueuing('');setSongs([]);setMessage('')};
 
  async function search(){
   request.current?.abort();const controller=new AbortController();request.current=controller;
@@ -24,8 +32,8 @@ export default function SongSearch({onPlay}:{onPlay:(song:PlayableSong)=>Promise
    setMessage(
     result.length
      ? provider==='resolver'
-       ? `${result.length} YouTube videos found · click Play to watch video background with synced lyrics overlay`
-       : `${result.length} JioSaavn tracks found · click Play to stream 320kbps AAC with synced lyrics`
+       ? `${result.length} YouTube videos found · click "Play Now" or "+ Queue" to build your video song queue`
+       : `${result.length} JioSaavn tracks found · click "Play Now" or "+ Queue" to stream 320kbps AAC`
      : 'No playable songs found for this query. Try switching between JioSaavn and YouTube.'
    );
   }catch(e){
@@ -48,11 +56,27 @@ export default function SongSearch({onPlay}:{onPlay:(song:PlayableSong)=>Promise
   }
  }
 
+ async function addToQueue(song:SongResult){
+  if(!onAddToQueue)return;
+  setQueuing(song.id);
+  try{
+   const effectiveBase=base.trim()||(typeof location!=='undefined'?`${location.origin}/music`:'');
+   const resolved=await resolveSong(song,effectiveBase);
+   onAddToQueue(resolved);
+   setQueuedIds(prev=>({...prev,[song.provider+song.id]:true}));
+   setMessage(`Added "${cleanYouTubeTitleForLyrics(song.title)||song.title}" to Queue (Q).`);
+  }catch(e){
+   setMessage(e instanceof Error?e.message:'Unable to add song to queue.');
+  }finally{
+   setQueuing('');
+  }
+ }
+
  return <section className="song-search" aria-label="Built-in online music player">
   <div className="song-search-heading">
    <div>
     <b><Disc3 size={15} style={{verticalAlign:'-2px',marginRight:6}}/>BUILT-IN ONLINE PLAYER (JIOSAAVN &amp; YOUTUBE VIDEO)</b>
-    <small>Stream JioSaavn 320kbps AAC or play YouTube video backgrounds with VoxelVerse lyrics on top</small>
+    <small>Stream JioSaavn 320kbps AAC or play YouTube video backgrounds with VoxelVerse lyrics &amp; Queue (Q)</small>
    </div>
    <button type="button" onClick={()=>setSettings(v=>!v)}>{settings?'Hide resolver':'Resolver settings'}</button>
   </div>
@@ -77,12 +101,14 @@ export default function SongSearch({onPlay}:{onPlay:(song:PlayableSong)=>Promise
     <input aria-label="Music resolver URL" value={base} onChange={e=>{cancel();setBase(e.target.value)}} placeholder="https://your-music-resolver.example"/>
    </label>
    <button type="button" onClick={()=>{try{const valid=resolverBase(base);localStorage.setItem('lyricflow.resolver',valid);setBase(valid);setMessage(valid?'Custom resolver saved.':'Using built-in JioSaavn & YouTube resolver.')}catch(e){setMessage(e instanceof Error?e.message:'Unable to save resolver.')}}}>Save resolver</button>
-   <p>Built-in Online Player supports JioSaavn (320kbps AAC) and YouTube (plays the YouTube video as the stage background with optional Built-in Theme switching and automatic lyric-video detection).</p>
+   <p>Built-in Online Player supports JioSaavn (320kbps AAC) and YouTube (plays the YouTube video as the stage background with SponsorBlock non-music skipping, Queue management, and LyricFlow hybrid word-sync).</p>
   </div>}
   {message&&<p role="status" className="source-message">{message}</p>}
   <div className="song-results">
    {songs.map(song=>{
     const lyricVideo=song.provider==='resolver'&&isLyricVideoTrack(song);
+    const cleanedTitle=song.provider==='resolver'?cleanYouTubeTitleForLyrics(song.title,song.artist):'';
+    const isAdded=Boolean(queuedIds[song.provider+song.id]);
     return <div className="song-result" key={song.provider+song.id}>
      {song.artwork?<img src={song.artwork} alt="" loading="lazy" referrerPolicy="no-referrer"/>:<span className="song-result-cover">♪</span>}
      <div>
@@ -91,12 +117,28 @@ export default function SongSearch({onPlay}:{onPlay:(song:PlayableSong)=>Promise
        {song.artist||'Unknown artist'}
        {song.album?` · ${song.album}`:''} · {Math.floor(song.duration/60)}:{String(Math.floor(song.duration%60)).padStart(2,'0')} · {MUSIC_SOURCES[song.provider]}
        {lyricVideo?' · Lyric Video Detected':''}
+       {cleanedTitle&&cleanedTitle.toLowerCase()!==song.title.toLowerCase()?` · Lyric Search: "${cleanedTitle}"`:''}
       </small>
       <a href={song.sourceUrl} target="_blank" rel="noreferrer">Source <ExternalLink size={10}/></a>
      </div>
-     <button type="button" className="source-primary" disabled={busy} onClick={()=>void play(song)} aria-label={'Play '+song.title}>
-      <Play size={15}/>{playing===song.id?'Loading…':song.provider==='resolver'?'Play Video':'Play'}
-     </button>
+     <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+      <button type="button" className="source-primary" disabled={busy} onClick={()=>void play(song)} aria-label={'Play now '+song.title}>
+       <Play size={14}/>{playing===song.id?'Loading…':'Play Now'}
+      </button>
+      {onAddToQueue&&(
+       <button
+        type="button"
+        className="upload-button"
+        disabled={queuing===song.id}
+        onClick={()=>void addToQueue(song)}
+        aria-label={'Add to queue '+song.title}
+        style={{display:'inline-flex',alignItems:'center',gap:5,padding:'6px 10px',fontSize:12}}
+       >
+        {isAdded?<Check size={13}/>:<ListPlus size={14}/>}
+        {queuing===song.id?'Adding…':isAdded?'Queued (+1)':'+ Queue'}
+       </button>
+      )}
+     </div>
     </div>;
    })}
   </div>

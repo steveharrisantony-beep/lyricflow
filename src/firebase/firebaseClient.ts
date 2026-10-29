@@ -20,7 +20,6 @@ import {
   serverTimestamp,
   type Firestore,
 } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
 import { TEMPLATES, type SceneId } from '../visualization/cinematic/catalog';
 import { LYRIC_MOTIONS, type LyricMotion } from '../visualization/cinematic/kineticTypography';
 import { CAMERA_VIEWS, type Quality, type CameraMode, type CameraView } from '../visualization/cinematic/CinematicStage';
@@ -30,14 +29,13 @@ import { normalizeTrack } from '../metadata/trackInfo';
 const env = ((import.meta as unknown as { env?: Record<string, string | undefined> }).env) ?? {};
 
 const resolvedFirebaseConfig = {
-  ...firebaseConfig,
-  apiKey: (env.VITE_FIREBASE_API_KEY || firebaseConfig.apiKey || '').trim(),
-  projectId: (env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId || '').trim(),
-  appId: (env.VITE_FIREBASE_APP_ID || firebaseConfig.appId || '').trim(),
-  authDomain: (env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfig.authDomain || '').trim(),
-  firestoreDatabaseId: (env.VITE_FIREBASE_DATABASE_ID || firebaseConfig.firestoreDatabaseId || '').trim(),
-  storageBucket: (env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket || '').trim(),
-  messagingSenderId: (env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfig.messagingSenderId || '').trim(),
+  apiKey: (env.VITE_FIREBASE_API_KEY || '').trim(),
+  projectId: (env.VITE_FIREBASE_PROJECT_ID || '').trim(),
+  appId: (env.VITE_FIREBASE_APP_ID || '').trim(),
+  authDomain: (env.VITE_FIREBASE_AUTH_DOMAIN || '').trim(),
+  firestoreDatabaseId: (env.VITE_FIREBASE_DATABASE_ID || '').trim(),
+  storageBucket: (env.VITE_FIREBASE_STORAGE_BUCKET || '').trim(),
+  messagingSenderId: (env.VITE_FIREBASE_MESSAGING_SENDER_ID || '').trim(),
 };
 
 export const isFirebaseConfigured = Boolean(resolvedFirebaseConfig.apiKey && resolvedFirebaseConfig.projectId);
