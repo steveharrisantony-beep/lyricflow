@@ -174,3 +174,19 @@ it('restores LyricFlow lookup for old automatically pinned LRCLIB mappings',asyn
   expect(host.querySelector('[data-testid="legacy-engine"]')?.getAttribute('data-pin')).toBe('');
  }finally{render.mockRestore();}
 });
+
+it('lets a personal automatic video-sync choice override a published fixed delay',async()=>{
+ const {correctionContext}=await import('../firebase/correctionModel');
+ const song={title:'Original test song',artist:'Test artist',album:'Studio',duration:200,provider:'jiosaavn' as const,source:'provider' as const,confidence:1};
+ const context=correctionContext(song,'video')!;
+ localStorage.setItem('lyricflow.v4.publishedSongMappings',JSON.stringify({[context.recordingKey]:{identity:context.identity,video:{youtubeVideoId:'abcdefghijk',delaySeconds:5}}}));
+ const stage=await import('../visualization/cinematic/CinematicStage');
+ const draw=vi.spyOn(stage,'default').mockImplementation(props=><span data-testid="automatic-video-delay" data-delay={props.videoDelaySeconds}/>);
+ try{
+  await act(async()=>click('Load JioSaavn fixture'));
+  expect(host.querySelector('[data-testid="automatic-video-delay"]')?.getAttribute('data-delay')).toBe('5');
+  await act(async()=>click('Use automatic video sync'));
+  expect(host.querySelector('[data-testid="automatic-video-delay"]')?.getAttribute('data-delay')).toBe('0');
+  expect(host.textContent).toContain('Automatic video sync active');
+ }finally{draw.mockRestore();}
+});

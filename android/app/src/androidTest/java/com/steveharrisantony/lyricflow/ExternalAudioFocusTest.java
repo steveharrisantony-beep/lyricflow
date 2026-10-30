@@ -43,10 +43,23 @@ public class ExternalAudioFocusTest {
             AtomicReference<AudioManager> manager = new AtomicReference<>();
             scenario.onActivity(activity -> manager.set((AudioManager) activity.getSystemService(Context.AUDIO_SERVICE)));
             Assume.assumeTrue(WebViewFeature.isFeatureSupported(WebViewFeature.MUTE_AUDIO));
-            for (int i = 0; i < 90; i++) {
-                if ("true".equals(evaluate(scenario, "Boolean(document.querySelector('.cinematic-canvas'))"))) break;
-                Thread.sleep(500);
+            // A JavaScript probe issued during the initial document navigation can lose
+            // its callback. Retry read-only startup probes within one cold-boot deadline.
+            long readyBy = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
+            boolean canvasReady = false;
+            while (System.nanoTime() < readyBy) {
+                CountDownLatch probe = new CountDownLatch(1);
+                AtomicReference<String> ready = new AtomicReference<>("");
+                scenario.onActivity(activity -> activity.getBridge().getWebView().evaluateJavascript(
+                    "Boolean(document.querySelector('.cinematic-canvas'))", response -> {
+                        ready.set(response); probe.countDown();
+                    }));
+                if (probe.await(3, TimeUnit.SECONDS) && "true".equals(ready.get())) {
+                    canvasReady = true; break;
+                }
+                Thread.sleep(250);
             }
+            assertTrue("The real app canvas must become ready after cold startup", canvasReady);
             assertEquals("true", evaluate(scenario, "Boolean(document.querySelector('.cinematic-canvas'))"));
             // Let the app's initial non-external policy settle before explicitly configuring the test.
             Thread.sleep(400);

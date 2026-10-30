@@ -15,7 +15,8 @@ export default function CorrectionControls({ user, track, delay, lyrics, video, 
   const editing = useRef(false);
   const originalVideoId = extractYouTubeVideoId(track) || '';
   const savedVideoId = video.correction?.youtubeVideoId || mappedVideo?.youtubeVideoId || originalVideoId;
-  const savedVideoDelay = video.correction?.videoDelaySeconds ?? mappedVideo?.delaySeconds ?? currentVideoDelay ?? 0;
+  const chosenVideoDelay=video.correction?video.correction.videoDelaySeconds:mappedVideo?.delaySeconds;
+  const savedVideoDelay = chosenVideoDelay ?? currentVideoDelay ?? 0;
   useEffect(() => {
     if (editing.current) return;
     setVideoInput(savedVideoId);
@@ -56,7 +57,7 @@ export default function CorrectionControls({ user, track, delay, lyrics, video, 
       <button type="submit" disabled={!canChangeVideo || !videoInput.trim()}>Save background video</button>
     </form>
     {canChangeVideo&&savedVideoId&&<div className="correction-actions">
-      <span>{video.correction?.videoDelaySeconds!=null||mappedVideo?.delaySeconds!=null?'Manual video delay active':'Automatic video sync active'}</span>
+      <span>{chosenVideoDelay!=null?'Manual video delay active':'Automatic video sync active'}</span>
       <button type="button" onClick={()=>{editing.current=false;onVideoChange(savedVideoId,null);setMessage('Automatic video sync enabled. Creator captions are preferred; SponsorBlock is the fallback.');}}>Use automatic video sync</button>
     </div>}
     <p>Positive delay shows the video later; negative delay advances it. Lyrics delay is independent.</p>

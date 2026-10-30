@@ -731,14 +731,10 @@ export default function App({ user = null }: { user?: User | null }) {
     lyricDelay-(activeLyrics.recordingKey===recordingKey?activeLyrics.offset:0));
   const autoVideoDelaySeconds=autoVideoSync.delaySeconds,autoVideoSyncStatus=autoVideoSync.status,bgCaptionStatus=autoVideoSync.captionStatus;
 
-  const hasManualVideoDelay =
-    videoFix.correction?.videoDelaySeconds != null ||
-    songMapping.video?.delaySeconds != null;
-  const videoDelaySeconds = hasSeparateAudioStream
-    ? videoFix.correction?.videoDelaySeconds ??
-      songMapping.video?.delaySeconds ??
-      autoVideoDelaySeconds
-    : 0;
+  // A personal automatic-timing choice (null) also overrides a published fixed delay.
+  const chosenVideoDelay=videoFix.correction?videoFix.correction.videoDelaySeconds:songMapping.video?.delaySeconds;
+  const hasManualVideoDelay=chosenVideoDelay!=null;
+  const videoDelaySeconds=hasSeparateAudioStream?chosenVideoDelay??autoVideoDelaySeconds:0;
 
   const videoTimingStatus=hasManualVideoDelay?`Manual video delay: ${videoDelaySeconds>0?'+':''}${videoDelaySeconds}s`:autoVideoSyncStatus;
   const showStageVideoController = Boolean(
