@@ -7,15 +7,15 @@ import type { Correction } from './correctionModel';
 import { extractYouTubeVideoId, type TrackInfo } from '../metadata/trackInfo';
 
 type Fix = ReturnType<typeof useCorrection>;
-export default function CorrectionControls({ user, track, delay, lyrics, video, mappedLyrics, mappedVideo, canChangeVideo, onVideoChange }: {
-  user: User | null; track: TrackInfo | null; delay: Fix; lyrics: Fix; video: Fix; mappedLyrics?: SongLyricsMapping | null; mappedVideo?: SongVideoMapping | null; canChangeVideo: boolean; onVideoChange: (id: string, delaySeconds: number) => void;
+export default function CorrectionControls({ user, track, delay, lyrics, video, mappedLyrics, mappedVideo, canChangeVideo, onVideoChange, currentVideoDelay }: {
+  user: User | null; track: TrackInfo | null; delay: Fix; lyrics: Fix; video: Fix; mappedLyrics?: SongLyricsMapping | null; mappedVideo?: SongVideoMapping | null; canChangeVideo: boolean; onVideoChange: (id: string, delaySeconds: number|null) => void; currentVideoDelay?:number;
 }) {
   const [videoInput, setVideoInput] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false);
   const [videoDelay, setVideoDelay] = useState('0');
   const editing = useRef(false);
   const originalVideoId = extractYouTubeVideoId(track) || '';
   const savedVideoId = video.correction?.youtubeVideoId || mappedVideo?.youtubeVideoId || originalVideoId;
-  const savedVideoDelay = video.correction?.videoDelaySeconds ?? mappedVideo?.delaySeconds ?? 0;
+  const savedVideoDelay = video.correction?.videoDelaySeconds ?? mappedVideo?.delaySeconds ?? currentVideoDelay ?? 0;
   useEffect(() => {
     if (editing.current) return;
     setVideoInput(savedVideoId);
@@ -55,11 +55,15 @@ export default function CorrectionControls({ user, track, delay, lyrics, video, 
       <label>Video delay (seconds)<input aria-label="Video delay seconds" type="number" min="-300" max="300" step="0.05" value={videoDelay} onChange={e => { editing.current = true; setVideoDelay(e.target.value); }} disabled={!canChangeVideo} /></label>
       <button type="submit" disabled={!canChangeVideo || !videoInput.trim()}>Save background video</button>
     </form>
+    {canChangeVideo&&savedVideoId&&<div className="correction-actions">
+      <span>{video.correction?.videoDelaySeconds!=null||mappedVideo?.delaySeconds!=null?'Manual video delay active':'Automatic video sync active'}</span>
+      <button type="button" onClick={()=>{editing.current=false;onVideoChange(savedVideoId,null);setMessage('Automatic video sync enabled. Creator captions are preferred; SponsorBlock is the fallback.');}}>Use automatic video sync</button>
+    </div>}
     <p>Positive delay shows the video later; negative delay advances it. Lyrics delay is independent.</p>
     {mappedLyrics && <p>Saved lyrics source file: {mappedLyrics.sourceFile.name} · {mappedLyrics.sourceFile.url || mappedLyrics.sourceFile.revision} · delay {mappedLyrics.delaySeconds}s</p>}
     {delay.correction?.lyricsSource && <p>Lyrics source: {delay.correction.lyricsSource.name} · {delay.correction.lyricsSource.url || delay.correction.lyricsSource.revision}</p>}
     {!canChangeVideo && <p>This player uses YouTube for audio too. Background-only replacement is available with a separate audio stream.</p>}
-    {video.correction?.youtubeVideoId && <p>Saved video: <a href={`https://www.youtube.com/watch?v=${video.correction.youtubeVideoId}`} target="_blank" rel="noreferrer">{video.correction.youtubeVideoId}</a> · {video.source} · delay {video.correction.videoDelaySeconds ?? 0}s</p>}
+    {video.correction?.youtubeVideoId && <p>Saved video: <a href={`https://www.youtube.com/watch?v=${video.correction.youtubeVideoId}`} target="_blank" rel="noreferrer">{video.correction.youtubeVideoId}</a> · {video.source} · {video.correction.videoDelaySeconds==null?'automatic video sync':`delay ${video.correction.videoDelaySeconds}s`}</p>}
     <div className="correction-actions">
       <button type="button" disabled={!video.correction || video.source !== 'personal' || busy} onClick={() => void submit(video.correction)}>Submit video selection</button>
       <button type="button" disabled={video.source !== 'personal'} onClick={video.reset}>Use default video</button>

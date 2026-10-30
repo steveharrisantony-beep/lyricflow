@@ -6,12 +6,13 @@ vi.mock('../visualization/cinematic/CinematicStage', () => ({ default: () => nul
 vi.mock('../audio/LocalPlayer', () => ({ default: (props: { onTrackChange: (track: unknown) => void; onFileChange: (loaded: boolean) => void; lyricDelay: number; onLyricDelayChange: (delay: number) => void }) => <div>
   <button onClick={() => { props.onTrackChange({ title: 'Original test song', artist: 'Test artist', album: 'Studio', duration: 200, provider: 'local', source: 'manual', confidence: 1 }); props.onFileChange(true); }}>Load fixture audio</button>
   <button onClick={() => { props.onTrackChange({ title: 'Original test song', artist: 'Test artist', album: 'Studio', duration: 200, provider: 'jiosaavn', sourceTrackId: 'saavn_123', source: 'provider', audioSource: 'JioSaavn', confidence: 1 }); props.onFileChange(true); }}>Load JioSaavn fixture</button>
+  <button onClick={() => { props.onTrackChange({ title: 'Next test song', artist: 'Test artist', album: 'Studio', duration: 200, provider: 'jiosaavn', sourceTrackId: 'saavn_next', source: 'provider', confidence: 1 }); props.onFileChange(true); }}>Load next JioSaavn fixture</button>
   <output data-testid="delay">{props.lyricDelay}</output>
   <button onClick={() => props.onLyricDelayChange(.5)}>Adjust fixture timing</button>
 </div> }));
 vi.mock('../music/providers', async importOriginal => ({
   ...await importOriginal<typeof import('../music/providers')>(),
-  searchStashCatalog: vi.fn().mockResolvedValue([{id:'yt_abcdefghijk',title:'Original test song',artist:'Test artist',album:'Studio',duration:200,provider:'resolver',sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk',youtubeVideoId:'abcdefghijk'}]),
+  searchStashCatalog: vi.fn().mockImplementation(async query=>[{id:'yt_abcdefghijk',title:'Original test song '+(query.includes('lyric')?'Official Lyrics Video':'Official Music Video'),artist:'Test artist',album:'Studio',duration:200,provider:'resolver',sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk',youtubeVideoId:'abcdefghijk'}]),
 }));
 vi.mock('../metadata/TrackFinder', () => ({ default: () => null }));
 import App from '../App';
@@ -90,11 +91,11 @@ it('stages an account edit before the first cloud snapshot or debounce, without 
 it('finds a music or lyrical YouTube background for JioSaavn and saves both source mappings without changing audio', async () => {
   await act(async () => click('Load JioSaavn fixture'));
   await act(async () => click('Find YouTube video background'));
-  expect(searchStashCatalog).toHaveBeenLastCalledWith('Original test song Test artist music video', 'resolver', '', expect.any(AbortSignal));
+  expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Test artist music video', 'resolver', '', expect.any(AbortSignal));
   const select = host.querySelector<HTMLSelectElement>('select[aria-label="Preferred YouTube background"]')!;
   await act(async () => { select.value = 'lyrics'; select.dispatchEvent(new Event('change',{bubbles:true})); });
   await act(async () => click('Find YouTube video background'));
-  expect(searchStashCatalog).toHaveBeenLastCalledWith('Original test song Test artist lyrics video', 'resolver', '', expect.any(AbortSignal));
+  expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Test artist lyrics video', 'resolver', '', expect.any(AbortSignal));
   await act(async () => click('Use muted background'));
   expect(host.textContent).toContain('Source: JioSaavn');
   await act(async () => click('Custom Edit (If Lyrics Mismatch)'));
@@ -106,7 +107,7 @@ it('finds a music or lyrical YouTube background for JioSaavn and saves both sour
   await act(async () => click('Adjust fixture timing'));
   const maps = Object.values(JSON.parse(localStorage.getItem('lyricflow.v3.guest.songMappings') || '{}')) as {identity:{title:string;artist:string;duration:number};lyrics:{sourceFile:{revision:string};delaySeconds:number};video:{youtubeVideoId:string;delaySeconds:number}}[];
   expect(maps).toHaveLength(1);
-  expect(maps[0]).toMatchObject({identity:{title:'original test song',artist:'test artist',duration:200},lyrics:{delaySeconds:.5},video:{youtubeVideoId:'abcdefghijk',delaySeconds:0}});
+  expect(maps[0]).toMatchObject({identity:{title:'original test song',artist:'test artist',duration:200},lyrics:{delaySeconds:.5},video:{youtubeVideoId:'abcdefghijk',delaySeconds:null}});
   expect(maps[0].lyrics.sourceFile.revision).toMatch(/^l3_/);
   expect(JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!).display.preferredVideoType).toBe('lyrics');
 });
@@ -144,4 +145,32 @@ it('switches external advertisements to themes, aborts video search and unmounts
     await act(async()=>deliver!({...media,title:'Advertisement',isAd:true},true));
     expect(host.querySelector('[data-testid="stage-ad"]')?.getAttribute('data-ad')).toBe('false');
   }finally{external.setAndroidAppOverrideForTest(null);subscribe.mockRestore();capture.mockRestore();stop.mockRestore();find.mockRestore();draw.mockRestore();}
+});
+
+it('clears the previous background while the next recording search is pending',async()=>{
+ const stage=await import('../visualization/cinematic/CinematicStage');
+ const draw=vi.spyOn(stage,'default').mockImplementation(props=><span data-testid="video-recording" data-video={props.youtubeVideoId||''} data-searching={String(props.videoSearchPending)}/>);
+ const search=vi.mocked(searchStashCatalog),original=search.getMockImplementation()!;
+ search.mockImplementation((query,...args)=>query.startsWith('Next test song')?new Promise(()=>{}):original(query,...args));
+ try{
+  await act(async()=>click('Load JioSaavn fixture'));
+  expect(host.querySelector('[data-testid="video-recording"]')?.getAttribute('data-video')).toBe('abcdefghijk');
+  await act(async()=>click('Load next JioSaavn fixture'));
+  expect(host.querySelector('[data-testid="video-recording"]')?.getAttribute('data-video')).toBe('');
+  expect(host.querySelector('[data-testid="video-recording"]')?.getAttribute('data-searching')).toBe('true');
+ }finally{draw.mockRestore();search.mockImplementation(original);}
+});
+
+it('restores LyricFlow lookup for old automatically pinned LRCLIB mappings',async()=>{
+ const {correctionContext}=await import('../firebase/correctionModel');
+ const track={title:'Original test song',artist:'Test artist',album:'Studio',duration:200,provider:'jiosaavn' as const,source:'provider' as const,confidence:1};
+ const context=correctionContext(track,'lyrics')!;
+ localStorage.setItem('lyricflow.v3.guest.songMappings',JSON.stringify({[context.recordingKey]:{identity:context.identity,lyrics:{sourceFile:{name:'LyricFlow Engine · LRC Library',url:'https://lrclib.net/api/get/42',revision:'l3_0123456789abcdef'},selection:{engine:'lrclib',lrclibId:42,subtitleTrackId:null},delaySeconds:0}}}));
+ const finder=await import('../metadata/TrackFinder');
+ const render=vi.spyOn(finder,'default').mockImplementation(props=><span data-testid="legacy-engine" data-engine={props.lyricEngineOption} data-pin={props.preferredSelection?.lrclibId||''}/>);
+ try{
+  await act(async()=>click('Load JioSaavn fixture'));
+  expect(host.querySelector('[data-testid="legacy-engine"]')?.getAttribute('data-engine')).toBe('lyricflow');
+  expect(host.querySelector('[data-testid="legacy-engine"]')?.getAttribute('data-pin')).toBe('');
+ }finally{render.mockRestore();}
 });

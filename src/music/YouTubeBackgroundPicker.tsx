@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   formatViewCount,
-  rankYouTubeBackgroundCandidates,
+  isYouTubeBackgroundVideo,
+  isLyricalVideo,
   searchStashCatalog,
   type SongResult,
 } from './providers';
 import { extractYouTubeVideoId, type TrackInfo } from '../metadata/trackInfo';
 import type { YouTubeBackgroundMode } from '../visualization/cinematic/CinematicStage';
+import {findYouTubeBackgrounds} from './backgroundVideos';
 import YouTubeAccountControl from '../auth/YouTubeAccountControl';
 
 export default function YouTubeBackgroundPicker({
@@ -19,6 +21,9 @@ export default function YouTubeBackgroundPicker({
   onBackgroundModeChange,
   onSearchingChange,
   captionStatus,
+  cachedCandidates,
+  cachedCandidateCount,
+  automaticSearchPending,
 }: {
   track: TrackInfo;
   activeVideoId: string | null;
@@ -29,16 +34,26 @@ export default function YouTubeBackgroundPicker({
   onBackgroundModeChange?: (mode: YouTubeBackgroundMode) => void;
   onSearchingChange?: (searching:boolean) => void;
   captionStatus?:string;
+  cachedCandidates?:SongResult[];
+  cachedCandidateCount?:number;
+  automaticSearchPending?:boolean;
 }) {
   const [results, setResults] = useState<SongResult[]>([]),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(''),
     [customQuery, setCustomQuery] = useState('');
   const pending = useRef<AbortController | null>(null);
+  const [showCached,setShowCached]=useState(false);
+  useEffect(()=>{
+    if(!showCached||!cachedCandidates)return;
+    setResults(cachedCandidates.slice(0,15));
+    setMessage(automaticSearchPending?'Finding video candidates…':cachedCandidates.length?`Showing candidates already found for this song (${cachedCandidateCount||cachedCandidates.length} compared). Search again to refresh or change the query.`:'No suitable video candidates were found. Search again with a different query.');
+  },[showCached,cachedCandidates,cachedCandidateCount,automaticSearchPending]);
   const searchingCallback=useRef(onSearchingChange);
   searchingCallback.current=onSearchingChange;
   useEffect(() => () => {pending.current?.abort();searchingCallback.current?.(false);}, []);
   const runSearch = async (overrideQuery?: string) => {
+    setShowCached(false);
     pending.current?.abort();
     const controller = new AbortController();
     pending.current = controller;
@@ -54,20 +69,14 @@ export default function YouTubeBackgroundPicker({
       const effectiveQuery = overrideQuery && overrideQuery.trim().length >= 2
         ? overrideQuery.trim()
         : defaultQuery;
-      const songs = await searchStashCatalog(
-        effectiveQuery,
-        'resolver',
-        base,
-        controller.signal
-      );
+      const custom=Boolean(overrideQuery&&overrideQuery.trim().length>=2);
+      const search=custom?null:await findYouTubeBackgrounds(track,preference,base,controller.signal);
+      const ranked=search?.videos||((await searchStashCatalog(effectiveQuery,'resolver',base,controller.signal)).filter(song=>isYouTubeBackgroundVideo(song)&&(preference!=='lyrics'||isLyricalVideo(song))));
       if (controller.signal.aborted) return;
-      const ranked = overrideQuery && overrideQuery.trim().length >= 2
-        ? songs.filter(s => Boolean(extractYouTubeVideoId(s)))
-        : rankYouTubeBackgroundCandidates(songs, track, preference);
       setResults(ranked);
       setMessage(
         ranked.length
-          ? 'Sorted by most views first. Choose the original music video or lyrical video; adjust video delay if it has an intro.'
+          ? `Compared ${search?.candidateCount||ranked.length} candidates by title, artist, duration and video type.${search?.usedLyricalFallback?' No suitable music video found; showing lyrical videos.':''} Adjust video delay if it has an intro.`
           : 'No videos found. Sign in to YouTube above, retry, or paste a YouTube video link directly.'
       );
     } catch (error) {
@@ -85,7 +94,7 @@ export default function YouTubeBackgroundPicker({
       </div>
       <p>
         {track.provider === 'jiosaavn'
-          ? 'JioSaavn keeps playing the audio while the highest-viewed matching YouTube video plays muted in the background.'
+          ? 'JioSaavn keeps playing the audio while the best matching YouTube video plays muted in the background.'
           : 'Your current audio keeps playing.'}{' '}
         Select between YouTube Video or Built-in Themes, and Music Video or Lyrical Video.
       </p>
@@ -123,7 +132,7 @@ export default function YouTubeBackgroundPicker({
         </label>
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-        <button type="button" className="upload-button" disabled={busy} onClick={() => void runSearch()}>
+        <button type="button" className="upload-button" disabled={busy} onClick={() => {if(cachedCandidates)setShowCached(true);else void runSearch();}}>
           {busy
             ? 'Finding videos…'
             : activeVideoId
@@ -140,7 +149,7 @@ export default function YouTubeBackgroundPicker({
         className="yt-custom-search-row"
         onSubmit={e => {
           e.preventDefault();
-          void runSearch(customQuery || `${track.title} ${track.artist}`.trim());
+          void runSearch(customQuery || undefined);
         }}
       >
         <input
@@ -152,7 +161,7 @@ export default function YouTubeBackgroundPicker({
           onChange={e => setCustomQuery(e.target.value)}
         />
         <button type="submit" className="upload-button" disabled={busy}>
-          Search YouTube
+          {results.length||showCached?'Search again':'Search YouTube'}
         </button>
       </form>
       {message && <p role="status">{message}</p>}
@@ -186,6 +195,7 @@ export default function YouTubeBackgroundPicker({
                 className="upload-button"
                 onClick={() => {
                   onChoose(id);
+                  setShowCached(false);
                   setResults([]);
                   setMessage('Muted background selected and saved. Your audio is unchanged.');
                 }}

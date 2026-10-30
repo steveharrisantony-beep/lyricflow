@@ -24,12 +24,10 @@ import {
 } from './visualization/cinematic/kineticTypography';
 import {
   LYRIC_ENGINE_OPTIONS,
-  computeVideoDelayFromSubtitles,
   type LyricEngineOption,
   type YouTubeSubtitleTrackItem,
 } from './lyrics/lyricFlowEngine';
-import { fetchYouTubeSubtitlesForTrack } from './lyrics/appleLyrics';
-import { fetchSponsorBlockSegments, computeLeadingNonMusicOffset } from './music/sponsorBlock';
+import {useVideoAutoSync} from './music/useVideoAutoSync';
 import {
   extractAlbumArtPalette,
   getDeterministicSongPalette,
@@ -54,7 +52,8 @@ import {
   type ExternalAudioCaptureMode,
   type ExternalMediaState,
 } from './audio/externalPlayer';
-import { searchStashCatalog, rankYouTubeBackgroundCandidates } from './music/providers';
+import type {SongResult} from './music/providers';
+import { findYouTubeBackgrounds } from './music/backgroundVideos';
 import { clampLyricDelay, formatLyricDelay } from './lyrics/lyricTiming';
 import ManualLyrics, {
   LYRIC_COLOR_MAP,
@@ -136,7 +135,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const [sourceOpen, setSourceOpen] = useState(false);
 
   // Android External Player & Auto-matched YouTube Video state
-  const [autoVideoMatch,setAutoVideoMatch]=useState<{key:string;id:string|null;pending:boolean}>({key:'',id:null,pending:false});
+  const [autoVideoMatch,setAutoVideoMatch]=useState<{key:string;id:string|null;pending:boolean;videos:SongResult[];candidateCount:number}>({key:'',id:null,pending:false,videos:[],candidateCount:0});
   const [manualVideoSearchKey,setManualVideoSearchKey]=useState('');
   const [externalAudioMode, setExternalAudioMode] = useState<ExternalAudioCaptureMode>('internal');
   const [externalMedia, setExternalMedia] = useState<ExternalMediaState | null>(null);
@@ -180,12 +179,6 @@ export default function App({ user = null }: { user?: User | null }) {
   const [sponsorBlockEnabled, setSponsorBlockEnabled] = useState<boolean>(initialPrefs.display.sponsorBlockEnabled);
   const [leadingNonMusicOffsetSec, setLeadingNonMusicOffsetSec] = useState<number>(0);
 
-  // Background video subtitles & SponsorBlock auto-sync state for JioSaavn / External Player
-  const [bgVideoSubtitles, setBgVideoSubtitles] = useState<YouTubeSubtitleTrackItem[]>([]);
-  const [bgCaptionStatus,setBgCaptionStatus]=useState('');
-  const [bgVideoSponsorOffsetSec, setBgVideoSponsorOffsetSec] = useState<number>(0);
-  const [autoVideoDelaySeconds, setAutoVideoDelaySeconds] = useState<number>(0);
-  const [autoVideoSyncStatus, setAutoVideoSyncStatus] = useState<string>('');
   const [albumArtPalette, setAlbumArtPalette] = useState<AlbumArtLyricPalette | null>(null);
 
   // Shared lyric display, available engine options, subtitle tracks, spatial placement & color controls
@@ -222,7 +215,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const [localLoaded, setLocalLoaded] = useState(false);
   const [localTrack, setLocalTrack] = useState<TrackInfo | null>(null);
   const [incoming, setIncoming] = useState<IncomingLyrics | null>(null);
-  const [activeLyrics, setActiveLyrics] = useState({ recordingKey: '', lyricsKey: '', name: '', url: '' });
+  const [activeLyrics, setActiveLyrics] = useState({ recordingKey: '', lyricsKey: '', name: '', url: '', original:'',offset:0 });
   const [fileEpoch, setFileEpoch] = useState(0);
   const [performance, setPerformance] = useState(false);
 
@@ -231,8 +224,8 @@ export default function App({ user = null }: { user?: User | null }) {
   const videoFix = useCorrection(localTrack, 'video', uid);
   const recordingKey = lyricsFix.context?.recordingKey || '';
   const lyricsKey = activeLyrics.recordingKey === recordingKey ? activeLyrics.lyricsKey : '';
-  const onLyricContentChange = useCallback((original: string, sourceUrl: string, sourceName: string) => {
-    setActiveLyrics({ recordingKey, lyricsKey: lyricFingerprint(original, sourceUrl), name: sourceName.slice(0, 256), url: sourceUrl });
+  const onLyricContentChange = useCallback((original: string, sourceUrl: string, sourceName: string,offset=0) => {
+    setActiveLyrics({ recordingKey,original,offset, lyricsKey: lyricFingerprint(original, sourceUrl), name: sourceName.slice(0, 256), url: sourceUrl });
   }, [recordingKey]);
   const delayFix = useCorrection(localTrack, 'delay', uid, lyricsKey, lyricsKey ? { name: activeLyrics.name, url: activeLyrics.url, revision: lyricsKey } : null);
   const privateLyrics = usePrivateLyrics(localTrack, uid);
@@ -252,7 +245,8 @@ export default function App({ user = null }: { user?: User | null }) {
       }
     }
   }, [uid, recordingKey, lyricsKey, delayFix.source]);
-  const effectiveLyricsEngine = lyricsFix.correction?.selection?.engine || songMapping.lyrics?.selection?.engine || lyricEngineOption;
+  const legacyAutomaticLrc=Boolean(!songMapping.approved?.lyrics&&!lyricsFix.correction?.selection&&songMapping.lyrics?.selection?.engine==='lrclib'&&songMapping.lyrics.sourceFile.name.startsWith('LyricFlow Engine'));
+  const effectiveLyricsEngine = lyricsFix.correction?.selection?.engine || (legacyAutomaticLrc?'lyricflow':songMapping.lyrics?.selection?.engine) || lyricEngineOption;
   const effectiveSubtitleTrackId = lyricsFix.correction?.selection?.subtitleTrackId || songMapping.lyrics?.selection?.subtitleTrackId || selectedSubtitleTrackId;
 
   const applyPreferences = useCallback((prefs: UserPreferencesData) => {
@@ -340,8 +334,9 @@ export default function App({ user = null }: { user?: User | null }) {
   };
 
   const handleSaveCustomOverride = (lrc: string) => { privateLyrics.save(lrc); };
+  const incomingRevision=useRef(0);
   const acceptLyrics = (lyrics: Omit<IncomingLyrics, 'token'>) =>
-    setIncoming({ ...lyrics, token: Date.now() });
+    setIncoming({ ...lyrics, token: ++incomingRevision.current });
 
   useEffect(() => {
     setSpectrumSensitivity(spectrumSensitivity / 100);
@@ -555,23 +550,19 @@ export default function App({ user = null }: { user?: User | null }) {
       !hasSeparateAudioStream ||
       (localTrack.provider !== 'jiosaavn' && localTrack.provider !== 'external' && localTrack.provider !== 'local')
     ) {
-      setAutoVideoMatch({key:videoSearchKey,id:null,pending:false});
+      setAutoVideoMatch({key:videoSearchKey,id:null,pending:false,videos:[],candidateCount:0});
       return;
     }
     const controller = new AbortController();
-    setAutoVideoMatch({key:videoSearchKey,id:null,pending:true});
+    setAutoVideoMatch({key:videoSearchKey,id:null,pending:true,videos:[],candidateCount:0});
     const base = localStorage.getItem('lyricflow.resolver') || import.meta.env.VITE_MUSIC_RESOLVER || '';
-    const query = `${localTrack.title} ${localTrack.artist} ${
-      preferredVideoType === 'music' ? 'music video' : 'lyrics video'
-    }`.trim();
-    void searchStashCatalog(query, 'resolver', base, controller.signal)
-      .then(songs => {
+    void findYouTubeBackgrounds(localTrack,preferredVideoType,base,controller.signal)
+      .then(({videos,candidateCount}) => {
         if (controller.signal.aborted) return;
-        const ranked = rankYouTubeBackgroundCandidates(songs, localTrack, preferredVideoType);
-        const bestId = ranked.length > 0 ? extractYouTubeVideoId(ranked[0]) : null;
-        setAutoVideoMatch({key:videoSearchKey,id:bestId||null,pending:false});
+        const bestId = videos.length > 0 ? extractYouTubeVideoId(videos[0]) : null;
+        setAutoVideoMatch({key:videoSearchKey,id:bestId||null,pending:false,videos,candidateCount});
       })
-      .catch(() => {if(!controller.signal.aborted)setAutoVideoMatch({key:videoSearchKey,id:null,pending:false});});
+      .catch(() => {if(!controller.signal.aborted)setAutoVideoMatch({key:videoSearchKey,id:null,pending:false,videos:[],candidateCount:0});});
     return () => controller.abort();
   }, [
     localTrack?.title,
@@ -603,7 +594,7 @@ export default function App({ user = null }: { user?: User | null }) {
           setVirtualMediaTime(media.position);
         }
         if (adDetected) {
-          setAutoVideoMatch({key:'',id:null,pending:false});
+          setAutoVideoMatch({key:'',id:null,pending:false,videos:[],candidateCount:0});
           setIncoming(null);
         }
         setLocalTrack(prev => {
@@ -734,87 +725,22 @@ export default function App({ user = null }: { user?: User | null }) {
       : undefined;
   const customLyricBaseHex = useAlbumArtColors ? albumArtPalette?.baseColor : undefined;
 
-  // Automatic Background YouTube Video Sync for JioSaavn & External Player:
-  // 1. Download creator-uploaded (non-auto-generated) subtitles for stageYoutubeVideoId in background
-  //    AND fetch SponsorBlock leading non-music segments.
-  useEffect(() => {
-    if (!hasSeparateAudioStream || !stageYoutubeVideoId || isAdPlaying) {
-      setBgVideoSubtitles([]);
-      setBgCaptionStatus('');
-      setBgVideoSponsorOffsetSec(0);
-      setAutoVideoDelaySeconds(0);
-      setAutoVideoSyncStatus('');
-      return;
-    }
-    const controller = new AbortController();
-    setBgVideoSubtitles([]);
-    setBgVideoSponsorOffsetSec(0);
-    setBgCaptionStatus('Checking video subtitles for timing…');
-    const captions=fetchYouTubeSubtitlesForTrack(stageYoutubeVideoId,controller.signal).then(result=>{
-      if(!controller.signal.aborted)setBgCaptionStatus(result?`Video subtitles available: ${(result.subtitleTracks||[]).map(t=>t.label).join(', ')||result.source}`:'This video has no accessible subtitle track. Manual video delay is available.');
-      return result;
-    }).catch(error=>{
-      if(!controller.signal.aborted)setBgCaptionStatus(error instanceof Error?error.message:'Video subtitles are unavailable. Manual video delay is available.');
-      return null;
-    });
-    void Promise.all([
-      captions,
-      fetchSponsorBlockSegments(stageYoutubeVideoId, controller.signal).catch(() => []),
-    ]).then(([subRes, sbSegments]) => {
-      if (controller.signal.aborted) return;
-      setBgVideoSubtitles(subRes?.subtitleTracks || []);
-      setBgVideoSponsorOffsetSec(computeLeadingNonMusicOffset(Array.isArray(sbSegments) ? sbSegments : []));
-    });
-    return () => controller.abort();
-  }, [hasSeparateAudioStream, stageYoutubeVideoId, isAdPlaying]);
-
-  // 2. Match song's lyrics timestamps with background video's creator subtitles (only when language matches);
-  //    otherwise cut leading non-music parts using SponsorBlock so video starts in sync with music!
-  useEffect(() => {
-    if (!hasSeparateAudioStream || !stageYoutubeVideoId || isAdPlaying) {
-      setAutoVideoDelaySeconds(0);
-      setAutoVideoSyncStatus('');
-      return;
-    }
-    if (incoming?.original && bgVideoSubtitles.length > 0) {
-      const subMatch = computeVideoDelayFromSubtitles(incoming.original, bgVideoSubtitles);
-      if (subMatch.matched) {
-        setAutoVideoDelaySeconds(subMatch.videoDelaySeconds);
-        setAutoVideoSyncStatus(
-          `Synced via creator YT subtitles (${subMatch.languageCode || 'same language'} · ${subMatch.anchorCount} anchors · ${subMatch.videoDelaySeconds > 0 ? '+' : ''}${subMatch.videoDelaySeconds}s)`
-        );
-        return;
-      }
-    }
-    if (bgVideoSponsorOffsetSec > 0.25) {
-      // Negative videoDelaySeconds jumps the video past the leading non-music intro at t=0
-      const cutDelay = -Number(bgVideoSponsorOffsetSec.toFixed(2));
-      setAutoVideoDelaySeconds(cutDelay);
-      setAutoVideoSyncStatus(
-        `Cut ${bgVideoSponsorOffsetSec.toFixed(1)}s leading non-music intro via SponsorBlock`
-      );
-    } else {
-      setAutoVideoDelaySeconds(0);
-      setAutoVideoSyncStatus('Direct start (0s offset · adjust manual video delay if needed)');
-    }
-  }, [
-    hasSeparateAudioStream,
-    stageYoutubeVideoId,
-    isAdPlaying,
-    incoming?.original,
-    bgVideoSubtitles,
-    bgVideoSponsorOffsetSec,
-  ]);
+  const backgroundSyncKey=recordingKey+'|'+(stageYoutubeVideoId||'');
+  const autoVideoSync=useVideoAutoSync(backgroundSyncKey,stageYoutubeVideoId,hasSeparateAudioStream&&!isAdPlaying,
+    activeLyrics.recordingKey===recordingKey?activeLyrics.original:incoming?.original||'',
+    lyricDelay-(activeLyrics.recordingKey===recordingKey?activeLyrics.offset:0));
+  const autoVideoDelaySeconds=autoVideoSync.delaySeconds,autoVideoSyncStatus=autoVideoSync.status,bgCaptionStatus=autoVideoSync.captionStatus;
 
   const hasManualVideoDelay =
-    videoFix.correction?.videoDelaySeconds !== undefined ||
-    songMapping.video?.delaySeconds !== undefined;
+    videoFix.correction?.videoDelaySeconds != null ||
+    songMapping.video?.delaySeconds != null;
   const videoDelaySeconds = hasSeparateAudioStream
     ? videoFix.correction?.videoDelaySeconds ??
       songMapping.video?.delaySeconds ??
       autoVideoDelaySeconds
     : 0;
 
+  const videoTimingStatus=hasManualVideoDelay?`Manual video delay: ${videoDelaySeconds>0?'+':''}${videoDelaySeconds}s`:autoVideoSyncStatus;
   const showStageVideoController = Boolean(
     !isAdPlaying &&
       (stageYoutubeVideoId ||
@@ -826,8 +752,7 @@ export default function App({ user = null }: { user?: User | null }) {
     if (!localTrack || !lyricsKey) return;
     const sourceFile = { name: activeLyrics.name, url: activeLyrics.url, revision: lyricsKey };
     const candidateId = activeLyrics.url.match(/lrclib\.net\/api\/get\/(\d+)/)?.[1];
-    const selection = lyricsFix.correction?.selection || (candidateId ? { engine: 'lrclib' as const, lrclibId: Number(candidateId), subtitleTrackId: null }
-      : { engine: effectiveLyricsEngine, lrclibId: null, subtitleTrackId: effectiveSubtitleTrackId || null });
+    const selection = lyricsFix.correction?.selection || { engine: effectiveLyricsEngine, lrclibId: effectiveLyricsEngine==='lrclib'&&candidateId?Number(candidateId):null, subtitleTrackId: effectiveSubtitleTrackId || null };
     songMapping.savePart('lyrics', { sourceFile, selection, delaySeconds: lyricDelay });
   }, [recordingKey, lyricsKey, activeLyrics.name, activeLyrics.url, effectiveLyricsEngine, effectiveSubtitleTrackId, lyricDelay]);
   useEffect(() => {
@@ -835,6 +760,10 @@ export default function App({ user = null }: { user?: User | null }) {
       songMapping.savePart('video', { youtubeVideoId: activeYoutubeVideoId, delaySeconds: videoDelaySeconds });
     }
   }, [recordingKey, activeYoutubeVideoId, hasManualVideoDelay, videoDelaySeconds]);
+  const saveVideoChoice=(id:string,seconds:number|null)=>{
+    videoFix.save({youtubeVideoId:id,videoDelaySeconds:seconds});
+    songMapping.savePart('video',{youtubeVideoId:id,delaySeconds:seconds});
+  };
   const activeBassThresholdPct = Math.round(computeBassThreshold(cameraShakeSensitivity) * 100);
 
   return (
@@ -920,6 +849,7 @@ export default function App({ user = null }: { user?: User | null }) {
           videoDelaySeconds={videoDelaySeconds}
           youtubeBackgroundMode={effectiveYoutubeBackgroundMode}
           hideStageLyrics={isAdPlaying}
+          recordingKey={recordingKey}
           externalPlayer={sourceMode==='external'||localTrack?.provider==='external'}
           advertisementPlaying={isAdPlaying}
           videoSearchPending={videoSearchPending}
@@ -1698,8 +1628,8 @@ export default function App({ user = null }: { user?: User | null }) {
               <small style={{ opacity: 0.8 }}>
                 {youtubeBackgroundMode === 'video'
                   ? stageYoutubeVideoId
-                    ? `Playing YouTube video background (Most Views · ${preferredVideoType === 'music' ? 'Music Video' : 'Lyrical Video'}) · ${Math.round(videoOverlayOpacity * 100)}% Black Overlay${hasSeparateAudioStream && autoVideoSyncStatus ? ` · ${autoVideoSyncStatus}` : ''}`
-                    : 'Finding highest-viewed YouTube background video for this track…'
+                    ? `Playing YouTube video background (Best Match · ${preferredVideoType === 'music' ? 'Music Video' : 'Lyrical Video'}) · ${Math.round(videoOverlayOpacity * 100)}% Black Overlay${hasSeparateAudioStream && videoTimingStatus ? ` · ${videoTimingStatus}` : ''}`
+                    : 'Finding best-matching YouTube background video for this track…'
                   : 'Built-in VoxelWall themes loaded as background with VoxelVerse lyrics engine'}
               </small>
             </div>
@@ -1767,8 +1697,8 @@ export default function App({ user = null }: { user?: User | null }) {
                     fontSize: '0.8rem',
                   }}
                 >
-                  <option value="music">Music video (Most Views)</option>
-                  <option value="lyrics">Lyrical video (Most Views)</option>
+                  <option value="music">Music video (Best Match)</option>
+                  <option value="lyrics">Lyrical video (Best Match)</option>
                 </select>
               </label>
             )}
@@ -1874,26 +1804,26 @@ export default function App({ user = null }: { user?: User | null }) {
           onPreferenceChange={setPreferredVideoType}
           backgroundMode={youtubeBackgroundMode}
           onBackgroundModeChange={setYoutubeBackgroundMode}
+          cachedCandidates={autoVideoMatch.key===videoSearchKey?autoVideoMatch.videos:[]}
+          cachedCandidateCount={autoVideoMatch.key===videoSearchKey?autoVideoMatch.candidateCount:0}
+          automaticSearchPending={autoVideoMatch.key!==videoSearchKey||autoVideoMatch.pending}
           captionStatus={bgCaptionStatus}
           onSearchingChange={searching=>setManualVideoSearchKey(searching?recordingKey:'')}
           onChoose={id => {
-            videoFix.save({
-              youtubeVideoId: id,
-              videoDelaySeconds: id === activeYoutubeVideoId ? videoDelaySeconds : 0,
-            });
+            saveVideoChoice(id,id===activeYoutubeVideoId&&hasManualVideoDelay?videoDelaySeconds:null);
             setYoutubeBackgroundMode('video');
           }}
         />
       )}
       <CorrectionControls key={'corrections-' + recordingKey} user={user} track={localTrack} delay={{ ...delayFix, reset: () => { songMapping.savePart('lyrics', null); delayFix.reset(); } }} lyrics={{ ...lyricsFix, reset: () => { songMapping.savePart('lyrics', null); lyricsFix.reset(); } }} video={{ ...videoFix, reset: () => { songMapping.savePart('video', null); videoFix.reset(); } }}
-        mappedLyrics={songMapping.lyrics} mappedVideo={songMapping.video} canChangeVideo={hasSeparateAudioStream} onVideoChange={(id, videoDelaySeconds) => videoFix.save({ youtubeVideoId: id, videoDelaySeconds })} />
+        mappedLyrics={songMapping.lyrics} mappedVideo={songMapping.video} canChangeVideo={hasSeparateAudioStream} currentVideoDelay={videoDelaySeconds} onVideoChange={saveVideoChoice} />
       {songMapping.error && <p role="status">{songMapping.error}</p>}
       {privateLyrics.error && <p role="status">{privateLyrics.error}</p>}
       {!isAdPlaying&&<TrackFinder
         key={'finder-' + fileEpoch}
         track={localTrack}
-        preferredSelection={lyricsFix.correction?.selection || songMapping.lyrics?.selection || null}
-        preferredSourceFile={lyricsFix.source === 'personal' ? null : songMapping.lyrics?.sourceFile || null}
+        preferredSelection={lyricsFix.correction?.selection || (legacyAutomaticLrc?null:songMapping.lyrics?.selection) || null}
+        preferredSourceFile={lyricsFix.source === 'personal' ? null : songMapping.approved?.lyrics?.sourceFile || (effectiveLyricsEngine!=='lyricflow'?songMapping.lyrics?.sourceFile:null) || null}
         onSelectionChange={selectLyrics}
         savedCustomLrc={savedCustomLrc}
         customEditOpen={customEditOpen}

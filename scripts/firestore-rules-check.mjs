@@ -23,6 +23,10 @@ const yes = async p => { await assertSucceeds(p); checks++; };
 const no = async p => { await assertFails(p); checks++; };
 try {
   await env.clearFirestore();
+  const autoVideo={...correction,kind:'video',lyricsKey:'',lyricsSource:null,delaySeconds:null,youtubeVideoId:'abcdefghijk',videoDelaySeconds:null};
+  await yes(setDoc(doc(alice,'profiles/alice/corrections/'+correction.recordingKey+'_video_recording'),{...autoVideo,updatedAt:serverTimestamp()}));
+  await no(setDoc(doc(alice,'profiles/alice/corrections/'+correction.recordingKey+'_video_recording'),{...autoVideo,videoDelaySeconds:'auto',updatedAt:serverTimestamp()}));
+  await yes(setDoc(doc(alice,'profiles/alice/songMappings/'+correction.recordingKey),{identity,video:{youtubeVideoId:'abcdefghijk',delaySeconds:null},updatedAt:serverTimestamp()}));
   await yes(setDoc(doc(alice,'profiles/alice'), {preferences:prefs,updatedAt:serverTimestamp()}));
   await yes(getDoc(doc(alice,'profiles/alice')));
   await no(getDoc(doc(bob,'profiles/alice')));

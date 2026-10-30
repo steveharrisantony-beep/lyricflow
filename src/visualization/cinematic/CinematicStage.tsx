@@ -50,6 +50,7 @@ export interface CinematicProps{
  playerVolume?:number;
  onYoutubeTimeUpdate?:(currentTime:number,duration?:number)=>void;
  onYoutubeEnded?:()=>void;
+ recordingKey?:string;
  externalPlayer?:boolean;
  videoSearchPending?:boolean;
  advertisementPlaying?:boolean;
@@ -455,7 +456,6 @@ export default function CinematicStage(props:CinematicProps){
  const videoWaitingRef=useRef(false);
  const ytReadyRef=useRef<boolean>(false);
  const ytEndedFiredRef=useRef<boolean>(false);
- const loadedVideoIdRef=useRef<string|null>(null);
  const latestPropsRef=useRef(props);
  latestPropsRef.current=props;
  const ytAuth=useYouTubeAuth();
@@ -464,9 +464,10 @@ export default function CinematicStage(props:CinematicProps){
  const nativePolicy=useNativePlaybackPolicy(Boolean(props.externalPlayer));
 
  const ytId=props.youtubeVideoId||null;
- const [mountedVideoId,setMountedVideoId]=useState<string|null>(ytId);
- const playbackKey=[ytId,Boolean(props.hasSeparateAudioStream),ytAuth.reloadNonce,errorRetryNonce].join('|');
+ const mountedVideoId=ytId;
+ const playbackKey=[props.recordingKey,ytId,Boolean(props.hasSeparateAudioStream),ytAuth.useNoCookieDomain,ytAuth.reloadNonce,errorRetryNonce].join('|');
  const [playingVideoKey,setPlayingVideoKey]=useState('');
+ useEffect(()=>setPlaybackError(''),[playbackKey]);
  const showThemes=!ytId||props.youtubeBackgroundMode==='theme'||Boolean(props.videoSearchPending)||Boolean(props.advertisementPlaying)||!nativePolicy.allowed||Boolean(playbackError)||playingVideoKey!==playbackKey;
  const [themeExitPending,setThemeExitPending]=useState(true);
  useEffect(()=>{
@@ -482,49 +483,8 @@ export default function CinematicStage(props:CinematicProps){
 
  const blackOverlayOpacity=Math.max(0,Math.min(0.92,props.videoOverlayOpacity??0.45));
 
- // Reuse the authenticated YouTube IFrame Player via loadVideoById when ready so playing multiple
- // videos in a row never triggers YouTube's /embed/ cold-load bot limiter or loses autoplay permission.
- useEffect(()=>{
-  setPlaybackError('');
-  if(!ytId){
-   loadedVideoIdRef.current=null;
-   setMountedVideoId(null);
-   return;
-  }
-  if(!mountedVideoId||!ytReadyRef.current||!ytIframeRef.current){
-   loadedVideoIdRef.current=ytId;
-   setMountedVideoId(ytId);
-   return;
-  }
-  if(loadedVideoIdRef.current!==ytId){
-   loadedVideoIdRef.current=ytId;
-   ytEndedFiredRef.current=false;
-   const target=videoSyncTarget(props.playbackTime??0,props.videoDelaySeconds,Boolean(props.hasSeparateAudioStream));
-   if(props.hasSeparateAudioStream){
-    sendYouTubeCommand(ytIframeRef.current,'mute');
-    sendYouTubeCommand(ytIframeRef.current,'setVolume',[0]);
-   }else{
-    sendYouTubeCommand(ytIframeRef.current,'unMute');
-    sendYouTubeCommand(ytIframeRef.current,'setVolume',[props.playerVolume??85]);
-   }
-   sendYouTubeCommand(ytIframeRef.current,'loadVideoById',[ytId,Math.max(0,target.time)]);
-   if(mustPauseVideo(props,target.waiting)){
-    sendYouTubeCommand(ytIframeRef.current,'pauseVideo');
-   }else{
-    sendYouTubeCommand(ytIframeRef.current,'playVideo');
-   }
-  }
- },[ytId,mountedVideoId]);
-
- // When user signs into YouTube account or clicks Reload Video, remount with current ytId
- useEffect(()=>{
-  if(ytId){
-   ytReadyRef.current=false;
-   loadedVideoIdRef.current=ytId;
-   setMountedVideoId(ytId);
-  }
- },[ytAuth.reloadNonce,ytAuth.useNoCookieDomain]);
-
+ // The previous iframe is removed in the same render as a recording/video change.
+ // Keeping its media alive while the next search loads can leak the old song's video/audio.
  const syncYtPlayerState=()=>{
   const iframe=ytIframeRef.current;
   if(!iframe||!nativePolicy.allowed)return;
@@ -535,11 +495,6 @@ export default function CinematicStage(props:CinematicProps){
   }else{
    sendYouTubeCommand(iframe,'unMute');
    sendYouTubeCommand(iframe,'setVolume',[cur.playerVolume??85]);
-  }
-  if(cur.youtubeVideoId&&loadedVideoIdRef.current&&loadedVideoIdRef.current!==cur.youtubeVideoId){
-   loadedVideoIdRef.current=cur.youtubeVideoId;
-   const startTarget=videoSyncTarget(cur.playbackTime??0,cur.videoDelaySeconds,Boolean(cur.hasSeparateAudioStream));
-   sendYouTubeCommand(iframe,'loadVideoById',[cur.youtubeVideoId,Math.max(0,startTarget.time)]);
   }
   const target=videoSyncTarget(cur.playbackTime??0,cur.videoDelaySeconds,Boolean(cur.hasSeparateAudioStream));
   if(cur.hasSeparateAudioStream)sendYouTubeCommand(iframe,'seekTo',[target.time,true]);
@@ -592,14 +547,6 @@ export default function CinematicStage(props:CinematicProps){
    }else if(evt==='onError'){
     const code=Number(data.info);
      setPlaybackError(code===101||code===150?'This video does not allow embedded playback. Choose another video.':code===153?'YouTube could not verify this player. Try reloading or choose another video.':'YouTube could not play this video. Try reloading or choose another video.');
-    // If loadVideoById hit a transient error, remount iframe once with the current video ID
-    const curVid=latestPropsRef.current.youtubeVideoId;
-    if(curVid&&mountedVideoId!==curVid){
-     ytReadyRef.current=false;
-     loadedVideoIdRef.current=curVid;
-     setMountedVideoId(curVid);
-     setErrorRetryNonce(n=>n+1);
-    }
    }else if(evt==='onAutoplayBlocked'){
      setPlaybackError('Tap Play video to start YouTube audio.');
     }else if(evt==='onStateChange'&&typeof data.info==='number'){
@@ -703,7 +650,7 @@ export default function CinematicStage(props:CinematicProps){
    <div ref={ytWrapRef} className="youtube-stage-backdrop" data-layer="video"
     style={{position:'absolute',inset:0,width:'100%',height:'100%',overflow:'hidden',zIndex:0,background:'#04070f',pointerEvents:!showThemes&&ytAuth.interactivePlayer?'auto':'none'}}>
     <iframe ref={ytIframeRef}
-     key={`yt-${mountedVideoId||ytId}-${ytAuth.reloadNonce}-${ytAuth.useNoCookieDomain?'nc':'std'}-${errorRetryNonce}-${props.hasSeparateAudioStream?'muted':'audio'}`}
+     key={`yt-${props.recordingKey||''}-${mountedVideoId||ytId}-${ytAuth.reloadNonce}-${ytAuth.useNoCookieDomain?'nc':'std'}-${errorRetryNonce}-${props.hasSeparateAudioStream?'muted':'audio'}`}
      src={embedSrc} title="YouTube video background" referrerPolicy="strict-origin-when-cross-origin"
      allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
      style={{position:'absolute',top:'50%',left:'50%',width:ytAuth.interactivePlayer?'100%':'116%',height:ytAuth.interactivePlayer?'100%':'116%',transform:'translate(-50%, -50%)',border:0,pointerEvents:!showThemes&&ytAuth.interactivePlayer?'auto':'none'}}

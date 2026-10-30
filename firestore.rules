@@ -164,7 +164,7 @@ service cloud.firestore {
           c.delaySeconds is number && c.delaySeconds >= -30 && c.delaySeconds <= 30 && c.selection == null && c.youtubeVideoId == null && c.videoDelaySeconds == null && validLyricsSource(c.lyricsSource, c.lyricsKey)) ||
          (c.kind == 'lyrics' && c.lyricsKey == '' && c.delaySeconds == null && validSelection(c.selection) && c.youtubeVideoId == null && c.videoDelaySeconds == null && c.lyricsSource == null) ||
          (c.kind == 'video' && c.lyricsKey == '' && c.delaySeconds == null && c.selection == null &&
-          c.youtubeVideoId is string && c.youtubeVideoId.matches('^[a-zA-Z0-9_-]{11}$') && c.lyricsSource == null && c.videoDelaySeconds is number && c.videoDelaySeconds >= -300 && c.videoDelaySeconds <= 300));
+          c.youtubeVideoId is string && c.youtubeVideoId.matches('^[a-zA-Z0-9_-]{11}$') && c.lyricsSource == null && (c.videoDelaySeconds == null || (c.videoDelaySeconds is number && c.videoDelaySeconds >= -300 && c.videoDelaySeconds <= 300))));
     }
     function correctionFields() { return ['recordingKey','identity','kind','lyricsKey','delaySeconds','selection','youtubeVideoId','videoDelaySeconds','lyricsSource']; }
     function validDisplay(d) {
@@ -227,7 +227,7 @@ service cloud.firestore {
           l.delaySeconds is number && l.delaySeconds >= -30 && l.delaySeconds <= 30)) &&
         (v == null || (v is map && v.keys().hasOnly(['youtubeVideoId','delaySeconds']) &&
           v.youtubeVideoId is string && v.youtubeVideoId.matches('^[a-zA-Z0-9_-]{11}$') &&
-          v.delaySeconds is number && v.delaySeconds >= -300 && v.delaySeconds <= 300));
+          (v.delaySeconds == null || (v.delaySeconds is number && v.delaySeconds >= -300 && v.delaySeconds <= 300))));
     }
     match /profiles/{uid}/songMappings/{id} {
       allow read, delete: if profileOwner(uid);

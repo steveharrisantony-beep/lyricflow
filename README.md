@@ -149,6 +149,9 @@ Accessible anytime from the stage bar (**Choose Source**) with a dedicated modal
      - Includes an interactive **Background Option Slider** (`0: YouTube Video` · `1: Built-in Themes`) allowing instant switching between the YouTube video background and the 23 built-in VoxelWall themes.
      - Permanent layers are YouTube video, animated built-in themes, then transparent lyrics. Themes remain visible during video search/loading, errors and external-player ads. Lyrics stay on top, including on lyrical videos; external ads hide lyrics and cancel lookup.
      - YouTube audio keeps playing from the same iframe when themes cover it. JioSaavn/local/external backgrounds are muted. On Android, external mode also mutes the WebContents through AndroidX to avoid taking the other app's audio focus; unsupported System WebView versions fall back to themes.
+     - Background selection compares up to 20 candidates per query, searches both music and lyrical videos for music preference, and rejects Topic/ATV, static audio, album images and visualizers. Lyrical preference requires `lyric`, `lyrical` or `lyrics` in the title. Recording suitability comes before views; missing music videos fall back to lyrical videos. Unknown unlabelled uploads are not used automatically. YouTube metadata cannot guarantee that every labelled video contains moving imagery.
+     - The manual background chooser first shows up to 15 already-loaded candidates; **Search again** refreshes the list using the current query.
+     - A recording change immediately removes its old iframe while the next match loads.
      - Captions use direct verified requests with bounded timeouts and support signed JSON3/XML/VTT tracks. Creator tracks are preferred; automatic captions are labelled and excluded from timing alignment. Restricted captions are reported rather than treated as missing. Use **Try video subtitles** to request captions directly or import a subtitle file when YouTube restricts access.
 2. **Local Audio Upload (`src/audio/LocalPlayer.tsx`)**:
    - Supports `.mp3`, `.wav`, `.flac`, `.m4a`, `.ogg`, and `.aac` files decoded locally in the browser via the Web Audio API.
@@ -157,9 +160,11 @@ Accessible anytime from the stage bar (**Choose Source**) with a dedicated modal
 
 ## 6. Synchronized Lyrics Engine (Dynamic Available Options) & YouTube Metadata Cleaner
 
+LyricFlow searches Apple Library and LRCLIB concurrently, displays the first available library result immediately, and prefers Apple when it becomes available. A later upgrade waits for the current lyric line (including overlapping singers) to finish; changing songs cancels the pending handoff. Saved explicit source choices and custom lyrics remain in control.
+
 LyricFlow dynamically probes and displays **only the Lyrics Engine options that are available** for the current song (`src/lyrics/lyricFlowEngine.ts`, `src/metadata/TrackFinder.tsx`, and `src/lyrics/providers.ts`):
 
-1. **LyricFlow Engine (`lyricflow` — Hybrid Video-Aligned Sync with Automatic Fallback)**:
+1. **LyricFlow Engine (`lyricflow` — Hybrid Video-Aligned Sync with Parallel Library Lookup)**:
    - Designed specifically to solve music video vs. studio audio duration mismatches.
    - Collects **creator-uploaded YouTube Subtitles** (line-by-line timed to the exact music video timeline) **AND** **Apple Library** word-by-word TTML/syllable sync (`<mm:ss.xx>`).
    - Compares each line between the two transcripts (`alignAppleWordSyncWithYouTubeSubtitles`) and shifts/scales every Apple Music word timestamp onto the YouTube video's actual timeline.
@@ -334,3 +339,18 @@ npm run build
 
 
 Per-song mappings now use title, artist/author and duration and retain a lyrics source file reference plus its signed delay, and a YouTube video ID plus its independent signed delay. Separate audio (including JioSaavn) can continue while a selected YouTube background stays muted. The saved music-video/lyrical-video preference changes the exact search query; see [Firebase setup](FIREBASE_SETUP.md).
+
+### Automatic video timing with separate audio
+
+JioSaavn, external-player and local audio retain their authoritative song clock.
+Creator-uploaded subtitles with matching script/text and consistent timestamp
+anchors shift only the muted video. Auto-generated captions are excluded. If
+captions cannot be aligned, leading SponsorBlock skip segments supply the intro
+cut. The two services load independently with bounded requests.
+
+Choosing a video uses automatic timing (`videoDelaySeconds` / mapped `delaySeconds`
+are null). Saving a numeric delay, including zero, overrides automatic timing.
+For an older saved fixed delay, use **Saved fixes & community corrections > Use
+automatic video sync** to enable the new behavior without losing the video choice.
+Updated Firestore rules accept automatic timing; deploy `firestore.rules` to your
+Firebase project before syncing these choices across signed-in devices.

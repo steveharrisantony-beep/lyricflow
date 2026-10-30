@@ -74,7 +74,7 @@ it('keeps an unsaved signed video delay while a background mapping catches up',a
   expect(choose).toHaveBeenCalledWith('abcdefghijk',-2);
 });
 
-it('ranks YouTube background candidates by most views for Music Video vs Lyrical Video and deprioritizes static audio-only Topic tracks',async()=>{
+it('ranks recording suitability before views, excludes static audio and requires lyrical title labels',async()=>{
   const {rankYouTubeBackgroundCandidates}=await import('../music/providers');
   const track={title:'Starboy',artist:'The Weeknd',album:'Starboy',duration:230,source:'provider' as const,confidence:1,provider:'jiosaavn' as const};
   const candidates=[
@@ -85,10 +85,11 @@ it('ranks YouTube background candidates by most views for Music Video vs Lyrical
     {id:'vid_lyric_low',title:'The Weeknd - Starboy Lyrics',artist:'The Weeknd',album:'YouTube',duration:230,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v=lyricLow111',viewCount:120_000},
   ];
   const musicRanked=rankYouTubeBackgroundCandidates(candidates,track,'music');
-  expect(musicRanked[0].id).toBe('vid_most_views');
-  expect(musicRanked.at(-1)?.id).toBe('vid_audio_topic');
+  expect(musicRanked[0].id).toBe('vid_low_views');
+  expect(musicRanked.some(s=>s.id==='vid_audio_topic')).toBe(false);
   const lyricRanked=rankYouTubeBackgroundCandidates(candidates,track,'lyrics');
   expect(lyricRanked[0].id).toBe('vid_lyric_most');
+  expect(lyricRanked.every(s=>/\blyric(?:s|al)?\b/i.test(s.title))).toBe(true);
 });
 
 it('renders video thumbnails in YouTubeBackgroundPicker custom video finding',async()=>{
@@ -262,4 +263,30 @@ it('keeps primary YouTube audio running under themes and remounts muted before s
   expect(mutedCommands.findIndex(c=>c.func==='mute')).toBeLessThan(mutedCommands.findIndex(c=>c.func==='playVideo'));
   expect(mutedCommands.some(c=>c.func==='setVolume'&&c.args[0]===0)).toBe(true);
   expect(mutedCommands.some(c=>c.func==='unMute')).toBe(false);
+});
+
+it('removes the old iframe immediately when the song or video changes, including while searching',async()=>{
+ await act(async()=>root.render(<CinematicStage {...base} recordingKey="first"/>));
+ const original=host.querySelector('iframe');
+ await act(async()=>root.render(<CinematicStage {...base} recordingKey="second" youtubeVideoId={null} videoSearchPending/>));
+ expect(host.querySelector('iframe')).toBeNull();
+ expect(host.querySelector('.theme-layer')?.getAttribute('aria-hidden')).toBe('false');
+ await act(async()=>root.render(<CinematicStage {...base} recordingKey="second" youtubeVideoId="nextVideo12"/>));
+ expect(host.querySelector('iframe')).not.toBe(original);
+ expect(host.querySelector('iframe')?.src).toContain('nextVideo12');
+});
+
+it('shows previously loaded video candidates immediately and only searches again on request',async()=>{
+ const providers=await import('../music/providers');
+ const search=vi.spyOn(providers,'searchStashCatalog').mockResolvedValue([]);
+ const {default:Picker}=await import('../music/YouTubeBackgroundPicker');
+ const videos=Array.from({length:15},(_,i)=>({id:'yt_'+String(i).padStart(11,'0'),title:'Song Official Music Video',artist:'Artist',album:'',duration:200,provider:'resolver' as const,youtubeVideoId:String(i).padStart(11,'0'),sourceUrl:'https://www.youtube.com/watch?v='+String(i).padStart(11,'0')}));
+ await act(async()=>root.render(<Picker track={{title:'Song',artist:'Artist',album:'',duration:200,source:'provider',confidence:1}} activeVideoId="abcdefghijk" preference="music" onPreferenceChange={()=>{}} onChoose={()=>{}} cachedCandidates={videos} cachedCandidateCount={35}/>));
+ await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='Change YouTube background')!.click());
+ expect(host.querySelectorAll('.video-candidate')).toHaveLength(15);
+ expect(search).not.toHaveBeenCalled();
+ const input=host.querySelector<HTMLInputElement>('input[aria-label="Custom YouTube video search"]')!;
+ await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'A different video query');input.dispatchEvent(new Event('input',{bubbles:true}));});
+ await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+ expect(search).toHaveBeenCalledWith('A different video query','resolver','',expect.any(AbortSignal));
 });

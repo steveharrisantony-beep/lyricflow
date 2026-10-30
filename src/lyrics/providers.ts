@@ -1,6 +1,7 @@
 import {providerRequest} from '../network/request';
 import {
  extractYouTubeVideoId,
+ isYouTubeAudioTrack,
  hasValidLrcTimestamps,
  normalizeTrackForLyricsLookup as normalizeTrackMetaForLyricsLookup,
  rankCandidate,
@@ -8,7 +9,7 @@ import {
  type TrackCandidate,
  type SearchRecord
 } from '../metadata/trackInfo';
-import {fetchAppleMusicWordSyncedLyrics, fetchYouTubeSubtitlesForTrack} from './appleLyrics';
+import {fetchAppleMusicWordSyncedLyrics, fetchYouTubeSubtitlesForTrack, type AppleLyricResult} from './appleLyrics';
 import {
  alignAppleWordSyncWithYouTubeSubtitles,
  type LyricEngineOption,
@@ -34,7 +35,7 @@ export const lrclibProvider:LyricProvider={
  async search(track,signal,rawOverride=false){
   const normalized=normalizeTrackForLyricsLookup(track,rawOverride);
   if(normalized.title.trim().length<2)return [];
-  const isYt=!rawOverride&&(track.provider==='resolver'||Boolean(track.youtubeVideoId));
+  const isYt=!rawOverride&&(isYouTubeAudioTrack(track));
   const queryTitle=rawOverride?normalized.title.trim():cleanLyricMetadata(normalized.title.trim());
   const p=new URLSearchParams({track_name:queryTitle});
   if((rawOverride||!isYt)&&normalized.artist.trim()){
@@ -71,7 +72,7 @@ export async function retrievePermittedLyrics(candidate:TrackCandidate, signal?:
 /** Automatic mode accepts only the same title/artist and a close recording length. */
 export function isAutomaticLyricMatch(track:TrackInfo,candidate:TrackCandidate){
  const clean=(s:string)=>cleanLyricMetadata(s).normalize('NFKC').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
- const isYt=track.provider==='resolver'||Boolean(track.youtubeVideoId);
+ const isYt=isYouTubeAudioTrack(track);
  if(isYt){
   return clean(track.title)===clean(candidate.title)
    &&candidate.hasSynced&&!candidate.instrumental
@@ -83,7 +84,7 @@ export function isAutomaticLyricMatch(track:TrackInfo,candidate:TrackCandidate){
   &&candidate.hasSynced&&!candidate.instrumental;
 }
 export async function resolveAutomaticLyrics(track:TrackInfo,signal?:AbortSignal){
- const isYt=track.provider==='resolver'||Boolean(track.youtubeVideoId);
+ const isYt=isYouTubeAudioTrack(track);
  if((!isYt&&!track.artist.trim())||track.duration<=0)return null;
  track=normalizeTrackForLyricsLookup(track);
  if(!isYt&&track.artist){
@@ -124,14 +125,13 @@ async function resolveFromLrcLibrary(
   if(cleaned.duration>0){
    const exact=await resolveAutomaticLyrics(cleaned,signal);
    if(exact&&exact.original){
-    const candidates=await lrclibProvider.search(cleaned,signal).catch(()=>[]);
     return {
      original:exact.original,
      romanized:exact.romanized,
      source:exact.original.includes('<')?'LRC Library · Word-Synced':'LRC Library · Synced',
      sourceUrl:exact.sourceUrl,
      hasWordSync:exact.original.includes('<'),
-     candidates
+     candidates:[]
     };
    }
   }
@@ -179,9 +179,10 @@ export async function resolveStashLyricsChain(
  signal?:AbortSignal,
  engineOption:LyricEngineOption='lyricflow',
  leadingNonMusicOffsetSec=0,
- selectedSubtitleTrackId?:string
+ selectedSubtitleTrackId?:string,
+ onProgress?:(result:StashResolvedLyrics)=>void
 ):Promise<StashResolvedLyrics|null>{
- const ytVideoId=extractYouTubeVideoId(track);
+ const ytVideoId=engineOption==='youtube'||isYouTubeAudioTrack(track)?extractYouTubeVideoId(track):null;
  const cleaned:TrackInfo=normalizeTrackForLyricsLookup(track);
  if(cleaned.title.trim().length<2&&!ytVideoId)return null;
 
@@ -196,21 +197,50 @@ export async function resolveStashLyricsChain(
   return {original:chosen?.lrc||result.lrc,romanized:'',source:chosen?`YouTube Subtitles (${chosen.label})`:result.source,sourceUrl:result.sourceUrl,hasWordSync:false,candidates:[],availableEngines:['lyricflow','youtube'],subtitleTracks,selectedSubtitleTrackId:chosen?.id};
  }
 
- // Probe available sources in parallel so we know which engines actually exist for this song
- // and so LyricFlow Engine can seamlessly combine or fall back between them.
- const [appleRes,lrcRes,ytSubRes]=await Promise.all([
-  cleaned.title.trim().length>=2
-   ?fetchAppleMusicWordSyncedLyrics(cleaned,signal,'apple').catch(()=>null)
-   :Promise.resolve(null),
-  cleaned.title.trim().length>=2
-   ?resolveFromLrcLibrary(cleaned,signal).catch(()=>null)
-   :Promise.resolve(null),
-  ytVideoId
-   ?fetchYouTubeSubtitlesForTrack(ytVideoId,signal).catch(()=>null)
-   :Promise.resolve(null)
+ // Start both libraries immediately. Captions enrich sync but never delay the first library result.
+ let appleRes:AppleLyricResult|null=null,lrcRes:StashResolvedLyrics|null=null,ytSubRes:AppleLyricResult|null=null;
+ const publish=()=>{
+  if(engineOption!=='lyricflow'||signal?.aborted||!onProgress||(!appleRes&&!lrcRes))return;
+  const result=combineLibraryLyrics(appleRes,lrcRes,ytSubRes,engineOption,leadingNonMusicOffsetSec,selectedSubtitleTrackId);
+  if(result)onProgress(result);
+ };
+ await Promise.all([
+  (cleaned.title.trim().length>=2?fetchAppleMusicWordSyncedLyrics(cleaned,signal,'apple'):Promise.resolve(null)).catch(()=>null).then(result=>{appleRes=result;publish();}),
+  (cleaned.title.trim().length>=2?resolveFromLrcLibrary(cleaned,signal):Promise.resolve(null)).catch(()=>null).then(result=>{lrcRes=result;publish();}),
+  (ytVideoId?fetchYouTubeSubtitlesForTrack(ytVideoId,signal):Promise.resolve(null)).catch(()=>null).then(result=>{ytSubRes=result;publish();})
  ]);
  signal?.throwIfAborted();
+ const resolved=combineLibraryLyrics(appleRes,lrcRes,ytSubRes,engineOption,leadingNonMusicOffsetSec,selectedSubtitleTrackId);
+ if(resolved)return resolved;
+ const candidates:TrackCandidate[]=[],subtitleTracks:YouTubeSubtitleTrackItem[]=[];
 
+ // 1e. Additional server-side fallback (Musixmatch / KuGou) when neither Apple, LRCLIB, nor YouTube Subtitles matched
+ if(cleaned.title.trim().length>=2){
+  try{
+   const extra=await fetchAppleMusicWordSyncedLyrics(cleaned,signal,'all');
+   if(extra&&(extra.lrc||extra.plain)){
+    return {
+     original:extra.lrc||'',
+     romanized:extra.romanizedLrc||'',
+     plain:extra.plain,
+     source:`LyricFlow Engine · ${extra.source}`,
+     sourceUrl:extra.sourceUrl,
+     hasWordSync:extra.hasWordSync,
+     candidates,
+     availableEngines:['lyricflow'],
+     subtitleTracks
+    };
+   }
+  }catch(e){
+   if(signal?.aborted)throw e;
+  }
+ }
+
+ return null;
+}
+
+/** Pure composition lets the first library publish while slower providers are still running. */
+function combineLibraryLyrics(appleRes:AppleLyricResult|null,lrcRes:StashResolvedLyrics|null,ytSubRes:AppleLyricResult|null,engineOption:LyricEngineOption,leadingNonMusicOffsetSec:number,selectedSubtitleTrackId?:string):StashResolvedLyrics|null{
  const hasApple=Boolean(appleRes&&(appleRes.lrc||appleRes.plain));
  const hasLrclib=Boolean(lrcRes&&(lrcRes.original||lrcRes.plain));
  const hasYoutube=Boolean(ytSubRes&&ytSubRes.lrc);
@@ -343,6 +373,17 @@ export async function resolveStashLyricsChain(
   };
  }
 
+ // 1d. If Apple Library is not found and LRC Library exists, show LRC Library
+ if(hasLrclib&&lrcRes){
+  return {
+   ...lrcRes,
+   source:`LyricFlow Engine · ${lrcRes.source}`,
+   availableEngines,
+   subtitleTracks,
+   selectedSubtitleTrackId:chosenSubTrack?.id
+  };
+ }
+
  // 1c. If Apple Library is not found and creator-uploaded YouTube Subtitles exist, show YouTube Subtitles
  if(hasYoutube&&ytSubRes&&activeYoutubeLrc){
   return {
@@ -356,39 +397,6 @@ export async function resolveStashLyricsChain(
    subtitleTracks,
    selectedSubtitleTrackId:chosenSubTrack?.id
   };
- }
-
- // 1d. If Apple Library is not found and LRC Library exists, show LRC Library
- if(hasLrclib&&lrcRes){
-  return {
-   ...lrcRes,
-   source:`LyricFlow Engine · ${lrcRes.source}`,
-   availableEngines,
-   subtitleTracks,
-   selectedSubtitleTrackId:chosenSubTrack?.id
-  };
- }
-
- // 1e. Additional server-side fallback (Musixmatch / KuGou) when neither Apple, LRCLIB, nor YouTube Subtitles matched
- if(cleaned.title.trim().length>=2){
-  try{
-   const extra=await fetchAppleMusicWordSyncedLyrics(cleaned,signal,'all');
-   if(extra&&(extra.lrc||extra.plain)){
-    return {
-     original:extra.lrc||'',
-     romanized:extra.romanizedLrc||'',
-     plain:extra.plain,
-     source:`LyricFlow Engine · ${extra.source}`,
-     sourceUrl:extra.sourceUrl,
-     hasWordSync:extra.hasWordSync,
-     candidates,
-     availableEngines:['lyricflow'],
-     subtitleTracks
-    };
-   }
-  }catch(e){
-   if(signal?.aborted)throw e;
-  }
  }
 
  return null;

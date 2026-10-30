@@ -15,6 +15,11 @@ export interface TrackInfo {
   isAd?:boolean;
 }
 
+/** A background video's metadata must not turn a separate audio recording into a YouTube lyric clock. */
+export function isYouTubeAudioTrack(track:Pick<TrackInfo,'provider'|'youtubeVideoId'|'videoId'>){
+ return (!track.provider||track.provider==='resolver'||track.provider==='ytmusic')&&(track.provider==='resolver'||Boolean(track.youtubeVideoId||track.videoId));
+}
+
 const LYRIC_VIDEO_PATTERN=/\b(?:lyrical|lyrics|lyric\s*video|official\s*lyric|with\s*lyrics|lyrical\s*video|lyrics\s*video)\b/i;
 const AD_TITLE_EXACT_PATTERN=/^(?:advertisement|ad|ads|sponsored|spotify|spotify\s+free|audio\s*ad|video\s*ad|commercial|promoted|sponsored\s+message|learn\s+more|listen\s+now)(?:\s*[-·•:|]\s*.*)?$/i;
 const AD_KEYWORD_PATTERN=/\b(?:advertisement|sponsored\s+by|audio\s+ad|video\s+ad|ad\s+break|commercial\s+break)\b/i;
@@ -140,8 +145,8 @@ export function normalizeTrackForLyricsLookup(track: TrackInfo, rawOverride = fa
       album: track.album.trim(),
     };
   }
-  const isYt = track.provider === 'resolver' || Boolean(track.youtubeVideoId);
-  const rawOriginalTitle = track.videoTitle || track.title;
+  const isYt = isYouTubeAudioTrack(track);
+  const rawOriginalTitle = isYt?(track.videoTitle || track.title):track.title;
   const cleanedTitle = cleanYouTubeTitleForLyrics(rawOriginalTitle, isYt ? track.artist : '');
   if (isYt) {
     return {
@@ -208,7 +213,7 @@ export interface SearchRecord {
   hasWordSync?: boolean;
 }
 export function rankCandidate(track: TrackInfo, candidate: SearchRecord, rawOverride = false): TrackCandidate {
-  const isYt = !rawOverride && (track.provider === 'resolver' || Boolean(track.youtubeVideoId));
+  const isYt = !rawOverride && (isYouTubeAudioTrack(track));
   const t = normalizeTrack(rawOverride ? track.title : cleanYouTubeTitleForLyrics(track.title));
   const c = normalizeTrack(
     rawOverride ? candidate.trackName : cleanYouTubeTitleForLyrics(candidate.trackName) || candidate.trackName

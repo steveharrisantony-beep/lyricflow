@@ -3,11 +3,13 @@ import {useEffect,useRef,useState} from 'react';
 import {
  hasValidLrcTimestamps,
  isAdvertisementTrack,
+ isYouTubeAudioTrack,
  normalizeTrackForLyricsLookup,
  type TrackInfo,
  type TrackCandidate
 } from '../metadata/trackInfo';
-import {lrclibProvider,retrievePermittedLyrics,resolveStashLyricsChain} from '../lyrics/providers';
+import {afterCurrentLyricLine} from '../lyrics/lyricHandoff';
+import {lrclibProvider,retrievePermittedLyrics,resolveStashLyricsChain,type StashResolvedLyrics} from '../lyrics/providers';
 import {findUserLyrics,type LibraryEntry} from '../lyrics/userLibrary';
 import {fetchAppleMusicCandidates,fetchAppleMusicWordSyncedLyrics} from '../lyrics/appleLyrics';
 import {
@@ -97,7 +99,7 @@ export default function TrackFinder({
  // Pre-fill the manual search box with what was searched automatically before whenever a new automatic song loads
  useEffect(()=>{
   if(!track||track.source==='manual')return;
-  const isYt=Boolean(track.videoId||track.youtubeVideoId||track.provider==='resolver');
+  const isYt=isYouTubeAudioTrack(track);
   const autoNorm=normalizeTrackForLyricsLookup(track,false);
   const searchedTitle=isYt
    ?cleanYouTubeTitleForLyrics(track.videoTitle||track.title,track.artist)
@@ -166,23 +168,9 @@ export default function TrackFinder({
   const engineLabel=LYRIC_ENGINE_OPTIONS.find(o=>o.id===lyricEngineOption)?.label||'LyricFlow Engine';
   const cleanedYtTitle=track.videoId?cleanYouTubeTitleForLyrics(track.videoTitle||track.title,track.artist):track.title;
 
-  const timer=setTimeout(()=>{
-   updateStatus(
-    track.videoId
-     ?`[${engineLabel}] Searching lyrics for "${cleanedYtTitle}" (artist/album skipped for YouTube)…`
-     :`[${engineLabel}] Searching synced lyrics for "${track.title}"…`
-   );
-   const selectedId=preferredSelection?.lrclibId;
-   const resolvePreferred=async()=>{
-    if(selectedId){
-     const lyric=await retrievePermittedLyrics({id:selectedId,title:track.title,artist:track.artist,album:track.album,duration:track.duration,instrumental:false,hasSynced:true,hasWordSync:false,url:`https://lrclib.net/api/get/${selectedId}`,confidence:1},controller.signal);
-     if(!lyric.synced&&!lyric.plain)throw new Error('Saved lyrics selection is unavailable. Use default lyrics selection or choose another match.');
-     return {original:lyric.synced,romanized:'',plain:lyric.plain,source:lyric.source,sourceUrl:lyric.sourceUrl,hasWordSync:Boolean(lyric.synced&&lyric.synced.includes('<')),candidates:[],availableEngines:['lrclib' as LyricEngineOption],subtitleTracks:[] as YouTubeSubtitleTrackItem[]};
-    }
-    return resolveStashLyricsChain(track,controller.signal,lyricEngineOption,leadingNonMusicOffsetSec,selectedSubtitleTrackId);
-   };
-   void resolvePreferred()
-    .then(resolved=>{
+  let appliedSignature='',pendingSignature='';
+  let cancelHandoff:(()=>void)|undefined;
+  const applyResolved=(resolved:StashResolvedLyrics|null)=>{
      if(controller.signal.aborted)return;
      if(resolved){
       if(preferredSourceFile?.url && resolved.sourceUrl !== preferredSourceFile.url){ updateStatus('The saved lyrics source file is unavailable. Select another source explicitly.'); return; }
@@ -197,14 +185,22 @@ export default function TrackFinder({
       }
       setCandidates(resolved.candidates);
       const hasTimedLines=hasValidLrcTimestamps(resolved.original);
-      latestLyrics.current({
+      const payload={
        original:hasTimedLines?resolved.original:'',
        romanized:hasTimedLines?resolved.romanized:'',
        plain:resolved.plain||(!hasTimedLines&&resolved.original?resolved.original:undefined),
        source:resolved.source,
        sourceUrl:resolved.sourceUrl,
        hasWordSync:hasTimedLines&&resolved.hasWordSync
-      });
+      };
+      const signature=JSON.stringify(payload);
+      if(signature===appliedSignature||signature===pendingSignature)return;
+      cancelHandoff?.();
+      pendingSignature=signature;
+      const commit=()=>{
+       if(controller.signal.aborted)return;
+       appliedSignature=signature;pendingSignature='';
+       latestLyrics.current(payload);
       updateStatus(
        hasTimedLines&&resolved.hasWordSync
         ?`${resolved.source} — word-by-word sync active.`
@@ -212,14 +208,38 @@ export default function TrackFinder({
         ?`${resolved.source} — line-by-line sync active.`
         :`${resolved.source} — plain lyrics loaded (no line timestamps available).`
       );
-     }else{
+      };
+      if(lyricEngineOption==='lyricflow'&&appliedSignature){
+       updateStatus('Preferred lyrics ready · switching after the current line finishes…');
+       cancelHandoff=afterCurrentLyricLine(commit,controller.signal);
+      }else commit();
+
+     }else if(!appliedSignature){
       setAvailableEngines([]);
       setSubtitleTracks([]);
       latestAvailableEngines.current?.([]);
       latestSubtitleTracks.current?.([]);
       updateStatus(`No automatic lyrics found via ${engineLabel}. Click "Custom Edit / Change Lyrics" to paste or choose lyrics.`);
      }
-    })
+  };
+
+  const timer=setTimeout(()=>{
+   updateStatus(
+    track.videoId
+     ?`[${engineLabel}] Searching lyrics for "${cleanedYtTitle}" (artist/album skipped for YouTube)…`
+     :`[${engineLabel}] Searching synced lyrics for "${track.title}"…`
+   );
+   const selectedId=preferredSelection?.lrclibId;
+   const resolvePreferred=async()=>{
+    if(selectedId){
+     const lyric=await retrievePermittedLyrics({id:selectedId,title:track.title,artist:track.artist,album:track.album,duration:track.duration,instrumental:false,hasSynced:true,hasWordSync:false,url:`https://lrclib.net/api/get/${selectedId}`,confidence:1},controller.signal);
+     if(!lyric.synced&&!lyric.plain)throw new Error('Saved lyrics selection is unavailable. Use default lyrics selection or choose another match.');
+     return {original:lyric.synced,romanized:'',plain:lyric.plain,source:lyric.source,sourceUrl:lyric.sourceUrl,hasWordSync:Boolean(lyric.synced&&lyric.synced.includes('<')),candidates:[],availableEngines:['lrclib' as LyricEngineOption],subtitleTracks:[] as YouTubeSubtitleTrackItem[]};
+    }
+    return resolveStashLyricsChain(track,controller.signal,lyricEngineOption,leadingNonMusicOffsetSec,selectedSubtitleTrackId,applyResolved);
+   };
+   void resolvePreferred()
+    .then(applyResolved)
     .catch(error=>{
      if(!controller.signal.aborted){
       updateStatus(error instanceof Error?error.message:'Automatic lyrics lookup unavailable.');
@@ -229,6 +249,7 @@ export default function TrackFinder({
 
   return()=>{
    clearTimeout(timer);
+   cancelHandoff?.();
    controller.abort();
   };
  },[autoTrackKey,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,preferredSelection?.lrclibId,preferredSourceFile?.url,Math.round(leadingNonMusicOffsetSec)]);

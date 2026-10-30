@@ -258,7 +258,7 @@ export default function ManualLyrics({
  customEditOpen?:boolean;
  onToggleCustomEdit?:()=>void;
  onSaveCustomOverride?:(lrc:string)=>void;
- onLyricContentChange?:(original:string,sourceUrl:string,sourceName:string)=>void;
+ onLyricContentChange?:(original:string,sourceUrl:string,sourceName:string,offset?:number)=>void;
  enabledScenes?:readonly SceneId[];
  activeSceneId?:SceneId;
  themePalettes?:Record<string,string>;
@@ -313,7 +313,7 @@ export default function ManualLyrics({
   return useState(initial);
  }
 
- useLayoutEffect(()=>{onLyricContentChange?.(raw,sourceUrl,source)},[raw,sourceUrl,source,onLyricContentChange]);
+ useLayoutEffect(()=>{onLyricContentChange?.(raw,sourceUrl,source,offset)},[raw,sourceUrl,source,offset,onLyricContentChange]);
  const lines=useMemo(()=>parseLRC(raw),[raw]);
  const romanLines=useMemo(()=>parseLRC(roman),[roman]);
  const language=useMemo(()=>detectLanguage(raw||plain),[raw,plain]);

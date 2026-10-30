@@ -60,8 +60,8 @@ export function validCorrection(raw: unknown, context: CorrectionContext): Corre
     return { ...base, lyricsSource: { ...source }, delaySeconds: r.delaySeconds };
   }
   if (r.kind === 'video' && typeof r.youtubeVideoId === 'string' && /^[\w-]{11}$/.test(r.youtubeVideoId)) {
-    const delay = r.videoDelaySeconds ?? 0;
-    if (typeof delay !== 'number' || !Number.isFinite(delay) || Math.abs(delay) > 300) return null;
+    const delay = r.videoDelaySeconds ?? null;
+    if (delay!==null&&(typeof delay !== 'number' || !Number.isFinite(delay) || Math.abs(delay) > 300)) return null;
     return { ...base, youtubeVideoId: r.youtubeVideoId, videoDelaySeconds: delay };
   }
   if (r.kind === 'lyrics' && r.selection && ['lyricflow', 'apple', 'lrclib', 'youtube'].includes(r.selection.engine)) {

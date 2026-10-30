@@ -91,7 +91,7 @@ function parseRawSegments(data: unknown): SponsorBlockSegment[] {
  * Fetch SponsorBlock segments for a YouTube video ID via server proxy with direct fallback
  * to https://sponsor.ajay.app/api/skipSegments.
  */
-export async function fetchSponsorBlockSegments(
+async function fetchSponsorBlockSegmentsRaw(
   videoId: string | null | undefined,
   signal?: AbortSignal
 ): Promise<SponsorBlockSegment[]> {
@@ -154,6 +154,18 @@ export async function fetchSponsorBlockSegments(
   return [];
 }
 
+/** Bound the proxy and direct fallback together so timing does not wait on an unavailable service. */
+export async function fetchSponsorBlockSegments(videoId:string|null|undefined,signal?:AbortSignal){
+ const controller=new AbortController();
+ const cancel=()=>controller.abort(signal?.reason);
+ signal?.addEventListener('abort',cancel,{once:true});
+ if(signal?.aborted)cancel();
+ const timer=setTimeout(()=>controller.abort(),8000);
+ try{return await fetchSponsorBlockSegmentsRaw(videoId,controller.signal);}
+ catch(error){if(signal?.aborted)throw error;return [];}
+ finally{clearTimeout(timer);signal?.removeEventListener('abort',cancel);}
+}
+
 /**
  * Find an active skip segment that contains `currentTime`.
  * Returns null if `currentTime` is within 0.45s of the segment end to prevent seek loops.
@@ -184,7 +196,7 @@ export function computeLeadingNonMusicOffset(segments: readonly SponsorBlockSegm
   for (const seg of sorted) {
     const [start, end] = seg.segment;
     if (
-      (seg.category === 'music_offtopic' ||
+      seg.actionType==='skip' && (seg.category === 'music_offtopic' ||
         seg.category === 'intro' ||
         seg.category === 'sponsor' ||
         seg.category === 'selfpromo') &&

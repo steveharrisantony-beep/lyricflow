@@ -17,68 +17,47 @@ export interface SongResult {
  directStreamUrl?:string;audioSource?:string;
  youtubeVideoId?:string;videoTitle?:string;
  viewCount?:number;
+ videoType?:'ATV'|'OMV'|'UGC';
 }
 export interface PlayableSong extends SongResult {streamUrl:string;format?:'hls'|'audio'|'youtube'}
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object';
 const string=(v:unknown)=>typeof v==='string'?v:'';
 
-/**
- * Ranks YouTube video background candidates for a track:
- * 1. Filters to candidates with a valid YouTube video ID.
- * 2. Matches preference ('lyrics' vs 'music') when matching candidates exist.
- * 3. Prioritizes the video with the MOST VIEWS (`viewCount` descending),
- *    using duration proximity to the song (`Math.abs(a.duration - track.duration)`) as tie-breaker.
- */
-export function rankYouTubeBackgroundCandidates(
- songs:SongResult[],
- track:{title:string;artist:string;duration:number},
- preference:'music'|'lyrics'='music'
-):SongResult[]{
- const valid=songs.filter(song=>Boolean(extractYouTubeVideoId(song)));
- const isLyricLabel=(s:SongResult)=>/\b(?:lyric(?:al)?|lyrics|text\s*video|words)\b/i.test(`${s.title} ${s.videoTitle||''}`);
- const isAudioOnlyLabel=(s:SongResult)=>
-  /\b(?:official\s*audio|audio\s*song|full\s*audio|audio\s*only|jukebox|auto-generated)\b/i.test(`${s.title} ${s.videoTitle||''}`)||
-  /(?:^|\s)[-–]?\s*topic$/i.test(s.artist||'')||
-  /^audio\s*track$/i.test(s.album||'');
- const normTitle=track.title.toLowerCase().replace(/\(.*?\)|\[.*?\]/g,' ').replace(/[^\p{L}\p{N}\s]/gu,' ').replace(/\s+/g,' ').trim();
- const matchesTitle=(s:SongResult)=>{
-  if(!normTitle)return true;
-  const cand=s.title.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu,' ').replace(/\s+/g,' ').trim();
-  if(cand.includes(normTitle)||normTitle.includes(cand))return true;
-  const words=normTitle.split(' ').filter(w=>w.length>=3);
-  return words.length===0||words.some(w=>cand.includes(w));
- };
- const getPrefScore=(s:SongResult):number=>{
-  const lyric=isLyricLabel(s);
-  const audioOnly=isAudioOnlyLabel(s);
-  if(preference==='lyrics'){
-   return lyric?2:!audioOnly?1:0;
-  }
-  return !lyric&&!audioOnly?2:lyric?1:0;
- };
- return [...valid].sort((a,b)=>{
-  const aTitleMatch=matchesTitle(a)?1:0;
-  const bTitleMatch=matchesTitle(b)?1:0;
-  if(aTitleMatch!==bTitleMatch)return bTitleMatch-aTitleMatch;
-
-  const aPrefScore=getPrefScore(a);
-  const bPrefScore=getPrefScore(b);
-  if(aPrefScore!==bPrefScore){
-   // Prefer true Music Video / Lyrical Video over static audio-only "song options"
-   if((a.viewCount!==undefined)===(b.viewCount!==undefined)||aPrefScore===0||bPrefScore===0){
-    return bPrefScore-aPrefScore;
-   }
-  }
-
-  const aViews=typeof a.viewCount==='number'&&Number.isFinite(a.viewCount)&&a.viewCount>0?a.viewCount:0;
-  const bViews=typeof b.viewCount==='number'&&Number.isFinite(b.viewCount)&&b.viewCount>0?b.viewCount:0;
-  if(aViews!==bViews)return bViews-aViews;
-
-  if(track.duration>0&&a.duration>0&&b.duration>0){
-   return Math.abs(a.duration-track.duration)-Math.abs(b.duration-track.duration);
-  }
-  return 0;
+/** Backgrounds require a video label or known music-video metadata; static audio is never a fallback. */
+export const isLyricalVideo=(song:SongResult)=>/\blyric(?:s|al)?\b/i.test(song.title);
+export function isYouTubeBackgroundVideo(song:SongResult){
+ const label=`${song.title} ${song.videoTitle||''}`;
+ if(!extractYouTubeVideoId(song)||song.videoType==='ATV'||/[-–]\s*Topic$/i.test(song.artist)||/^Audio Track$/i.test(song.album))return false;
+ if(/\b(?:audio|jukebox|album\s*(?:art|image)|cover\s*art|static|visuali[sz]er|auto.generated|podcast|reaction)\b/i.test(label))return false;
+ return isLyricalVideo(song)||song.videoType==='OMV'||/\b(?:(?:official|music|full)\s*video|video\s*song|mv)\b/i.test(label);
+}
+const videoWords=(value:string)=>value.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim().split(/\s+/).filter(Boolean);
+export function rankYouTubeBackgroundCandidates(songs:SongResult[],track:{title:string;artist:string;duration:number},preference:'music'|'lyrics'='music'):SongResult[]{
+ const titleWords=videoWords(track.title.replace(/\([^)]*\)|\[[^\]]*\]/g,' '));
+ const artistWords=videoWords(track.artist).filter(w=>w.length>1&&!['unknown','various','artist','artists','official','music','records','vevo'].includes(w));
+ const scored=songs.filter(isYouTubeBackgroundVideo).flatMap(song=>{
+  const lyric=isLyricalVideo(song);
+  if(preference==='lyrics'&&!lyric)return [];
+  const words=new Set(videoWords(song.title));
+  const titleMatch=titleWords.filter(w=>words.has(w)).length/Math.max(1,titleWords.length);
+  if(titleMatch<.75)return [];
+  const context=new Set(videoWords(song.title+' '+song.artist));
+  const artistMatch=artistWords.filter(w=>context.has(w)).length/Math.max(1,artistWords.length);
+  if(artistWords.length&&artistMatch===0)return [];
+  const version=/\b(cover|live|remix|karaoke|instrumental|sped\s*up|slowed|nightcore)\b/i;
+  if(version.test(song.title)&&!version.test(track.title))return [];
+  const difference=track.duration>0&&song.duration>0?Math.abs(song.duration-track.duration):null;
+  if(difference!==null&&(song.duration<track.duration*.6||difference>Math.max(100,track.duration*.5)))return [];
+  const timing=difference===null?0:25*Math.max(0,1-difference/Math.max(30,track.duration*.3));
+  const score=titleMatch*100+artistMatch*45+timing+(/\bofficial\b/i.test(song.title)?5:0);
+  return [{song,lyric,score}];
  });
+ return scored.sort((a,b)=>{
+  // A suitable music video wins; use a lyrical video when no music video passes the checks.
+  if(preference==='music'&&a.lyric!==b.lyric)return Number(a.lyric)-Number(b.lyric);
+  if(Math.abs(a.score-b.score)>3)return b.score-a.score;
+  return (b.song.viewCount||0)-(a.song.viewCount||0)||b.score-a.score;
+ }).map(item=>item.song);
 }
 
 export function formatViewCount(views?:number):string{
@@ -116,7 +95,7 @@ export function parseSongs(value:unknown,provider:SongResult['provider']):SongRe
    audioSource:string(item.audioSource)||undefined,
    youtubeVideoId:ytId,
    videoTitle:string(item.videoTitle)||(ytId?string(item.title):undefined),
-   viewCount}];
+   viewCount,videoType:['ATV','OMV','UGC'].includes(string(item.videoType))?item.videoType as SongResult['videoType']:undefined}];
  });
 }
 async function json(url:string,signal?:AbortSignal){

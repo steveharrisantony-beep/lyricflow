@@ -6,7 +6,7 @@ import { correctionContext, type LyricsSourceReference, type LyricsSelection, ty
 import type { TrackInfo } from '../metadata/trackInfo';
 
 export interface SongLyricsMapping { sourceFile: LyricsSourceReference; selection: LyricsSelection | null; delaySeconds: number; }
-export interface SongVideoMapping { youtubeVideoId: string; delaySeconds: number; }
+export interface SongVideoMapping { youtubeVideoId: string; delaySeconds: number|null; }
 export interface SongMapping { identity: RecordingIdentity; lyrics?: SongLyricsMapping; video?: SongVideoMapping; }
 type Entry = SongMapping & { dirty?: ('lyrics' | 'video')[] };
 type Cache = Record<string, Entry>;
@@ -28,7 +28,7 @@ export function validSongMapping(raw: unknown, identity: RecordingIdentity): Son
     result.lyrics = { sourceFile: { ...f }, selection: selection ? { ...selection } : null, delaySeconds: l.delaySeconds };
   }
   if (r.video) {
-    if (!/^[\w-]{11}$/.test(r.video.youtubeVideoId) || !Number.isFinite(r.video.delaySeconds) || Math.abs(r.video.delaySeconds) > 300) return null;
+    if (!/^[\w-]{11}$/.test(r.video.youtubeVideoId) || (r.video.delaySeconds!==null&&(!Number.isFinite(r.video.delaySeconds)||Math.abs(r.video.delaySeconds)>300))) return null;
     result.video = { ...r.video };
   }
   return result;

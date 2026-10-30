@@ -747,7 +747,7 @@ async function resolveDirectYouTubeVideoQuery(videoId: string): Promise<TrackMet
           artist: author.replace(/\s*[-–]\s*Topic$/i, '').trim() || 'YouTube',
           album: '',
           duration: 0,
-          videoType: 'OMV',
+          videoType: 'UGC',
           sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
           artwork: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
         };
@@ -808,7 +808,7 @@ async function fetchYouTubeDataApiVideos(
         artist: isTopic ? `${channelName} - Topic` : channelName,
         album: isTopic ? 'Audio Track' : '',
         duration: 0,
-        videoType: isTopic ? 'ATV' : 'OMV',
+        videoType: isTopic ? 'ATV' : 'UGC',
         sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
         artwork: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
       };
@@ -882,7 +882,7 @@ function parseYouTubeSearchTree(root: unknown, limit: number): TrackMetadata[] {
             album: isTopicChannel ? 'Audio Track' : '',
             duration,
             viewCount,
-            videoType: isTopicChannel ? 'ATV' : 'OMV',
+            videoType: isTopicChannel ? 'ATV' : JSON.stringify(renderer).includes('MUSIC_VIDEO_TYPE_OMV') ? 'OMV' : 'UGC',
             sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
             artwork: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
           };
@@ -956,7 +956,7 @@ async function fetchPipedOrInvidiousVideos(query: string, limit = 16): Promise<T
           album: isTopic ? 'Audio Track' : '',
           duration: Number.isFinite(duration) && duration > 0 ? duration : 0,
           viewCount: Number.isFinite(views) && views > 0 ? views : undefined,
-          videoType: isTopic ? 'ATV' : 'OMV',
+          videoType: isTopic ? 'ATV' : 'UGC',
           sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
           artwork: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
         };
@@ -1057,31 +1057,7 @@ async function searchYouTubeMusic(
   ytAuth?: YouTubeAuthContext
 ): Promise<TrackMetadata[]> {
   if (provider === 'youtube') {
-    const trimmed = query.trim();
-    const strippedQuery = trimmed
-      .replace(/\b(?:official\s*)?music\s*video$/i, '')
-      .replace(/\(from\s+["']?[^)"']+["']?\)/gi, ' ')
-      .replace(/\[from\s+["']?[^\]"']+["']?\]/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    const queries =
-      strippedQuery && strippedQuery.toLowerCase() !== trimmed.toLowerCase() && !/\blyric(?:s|al)?\s*video$/i.test(trimmed)
-        ? [strippedQuery, trimmed]
-        : [trimmed];
-    const batches = await Promise.all(queries.map(q => fetchYouTubeWebVideos(q, limit, ytAuth)));
-    const merged: TrackMetadata[] = [];
-    const seenIds = new Set<string>();
-    for (const list of batches) {
-      for (const item of list) {
-        if (!seenIds.has(item.rawId)) {
-          seenIds.add(item.rawId);
-          merged.push(item);
-        }
-      }
-    }
-    if (merged.length > 0) {
-      return merged.slice(0, limit);
-    }
+    return fetchYouTubeWebVideos(query.trim(),limit,ytAuth);
   }
 
   try {
@@ -2833,7 +2809,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       } else if (provider === 'soundcloud') {
         results = await searchSoundCloud(q, 12);
       } else if (provider === 'ytmusic' || provider === 'youtube') {
-        results = await searchYouTubeMusic(q, provider, 12, ytAuth);
+        results = await searchYouTubeMusic(q, provider, 20, ytAuth);
       } else if (provider === 'audius') {
         results = await searchAudius(q, 12);
       }
@@ -2848,6 +2824,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
           album: t.album,
           duration: t.duration,
           viewCount: t.viewCount,
+          videoType: t.videoType,
           sourceUrl: t.sourceUrl,
           artwork: t.artwork,
           youtubeVideoId:

@@ -1,7 +1,7 @@
 import {backendOrigin} from '../network/backend';
 import { providerRequest } from '../network/request';
 import {getYouTubeRequestHeaders} from '../music/youtubeAuth';
-import { hasValidLrcTimestamps, type TrackCandidate, type TrackInfo } from '../metadata/trackInfo';
+import { isYouTubeAudioTrack, hasValidLrcTimestamps, type TrackCandidate, type TrackInfo } from '../metadata/trackInfo';
 import { cleanLyricMetadata } from './providers';
 import {
   scoreCandidateAgainstRawMetadata,
@@ -363,7 +363,7 @@ export async function fetchAppleMusicWordSyncedLyrics(
   requestedSource: 'all' | 'apple' | 'lrclib' | 'youtube' = 'all',
   rawOverride = false
 ): Promise<AppleLyricResult | null> {
-  const isYt = !rawOverride && (track.provider === 'resolver' || Boolean(track.youtubeVideoId));
+  const isYt = !rawOverride && (isYouTubeAudioTrack(track));
   const title = rawOverride ? track.title.trim() : cleanLyricMetadata(track.title.trim());
   // Skip artist and album names when searching lyrics of songs sourced from YouTube unless rawOverride is active
   const artist = rawOverride ? track.artist.trim() : isYt ? '' : cleanLyricMetadata(track.artist.trim());
@@ -385,7 +385,7 @@ export async function fetchAppleMusicWordSyncedLyrics(
       });
       if (isYt) params.set('isYouTube', '1');
       if (rawOverride) params.set('rawOverride', '1');
-      if (track.youtubeVideoId && !rawOverride) params.set('videoId', track.youtubeVideoId);
+      if (isYt && track.youtubeVideoId && !rawOverride) params.set('videoId', track.youtubeVideoId);
       const serverUrl = `${backendOrigin()}/music/lyrics?${params.toString()}`;
       const res = await fetch(serverUrl, {
         headers: { Accept: 'application/json' },
