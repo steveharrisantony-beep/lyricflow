@@ -633,6 +633,19 @@ export function resolveCuePlacement(
  return pool[(cueSeed+scene.variation)%pool.length];
 }
 
+interface CachedCueLayout {
+ key:string;
+ runs:LyricRun[];
+ placements:WordPlacement[];
+ totalRowsCount:number;
+ widestRow:number;
+ fit:number;
+ size:number;
+ joinedText:string;
+}
+
+let cachedLayout:CachedCueLayout|null=null;
+
 /** One continuous phrase, each word painted on a projected world plane with VoxelVerse choreography. */
 export function drawKineticLyrics({
  c,
@@ -660,15 +673,11 @@ export function drawKineticLyrics({
 }:KineticArgs):KineticResult{
  const motion=lyricMotionFor(scene,cue.text,enabledMotions);
  const font=lyricFontFor(scene,cue.text);
- const runs=lyricRuns(cue,mode,emphasis);
  const baseTemplate=byId[scene.id]||TEMPLATES[0];
  const theme=resolveThemePalette(baseTemplate.id,paletteId);
  const unit=Math.min(w,h);
  const energy=reduced||!animated?0:clamp(intensity,0,1.25);
  const age=Math.max(0,time-cue.time);
- const vocalEnd=duetSide&&runs.length>0?Math.max(cue.time+0.18,runs[runs.length-1].end):cue.end;
- const duration=Math.max(.18,vocalEnd-cue.time);
- const progress=clamp(age/duration);
  const hasWordSync=cue.timing==='sourced';
  const activePlacement:Exclude<LyricPlacementMode,'auto'>=duetSide
   ?duetSide
@@ -677,26 +686,47 @@ export function drawKineticLyrics({
 
  const safeMinFont=clamp(Math.min(minFontSize,maxFontSize),16,120);
  const safeMaxFont=clamp(Math.max(minFontSize,maxFontSize),safeMinFont,140);
- const duetScale=duetSide?0.78:1;
- const rawBaseline=unit*(runs.length<=3?0.175:runs.length<=6?0.142:runs.length<=10?0.118:0.102)*duetScale;
- const baseline=clamp(rawBaseline,safeMinFont,safeMaxFont);
- const space=baseline*0.28;
- const widths=runs.map(word=>{
-  applySceneFont(c,font,baseline,word.text);
-  return c.measureText(word.text).width;
- });
+ const layoutKey=`${cue.time}|${cue.end}|${cue.text}|${cue.romanized}|${cue.words.length}|${mode}|${font}|${w}|${h}|${safeMinFont}|${safeMaxFont}|${motion}|${activePlacement}|${duetSide||''}`;
 
- const maxBoxFraction=duetSide
-  ?0.40
-  :activePlacement==='bottom-right'||activePlacement==='bottom-left'||activePlacement==='top-left'
-  ?0.64
-  :0.72;
- const placements=buildWordRows(runs,widths,space,motion,w*maxBoxFraction);
- const totalRowsCount=placements[0]?.totalRows||1;
- const widestRow=placements.reduce((m,p)=>Math.max(m,p.rowWidth),1);
- const heightCap=totalRowsCount>2?Math.min(1,0.72/(totalRowsCount*0.24)):1;
- const fit=Math.min(heightCap,w*(maxBoxFraction+(duetSide?0.02:0.06))/Math.max(1,widestRow));
- const size=clamp(baseline*fit,safeMinFont,safeMaxFont);
+ let runs:LyricRun[];
+ let placements:WordPlacement[];
+ let totalRowsCount:number;
+ let widestRow:number;
+ let fit:number;
+ let size:number;
+ let joinedText:string;
+
+ if(cachedLayout&&cachedLayout.key===layoutKey){
+  ({runs,placements,totalRowsCount,widestRow,fit,size,joinedText}=cachedLayout);
+ }else{
+  runs=lyricRuns(cue,mode,emphasis);
+  const duetScale=duetSide?0.78:1;
+  const rawBaseline=unit*(runs.length<=3?0.175:runs.length<=6?0.142:runs.length<=10?0.118:0.102)*duetScale;
+  const baseline=clamp(rawBaseline,safeMinFont,safeMaxFont);
+  const space=baseline*0.28;
+  const widths=runs.map(word=>{
+   applySceneFont(c,font,baseline,word.text);
+   return c.measureText(word.text).width;
+  });
+
+  const maxBoxFraction=duetSide
+   ?0.40
+   :activePlacement==='bottom-right'||activePlacement==='bottom-left'||activePlacement==='top-left'
+   ?0.64
+   :0.72;
+  placements=buildWordRows(runs,widths,space,motion,w*maxBoxFraction);
+  totalRowsCount=placements[0]?.totalRows||1;
+  widestRow=placements.reduce((m,p)=>Math.max(m,p.rowWidth),1);
+  const heightCap=totalRowsCount>2?Math.min(1,0.72/(totalRowsCount*0.24)):1;
+  fit=Math.min(heightCap,w*(maxBoxFraction+(duetSide?0.02:0.06))/Math.max(1,widestRow));
+  size=clamp(baseline*fit,safeMinFont,safeMaxFont);
+  joinedText=runs.map(word=>word.text).join(' ');
+  cachedLayout={key:layoutKey,runs,placements,totalRowsCount,widestRow,fit,size,joinedText};
+ }
+
+ const vocalEnd=duetSide&&runs.length>0?Math.max(cue.time+0.18,runs[runs.length-1].end):cue.end;
+ const duration=Math.max(.18,vocalEnd-cue.time);
+ const progress=clamp(age/duration);
 
  const origin=project(0,0,0),one=project(1,0,0);
  const pixelsPerWorld=Math.max(10,Math.hypot(one.x-origin.x,one.y-origin.y));
@@ -787,16 +817,17 @@ export function drawKineticLyrics({
   motion==='portal'?0.48*Math.exp(-age*4):0
  );
 
+ const cy=Math.cos(yaw),sy=Math.sin(yaw);
+ const cp=Math.cos(pitch),sp=Math.sin(pitch);
+ const cr=Math.cos(roll),sr=Math.sin(roll);
  const point=(x:number,y:number,z:number)=>{
-  const cy=Math.cos(yaw),sy=Math.sin(yaw);
-  const cp=Math.cos(pitch),sp=Math.sin(pitch);
-  const cr=Math.cos(roll),sr=Math.sin(roll);
   const xx=x*cy+z*sy,zz=z*cy-x*sy,yy=y*cp-zz*sp;
   return project(xx*cr-yy*sr,xx*sr+yy*cr,zz*cp+y*sp+lineZ);
  };
 
  const rowSpacingWorld=(size*1.30)/pixelsPerWorld;
  let drawn=0,highlights=0;
+ applySceneFont(c,font,size,joinedText);
 
  for(const item of placements){
   const {word,width,row,totalRows,rowX,rowWidth}=item;
@@ -807,23 +838,25 @@ export function drawKineticLyrics({
   const isSpokenEnd=hasWordSync?time>=word.end:false;
   const isActive=hasWordSync?(time>=word.start&&time<word.end):false;
 
-  const hit=hasWordSync&&wordAge>=0?Math.exp(-wordAge*8.5):0;
-  const spring=hasWordSync&&wordAge>=0?Math.exp(-wordAge*7.5)*Math.cos(wordAge*24):0;
+  // Smooth attack + release envelope prevents discontinuous frame jumps at wordAge = 0
+  const hitAttack=wordAge>=0?Math.min(1,wordAge/0.042):0;
+  const hit=hasWordSync&&wordAge>=0?hitAttack*Math.exp(-wordAge*7.5):0;
+  const spring=hasWordSync&&wordAge>=0?hitAttack*Math.exp(-wordAge*6.8)*Math.sin(wordAge*22):0;
   const preWait=hasWordSync&&wordAge<0?clamp(-wordAge/0.45,0,1):0;
-  const enter=energy*Math.exp(-age*12);
-  const stagger=energy*Math.exp(-Math.max(0,age-(hasWordSync?word.index*0.045:row*0.055))*14);
+  const enter=energy*Math.exp(-age*9.5);
+  const stagger=energy*Math.exp(-Math.max(0,age-(hasWordSync?word.index*0.04:row*0.05))*10.5);
   const impulse=hit*energy*0.12;
 
-  const rowSlideDecay=energy*Math.exp(-Math.max(0,age-row*0.065)*8.5);
+  const rowSlideDecay=energy*Math.exp(-Math.max(0,age-row*0.06)*7.5);
   const rowDirection=
    activePlacement==='left'||activePlacement==='bottom-left'||activePlacement==='top-left'
     ?(row%2===0?-1:-0.55)
     :activePlacement==='right'||activePlacement==='bottom-right'
     ?(row%2===0?1:0.55)
     :((row+cueParity)%2===0?-1:1);
-  const rowSlideX=rowDirection*rowSlideDecay*1.35;
+  const rowSlideX=rowDirection*rowSlideDecay*1.25;
   const rowSlideY=
-   (activePlacement==='bottom-right'||activePlacement==='bottom-left'?-0.45:activePlacement==='top-left'?0.45:0)*
+   (activePlacement==='bottom-right'||activePlacement==='bottom-left'?-0.42:activePlacement==='top-left'?0.42:0)*
    rowSlideDecay;
 
   const maxRowShift=((widestRow-rowWidth)*0.5*fit)/pixelsPerWorld;
@@ -968,25 +1001,25 @@ export function drawKineticLyrics({
   const scaleY=-(d.y-a.y)/pixelsPerWorld;
 
   if(a.visible&&Math.abs(scaleX*scaleY-scaleXY*scaleYX)>.08){
+   const activeScale=1+(isActive?0.05*energy*(0.5+0.5*hit):0);
    c.save();
    c.transform(
-    scaleX*stretchX,
-    scaleXY*stretchX,
-    scaleYX+wordShear*scaleX,
-    scaleY*stretchY,
+    scaleX*stretchX*activeScale,
+    scaleXY*stretchX*activeScale,
+    (scaleYX+wordShear*scaleX)*activeScale,
+    scaleY*stretchY*activeScale,
     a.x,
     a.y
    );
    c.textAlign='center';
    c.textBaseline='middle';
-   const wordSize=size*(1+(isActive?0.05*energy:0));
-   applySceneFont(c,font,wordSize,word.text);
-   const measuredW=width*fit*(1+(isActive?0.04*energy:0));
+   applySceneFont(c,font,size,word.text);
+   const measuredW=width*fit;
 
    drawWordPlotterAccents(
     c,
     measuredW*0.5,
-    wordSize*0.52,
+    size*0.52,
     wordProgress,
     isActive,
     isSpokenEnd,
@@ -1024,7 +1057,7 @@ export function drawKineticLyrics({
   drawn,
   highlights,
   font,
-  text:runs.map(word=>word.text).join(' '),
+  text:joinedText,
   rows:totalRowsCount,
   baseColor,
   activeColor:sungColor,

@@ -531,3 +531,28 @@ body {
 .account-panel :focus-visible, .correction-controls :focus-visible { outline: 2px solid #6ee7f9; outline-offset: 3px; }
 
 .youtube-background-picker select{display:block;min-height:44px;margin:8px 0;padding:10px;background:#121e2c;color:#eef4ff;border:1px solid #52647a;border-radius:8px;max-width:100%}
+
+/* Three-Card Source Selector & External Player (Android Only) + JioSaavn Background Prefs */
+.source-three-card-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.source-unavailable-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:#ffb8a8;background:#35191d;border:1px solid #6b3038;border-radius:6px;padding:3px 7px;font-weight:600}
+.web-disabled-card{opacity:0.86;border-style:dashed}
+.source-background-pref-bar{background:#101925;border:1px solid #2a3e4e;border-radius:12px;padding:14px 16px;margin-bottom:14px;display:grid;gap:12px}
+.source-pref-group{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
+.source-pref-group>span{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:#d6e9f2}
+.source-pref-pills{display:flex;flex-wrap:wrap;gap:8px}
+.source-pref-pills button{display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:7px 12px;border-radius:8px;background:#162433;border:1px solid #354e61;color:#cbe2ec;font-size:11px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s}
+.source-pref-pills button:hover{background:#1e3246;border-color:#6bc5d2}
+.source-pref-pills button.active{background:#1d3e4c;border-color:#84d8e3;color:#ffffff;box-shadow:0 0 0 1px rgba(132,216,227,0.25)}
+.external-web-notice{background:#151d28;border:1px solid #3c4c5d;border-radius:12px;padding:18px;display:grid;gap:10px}
+.external-web-notice strong{font-size:14px;color:#ffb8a8}
+.external-web-notice p{font-size:12px;line-height:1.6;color:#b2c5d4;margin:0}
+.external-android-panel{display:grid;gap:14px}
+.external-panel-row{background:#101925;border:1px solid #2a3e4e;border-radius:12px;padding:14px 16px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
+.external-panel-row strong{display:block;font-size:13px;color:#edf7fb;margin-bottom:4px}
+.external-panel-row small{display:block;font-size:11px;color:#93aab9;line-height:1.5}
+.external-detected-song{margin-top:8px;padding:10px 12px;border-radius:9px;background:#162636;border:1px solid #345266;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.external-app-pill{font:700 10px 'Space Mono',monospace;background:#1e3f4b;color:#aef4fa;border:1px solid #4fa2b0;padding:3px 7px;border-radius:5px}
+.external-detected-song b{font-size:13px;color:#f3fafc}
+.external-detected-song span{font-size:12px;color:#a5becb}
+.external-audio-status{font-size:11px;color:#9ce5cb;margin:4px 0 0}
+@media(max-width:900px){.source-three-card-grid{grid-template-columns:1fr}}

@@ -564,8 +564,13 @@ function LocalPlayer(
         ref={audioRef}
         preload="metadata"
         onTimeUpdate={e => {
-          setTime(e.currentTarget.currentTime);
-          onTimeChange(e.currentTarget.currentTime);
+          const ct = e.currentTarget.currentTime;
+          const now = performance.now();
+          if (now - lastUiTimeUpdateRef.current >= 120 || ct === 0 || (duration > 0 && ct >= duration - 0.15)) {
+            lastUiTimeUpdateRef.current = now;
+            setTime(ct);
+            onTimeChange(ct);
+          }
         }}
         onLoadedMetadata={e => {
           const d = e.currentTarget.duration;
@@ -613,7 +618,7 @@ function LocalPlayer(
         <div className="player-heading">
           <div className="heading-left">
             <span className="heading-icon">
-              {remote || sourceMode === 'online' ? <Disc3 size={17} /> : <Music2 size={17} />}
+              {remote || sourceMode === 'online' || sourceMode === 'external' ? <Disc3 size={17} /> : <Music2 size={17} />}
             </span>
             <div>
               <b>PLAYER DETAILS</b>
@@ -621,9 +626,11 @@ function LocalPlayer(
                 Source:{' '}
                 {currentTrack
                   ? describeAudioSource(currentTrack, Boolean(name)).detail
-                  : remote || sourceMode === 'online'
-                    ? 'Built-in Online Player (JioSaavn & YouTube)'
-                    : 'Local Audio Upload'}
+                  : sourceMode === 'external'
+                    ? 'External Player (Android Notification Listener)'
+                    : remote || sourceMode === 'online'
+                      ? 'Built-in Online Player (JioSaavn & YouTube)'
+                      : 'Local Audio Upload'}
               </small>
             </div>
           </div>

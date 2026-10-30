@@ -27,7 +27,7 @@ try {
   await page.locator('.stage-source-button').click();
   const sources = page.getByRole('dialog', {name: 'Choose audio source'});
   await sources.waitFor();
-  assert.equal(await sources.locator('.source-option-card').count(), 2);
+  assert.equal(await sources.locator('.source-option-card').count(), 3);
   await page.getByRole('button', {name: 'Close audio sources', exact: true}).click();
 
   // A generated tone exercises real browser decoding/playback, without external media.

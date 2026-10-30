@@ -1,8 +1,15 @@
+const luminanceCache=new Map<string,number>();
+const chromaticCache=new Map<string,string>();
+
 /** WCAG luminance: keep text polarity consistent with the actual scene surface. */
 export function luminance(hex:string){
+ const cached=luminanceCache.get(hex);
+ if(cached!==undefined)return cached;
  const rgb=hex.replace('#','');
  const values=[0,2,4].map(i=>parseInt(rgb.slice(i,i+2),16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);
- return values[0]*.2126+values[1]*.7152+values[2]*.0722;
+ const lum=values[0]*.2126+values[1]*.7152+values[2]*.0722;
+ if(luminanceCache.size<512)luminanceCache.set(hex,lum);
+ return lum;
 }
 export function contrastRatio(a:string,b:string){const x=luminance(a),y=luminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)}
 export function readableInk(background:string,preferred?:string){
@@ -21,14 +28,24 @@ function blendHex(hexA:string,hexB:string,t:number):string{
 
 /** Preserve chromatic lyric colors while guaranteeing legibility over dynamic 3D/2D surfaces. */
 export function readableChromaticInk(background:string,preferred?:string):string{
- if(!preferred||!/^#[a-f0-9]{6}$/i.test(preferred))return readableInk(background,preferred);
- if(contrastRatio(background,preferred)>=3.0)return preferred;
- const pole=luminance(background)<0.38?'#ffffff':'#101521';
- for(const mix of [0.22,0.38,0.52,0.68]){
-  const candidate=blendHex(preferred,pole,mix);
-  if(contrastRatio(background,candidate)>=3.2)return candidate;
+ const key=`${background}|${preferred||''}`;
+ const hit=chromaticCache.get(key);
+ if(hit)return hit;
+ let result:string;
+ if(!preferred||!/^#[a-f0-9]{6}$/i.test(preferred)){
+  result=readableInk(background,preferred);
+ }else if(contrastRatio(background,preferred)>=3.0){
+  result=preferred;
+ }else{
+  const pole=luminance(background)<0.38?'#ffffff':'#101521';
+  result=readableInk(background,preferred);
+  for(const mix of [0.22,0.38,0.52,0.68]){
+   const candidate=blendHex(preferred,pole,mix);
+   if(contrastRatio(background,candidate)>=3.2){result=candidate;break;}
+  }
  }
- return readableInk(background,preferred);
+ if(chromaticCache.size<1024)chromaticCache.set(key,result);
+ return result;
 }
 
 const backdrops=new WeakMap<CanvasRenderingContext2D,{data:Uint8ClampedArray;width:number;height:number}>();
@@ -51,7 +68,11 @@ export function paintLyric(c:CanvasRenderingContext2D,text:string,x:number,y:num
   surface='#'+samples[3].rgb.map(v=>v.toString(16).padStart(2,'0')).join('');
  }
  const ink=readableChromaticInk(surface||'#101521',preferred);
- c.save();c.shadowColor=luminance(ink)<.25?'rgba(255,250,242,.28)':'rgba(0,0,0,.64)';
- c.shadowBlur=Math.min(12,c.measureText('M').width*.16);c.shadowOffsetY=2;
- c.fillStyle=ink;c.fillText(text,x,y,maxWidth);c.restore();
+ c.save();
+ c.shadowColor=luminance(ink)<.25?'rgba(255,250,242,.28)':'rgba(0,0,0,.62)';
+ c.shadowBlur=3;
+ c.shadowOffsetY=1.5;
+ c.fillStyle=ink;
+ c.fillText(text,x,y,maxWidth);
+ c.restore();
 }

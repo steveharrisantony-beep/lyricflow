@@ -5,7 +5,7 @@ export interface TrackInfo {
   title:string; artist:string; album:string; duration:number; fileName?:string; sourceTrackId?:string;
   source:'filename'|'manual'|'provider'; confidence:number;
   artwork?:string;
-  provider?:'ytmusic'|'soundcloud'|'jiosaavn'|'audius'|'resolver'|'local';
+  provider?:'ytmusic'|'soundcloud'|'jiosaavn'|'audius'|'resolver'|'local'|'external';
   audioSource?:string;
   sourceUrl?:string;
   youtubeVideoId?:string;

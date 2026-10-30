@@ -73,3 +73,51 @@ it('keeps an unsaved signed video delay while a background mapping catches up',a
   await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
   expect(choose).toHaveBeenCalledWith('abcdefghijk',-2);
 });
+
+it('ranks YouTube background candidates by most views for Music Video vs Lyrical Video',async()=>{
+  const {rankYouTubeBackgroundCandidates}=await import('../music/providers');
+  const track={title:'Starboy',artist:'The Weeknd',album:'Starboy',duration:230,source:'provider' as const,confidence:1,provider:'jiosaavn' as const};
+  const candidates=[
+    {id:'vid_low_views',title:'The Weeknd - Starboy (Official Video)',artist:'The Weeknd',album:'YouTube',duration:232,provider:'resolver' as const,sourceLabel:'YouTube',streamUrl:null,sourceUrl:'https://www.youtube.com/watch?v=vidLowViews1',viewCount:450_000},
+    {id:'vid_most_views',title:'The Weeknd - Starboy ft. Daft Punk (Official Music Video)',artist:'The Weeknd',album:'YouTube',duration:273,provider:'resolver' as const,sourceLabel:'YouTube',streamUrl:null,sourceUrl:'https://www.youtube.com/watch?v=34Na4j8AVgA',viewCount:2_400_000_000},
+    {id:'vid_lyric_most',title:'The Weeknd - Starboy (Official Lyric Video)',artist:'The Weeknd',album:'YouTube',duration:230,provider:'resolver' as const,sourceLabel:'YouTube',streamUrl:null,sourceUrl:'https://www.youtube.com/watch?v=lyricMost11',viewCount:85_000_000},
+    {id:'vid_lyric_low',title:'The Weeknd - Starboy Lyrics',artist:'The Weeknd',album:'YouTube',duration:230,provider:'resolver' as const,sourceLabel:'YouTube',streamUrl:null,sourceUrl:'https://www.youtube.com/watch?v=lyricLow111',viewCount:120_000},
+  ];
+  const musicRanked=rankYouTubeBackgroundCandidates(candidates,track,'music');
+  expect(musicRanked[0].id).toBe('vid_most_views');
+  const lyricRanked=rankYouTubeBackgroundCandidates(candidates,track,'lyrics');
+  expect(lyricRanked[0].id).toBe('vid_lyric_most');
+});
+
+it('shows External Player as Not available in web on browsers and enables Notification + Mic/Internal Audio on Android app',async()=>{
+  const {default:AudioSourceHub}=await import('../audio/AudioSourceHub');
+  const {setAndroidAppOverrideForTest}=await import('../audio/externalPlayer');
+  setAndroidAppOverrideForTest(false);
+  let selectedMode:string|null=null;
+  const renderHub=(mode:'local'|'online'|'external'|null)=>(
+    <AudioSourceHub
+      open={true}
+      onClose={vi.fn()}
+      activeMode={mode}
+      onSelectMode={m=>{selectedMode=m;}}
+      onPickLocal={vi.fn()}
+      onPlaySong={vi.fn()}
+    />
+  );
+  await act(async()=>root.render(renderHub(null)));
+  expect(host.textContent).toContain('Not available in web');
+  const extCard=Array.from(host.querySelectorAll<HTMLButtonElement>('.source-option-card')).find(b=>b.textContent?.includes('External Player'))!;
+  await act(async()=>extCard.click());
+  expect(selectedMode).toBeNull();
+  expect(host.textContent).toContain('External Player · Not available in web');
+
+  setAndroidAppOverrideForTest(true);
+  await act(async()=>root.render(renderHub(null)));
+  const androidExtCard=Array.from(host.querySelectorAll<HTMLButtonElement>('.source-option-card')).find(b=>b.textContent?.includes('External Player'))!;
+  await act(async()=>androidExtCard.click());
+  expect(selectedMode).toBe('external');
+  expect(host.textContent).toContain('Android Notification Listening');
+  expect(host.textContent).toContain('Internal Audio');
+  expect(host.textContent).toContain('Mic');
+  setAndroidAppOverrideForTest(null);
+});

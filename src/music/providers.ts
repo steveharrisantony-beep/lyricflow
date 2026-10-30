@@ -16,10 +16,65 @@ export interface SongResult {
  provider:keyof typeof MUSIC_SOURCES;sourceUrl:string;artwork?:string;
  directStreamUrl?:string;audioSource?:string;
  youtubeVideoId?:string;videoTitle?:string;
+ viewCount?:number;
 }
 export interface PlayableSong extends SongResult {streamUrl:string;format?:'hls'|'audio'|'youtube'}
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object';
 const string=(v:unknown)=>typeof v==='string'?v:'';
+
+/**
+ * Ranks YouTube video background candidates for a track:
+ * 1. Filters to candidates with a valid YouTube video ID.
+ * 2. Matches preference ('lyrics' vs 'music') when matching candidates exist.
+ * 3. Prioritizes the video with the MOST VIEWS (`viewCount` descending),
+ *    using duration proximity to the song (`Math.abs(a.duration - track.duration)`) as tie-breaker.
+ */
+export function rankYouTubeBackgroundCandidates(
+ songs:SongResult[],
+ track:{title:string;artist:string;duration:number},
+ preference:'music'|'lyrics'='music'
+):SongResult[]{
+ const valid=songs.filter(song=>Boolean(extractYouTubeVideoId(song)));
+ const isLyricLabel=(s:SongResult)=>/\b(?:lyric(?:al)?|lyrics|text\s*video|words)\b/i.test(`${s.title} ${s.videoTitle||''}`);
+ const normTitle=track.title.toLowerCase().replace(/\(.*?\)|\[.*?\]/g,' ').replace(/[^\p{L}\p{N}\s]/gu,' ').replace(/\s+/g,' ').trim();
+ const matchesTitle=(s:SongResult)=>{
+  if(!normTitle)return true;
+  const cand=s.title.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu,' ').replace(/\s+/g,' ').trim();
+  if(cand.includes(normTitle)||normTitle.includes(cand))return true;
+  const words=normTitle.split(' ').filter(w=>w.length>=3);
+  return words.length===0||words.some(w=>cand.includes(w));
+ };
+ return [...valid].sort((a,b)=>{
+  const aTitleMatch=matchesTitle(a)?1:0;
+  const bTitleMatch=matchesTitle(b)?1:0;
+  if(aTitleMatch!==bTitleMatch)return bTitleMatch-aTitleMatch;
+
+  const aPrefMatch=(preference==='lyrics'?isLyricLabel(a):!isLyricLabel(a))?1:0;
+  const bPrefMatch=(preference==='lyrics'?isLyricLabel(b):!isLyricLabel(b))?1:0;
+  if(aPrefMatch!==bPrefMatch){
+   // If both have viewCount or neither has viewCount, prefer the requested video type (Lyrical vs Music Video)
+   if((a.viewCount!==undefined)===(b.viewCount!==undefined))return bPrefMatch-aPrefMatch;
+  }
+
+  const aViews=typeof a.viewCount==='number'&&Number.isFinite(a.viewCount)&&a.viewCount>0?a.viewCount:0;
+  const bViews=typeof b.viewCount==='number'&&Number.isFinite(b.viewCount)&&b.viewCount>0?b.viewCount:0;
+  if(aViews!==bViews)return bViews-aViews;
+
+  if(track.duration>0&&a.duration>0&&b.duration>0){
+   return Math.abs(a.duration-track.duration)-Math.abs(b.duration-track.duration);
+  }
+  return 0;
+ });
+}
+
+export function formatViewCount(views?:number):string{
+ if(typeof views!=='number'||!Number.isFinite(views)||views<=0)return '';
+ if(views>=1_000_000_000)return `${(views/1_000_000_000).toFixed(1).replace(/\.0$/,'')}B views`;
+ if(views>=1_000_000)return `${(views/1_000_000).toFixed(1).replace(/\.0$/,'')}M views`;
+ if(views>=1_000)return `${(views/1_000).toFixed(1).replace(/\.0$/,'')}K views`;
+ return `${Math.round(views)} views`;
+}
+
 export function resolverBase(value:string){
  if(!value.trim())return '';
  const u=new URL(value,typeof location!=='undefined'?location.origin:undefined);
@@ -35,6 +90,7 @@ export function parseSongs(value:unknown,provider:SongResult['provider']):SongRe
   const user=record(item.user)?item.user:{};
   const art=record(item.artwork)?item.artwork:{};
   const duration=typeof item.duration==='number'&&Number.isFinite(item.duration)?Math.max(0,item.duration):0;
+  const viewCount=typeof item.viewCount==='number'&&Number.isFinite(item.viewCount)&&item.viewCount>0?Math.round(item.viewCount):undefined;
   const resolvedProv=(Object.hasOwn(MUSIC_SOURCES,string(item.provider))?string(item.provider):provider) as SongResult['provider'];
   const id=string(item.id);
   const sourceUrl=provider==='audius'&&string(item.permalink)?'https://audius.co'+string(item.permalink):string(item.sourceUrl);
@@ -44,7 +100,8 @@ export function parseSongs(value:unknown,provider:SongResult['provider']):SongRe
    directStreamUrl:string(item.directStreamUrl)||undefined,
    audioSource:string(item.audioSource)||undefined,
    youtubeVideoId:ytId,
-   videoTitle:string(item.videoTitle)||(ytId?string(item.title):undefined)}];
+   videoTitle:string(item.videoTitle)||(ytId?string(item.title):undefined),
+   viewCount}];
  });
 }
 async function json(url:string,signal?:AbortSignal){

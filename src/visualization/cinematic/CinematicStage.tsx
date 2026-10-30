@@ -128,10 +128,19 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
   const observer=new ResizeObserver(resize);observer.observe(element);resize();
   const pulse:Pulse={...NO_AUDIO};
   let visualMode:GraphicSystem|'motion2d'='motion2d';
+  let smoothMediaClock:number|null=null;
+  let lastRawMediaTime:number|null=null;
+  const datasetCache:Record<string,string>={};
+  const setData=(key:string,val:string)=>{
+   if(datasetCache[key]!==val){
+    datasetCache[key]=val;
+    element.dataset[key]=val;
+   }
+  };
   const frame=(now:number)=>{
    raf=requestAnimationFrame(frame);
    const config=currentProps.current;
-   const dt=Math.max(0,(last?now-last:16.7)/1000);last=now;
+   const dt=Math.min(0.1,Math.max(0,(last?now-last:16.7)/1000));last=now;
    if(document.hidden||config.paused)return;
    const useYtVideoBg=Boolean(config.youtubeVideoId&&(config.youtubeBackgroundMode??'video')==='video');
    if(wasYtVideoBg!==useYtVideoBg){
@@ -151,7 +160,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
    frames++;
    if(now-fpsTime>=1000){
     const fps=frames*1000/(now-fpsTime);
-    element.dataset.fps=String(Math.round(fps));
+    setData('fps',String(Math.round(fps)));
     if(config.quality!=='High'&&!useYtVideoBg){
      slowSeconds=fps<26?slowSeconds+1:0;
      fastSeconds=fps>51?fastSeconds+1:0;
@@ -161,10 +170,33 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
       adaptiveScale=Math.min(1,adaptiveScale+.11);slowSeconds=0;fastSeconds=0;resize();
      }
     }
-    element.dataset.renderScale=String(Math.round(adaptiveScale*100));
+    setData('renderScale',String(Math.round(adaptiveScale*100)));
     frames=0;fpsTime=now;
    }
-   const mediaTime=getLocalMediaTime(),time=mediaTime??elapsed;
+   const rawMediaTime=getLocalMediaTime();
+   if(rawMediaTime!==null){
+    if(config.audioPaused){
+     smoothMediaClock=rawMediaTime;
+     lastRawMediaTime=rawMediaTime;
+    }else if(
+     smoothMediaClock===null||
+     lastRawMediaTime===null||
+     Math.abs(rawMediaTime-smoothMediaClock)>0.18||
+     rawMediaTime<lastRawMediaTime-0.02
+    ){
+     smoothMediaClock=rawMediaTime;
+     lastRawMediaTime=rawMediaTime;
+    }else{
+     smoothMediaClock+=dt;
+     const drift=rawMediaTime-smoothMediaClock;
+     smoothMediaClock+=drift*Math.min(1,dt*10);
+     lastRawMediaTime=rawMediaTime;
+    }
+   }else{
+    smoothMediaClock=null;
+    lastRawMediaTime=null;
+   }
+   const mediaTime=smoothMediaClock,time=mediaTime??elapsed;
    const snapshot=getLyricTimelineSnapshot();
    const currentScenesKey=(config.enabledScenes||[]).join(',');
    if(snapshot.revision!==revision||currentScenesKey!==enabledScenesKey){
@@ -228,16 +260,9 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
     measured?.beatCount??demoBeatCount
    );
 
-   if(ytWrapRef.current){
-    if(useYtVideoBg){
-     if(shakeEnabled&&(Math.abs(cameraFrame.x)>0.0005||Math.abs(cameraFrame.y)>0.0005||Math.abs(cameraFrame.roll)>0.0005)){
-      ytWrapRef.current.style.transform=`translate3d(${(cameraFrame.x*w).toFixed(1)}px,${(cameraFrame.y*h).toFixed(1)}px,0) rotate(${cameraFrame.roll.toFixed(4)}rad) scale(${(cameraFrame.zoom*1.03).toFixed(3)})`;
-     }else{
-      ytWrapRef.current.style.transform='none';
-     }
-    }else{
-     ytWrapRef.current.style.transform='none';
-    }
+   // Camera shake must never affect the YouTube video background
+   if(ytWrapRef.current&&ytWrapRef.current.style.transform!=='none'){
+    ytWrapRef.current.style.transform='none';
    }
 
    // ONLY load & render procedural background themes when Built-in Themes mode is active (!useYtVideoBg)
@@ -283,14 +308,14 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
    if(!useYtVideoBg&&outgoingId&&displayTransition<1&&outgoing.width>0){
     drawSceneTransition(textCtx,outgoing,w,h,displayTransition,scene.transition);
    }
-   element.dataset.transition=!useYtVideoBg&&outgoingId&&displayTransition<1?scene.transition:'none';
+   setData('transition',!useYtVideoBg&&outgoingId&&displayTransition<1?scene.transition:'none');
    const entry=sceneEntryPose(displayTransition,scene.transition);
    if(!useYtVideoBg&&fx){
     fx.style.transform=`translate(${entry.x*w}px,${entry.y*h}px) rotate(${entry.roll}rad) scale(${entry.scale})`;
    }
    textCtx.save();textCtx.translate(w*.5+entry.x*w,h*.5+entry.y*h);textCtx.rotate(entry.roll);
    textCtx.scale(entry.scale,entry.scale);textCtx.translate(-w*.5,-h*.5);
-   const lyricClock=getLocalMediaTime()??time;
+   const lyricClock=smoothMediaClock??time;
    lyric=getLyricState(lyricClock);
    // Do not hold previous lyrics during pause, instrumental music gaps, or when hidden for lyric videos
    const activeCue=(config.audioPaused||config.hideStageLyrics)?null:lyric.cue;
@@ -350,58 +375,58 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
       placementMode:config.lyricPlacementMode??'auto',
       duetSide:secondaryDuetSide
      });
-     element.dataset.lyricLayout=config.spatialTypography?result.motion:'classic';
-     element.dataset.lyricPlacement='duet-split';
-     element.dataset.lyricText=`${result.text} | ${rightResult.text}`;
-     element.dataset.lyricWords=String(result.words+rightResult.words);
-     element.dataset.lyricDraws=String(result.drawn+rightResult.drawn);
-     element.dataset.lyricHighlights=String(result.highlights+rightResult.highlights);
-     element.dataset.lyricFont=result.font;
-     element.dataset.lyricFillPace=result.fillPace||'line';
+     setData('lyricLayout',config.spatialTypography?result.motion:'classic');
+     setData('lyricPlacement','duet-split');
+     setData('lyricText',`${result.text} | ${rightResult.text}`);
+     setData('lyricWords',String(result.words+rightResult.words));
+     setData('lyricDraws',String(result.drawn+rightResult.drawn));
+     setData('lyricHighlights',String(result.highlights+rightResult.highlights));
+     setData('lyricFont',result.font);
+     setData('lyricFillPace',result.fillPace||'line');
     }else{
-     element.dataset.lyricLayout=config.spatialTypography?result.motion:'classic';
-     element.dataset.lyricPlacement=isDuet?'duet-split':(result.placement||'center');
-     element.dataset.lyricText=result.text;element.dataset.lyricWords=String(result.words);element.dataset.lyricDraws=String(result.drawn);
-     element.dataset.lyricHighlights=String(result.highlights);element.dataset.lyricFont=result.font;
-     element.dataset.lyricFillPace=result.fillPace||'line';
+     setData('lyricLayout',config.spatialTypography?result.motion:'classic');
+     setData('lyricPlacement',isDuet?'duet-split':(result.placement||'center'));
+     setData('lyricText',result.text);setData('lyricWords',String(result.words));setData('lyricDraws',String(result.drawn));
+     setData('lyricHighlights',String(result.highlights));setData('lyricFont',result.font);
+     setData('lyricFillPace',result.fillPace||'line');
     }
    }else{
     if(!snapshot.cues.length&&!useYtVideoBg&&!config.hideStageLyrics){
      drawInstrumentalMark(textCtx,scene,w,h,measured?.loudness??fake);
     }
-    element.dataset.lyricLayout='none';element.dataset.lyricText='';element.dataset.lyricWords='0';element.dataset.lyricDraws='0';
+    setData('lyricLayout','none');setData('lyricText','');setData('lyricWords','0');setData('lyricDraws','0');
    }
    textCtx.restore();
-   element.dataset.lyricClock=lyricClock.toFixed(3);
-   element.dataset.lyricClockLag=String(Math.round(Math.abs((getLocalMediaTime()??lyricClock)-lyricClock)*1000));
-   element.dataset.cameraImpact=cameraFrame.impact.toFixed(3);element.dataset.cameraZoom=cameraFrame.zoom.toFixed(3);
-   element.dataset.cameraView=activeCameraView;
-   element.dataset.cameraShake=shakeEnabled?String(Math.round((config.cameraShakeSensitivity??50))):'off';
-   element.dataset.wordKeywords=snapshot.emphasis.keywords.slice(0,12).join(',');
+   setData('lyricClock',lyricClock.toFixed(3));
+   setData('lyricClockLag',String(Math.round(Math.abs((rawMediaTime??lyricClock)-lyricClock)*1000)));
+   setData('cameraImpact',cameraFrame.impact.toFixed(3));setData('cameraZoom',cameraFrame.zoom.toFixed(3));
+   setData('cameraView',activeCameraView);
+   setData('cameraShake',shakeEnabled?String(Math.round((config.cameraShakeSensitivity??50))):'off');
+   setData('wordKeywords',snapshot.emphasis.keywords.slice(0,12).join(','));
    const engine=useYtVideoBg?'YOUTUBE VIDEO + VOXELVERSE':visualMode==='motion2d'?'VOXELWALL 2D ENGINE':visualMode==='spectrum'?'SPECTRUM 64B':'GENERATIVE GEOMETRY';
-   element.dataset.renderer=engine;
-   element.dataset.visualSystem=useYtVideoBg?'youtube-video':visualMode;
-   element.dataset.currentScene=scene.id;
-   element.dataset.motionBlur=String(config.reducedMotion?0:config.motionBlur);
-   element.dataset.motif='disabled';
-   element.dataset.sceneLabel=useYtVideoBg?'YouTube Video Background':byId[scene.id].label;
-   element.dataset.hasLyrics=sequence.length>0&&!!activeCue?'yes':'no';
-   element.dataset.sceneCount=String(sequence.length);
-   element.dataset.audioSource=source!=='IDLE'?source:isYtPlaying?'YOUTUBE VIDEO':isDemo?'DEMO':'IDLE';
-   element.dataset.audioLevel=String(Math.round(pulse.loudness*100));
-   element.dataset.audioBass=String(Math.round(pulse.bass*100));
-   element.dataset.audioMids=String(Math.round(pulse.mids*100));
-   element.dataset.audioTreble=String(Math.round(pulse.treble*100));
-   element.dataset.audioBeat=String(Math.round(pulse.beat*100));
-   element.dataset.audioBpm=String(measured?.bpm||0);
-   element.dataset.audioTempoConfidence=String(Math.round((measured?.tempoConfidence||0)*100));
-   element.dataset.audioOnset=String(Math.round(pulse.onset*100));
-   element.dataset.audioDownbeat=String(Math.round(pulse.downbeat*100));
-   element.dataset.audioSection=measured?.section||'unknown';
-   element.dataset.audioFlux=String(Math.round((measured?.flux||0)*10000));
-   element.dataset.audioThreshold=String(Math.round((measured?.threshold||0)*10000));
-   element.dataset.audioBeatCount=String(measured?.beatCount||0);
-   element.dataset.audioBandCount=String(measured?.bands.length??64);
+   setData('renderer',engine);
+   setData('visualSystem',useYtVideoBg?'youtube-video':visualMode);
+   setData('currentScene',scene.id);
+   setData('motionBlur',String(config.reducedMotion?0:config.motionBlur));
+   setData('motif','disabled');
+   setData('sceneLabel',useYtVideoBg?'YouTube Video Background':byId[scene.id].label);
+   setData('hasLyrics',sequence.length>0&&!!activeCue?'yes':'no');
+   setData('sceneCount',String(sequence.length));
+   setData('audioSource',source!=='IDLE'?source:isYtPlaying?'YOUTUBE VIDEO':isDemo?'DEMO':'IDLE');
+   setData('audioLevel',String(Math.round(pulse.loudness*100)));
+   setData('audioBass',String(Math.round(pulse.bass*100)));
+   setData('audioMids',String(Math.round(pulse.mids*100)));
+   setData('audioTreble',String(Math.round(pulse.treble*100)));
+   setData('audioBeat',String(Math.round(pulse.beat*100)));
+   setData('audioBpm',String(measured?.bpm||0));
+   setData('audioTempoConfidence',String(Math.round((measured?.tempoConfidence||0)*100)));
+   setData('audioOnset',String(Math.round(pulse.onset*100)));
+   setData('audioDownbeat',String(Math.round(pulse.downbeat*100)));
+   setData('audioSection',measured?.section||'unknown');
+   setData('audioFlux',String(Math.round((measured?.flux||0)*10000)));
+   setData('audioThreshold',String(Math.round((measured?.threshold||0)*10000)));
+   setData('audioBeatCount',String(measured?.beatCount||0));
+   setData('audioBandCount',String(measured?.bands.length??64));
   };
   raf=requestAnimationFrame(frame);
   return()=>{cancelAnimationFrame(raf);observer.disconnect()};

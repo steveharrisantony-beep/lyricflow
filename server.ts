@@ -27,6 +27,7 @@ interface TrackMetadata {
   artwork?: string;
   audioSource?: string;
   videoType?: 'ATV' | 'OMV' | 'UGC';
+  viewCount?: number;
   encryptedMediaUrl?: string;
   transcodings?: Array<{
     url?: string;
@@ -107,6 +108,40 @@ function parseDurationText(value: string): number {
     .trim()
     .split(':')
     .reduce((acc, part) => acc * 60 + Number(part), 0);
+}
+
+function parseViewCountFromRenderer(vr: Record<string, unknown>): number | undefined {
+  const extractText = (field: unknown): string => {
+    if (!field || typeof field !== 'object') return '';
+    const rec = field as Record<string, unknown>;
+    if (typeof rec.simpleText === 'string') return rec.simpleText;
+    if (Array.isArray(rec.runs)) {
+      return rec.runs
+        .map(r => (r && typeof r === 'object' ? String((r as Record<string, unknown>).text || '') : ''))
+        .join('');
+    }
+    return '';
+  };
+  const raw = extractText(vr.viewCountText) || extractText(vr.shortViewCountText);
+  if (!raw) return undefined;
+  const cleaned = raw.replace(/,/g, '').trim();
+  const suffixMatch = cleaned.match(/(\d+(?:\.\d+)?)\s*([KMBkmb])\b/);
+  if (suffixMatch) {
+    const base = Number(suffixMatch[1]);
+    const mult =
+      suffixMatch[2].toUpperCase() === 'B'
+        ? 1_000_000_000
+        : suffixMatch[2].toUpperCase() === 'M'
+          ? 1_000_000
+          : 1_000;
+    return Number.isFinite(base) ? Math.round(base * mult) : undefined;
+  }
+  const digitsMatch = cleaned.match(/(\d+)/);
+  if (digitsMatch) {
+    const val = Number(digitsMatch[1]);
+    return Number.isFinite(val) && val > 0 ? val : undefined;
+  }
+  return undefined;
 }
 
 const USER_AGENT =
@@ -689,6 +724,7 @@ async function searchYouTubeMusic(
                 (vr.lengthText as Record<string, unknown>)?.simpleText || ''
               );
               const duration = parseDurationText(lengthText);
+              const viewCount = parseViewCountFromRenderer(vr);
               if (rawTitle && (duration === 0 || duration >= 45)) {
                 seenWebIds.add(videoId);
                 const trackId = `yt_${videoId}`;
@@ -700,6 +736,7 @@ async function searchYouTubeMusic(
                   artist: channelName,
                   album: '',
                   duration,
+                  viewCount,
                   videoType: 'OMV',
                   sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
                   artwork: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
@@ -2558,6 +2595,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
           artist: t.artist,
           album: t.album,
           duration: t.duration,
+          viewCount: t.viewCount,
           sourceUrl: t.sourceUrl,
           artwork: t.artwork,
           youtubeVideoId:

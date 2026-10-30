@@ -19,7 +19,9 @@ let waveform:Uint8Array<ArrayBuffer>|null=null;
 let localAnalyser:AnalyserNode|null=null;
 let microphoneAnalyser:AnalyserNode|null=null;
 let externalAnalyser:AnalyserNode|null=null;
-let externalKind:'SYSTEM AUDIO'|'INTERNET RADIO'|null=null;
+let externalKind:'SYSTEM AUDIO'|'INTERNET RADIO'|'INTERNAL AUDIO'|null=null;
+let syntheticFrequency:Uint8Array<ArrayBuffer>|null=null;
+let syntheticWaveform:Uint8Array<ArrayBuffer>|null=null;
 let microphonePlaying=false;
 let mediaElement:HTMLAudioElement|null=null,playing=false,sensitivity=.5;
 let lastSample=0,sectionAt=0,historyCursor=0,historyCount=0,lastSongTime=0;
@@ -31,7 +33,7 @@ const history=new Float32Array(48);
 let audioPump:number|null=null;
 function syncAudioPump(){
  if(typeof window==='undefined')return;
- const active=Boolean(analyser&&(playing||microphonePlaying||externalKind));
+ const active=Boolean((analyser||syntheticFrequency)&&(playing||microphonePlaying||externalKind));
  if(active&&audioPump===null){
   audioPump=window.setInterval(()=>{
    if(!document.hidden)readLocalAudio(performance.now());
@@ -59,10 +61,10 @@ export function getLocalMediaTime(){
  return virtualMediaTime;
 }
 function activate(node:AnalyserNode|null){
- if(node===analyser)return;
+ if(node===analyser&&!syntheticFrequency)return;
  analyser=node;
- frequency=node?new Uint8Array(new ArrayBuffer(node.frequencyBinCount)):null;
- waveform=node?new Uint8Array(new ArrayBuffer(node.fftSize)):null;
+ frequency=node?new Uint8Array(new ArrayBuffer(node.frequencyBinCount)):syntheticFrequency;
+ waveform=node?new Uint8Array(new ArrayBuffer(node.fftSize)):syntheticWaveform;
  lastSample=0;sectionAt=0;historyCursor=0;historyCount=0;lastSongTime=0;
  history.fill(0);metrics.bands.fill(0);detector.reset();envelopes.forEach(e=>e.reset());
  for(const field of ['loudness','bass','mids','treble','beat','rms','onset','downbeat',
@@ -82,26 +84,69 @@ export function connectLocalAudio(node:AnalyserNode|null){
 }
 export function connectMicrophoneAudio(node:AnalyserNode|null){
  microphoneAnalyser=node;microphonePlaying=Boolean(node);
+ if(node){syntheticFrequency=null;syntheticWaveform=null;externalKind=null;}
  if(!playing&&!externalKind)activate(node);
 }
 /** External permitted audio sources enter the same local-only beat analyzer. */
-export function connectExternalAudio(node:AnalyserNode|null,source:'SYSTEM AUDIO'|'INTERNET RADIO'='SYSTEM AUDIO'){
- externalAnalyser=node;externalKind=node?source:null;
+export function connectExternalAudio(node:AnalyserNode|null,source:'SYSTEM AUDIO'|'INTERNET RADIO'|'INTERNAL AUDIO'='SYSTEM AUDIO'){
+ externalAnalyser=node;
+ if(!node){
+  syntheticFrequency=null;
+  syntheticWaveform=null;
+ }
+ externalKind=(node||syntheticFrequency)?source:null;
  if(!playing)activate(node??(microphonePlaying?microphoneAnalyser:null));
 }
+/** Feed native Android Visualizer (internal audio output mix) FFT & waveform frames into the analyzer. */
+export function feedExternalVisualizerData(
+ waveBytes:ArrayLike<number>|null,
+ fftBytes:ArrayLike<number>|null,
+ source:'INTERNAL AUDIO'|'SYSTEM AUDIO'='INTERNAL AUDIO'
+){
+ if(!waveBytes||!fftBytes){
+  syntheticFrequency=null;
+  syntheticWaveform=null;
+  if(externalKind===source)externalKind=null;
+  syncAudioPump();
+  return;
+ }
+ if(!syntheticFrequency||syntheticFrequency.length!==1024){
+  syntheticFrequency=new Uint8Array(new ArrayBuffer(1024));
+ }
+ if(!syntheticWaveform||syntheticWaveform.length!==1024){
+  syntheticWaveform=new Uint8Array(new ArrayBuffer(1024));
+ }
+ const fftLen=Math.max(1,fftBytes.length);
+ for(let i=0;i<syntheticFrequency.length;i++){
+  const srcIdx=Math.min(fftLen-1,Math.floor((i/syntheticFrequency.length)*fftLen));
+  syntheticFrequency[i]=Math.max(0,Math.min(255,Number(fftBytes[srcIdx])||0));
+ }
+ const waveLen=Math.max(1,waveBytes.length);
+ for(let i=0;i<syntheticWaveform.length;i++){
+  const srcIdx=Math.min(waveLen-1,Math.floor((i/syntheticWaveform.length)*waveLen));
+  syntheticWaveform[i]=Math.max(0,Math.min(255,Number(waveBytes[srcIdx])??128));
+ }
+ externalKind=source;
+ frequency=syntheticFrequency;
+ waveform=syntheticWaveform;
+ syncAudioPump();
+ readLocalAudio(performance.now());
+}
 export function readLocalAudio(now=performance.now()):AudioMetrics|null{
- if(!analyser||!frequency||!waveform||(!playing&&!microphonePlaying&&!externalKind))return null;
+ if((!analyser&&!syntheticFrequency)||!frequency||!waveform||(!playing&&!microphonePlaying&&!externalKind))return null;
  if(now-lastSample<11)return metrics;
  const sampleDelta=lastSample?(now-lastSample)/1000:.025;
  lastSample=now;
- const songTime=playing?getLocalMediaTime():null;
+ const songTime=playing?getLocalMediaTime():virtualMediaTime;
  if(songTime!==null){
   if(lastSongTime&&Math.abs(songTime-lastSongTime)>1.2){detector.reset();envelopes.forEach(e=>e.reset())}
   lastSongTime=songTime;
  }
- analyser.getByteFrequencyData(frequency);
- analyser.getByteTimeDomainData(waveform);
- const nyquist=analyser.context.sampleRate*.5;
+ if(analyser){
+  analyser.getByteFrequencyData(frequency);
+  analyser.getByteTimeDomainData(waveform);
+ }
+ const nyquist=(analyser?.context.sampleRate??44100)*.5;
  const band=(lo:number,hi:number)=>{
   const start=Math.max(0,Math.min(frequency!.length-1,Math.floor(lo/nyquist*frequency!.length)));
   const end=Math.min(frequency!.length,Math.max(start+1,Math.ceil(hi/nyquist*frequency!.length)));
