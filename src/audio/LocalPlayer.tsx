@@ -365,15 +365,6 @@ function LocalPlayer(
       await player.play();
     } catch {
       if (epoch !== loadEpoch.current) return;
-      if (ytId) {
-        // Fallback smoothly to YouTube embedded video playback if audio proxy stream failed
-        setYoutubeOnlyClock(true);
-        onAudioStreamModeChange?.(false);
-        setVirtualMediaTime(0);
-        setActive(true);
-        onActiveChange(true);
-        return;
-      }
       setError('This source could not play in your browser. Try another result or a local file.');
       throw Error('Playback failed. The source may be unavailable or block browser audio access.');
     }
@@ -819,7 +810,7 @@ function LocalPlayer(
                 {youtubeSubtitleTracks.length > 1 && onSelectSubtitleTrackId && (
                   <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8' }}>
-                      Creator Subtitle Track ({youtubeSubtitleTracks.length}):
+                      Subtitle Track ({youtubeSubtitleTracks.length}):
                     </span>
                     {youtubeSubtitleTracks.map(st => {
                       const activeSt = (selectedSubtitleTrackId || youtubeSubtitleTracks[0]?.id) === st.id;
@@ -848,6 +839,11 @@ function LocalPlayer(
               </div>
             )}
 
+            {isYouTubeTrack&&onLyricEngineOptionChange&&(
+              <button type="button" className="upload-button" onClick={()=>onLyricEngineOptionChange('youtube')}>
+                Try video subtitles
+              </button>
+            )}
             {/* SponsorBlock Non-Music & Sponsor Auto-Skip */}
             {isYouTubeTrack && (
               <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, fontSize: 12 }}>

@@ -1,6 +1,6 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import {BUILTIN_PLAYER_SOURCES,parseSongs,resolveSong,searchSongs,resolverBase,type SongResult} from '../music/providers';
-import {isAutomaticLyricMatch,resolveAutomaticLyrics} from '../lyrics/providers';
+import {isAutomaticLyricMatch,resolveAutomaticLyrics,resolveStashLyricsChain} from '../lyrics/providers';
 import {convertTtmlToEnhancedLrc,convertStructuredAppleJsonToLrc} from '../lyrics/appleLyrics';
 import {describeLyricProvider,describeAudioSource,splitLyricIntoBalancedLines} from '../lyrics/ManualLyrics';
 import {buildCinematicSchedule,TEMPLATES} from '../visualization/cinematic/catalog';
@@ -74,6 +74,21 @@ describe('automatic lyric recording matching & Apple Music TTML word-sync',()=>{
   const raw={id:1,trackName:track.title,artistName:track.artist,albumName:'Demo',duration:180,syncedLyrics:'[00:01.00]Original test',instrumental:false};
   const mock=vi.fn().mockResolvedValueOnce({ok:false,status:404}).mockResolvedValueOnce({ok:true,json:async()=>[raw,{...raw,id:2}]});vi.stubGlobal('fetch',mock);
   expect(await resolveAutomaticLyrics(track)).toBeNull();expect(mock).toHaveBeenCalledTimes(2);
+ });
+ it('requests an explicitly selected YouTube caption track without waiting on Apple or LRCLIB',async()=>{
+  vi.stubGlobal('window',{location:{origin:'https://lyricflow.test'}});
+  const subtitleTracks=[{id:'.en',languageCode:'en',label:'English',lrc:'[00:01.00]Original caption',lineCount:1},{id:'.es',languageCode:'es',label:'Spanish',lrc:'[00:02.00]Otra frase',lineCount:1}];
+  const request=vi.fn().mockResolvedValue({ok:true,status:200,json:async()=>({lrc:subtitleTracks[0].lrc,subtitleTracks})});
+  vi.stubGlobal('fetch',request);
+  const result=await resolveStashLyricsChain({...track,youtubeVideoId:'abcdefghijk'},undefined,'youtube',0,'.es');
+  expect(result).toMatchObject({original:subtitleTracks[1].lrc,hasWordSync:false,selectedSubtitleTrackId:'.es'});
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(String(request.mock.calls[0][0])).toContain('/yt-subtitles?videoId=abcdefghijk');
+ });
+ it('shows restricted captions as an error instead of silently using a different lyrics engine',async()=>{
+  vi.stubGlobal('window',{location:{origin:'https://lyricflow.test'}});
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:403,json:async()=>({detail:'YouTube restricted the caption download.'})}));
+  await expect(resolveStashLyricsChain({...track,youtubeVideoId:'abcdefghijk'},undefined,'youtube')).rejects.toThrow('restricted');
  });
  it('converts Apple Music TTML and syllable JSON into enhanced word-synced LRC',()=>{
   const ttml='<tt><body><div><p begin="00:02.00" end="00:05.00"><span begin="00:02.00" end="00:03.20">Feel</span> <span begin="00:03.20" end="00:05.00">sound</span></p></div></body></tt>';

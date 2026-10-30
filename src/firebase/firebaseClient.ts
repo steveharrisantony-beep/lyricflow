@@ -76,7 +76,7 @@ export interface DisplayPreferences {
 }
 export const DEFAULT_DISPLAY_PREFERENCES: DisplayPreferences = {
   preferredVideoType: 'music', scene: 'holographic-tide', reducedMotion: false, youtubeBackgroundMode: 'video', videoOverlayOpacity: .45,
-  autoHideYoutubeLyrics: true, playerVolume: 85, sponsorBlockEnabled: true, lyricPlacementMode: 'auto',
+  autoHideYoutubeLyrics: false, playerVolume: 85, sponsorBlockEnabled: true, lyricPlacementMode: 'auto',
   lyricColorMode: 'auto', lyricFillPaceMode: 'auto', lyricDisplayMode: 'both',
 };
 export interface UserPreferencesData {
@@ -167,7 +167,8 @@ function sanitizeDisplay(raw: Partial<DisplayPreferences> | null | undefined): D
     reducedMotion: typeof r.reducedMotion === 'boolean' ? r.reducedMotion : false,
     youtubeBackgroundMode: oneOf(r.youtubeBackgroundMode, ['video', 'theme'], 'video'),
     videoOverlayOpacity: clampNum(r.videoOverlayOpacity, 0, 1, .45),
-    autoHideYoutubeLyrics: typeof r.autoHideYoutubeLyrics === 'boolean' ? r.autoHideYoutubeLyrics : true,
+    // Retained for compatibility with deployed preference rules. Lyrics always remain above video.
+    autoHideYoutubeLyrics: false,
     playerVolume: clampNum(r.playerVolume, 0, 100, 85),
     sponsorBlockEnabled: typeof r.sponsorBlockEnabled === 'boolean' ? r.sponsorBlockEnabled : true,
     lyricPlacementMode: oneOf(r.lyricPlacementMode, ['auto','alternating','left','right','bottom-right','bottom-left','top-left','diagonal','center'], 'auto'),

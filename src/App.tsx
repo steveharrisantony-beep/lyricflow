@@ -65,7 +65,6 @@ import TrackFinder from './metadata/TrackFinder';
 import {
   extractYouTubeVideoId,
   isAdvertisementTrack,
-  isLyricVideoTrack,
   type TrackInfo,
 } from './metadata/trackInfo';
 import { saveTrackCorrection } from './metadata/metadataStore';
@@ -137,7 +136,8 @@ export default function App({ user = null }: { user?: User | null }) {
   const [sourceOpen, setSourceOpen] = useState(false);
 
   // Android External Player & Auto-matched YouTube Video state
-  const [autoYoutubeVideoId, setAutoYoutubeVideoId] = useState<string | null>(null);
+  const [autoVideoMatch,setAutoVideoMatch]=useState<{key:string;id:string|null;pending:boolean}>({key:'',id:null,pending:false});
+  const [manualVideoSearchKey,setManualVideoSearchKey]=useState('');
   const [externalAudioMode, setExternalAudioMode] = useState<ExternalAudioCaptureMode>('internal');
   const [externalMedia, setExternalMedia] = useState<ExternalMediaState | null>(null);
   const [notificationAccessGranted, setNotificationAccessGranted] = useState<boolean>(false);
@@ -175,7 +175,6 @@ export default function App({ user = null }: { user?: User | null }) {
   const [preferredVideoType, setPreferredVideoType] = useState(initialPrefs.display.preferredVideoType);
   const [youtubeBackgroundMode, setYoutubeBackgroundMode] = useState<YouTubeBackgroundMode>(initialPrefs.display.youtubeBackgroundMode);
   const [videoOverlayOpacity, setVideoOverlayOpacity] = useState<number>(initialPrefs.display.videoOverlayOpacity);
-  const [autoHideYoutubeLyrics, setAutoHideYoutubeLyrics] = useState<boolean>(initialPrefs.display.autoHideYoutubeLyrics);
   const [hasSeparateAudioStream, setHasSeparateAudioStream] = useState<boolean>(true);
   const [playerVolume, setPlayerVolume] = useState<number>(initialPrefs.display.playerVolume);
   const [sponsorBlockEnabled, setSponsorBlockEnabled] = useState<boolean>(initialPrefs.display.sponsorBlockEnabled);
@@ -183,6 +182,7 @@ export default function App({ user = null }: { user?: User | null }) {
 
   // Background video subtitles & SponsorBlock auto-sync state for JioSaavn / External Player
   const [bgVideoSubtitles, setBgVideoSubtitles] = useState<YouTubeSubtitleTrackItem[]>([]);
+  const [bgCaptionStatus,setBgCaptionStatus]=useState('');
   const [bgVideoSponsorOffsetSec, setBgVideoSponsorOffsetSec] = useState<number>(0);
   const [autoVideoDelaySeconds, setAutoVideoDelaySeconds] = useState<number>(0);
   const [autoVideoSyncStatus, setAutoVideoSyncStatus] = useState<string>('');
@@ -273,7 +273,7 @@ export default function App({ user = null }: { user?: User | null }) {
     const d = prefs.display;
     setPreferredVideoType(d.preferredVideoType);
     setScene(d.scene); setReducedMotion(d.reducedMotion); setYoutubeBackgroundMode(d.youtubeBackgroundMode);
-    setVideoOverlayOpacity(d.videoOverlayOpacity); setAutoHideYoutubeLyrics(d.autoHideYoutubeLyrics);
+    setVideoOverlayOpacity(d.videoOverlayOpacity);
     setPlayerVolume(d.playerVolume); setSponsorBlockEnabled(d.sponsorBlockEnabled);
     setLyricPlacementMode(d.lyricPlacementMode); setLyricColorMode(d.lyricColorMode);
     setLyricFillPaceMode(d.lyricFillPaceMode); setLyricDisplayMode(d.lyricDisplayMode);
@@ -289,7 +289,7 @@ export default function App({ user = null }: { user?: User | null }) {
   // Debounce network writes; nothing is sent from the visualizer render loop.
   useEffect(() => {
     const prefs: UserPreferencesData = {
-      display: { preferredVideoType, scene, reducedMotion, youtubeBackgroundMode, videoOverlayOpacity, autoHideYoutubeLyrics, playerVolume,
+      display: { preferredVideoType, scene, reducedMotion, youtubeBackgroundMode, videoOverlayOpacity, autoHideYoutubeLyrics: false, playerVolume,
         sponsorBlockEnabled, lyricPlacementMode, lyricColorMode, lyricFillPaceMode, lyricDisplayMode },
       intensity, speed, sensitivity, spectrumGain: spectrumSensitivity, motionBlur, quality,
       autoScenes, spatialTypography, narrativeObjects: false, cameraMode: 'Front', enabledScenes,
@@ -313,10 +313,13 @@ export default function App({ user = null }: { user?: User | null }) {
     enabledScenes, autoKineticMotion, manualKineticMotion, enabledKineticMotions, enabledPlacements,
     autoFonts, manualFont, enabledFonts, cameraShakeEnabled, cameraShakeSensitivity, lyricMinFontSize,
     lyricMaxFontSize, themePalettes, uid, cloudReady, preferredVideoType, scene, reducedMotion, youtubeBackgroundMode, videoOverlayOpacity,
-    autoHideYoutubeLyrics, playerVolume, sponsorBlockEnabled, lyricPlacementMode, lyricColorMode, lyricFillPaceMode, lyricDisplayMode]);
+    playerVolume, sponsorBlockEnabled, lyricPlacementMode, lyricColorMode, lyricFillPaceMode, lyricDisplayMode]);
 
   const selectLyrics = (selection: LyricsSelection) => { privateLyrics.save(''); lyricsFix.save({ selection }); };
-  const selectEngine = (engine: LyricEngineOption) => selectLyrics({ engine, lrclibId: null, subtitleTrackId: null });
+  const selectEngine = (engine: LyricEngineOption) => {
+    if(engine==='youtube'&&effectiveLyricsEngine==='youtube')setFileEpoch(epoch=>epoch+1);
+    selectLyrics({ engine, lrclibId: null, subtitleTrackId: null });
+  };
   const selectSubtitle = (id: string) => selectLyrics({ engine: 'youtube', lrclibId: null, subtitleTrackId: id });
   const updateLyricDelay = (value: number) => { delayFix.save({ delaySeconds: clampLyricDelay(value) }); };
 
@@ -539,19 +542,24 @@ export default function App({ user = null }: { user?: User | null }) {
     : (hasSeparateAudioStream ? videoFix.correction?.youtubeVideoId || songMapping.video?.youtubeVideoId : null) ||
       extractYouTubeVideoId(localTrack);
 
-  // Automatically find the highest-viewed matching YouTube video when JioSaavn or External Player is the source
+  const videoSearchKey=localTrack?[localTrack.title,localTrack.artist,Math.round(localTrack.duration),localTrack.provider,preferredVideoType].join('|'):'';
+  const autoYoutubeVideoId=autoVideoMatch.key===videoSearchKey?autoVideoMatch.id:null;
+  const videoSearchPending=Boolean(manualVideoSearchKey===recordingKey&&manualVideoSearchKey)||Boolean(hasSeparateAudioStream&&localTrack&&!isAdPlaying&&!activeYoutubeVideoId&&(autoVideoMatch.key!==videoSearchKey||autoVideoMatch.pending));
+
+  // Find a background for the current recording; stale results never carry into another song.
   useEffect(() => {
     if (
       !localTrack ||
       isAdPlaying ||
       isAdvertisementTrack(localTrack) ||
       !hasSeparateAudioStream ||
-      (localTrack.provider !== 'jiosaavn' && localTrack.provider !== 'external')
+      (localTrack.provider !== 'jiosaavn' && localTrack.provider !== 'external' && localTrack.provider !== 'local')
     ) {
-      setAutoYoutubeVideoId(null);
+      setAutoVideoMatch({key:videoSearchKey,id:null,pending:false});
       return;
     }
     const controller = new AbortController();
+    setAutoVideoMatch({key:videoSearchKey,id:null,pending:true});
     const base = localStorage.getItem('lyricflow.resolver') || import.meta.env.VITE_MUSIC_RESOLVER || '';
     const query = `${localTrack.title} ${localTrack.artist} ${
       preferredVideoType === 'music' ? 'music video' : 'lyrics video'
@@ -561,9 +569,9 @@ export default function App({ user = null }: { user?: User | null }) {
         if (controller.signal.aborted) return;
         const ranked = rankYouTubeBackgroundCandidates(songs, localTrack, preferredVideoType);
         const bestId = ranked.length > 0 ? extractYouTubeVideoId(ranked[0]) : null;
-        setAutoYoutubeVideoId(bestId || null);
+        setAutoVideoMatch({key:videoSearchKey,id:bestId||null,pending:false});
       })
-      .catch(() => {});
+      .catch(() => {if(!controller.signal.aborted)setAutoVideoMatch({key:videoSearchKey,id:null,pending:false});});
     return () => controller.abort();
   }, [
     localTrack?.title,
@@ -595,7 +603,7 @@ export default function App({ user = null }: { user?: User | null }) {
           setVirtualMediaTime(media.position);
         }
         if (adDetected) {
-          setAutoYoutubeVideoId(null);
+          setAutoVideoMatch({key:'',id:null,pending:false});
           setIncoming(null);
         }
         setLocalTrack(prev => {
@@ -686,7 +694,7 @@ export default function App({ user = null }: { user?: User | null }) {
     ? null
     : activeYoutubeVideoId ||
       (hasSeparateAudioStream &&
-      (localTrack?.provider === 'jiosaavn' || localTrack?.provider === 'external')
+      (localTrack?.provider === 'jiosaavn' || localTrack?.provider === 'external' || localTrack?.provider === 'local')
         ? autoYoutubeVideoId
         : null);
 
@@ -732,14 +740,25 @@ export default function App({ user = null }: { user?: User | null }) {
   useEffect(() => {
     if (!hasSeparateAudioStream || !stageYoutubeVideoId || isAdPlaying) {
       setBgVideoSubtitles([]);
+      setBgCaptionStatus('');
       setBgVideoSponsorOffsetSec(0);
       setAutoVideoDelaySeconds(0);
       setAutoVideoSyncStatus('');
       return;
     }
     const controller = new AbortController();
+    setBgVideoSubtitles([]);
+    setBgVideoSponsorOffsetSec(0);
+    setBgCaptionStatus('Checking video subtitles for timing…');
+    const captions=fetchYouTubeSubtitlesForTrack(stageYoutubeVideoId,controller.signal).then(result=>{
+      if(!controller.signal.aborted)setBgCaptionStatus(result?`Video subtitles available: ${(result.subtitleTracks||[]).map(t=>t.label).join(', ')||result.source}`:'This video has no accessible subtitle track. Manual video delay is available.');
+      return result;
+    }).catch(error=>{
+      if(!controller.signal.aborted)setBgCaptionStatus(error instanceof Error?error.message:'Video subtitles are unavailable. Manual video delay is available.');
+      return null;
+    });
     void Promise.all([
-      fetchYouTubeSubtitlesForTrack(stageYoutubeVideoId, controller.signal).catch(() => null),
+      captions,
       fetchSponsorBlockSegments(stageYoutubeVideoId, controller.signal).catch(() => []),
     ]).then(([subRes, sbSegments]) => {
       if (controller.signal.aborted) return;
@@ -795,24 +814,12 @@ export default function App({ user = null }: { user?: User | null }) {
       songMapping.video?.delaySeconds ??
       autoVideoDelaySeconds
     : 0;
-  const isLyricVideoDetected = Boolean(
-    stageYoutubeVideoId &&
-      !videoFix.correction &&
-      (isLyricVideoTrack(localTrack) ||
-        (hasSeparateAudioStream && !activeYoutubeVideoId && preferredVideoType === 'lyrics'))
-  );
-  const hideStageLyricsForVideo = Boolean(
-    isAdPlaying ||
-      (stageYoutubeVideoId &&
-        effectiveYoutubeBackgroundMode === 'video' &&
-        autoHideYoutubeLyrics &&
-        isLyricVideoDetected)
-  );
+
   const showStageVideoController = Boolean(
     !isAdPlaying &&
       (stageYoutubeVideoId ||
         (hasSeparateAudioStream &&
-          (localTrack?.provider === 'jiosaavn' || localTrack?.provider === 'external')))
+          (localTrack?.provider === 'jiosaavn' || localTrack?.provider === 'external' || localTrack?.provider === 'local')))
   );
 
   useEffect(() => {
@@ -912,7 +919,10 @@ export default function App({ user = null }: { user?: User | null }) {
           youtubeVideoId={stageYoutubeVideoId}
           videoDelaySeconds={videoDelaySeconds}
           youtubeBackgroundMode={effectiveYoutubeBackgroundMode}
-          hideStageLyrics={hideStageLyricsForVideo}
+          hideStageLyrics={isAdPlaying}
+          externalPlayer={sourceMode==='external'||localTrack?.provider==='external'}
+          advertisementPlaying={isAdPlaying}
+          videoSearchPending={videoSearchPending}
           playbackTime={localTime}
           hasSeparateAudioStream={hasSeparateAudioStream}
           playerVolume={playerVolume}
@@ -922,9 +932,6 @@ export default function App({ user = null }: { user?: User | null }) {
           }}
         />
 
-        {hideStageLyricsForVideo && !isAdPlaying && (
-          <button className="show-video-lyrics" type="button" onClick={() => setAutoHideYoutubeLyrics(false)}>Show LyricFlow lyrics over video</button>
-        )}
         {!performance && (
           <div className="stage-source-bar">
             <button
@@ -1262,7 +1269,7 @@ export default function App({ user = null }: { user?: User | null }) {
 
                     {youtubeSubtitleTracks.length > 1 && (
                       <label className="cinema-field">
-                        <span>Creator Subtitle Track ({youtubeSubtitleTracks.length})</span>
+                        <span>Subtitle Track ({youtubeSubtitleTracks.length})</span>
                         <select
                           aria-label="Cinema YouTube subtitle track"
                           value={effectiveSubtitleTrackId || youtubeSubtitleTracks[0]?.id || ''}
@@ -1291,18 +1298,6 @@ export default function App({ user = null }: { user?: User | null }) {
                         ))}
                       </select>
                     </label>
-
-                    {stageYoutubeVideoId && (
-                      <label className="cinema-check">
-                        <input
-                          type="checkbox"
-                          checked={autoHideYoutubeLyrics}
-                          onChange={e => setAutoHideYoutubeLyrics(e.target.checked)}
-                        />{' '}
-                        Auto-hide stage lyrics if YouTube video contains lyrics (
-                        {isLyricVideoDetected ? 'Lyric video detected' : 'Standard video'})
-                      </label>
-                    )}
 
                     <label className="cinema-check">
                       <input
@@ -1624,9 +1619,7 @@ export default function App({ user = null }: { user?: User | null }) {
             </b>
             <small>
               {stageYoutubeVideoId && youtubeBackgroundMode === 'video'
-                ? hideStageLyricsForVideo
-                  ? 'Lyric Video Detected · Stage Lyrics Auto-Hidden'
-                  : 'VoxelVerse Lyrics Engine Overlaid on Video'
+                ? 'VoxelVerse Lyrics Engine Overlaid on Video'
                 : `${enabledScenes.length}/${choices.length} Unique Themes · ${enabledKineticMotions.length}/${VOXELVERSE_STYLES.length} VoxelVerse Styles`}
             </small>
           </div>
@@ -1705,9 +1698,7 @@ export default function App({ user = null }: { user?: User | null }) {
               <small style={{ opacity: 0.8 }}>
                 {youtubeBackgroundMode === 'video'
                   ? stageYoutubeVideoId
-                    ? hideStageLyricsForVideo
-                      ? 'Playing YouTube video background (Built-in themes unloaded) · Lyric Video detected — stage lyrics auto-hidden'
-                      : `Playing YouTube video background (Most Views · ${preferredVideoType === 'music' ? 'Music Video' : 'Lyrical Video'}) · ${Math.round(videoOverlayOpacity * 100)}% Black Overlay${hasSeparateAudioStream && autoVideoSyncStatus ? ` · ${autoVideoSyncStatus}` : ''}`
+                    ? `Playing YouTube video background (Most Views · ${preferredVideoType === 'music' ? 'Music Video' : 'Lyrical Video'}) · ${Math.round(videoOverlayOpacity * 100)}% Black Overlay${hasSeparateAudioStream && autoVideoSyncStatus ? ` · ${autoVideoSyncStatus}` : ''}`
                     : 'Finding highest-viewed YouTube background video for this track…'
                   : 'Built-in VoxelWall themes loaded as background with VoxelVerse lyrics engine'}
               </small>
@@ -1809,28 +1800,7 @@ export default function App({ user = null }: { user?: User | null }) {
               </label>
             )}
 
-            <label
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-              }}
-            >
-              <input
-                type="checkbox"
-                aria-label="Automatically hide lyrics engine if video already contains lyrics"
-                checked={autoHideYoutubeLyrics}
-                onChange={e => setAutoHideYoutubeLyrics(e.target.checked)}
-              />
-              <span>
-                Auto-hide lyrics engine if video contains lyrics{' '}
-                <small style={{ opacity: 0.75 }}>
-                  ({isLyricVideoDetected ? 'Lyric video detected' : 'No embedded lyrics detected'})
-                </small>
-              </span>
-            </label>
+
           </div>
         </section>
       )}
@@ -1874,6 +1844,7 @@ export default function App({ user = null }: { user?: User | null }) {
           setSelectedSubtitleTrackId(undefined);
         }}
         onTrackChange={track => {
+          if(track?.provider==='local')setSourceMode('local');
           setLocalTrack(track);
           setIncoming(null);
           setAvailableLyricEngines([]);
@@ -1903,6 +1874,8 @@ export default function App({ user = null }: { user?: User | null }) {
           onPreferenceChange={setPreferredVideoType}
           backgroundMode={youtubeBackgroundMode}
           onBackgroundModeChange={setYoutubeBackgroundMode}
+          captionStatus={bgCaptionStatus}
+          onSearchingChange={searching=>setManualVideoSearchKey(searching?recordingKey:'')}
           onChoose={id => {
             videoFix.save({
               youtubeVideoId: id,
@@ -1916,7 +1889,7 @@ export default function App({ user = null }: { user?: User | null }) {
         mappedLyrics={songMapping.lyrics} mappedVideo={songMapping.video} canChangeVideo={hasSeparateAudioStream} onVideoChange={(id, videoDelaySeconds) => videoFix.save({ youtubeVideoId: id, videoDelaySeconds })} />
       {songMapping.error && <p role="status">{songMapping.error}</p>}
       {privateLyrics.error && <p role="status">{privateLyrics.error}</p>}
-      <TrackFinder
+      {!isAdPlaying&&<TrackFinder
         key={'finder-' + fileEpoch}
         track={localTrack}
         preferredSelection={lyricsFix.correction?.selection || songMapping.lyrics?.selection || null}
@@ -1937,7 +1910,7 @@ export default function App({ user = null }: { user?: User | null }) {
         }}
         onLyricsFound={acceptLyrics}
         onStatusChange={setLyricStatusMessage}
-      />
+      />}
 
       <ManualLyrics
         key={'editor-' + (recordingKey || fileEpoch)}
@@ -2693,11 +2666,11 @@ export default function App({ user = null }: { user?: User | null }) {
         open={sourceOpen}
         onClose={() => setSourceOpen(false)}
         activeMode={sourceMode}
-        onSelectMode={mode => setSourceMode(mode)}
-        onPickLocal={() => {
-          setSourceMode('local');
-          playerRef.current?.chooseFile();
+        onSelectMode={mode => {
+          if(mode==='external'&&sourceMode!=='external'){playerRef.current?.stop();setHasSeparateAudioStream(true);}
+          if(mode==='external'||!localTrack)setSourceMode(mode);
         }}
+        onPickLocal={() => playerRef.current?.chooseFile()}
         onPlaySong={async song => {
           setSourceMode('online');
           await playerRef.current?.loadRemote(song);

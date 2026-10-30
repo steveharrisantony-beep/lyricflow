@@ -110,3 +110,33 @@ it('finds a music or lyrical YouTube background for JioSaavn and saves both sour
   expect(maps[0].lyrics.sourceFile.revision).toMatch(/^l3_/);
   expect(JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!).display.preferredVideoType).toBe('lyrics');
 });
+
+it('switches external advertisements to themes, aborts video search and unmounts lyric lookup',async()=>{
+  const external=await import('../audio/externalPlayer');
+  const finder=await import('../metadata/TrackFinder');
+  const stage=await import('../visualization/cinematic/CinematicStage');
+  let deliver:Parameters<typeof external.subscribeExternalMedia>[0]|undefined;
+  const subscribe=vi.spyOn(external,'subscribeExternalMedia').mockImplementation(async callback=>{deliver=callback;return()=>{};});
+  const capture=vi.spyOn(external,'startExternalAudioCapture').mockResolvedValue({ok:true,activeMode:'internal',message:'Fixture capture'});
+  const stop=vi.spyOn(external,'stopExternalAudioCapture').mockResolvedValue();
+  const find=vi.spyOn(finder,'default').mockImplementation(()=> <span data-testid="lyrics-lookup"/>);
+  const draw=vi.spyOn(stage,'default').mockImplementation(props=><span data-testid="stage-ad" data-ad={String(props.advertisementPlaying)} data-video={props.youtubeVideoId||''} data-mode={props.youtubeBackgroundMode}/>);
+  external.setAndroidAppOverrideForTest(true);
+  try{
+    await act(async()=>host.querySelector<HTMLButtonElement>('.stage-source-button')!.click());
+    await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('.source-option-card')].find(b=>b.textContent?.includes('External Player'))!.click());
+    const media={title:'Original fixture song',artist:'Fixture Artist',album:'',duration:200,position:1,playing:true,packageName:'fixture.player',appName:'Fixture Player',updatedAt:Date.now()};
+    await act(async()=>deliver!(media,true));
+    expect(host.querySelector('[data-testid="lyrics-lookup"]')).not.toBeNull();
+    const calls=vi.mocked(searchStashCatalog).mock.calls;
+    const searchSignal=calls.at(-1)?.[3];
+    const count=calls.length;
+    await act(async()=>deliver!({...media,title:'Advertisement',isAd:true},true));
+    expect(host.querySelector('[data-testid="lyrics-lookup"]')).toBeNull();
+    expect(host.querySelector('[data-testid="stage-ad"]')?.getAttribute('data-ad')).toBe('true');
+    expect(host.querySelector('[data-testid="stage-ad"]')?.getAttribute('data-video')).toBe('');
+    expect(host.querySelector('[data-testid="stage-ad"]')?.getAttribute('data-mode')).toBe('theme');
+    expect(vi.mocked(searchStashCatalog).mock.calls.length).toBe(count);
+    expect(searchSignal?.aborted).toBe(true);
+  }finally{external.setAndroidAppOverrideForTest(null);subscribe.mockRestore();capture.mockRestore();stop.mockRestore();find.mockRestore();draw.mockRestore();}
+});

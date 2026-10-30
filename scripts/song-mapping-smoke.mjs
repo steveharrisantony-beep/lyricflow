@@ -16,8 +16,12 @@ await page.route('https://lrclib.net/**',r=>r.fulfill({json:[]}));
 await page.route('**/music/search**',route=>{const p=new URL(route.request().url()).searchParams;lastQuery=p.get('q')||'';return route.fulfill({json:{data:[p.get('provider')==='youtube'?video:song]}});});
 await page.route('**/music/resolve/**',route=>route.fulfill({json:{streamPath:'/audio/jiofixture',format:'audio',audioSource:'JioSaavn',track:song}}));
 await page.route('**/music/audio/jiofixture',route=>route.fulfill({contentType:'audio/wav',body:wav}));
-await page.route('https://www.youtube.com/**',route=>route.fulfill({contentType:'text/html',body:`<script>window.commands=[];addEventListener('message',event=>{try{const d=JSON.parse(event.data);if(d.func)commands.push(d);if(d.event==='listening')parent.postMessage(JSON.stringify({event:'onReady'}),'*')}catch{}})</script>`}));
-await page.addInitScript(()=>localStorage.setItem('lyricflow.youtubeAuth.v1',JSON.stringify({interactivePlayer:true})));
+await page.route('https://www.youtube.com/**',route=>route.fulfill({contentType:'text/html',body:`<script>window.commands=[];window.holdPlayback=true;addEventListener('message',event=>{try{const d=JSON.parse(event.data);if(d.func)commands.push(d);if(d.event==='listening')parent.postMessage(JSON.stringify({event:'onReady'}),'*');if(d.func==='playVideo'&&!window.holdPlayback)parent.postMessage(JSON.stringify({event:'onStateChange',info:1}),'*')}catch{}})</script>`}));
+await page.addInitScript(()=>{
+ localStorage.setItem('lyricflow.youtubeAuth.v1',JSON.stringify({interactivePlayer:true}));
+ const drawImage=CanvasRenderingContext2D.prototype.drawImage;
+ CanvasRenderingContext2D.prototype.drawImage=function(...args){if(this.canvas.classList.contains('cinematic-canvas'))window.__lyricBackgroundCopies=(window.__lyricBackgroundCopies||0)+1;return drawImage.apply(this,args);};
+});
 try{
  await page.goto('http://127.0.0.1:5175');
  await page.getByRole('button',{name:'Search JioSaavn & YouTube',exact:true}).click();
@@ -31,6 +35,18 @@ try{
  await page.getByRole('button',{name:'Use muted background',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('iframe')?.src.includes('abcdefghijk'));
  assert.ok((await page.locator('iframe').getAttribute('src')).includes('mute=1'));
+ assert.equal(await page.locator('.cinematic-stack').getAttribute('data-background-state'),'themes');
+ const initialFrame=page.frames().find(f=>f.url().includes('youtube.com/embed/'));
+ await initialFrame.evaluate(()=>{window.holdPlayback=false;parent.postMessage(JSON.stringify({event:'onStateChange',info:1}),'*');});
+ await page.waitForFunction(()=>getComputedStyle(document.querySelector('.theme-layer')).visibility==='hidden');
+ assert.equal(await page.locator('.cinematic-stack').getAttribute('data-background-state'),'video');
+ const clockBeforeToggle=await page.locator('audio').evaluate(a=>a.currentTime);
+ await page.getByLabel('Stage background mode',{exact:true}).selectOption('theme');
+ await page.waitForFunction(()=>getComputedStyle(document.querySelector('.theme-layer')).opacity==='1');
+ assert.equal(await page.locator('audio').evaluate(a=>a.paused),false);
+ await page.getByLabel('Stage background mode',{exact:true}).selectOption('video');
+ await page.waitForFunction(()=>getComputedStyle(document.querySelector('.theme-layer')).visibility==='hidden');
+ assert.ok(await page.locator('audio').evaluate((a,start)=>a.currentTime>start,clockBeforeToggle));
  assert.equal(await page.locator('audio').getAttribute('src'),originalAudio);
  await page.getByLabel('Preferred YouTube background',{exact:true}).selectOption('lyrics');
  await page.getByRole('button',{name:'Change YouTube background',exact:true}).click();
@@ -58,9 +74,9 @@ try{
  await page.evaluate(async()=>{const audio=document.querySelector('audio');audio.currentTime=.1;await audio.play();});
  await page.waitForFunction(()=>Number(document.querySelector('.cinematic-canvas')?.dataset.lyricDraws)>0);
  assert.ok(await page.evaluate(()=>{
-  const video=document.querySelector('.youtube-stage-backdrop'),lyrics=document.querySelector('.cinematic-canvas');
-  return Number(getComputedStyle(video).zIndex)<Number(getComputedStyle(lyrics).zIndex)&&getComputedStyle(lyrics).pointerEvents==='none';
+  const video=document.querySelector('.youtube-stage-backdrop'),theme=document.querySelector('.theme-layer'),lyrics=document.querySelector('.cinematic-canvas');
+  return Number(getComputedStyle(video).zIndex)<Number(getComputedStyle(theme).zIndex)&&Number(getComputedStyle(theme).zIndex)<Number(getComputedStyle(lyrics).zIndex)&&getComputedStyle(lyrics).pointerEvents==='none'&&(window.__lyricBackgroundCopies||0)===0;
  }));
  assert.deepEqual(errors,[]);
- console.log('PASS: JioSaavn audio retained; both exact video queries; selected video stays muted; separate signed delays and source/video mappings saved.');
+ console.log('PASS: Permanent video/theme/lyrics layer order; loading themes and animated toggles retain JioSaavn audio; no themes painted onto lyrics; both exact video queries; selected video stays muted; separate signed delays and source/video mappings saved.');
 }catch(error){console.error('Mapping diagnostics',await page.evaluate(()=>({mappings:localStorage.getItem('lyricflow.v3.guest.songMappings'),corrections:localStorage.getItem('lyricflow.v3.guest.corrections')})));throw error;}finally{await browser.close();server.kill();}

@@ -13,6 +13,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(LocalBackendPlugin.class);
         registerPlugin(ExternalMediaPlugin.class);
         registerPlugin(AppUpdaterPlugin.class);
+        registerPlugin(MediaPlaybackPolicyPlugin.class);
         super.onCreate(savedInstanceState);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         CookieManager cookieManager = CookieManager.getInstance();

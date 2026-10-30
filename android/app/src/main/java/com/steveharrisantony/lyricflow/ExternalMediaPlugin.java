@@ -22,6 +22,8 @@ import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
@@ -163,6 +165,9 @@ public class ExternalMediaPlugin extends Plugin {
                 topBar.addView(doneBtn);
 
                 final WebView loginWebView = new WebView(activity);
+                if (WebViewFeature.isFeatureSupported(WebViewFeature.MUTE_AUDIO)) {
+                    WebViewCompat.setAudioMuted(loginWebView, true);
+                }
                 CookieManager cm = CookieManager.getInstance();
                 cm.setAcceptCookie(true);
                 cm.setAcceptThirdPartyCookies(loginWebView, true);

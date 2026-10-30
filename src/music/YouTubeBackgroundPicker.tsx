@@ -17,6 +17,8 @@ export default function YouTubeBackgroundPicker({
   onChoose,
   backgroundMode = 'video',
   onBackgroundModeChange,
+  onSearchingChange,
+  captionStatus,
 }: {
   track: TrackInfo;
   activeVideoId: string | null;
@@ -25,18 +27,23 @@ export default function YouTubeBackgroundPicker({
   onChoose: (id: string) => void;
   backgroundMode?: YouTubeBackgroundMode;
   onBackgroundModeChange?: (mode: YouTubeBackgroundMode) => void;
+  onSearchingChange?: (searching:boolean) => void;
+  captionStatus?:string;
 }) {
   const [results, setResults] = useState<SongResult[]>([]),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(''),
     [customQuery, setCustomQuery] = useState('');
   const pending = useRef<AbortController | null>(null);
-  useEffect(() => () => pending.current?.abort(), []);
+  const searchingCallback=useRef(onSearchingChange);
+  searchingCallback.current=onSearchingChange;
+  useEffect(() => () => {pending.current?.abort();searchingCallback.current?.(false);}, []);
   const runSearch = async (overrideQuery?: string) => {
     pending.current?.abort();
     const controller = new AbortController();
     pending.current = controller;
     setBusy(true);
+    searchingCallback.current?.(true);
     setMessage('Finding YouTube backgrounds…');
     try {
       const base =
@@ -67,7 +74,7 @@ export default function YouTubeBackgroundPicker({
       if (!controller.signal.aborted)
         setMessage(error instanceof Error ? error.message : 'YouTube search unavailable.');
     } finally {
-      if (!controller.signal.aborted) setBusy(false);
+      if (!controller.signal.aborted) {setBusy(false);searchingCallback.current?.(false);}
     }
   };
   return (
@@ -104,6 +111,7 @@ export default function YouTubeBackgroundPicker({
             onChange={event => {
               pending.current?.abort();
               setBusy(false);
+              searchingCallback.current?.(false);
               setResults([]);
               setMessage('');
               onPreferenceChange(event.target.value as 'music' | 'lyrics');
@@ -148,6 +156,7 @@ export default function YouTubeBackgroundPicker({
         </button>
       </form>
       {message && <p role="status">{message}</p>}
+      {captionStatus && <p role="status">{captionStatus}</p>}
       <div className="track-candidates">
         {results.map(song => {
           const id = extractYouTubeVideoId(song)!;

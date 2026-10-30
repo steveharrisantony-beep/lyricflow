@@ -59,10 +59,13 @@ or stored by the app.
 
 ## Publishing updates
 
-After adding the four secrets, push to main or run **Build Android APK** manually.
-The workflow assigns an increasing version code, builds a signed release APK,
-runs the checks and Android emulator tests, then publishes the tested APK as a
-stable GitHub Release tagged android-VERSION_CODE. Release assets use the name
+Pushes to main build and test an APK without publishing a release. Check the
+changes in the web preview first. After approval and adding the four secrets,
+run **Actions > Build Android APK > Run workflow** on main and enable
+**Publish a signed APK update after manual preview approval**. The workflow
+assigns an increasing version code, builds a signed release APK, runs the checks
+and Android emulator tests, then publishes a stable GitHub Release tagged
+android-VERSION_CODE. Release assets use the name
 LyricFlow-Android.apk. GitHub's asset SHA-256 digest is required by the update checker.
 
 Without secrets, the same workflow still builds a test APK under

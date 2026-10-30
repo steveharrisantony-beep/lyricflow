@@ -49,7 +49,10 @@ export function readableChromaticInk(background:string,preferred?:string):string
 }
 
 const backdrops=new WeakMap<CanvasRenderingContext2D,{data:Uint8ClampedArray;width:number;height:number}>();
-export function setLyricBackdrop(c:CanvasRenderingContext2D,pixels:ImageData){backdrops.set(c,{data:pixels.data,width:pixels.width,height:pixels.height})}
+export function setLyricBackdrop(c:CanvasRenderingContext2D,pixels:ImageData|null){
+ if(pixels)backdrops.set(c,{data:pixels.data,width:pixels.width,height:pixels.height});
+ else backdrops.delete(c);
+}
 /** Sample the scene beneath the text. Keep solid typography free of stroked outlines. */
 export function paintLyric(c:CanvasRenderingContext2D,text:string,x:number,y:number,maxWidth:number,preferred:string,surface?:string){
  const backdrop=backdrops.get(c),m=c.getTransform();

@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish_update:
+        description: 'Publish a signed APK update after manual preview approval'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -131,7 +136,7 @@ jobs:
 
   publish-update:
     needs: apk
-    if: needs.apk.outputs.release == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: needs.apk.outputs.release == 'true' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.publish_update == true
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -224,3 +224,42 @@ it('allows ordinary Google video streams regardless of ctier metadata',async()=>
   const {evaluateBlockyUrl}=await import('../music/youtubeAdBlocker');
   expect(evaluateBlockyUrl('https://r1.googlevideo.com/videoplayback?ctier=L&id=music').blocked).toBe(false);
 });
+
+it('keeps permanent video, theme and lyric layers and waits for a playing frame before revealing video',async()=>{
+  await act(async()=>root.render(<CinematicStage {...base} reducedMotion={false}/>));
+  const frame=host.querySelector('iframe')!,theme=host.querySelector<HTMLElement>('.theme-layer')!,lyrics=host.querySelector<HTMLElement>('[data-layer="lyrics"]')!;
+  expect(host.querySelector('.cinematic-stack')?.getAttribute('data-background-state')).toBe('themes');
+  expect(Number(host.querySelector<HTMLElement>('[data-layer="video"]')!.style.zIndex)).toBeLessThan(Number(theme.style.zIndex));
+  expect(Number(theme.style.zIndex)).toBeLessThan(Number(lyrics.style.zIndex));
+  expect(theme.style.opacity).toBe('1');
+  await act(async()=>window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,data:JSON.stringify({event:'onStateChange',info:1})})));
+  expect(host.querySelector('.cinematic-stack')?.getAttribute('data-background-state')).toBe('video');
+  expect(theme.style.opacity).toBe('0');
+  expect(theme.style.transition).toContain('440ms');
+  await act(async()=>root.render(<CinematicStage {...base} reducedMotion={false} videoSearchPending/>));
+  expect(host.querySelector('.theme-layer')).toBe(theme);
+  expect(theme.style.opacity).toBe('1');
+  expect(lyrics.style.background).toBe('transparent');
+});
+
+it('keeps primary YouTube audio running under themes and remounts muted before switching to separate audio',async()=>{
+  await act(async()=>root.render(<CinematicStage {...base} hasSeparateAudioStream={false}/>));
+  const primary=host.querySelector('iframe')!;
+  expect(primary.src).toContain('autoplay=0');
+  const send=vi.spyOn(primary.contentWindow!,'postMessage');
+  await act(async()=>root.render(<CinematicStage {...base} hasSeparateAudioStream={false} youtubeBackgroundMode="theme"/>));
+  expect(host.querySelector('iframe')).toBe(primary);
+  const commands=send.mock.calls.map(args=>JSON.parse(String(args[0])));
+  expect(commands.some(c=>c.func==='pauseVideo')).toBe(false);
+  expect(commands.some(c=>c.func==='playVideo')).toBe(true);
+  await act(async()=>root.render(<CinematicStage {...base} hasSeparateAudioStream/>));
+  const background=host.querySelector('iframe')!;
+  expect(background).not.toBe(primary);
+  expect(background.src).toContain('mute=1');
+  const backgroundSend=vi.spyOn(background.contentWindow!,'postMessage');
+  await act(async()=>background.dispatchEvent(new Event('load')));
+  const mutedCommands=backgroundSend.mock.calls.map(args=>JSON.parse(String(args[0]))).filter(c=>c.event==='command');
+  expect(mutedCommands.findIndex(c=>c.func==='mute')).toBeLessThan(mutedCommands.findIndex(c=>c.func==='playVideo'));
+  expect(mutedCommands.some(c=>c.func==='setVolume'&&c.args[0]===0)).toBe(true);
+  expect(mutedCommands.some(c=>c.func==='unMute')).toBe(false);
+});

@@ -1,5 +1,6 @@
 import {backendOrigin} from '../network/backend';
 import { providerRequest } from '../network/request';
+import {getYouTubeRequestHeaders} from '../music/youtubeAuth';
 import { hasValidLrcTimestamps, type TrackCandidate, type TrackInfo } from '../metadata/trackInfo';
 import { cleanLyricMetadata } from './providers';
 import {
@@ -293,8 +294,7 @@ export function convertStructuredAppleJsonToLrc(payload: unknown): { lrc: string
 }
 
 /**
- * Fetch creator-uploaded YouTube video subtitles / closed captions as line-synced LRC via server endpoint.
- * Returns all available creator-uploaded subtitle tracks (`subtitleTracks`) when multiple languages/scripts exist.
+ * Fetch available caption text. Automatic captions are explicitly labelled, never treated as verified word sync.
  */
 export async function fetchYouTubeSubtitlesForTrack(
   videoId: string | null | undefined,
@@ -303,17 +303,24 @@ export async function fetchYouTubeSubtitlesForTrack(
   const cleanId = (videoId || '').trim();
   if (!/^[a-zA-Z0-9_-]{11}$/.test(cleanId)) return null;
   if (typeof window === 'undefined' || !window.location?.origin) return null;
-
+  const controller=new AbortController();
+  const cancel=()=>controller.abort(signal?.reason);
+  signal?.addEventListener('abort',cancel,{once:true});
+  const timer=setTimeout(()=>controller.abort(new Error('YouTube caption lookup timed out.')),17000);
   try {
     signal?.throwIfAborted();
     const res = await fetch(
       `${backendOrigin()}/music/yt-subtitles?videoId=${encodeURIComponent(cleanId)}`,
       {
-        headers: { Accept: 'application/json' },
-        signal,
+        headers: { Accept: 'application/json',...getYouTubeRequestHeaders() },
+        signal:controller.signal,
       }
     );
-    if (!res.ok) return null;
+    if(res.status===404)return null;
+    if(!res.ok){
+      const failure=await res.json().catch(()=>null) as {detail?:string}|null;
+      throw new Error(failure?.detail||'YouTube captions are unavailable. Try again or import a subtitle file.');
+    }
     const data = (await res.json()) as {
       lrc?: string;
       source?: string;
@@ -331,6 +338,11 @@ export async function fetchYouTubeSubtitlesForTrack(
     }
   } catch (err) {
     if (signal?.aborted) throw err;
+    if(controller.signal.aborted)throw new Error('YouTube caption lookup timed out. Try again or import a subtitle file.');
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort',cancel);
   }
   return null;
 }

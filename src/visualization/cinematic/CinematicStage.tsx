@@ -1,7 +1,7 @@
 import {videoSyncTarget} from '../../audio/videoTiming';
 import {setLyricBackdrop} from './contrast';
 import {drawMotionGraphics,MOTION_SCENES} from './procedural/MotionGraphics';
-import {drawSceneTransition,transitionProgress,sceneEntryPose} from './transitions';
+import {drawSceneTransition,transitionProgress,sceneEntryPose,TRANSITION_SECONDS} from './transitions';
 import {drawKineticLyrics,lyricWordHit,type LyricMotion,type LyricFillPaceMode,type LyricPlacementMode} from './kineticTypography';
 import {MusicCameraRig,makeLyricProjection} from './cameraRig';
 import {getSpectrumSensitivity} from '../../audio/audioSignal';
@@ -13,6 +13,7 @@ import {NO_AUDIO,type Pulse} from './paint';
 import {drawInstrumentalMark} from './typography';
 import {GraphicCompositions,type GraphicSystem} from './procedural/GraphicCompositions';
 import {useYouTubeAuth,setYouTubeInteractivePlayer} from '../../music/youtubeAuth';
+import {useNativePlaybackPolicy} from '../../audio/nativePlaybackPolicy';
 
 export type Quality='High'|'Balanced'|'Performance';
 export const CAMERA_VIEWS=['Front'] as const;
@@ -49,6 +50,10 @@ export interface CinematicProps{
  playerVolume?:number;
  onYoutubeTimeUpdate?:(currentTime:number,duration?:number)=>void;
  onYoutubeEnded?:()=>void;
+ externalPlayer?:boolean;
+ videoSearchPending?:boolean;
+ advertisementPlaying?:boolean;
+ renderThemes?:boolean;
 }
 export function resolveActiveCameraView():CameraView{
  return 'Front';
@@ -107,12 +112,14 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
   const sampleCtx=sample.getContext('2d',{willReadFrequently:true});let sampleAt=-1;
   const outgoing=document.createElement('canvas');
   const outgoingCtx=outgoing.getContext('2d');
+  let needsFrame=true;
   let previousId:SceneId|null=null,outgoingId:SceneId|null=null,transitionStarted=-100;
   const demoBands=new Float32Array(64);
   const resize=()=>{
+   needsFrame=true;
    w=Math.max(1,element.clientWidth);h=Math.max(1,element.clientHeight);
    const q=currentProps.current.quality;
-   const useYtBgNow=Boolean(currentProps.current.youtubeVideoId&&(currentProps.current.youtubeBackgroundMode??'video')==='video');
+   const useYtBgNow=currentProps.current.renderThemes===false;
    const ratio=Math.min(window.devicePixelRatio||1,q==='High'?2:q==='Balanced'?1.5:1);
    const limit=q==='Performance'?950_000:q==='Balanced'?1_600_000:2_400_000;
    const dpr=Math.max(.48,Math.min(ratio,Math.sqrt(limit/(w*h)))*adaptiveScale);
@@ -121,7 +128,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
    element.height=Math.max(1,Math.floor(h*textRatio));
    textCtx.setTransform(element.width/w,0,0,element.height/h,0,0);
    const fx=effects.current;
-   if(fx&&!useYtBgNow){
+   if(fx){
     fx.width=Math.max(1,Math.floor(w*dpr));
     fx.height=Math.max(1,Math.floor(h*dpr));
     const paintCtx=fx.getContext('2d',{alpha:false});
@@ -145,14 +152,16 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
    raf=requestAnimationFrame(frame);
    const config=currentProps.current;
    const dt=Math.min(0.1,Math.max(0,(last?now-last:16.7)/1000));last=now;
-   if(document.hidden||config.paused)return;
-   const useYtVideoBg=Boolean(config.youtubeVideoId&&(config.youtubeBackgroundMode??'video')==='video');
+   const useYtVideoBg=config.renderThemes===false;
+   if(document.hidden||(config.paused&&!needsFrame&&wasYtVideoBg===useYtVideoBg))return;
+   needsFrame=false;
    if(wasYtVideoBg!==useYtVideoBg){
     wasYtVideoBg=useYtVideoBg;
     if(useYtVideoBg){
      // Unload theme state while YouTube video is active so zero background theme work runs
      graphicArt?.reset();
      outgoingArt?.reset();
+     setLyricBackdrop(textCtx,null);
     }
     resize();
    }
@@ -269,7 +278,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
     ytWrapRef.current.style.transform='none';
    }
 
-   // ONLY load & render procedural background themes when Built-in Themes mode is active (!useYtVideoBg)
+   // Draw themes only while visible or transitioning. This canvas is permanently between video and lyrics.
    const fx=effects.current;
    const paintCtx=!useYtVideoBg&&fx?fx.getContext('2d',{alpha:false}):null;
    if(!useYtVideoBg&&fx&&paintCtx){
@@ -300,6 +309,8 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
     };
     if(transition<1&&outgoingId&&outgoingCtx)background(outgoingId,outgoingCtx,getOutgoingArt(),true);
     background(scene.id,paintCtx,getGraphicArt());
+    // Scene transitions belong on the theme layer, never on the transparent lyrics canvas.
+    if(transition<1&&outgoingId&&outgoing.width>0)drawSceneTransition(paintCtx,outgoing,w,h,transition,scene.transition);
     if(sampleCtx&&(elapsed-sampleAt>.25||transition<.04)){
      sampleCtx.drawImage(fx,0,0,48,30);
      setLyricBackdrop(textCtx,sampleCtx.getImageData(0,0,48,30));sampleAt=elapsed;
@@ -308,17 +319,9 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
 
    textCtx.setTransform(element.width/w,0,0,element.height/h,0,0);
    textCtx.clearRect(0,0,w,h);
-   const displayTransition=useYtVideoBg||config.reducedMotion?1:transitionProgress(performance.now()/1000,transitionStarted);
-   if(!useYtVideoBg&&outgoingId&&displayTransition<1&&outgoing.width>0){
-    drawSceneTransition(textCtx,outgoing,w,h,displayTransition,scene.transition);
-   }
+   const displayTransition=useYtVideoBg||config.reducedMotion?1:transitionProgress(now/1000,transitionStarted);
    setData('transition',!useYtVideoBg&&outgoingId&&displayTransition<1?scene.transition:'none');
-   const entry=sceneEntryPose(displayTransition,scene.transition);
-   if(!useYtVideoBg&&fx){
-    fx.style.transform=`translate(${entry.x*w}px,${entry.y*h}px) rotate(${entry.roll}rad) scale(${entry.scale})`;
-   }
-   textCtx.save();textCtx.translate(w*.5+entry.x*w,h*.5+entry.y*h);textCtx.rotate(entry.roll);
-   textCtx.scale(entry.scale,entry.scale);textCtx.translate(-w*.5,-h*.5);
+   textCtx.save();
    const lyricClock=smoothMediaClock??time;
    lyric=getLyricState(lyricClock);
    // Do not hold previous lyrics during pause, instrumental music gaps, or when hidden for lyric videos
@@ -457,12 +460,26 @@ export default function CinematicStage(props:CinematicProps){
  latestPropsRef.current=props;
  const ytAuth=useYouTubeAuth();
  const [playbackError,setPlaybackError]=useState('');
-const [errorRetryNonce,setErrorRetryNonce]=useState(0);
- const {host,canvas,effects}=useCinematicRenderer(props,ytWrapRef);
+ const [errorRetryNonce,setErrorRetryNonce]=useState(0);
+ const nativePolicy=useNativePlaybackPolicy(Boolean(props.externalPlayer));
 
  const ytId=props.youtubeVideoId||null;
  const [mountedVideoId,setMountedVideoId]=useState<string|null>(ytId);
- const showYtBg=Boolean(ytId&&(props.youtubeBackgroundMode??'video')==='video');
+ const playbackKey=[ytId,Boolean(props.hasSeparateAudioStream),ytAuth.reloadNonce,errorRetryNonce].join('|');
+ const [playingVideoKey,setPlayingVideoKey]=useState('');
+ const showThemes=!ytId||props.youtubeBackgroundMode==='theme'||Boolean(props.videoSearchPending)||Boolean(props.advertisementPlaying)||!nativePolicy.allowed||Boolean(playbackError)||playingVideoKey!==playbackKey;
+ const [themeExitPending,setThemeExitPending]=useState(true);
+ useEffect(()=>{
+  if(showThemes){setThemeExitPending(true);return;}
+  const timer=window.setTimeout(()=>setThemeExitPending(false),props.reducedMotion?0:TRANSITION_SECONDS*1000);
+  return()=>window.clearTimeout(timer);
+ },[showThemes,props.reducedMotion]);
+ const renderThemes=showThemes||themeExitPending;
+ const {host,canvas,effects}=useCinematicRenderer({...props,renderThemes},ytWrapRef);
+ const backgroundPose=sceneEntryPose(showThemes?1:0,byId[props.manualScene].transition);
+ const transitionMs=props.reducedMotion?0:TRANSITION_SECONDS*1000;
+ const mustPauseVideo=(config:CinematicProps,waiting:boolean)=>Boolean(config.audioPaused||waiting||(config.hasSeparateAudioStream&&(config.youtubeBackgroundMode==='theme'||config.videoSearchPending||config.advertisementPlaying)));
+
  const blackOverlayOpacity=Math.max(0,Math.min(0.92,props.videoOverlayOpacity??0.45));
 
  // Reuse the authenticated YouTube IFrame Player via loadVideoById when ready so playing multiple
@@ -483,14 +500,15 @@ const [errorRetryNonce,setErrorRetryNonce]=useState(0);
    loadedVideoIdRef.current=ytId;
    ytEndedFiredRef.current=false;
    const target=videoSyncTarget(props.playbackTime??0,props.videoDelaySeconds,Boolean(props.hasSeparateAudioStream));
-   sendYouTubeCommand(ytIframeRef.current,'loadVideoById',[ytId,Math.max(0,target.time)]);
    if(props.hasSeparateAudioStream){
     sendYouTubeCommand(ytIframeRef.current,'mute');
+    sendYouTubeCommand(ytIframeRef.current,'setVolume',[0]);
    }else{
     sendYouTubeCommand(ytIframeRef.current,'unMute');
     sendYouTubeCommand(ytIframeRef.current,'setVolume',[props.playerVolume??85]);
    }
-   if(props.audioPaused||target.waiting){
+   sendYouTubeCommand(ytIframeRef.current,'loadVideoById',[ytId,Math.max(0,target.time)]);
+   if(mustPauseVideo(props,target.waiting)){
     sendYouTubeCommand(ytIframeRef.current,'pauseVideo');
    }else{
     sendYouTubeCommand(ytIframeRef.current,'playVideo');
@@ -509,22 +527,23 @@ const [errorRetryNonce,setErrorRetryNonce]=useState(0);
 
  const syncYtPlayerState=()=>{
   const iframe=ytIframeRef.current;
-  if(!iframe)return;
+  if(!iframe||!nativePolicy.allowed)return;
   const cur=latestPropsRef.current;
+  if(cur.hasSeparateAudioStream){
+   sendYouTubeCommand(iframe,'mute');
+   sendYouTubeCommand(iframe,'setVolume',[0]);
+  }else{
+   sendYouTubeCommand(iframe,'unMute');
+   sendYouTubeCommand(iframe,'setVolume',[cur.playerVolume??85]);
+  }
   if(cur.youtubeVideoId&&loadedVideoIdRef.current&&loadedVideoIdRef.current!==cur.youtubeVideoId){
    loadedVideoIdRef.current=cur.youtubeVideoId;
    const startTarget=videoSyncTarget(cur.playbackTime??0,cur.videoDelaySeconds,Boolean(cur.hasSeparateAudioStream));
    sendYouTubeCommand(iframe,'loadVideoById',[cur.youtubeVideoId,Math.max(0,startTarget.time)]);
   }
-  if(cur.hasSeparateAudioStream){
-   sendYouTubeCommand(iframe,'mute');
-  }else{
-   sendYouTubeCommand(iframe,'unMute');
-   sendYouTubeCommand(iframe,'setVolume',[cur.playerVolume??85]);
-  }
   const target=videoSyncTarget(cur.playbackTime??0,cur.videoDelaySeconds,Boolean(cur.hasSeparateAudioStream));
   if(cur.hasSeparateAudioStream)sendYouTubeCommand(iframe,'seekTo',[target.time,true]);
-  if(cur.audioPaused||target.waiting){
+  if(mustPauseVideo(cur,target.waiting)){
    sendYouTubeCommand(iframe,'pauseVideo');
   }else{
    sendYouTubeCommand(iframe,'playVideo');
@@ -584,7 +603,7 @@ const [errorRetryNonce,setErrorRetryNonce]=useState(0);
    }else if(evt==='onAutoplayBlocked'){
      setPlaybackError('Tap Play video to start YouTube audio.');
     }else if(evt==='onStateChange'&&typeof data.info==='number'){
-     if(data.info===1)setPlaybackError('');
+     if(data.info===1){setPlaybackError('');setPlayingVideoKey(playbackKey);}
     if(data.info===0&&!ytEndedFiredRef.current){
      ytEndedFiredRef.current=true;
      if(!latestPropsRef.current.hasSeparateAudioStream)latestPropsRef.current.onYoutubeEnded?.();
@@ -617,6 +636,7 @@ const [errorRetryNonce,setErrorRetryNonce]=useState(0);
      }
     }
     const pState=typeof info.playerState==='number'?info.playerState:undefined;
+    if(pState===1){setPlaybackError('');setPlayingVideoKey(playbackKey);}
     if(pState===0&&!ytEndedFiredRef.current){
      ytEndedFiredRef.current=true;
      if(!latestPropsRef.current.hasSeparateAudioStream)latestPropsRef.current.onYoutubeEnded?.();
@@ -640,7 +660,7 @@ const [errorRetryNonce,setErrorRetryNonce]=useState(0);
    window.removeEventListener('message',onMessage);
    if(pollId)window.clearInterval(pollId);
   };
- },[mountedVideoId,ytAuth.reloadNonce,errorRetryNonce]);
+ },[mountedVideoId,playbackKey,nativePolicy.allowed]);
 
  // Video timing is independent of the audio clock and lyric timing.
  useEffect(()=>{
@@ -665,8 +685,8 @@ const [errorRetryNonce,setErrorRetryNonce]=useState(0);
     lastSyncTimeRef.current=target.time;
    }
   }
-  sendYouTubeCommand(ytIframeRef.current,props.audioPaused||target.waiting?'pauseVideo':'playVideo');
- },[ytId,props.playbackTime,props.videoDelaySeconds,props.hasSeparateAudioStream,props.audioPaused,props.playerVolume]);
+  sendYouTubeCommand(ytIframeRef.current,mustPauseVideo(props,target.waiting)?'pauseVideo':'playVideo');
+ },[ytId,props.playbackTime,props.videoDelaySeconds,props.hasSeparateAudioStream,props.audioPaused,props.playerVolume,props.youtubeBackgroundMode,props.videoSearchPending,props.advertisementPlaying,nativePolicy.allowed]);
 
  const originParam=typeof window!=='undefined'&&window.location?.origin
   ?`&origin=${encodeURIComponent(window.location.origin)}&widget_referrer=${encodeURIComponent(window.location.origin)}`
@@ -675,113 +695,41 @@ const [errorRetryNonce,setErrorRetryNonce]=useState(0);
  const activeEmbedVid=mountedVideoId||ytId;
  const controlsParam=ytAuth.interactivePlayer?'1':'0';
  const embedSrc=activeEmbedVid
-  ?`${embedHost}/embed/${encodeURIComponent(activeEmbedVid)}?autoplay=1&controls=${controlsParam}&disablekb=${ytAuth.interactivePlayer?'0':'1'}&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&enablejsapi=1${props.hasSeparateAudioStream?'&mute=1':''}${originParam}`
+  ?`${embedHost}/embed/${encodeURIComponent(activeEmbedVid)}?autoplay=0&controls=${controlsParam}&disablekb=${ytAuth.interactivePlayer?'0':'1'}&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&enablejsapi=1${props.hasSeparateAudioStream?'&mute=1':''}${originParam}`
   :'';
 
- return <div className="cinematic-stack" ref={host}>
-  {activeEmbedVid&&(
-   <div
-    ref={ytWrapRef}
-    className="youtube-stage-backdrop"
-    style={{
-     position:'absolute',
-     inset:0,
-     width:'100%',
-     height:'100%',
-     overflow:'hidden',
-     zIndex:0,
-     opacity:showYtBg?1:0,
-     visibility:showYtBg?'visible':'hidden',
-     pointerEvents:ytAuth.interactivePlayer?'auto':'none',
-     transition:'opacity 240ms ease',
-     background:'#04070f'
-    }}
-    aria-hidden={!showYtBg}
-   >
-    <iframe
-     ref={ytIframeRef}
-     key={`yt-${mountedVideoId||ytId}-${ytAuth.reloadNonce}-${ytAuth.useNoCookieDomain?'nc':'std'}-${errorRetryNonce}`}
-     src={embedSrc}
-     title="YouTube video background"
-     referrerPolicy="strict-origin-when-cross-origin"
+ return <div className="cinematic-stack" ref={host} data-background-state={showThemes?'themes':'video'} data-video-ready={playingVideoKey===playbackKey?'yes':'no'}>
+  {activeEmbedVid&&nativePolicy.allowed&&(
+   <div ref={ytWrapRef} className="youtube-stage-backdrop" data-layer="video"
+    style={{position:'absolute',inset:0,width:'100%',height:'100%',overflow:'hidden',zIndex:0,background:'#04070f',pointerEvents:!showThemes&&ytAuth.interactivePlayer?'auto':'none'}}>
+    <iframe ref={ytIframeRef}
+     key={`yt-${mountedVideoId||ytId}-${ytAuth.reloadNonce}-${ytAuth.useNoCookieDomain?'nc':'std'}-${errorRetryNonce}-${props.hasSeparateAudioStream?'muted':'audio'}`}
+     src={embedSrc} title="YouTube video background" referrerPolicy="strict-origin-when-cross-origin"
      allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-     style={{
-      position:'absolute',
-      top:'50%',
-      left:'50%',
-      width:ytAuth.interactivePlayer?'100%':'116%',
-      height:ytAuth.interactivePlayer?'100%':'116%',
-      transform:'translate(-50%, -50%)',
-      border:0,
-      pointerEvents:ytAuth.interactivePlayer?'auto':'none'
-     }}
+     style={{position:'absolute',top:'50%',left:'50%',width:ytAuth.interactivePlayer?'100%':'116%',height:ytAuth.interactivePlayer?'100%':'116%',transform:'translate(-50%, -50%)',border:0,pointerEvents:!showThemes&&ytAuth.interactivePlayer?'auto':'none'}}
      onLoad={()=>{
       try{
-       ytIframeRef.current?.contentWindow?.postMessage(
-        JSON.stringify({event:'listening',id:'lyricflow-yt',channel:'widget'}),
-        '*'
-       );
-       sendYouTubeCommand(ytIframeRef.current,'addEventListener',['onReady']);
-       sendYouTubeCommand(ytIframeRef.current,'addEventListener',['onStateChange']);
-       sendYouTubeCommand(ytIframeRef.current,'addEventListener',['onError']);
+       ytIframeRef.current?.contentWindow?.postMessage(JSON.stringify({event:'listening',id:'lyricflow-yt',channel:'widget'}),'*');
+       for(const event of ['onReady','onStateChange','onError','onAutoplayBlocked'])sendYouTubeCommand(ytIframeRef.current,'addEventListener',[event]);
       }catch{}
       syncYtPlayerState();
-      window.setTimeout(syncYtPlayerState,250);
-      window.setTimeout(syncYtPlayerState,700);
-     }}
-    />
+     }}/>
+    <div className="youtube-video-black-overlay" aria-hidden="true" style={{position:'absolute',inset:0,zIndex:1,background:'#000',opacity:blackOverlayOpacity,pointerEvents:'none'}}/>
    </div>
   )}
-  {playbackError&&<div className="youtube-playback-notice" role="status">
-    <span>{playbackError}</span>
-    <button type="button" onClick={()=>{setYouTubeInteractivePlayer(true);setPlaybackError('');sendYouTubeCommand(ytIframeRef.current,'playVideo');}}>Play video</button>
+  <div className="theme-layer" data-layer="themes" data-transition={byId[props.manualScene].transition} aria-hidden={!showThemes}
+   style={{position:'absolute',inset:0,zIndex:1,pointerEvents:'none',opacity:showThemes?1:0,visibility:renderThemes?'visible':'hidden',transform:`translate(${backgroundPose.x*100}%,${backgroundPose.y*100}%) rotate(${backgroundPose.roll}rad) scale(${backgroundPose.scale})`,transition:`opacity ${transitionMs}ms ease, transform ${transitionMs}ms cubic-bezier(.22,.7,.25,1)`}}>
+   <canvas className="cinematic-effects" ref={effects} aria-hidden="true" style={{position:'absolute',inset:0,width:'100%',height:'100%',pointerEvents:'none'}}/>
+  </div>
+  <canvas className="visual-canvas cinematic-canvas" ref={canvas} data-layer="lyrics"
+   style={{position:'absolute',inset:0,width:'100%',height:'100%',zIndex:2,background:'transparent',pointerEvents:'none'}}
+   aria-label="LyricFlow VoxelWall audio-reactive backgrounds with VoxelVerse animated lyrics"/>
+  {(playbackError||nativePolicy.message)&&<div className="youtube-playback-notice" role="status">
+   <span>{playbackError||nativePolicy.message}</span>
+   {nativePolicy.allowed&&<>
+    <button type="button" onClick={()=>{setYouTubeInteractivePlayer(true);setPlaybackError('');setPlayingVideoKey(playbackKey);sendYouTubeCommand(ytIframeRef.current,'playVideo');}}>Play video</button>
     <button type="button" onClick={()=>{setPlaybackError('');setErrorRetryNonce(n=>n+1);}}>Reload video</button>
-   </div>}
-   {showYtBg&&(
-   <div
-    className="youtube-video-black-overlay"
-    aria-hidden="true"
-    style={{
-     position:'absolute',
-     inset:0,
-     width:'100%',
-     height:'100%',
-     zIndex:1,
-     background:'#000000',
-     opacity:blackOverlayOpacity,
-     pointerEvents:'none'
-    }}
-   />
-  )}
-  {!showYtBg&&(
-   <canvas
-    className="cinematic-effects"
-    ref={effects}
-    aria-hidden="true"
-    style={{
-     position:'absolute',
-     inset:0,
-     width:'100%',
-     height:'100%',
-     zIndex:1,
-     pointerEvents:'none'
-    }}
-   />
-  )}
-  <canvas
-   className="visual-canvas cinematic-canvas"
-   ref={canvas}
-   style={{
-    position:'absolute',
-    inset:0,
-    width:'100%',
-    height:'100%',
-    zIndex:2,
-    background:'transparent',
-    pointerEvents:'none'
-   }}
-   aria-label="LyricFlow VoxelWall audio-reactive backgrounds with VoxelVerse animated lyrics"
-  />
+   </>}
+  </div>}
  </div>;
 }
-
