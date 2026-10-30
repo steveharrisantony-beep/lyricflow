@@ -132,6 +132,8 @@ export async function searchSongs(query:string,provider:SongResult['provider'],b
 }
 export async function resolveSong(song:SongResult,base:string,signal?:AbortSignal):Promise<PlayableSong>{
  const ytId=song.youtubeVideoId||extractYouTubeVideoId(song)||undefined;
+ // The embedded player provides YouTube audio; it does not need an audio proxy.
+ if(song.provider==='resolver'&&ytId)return {...song,youtubeVideoId:ytId,streamUrl:'https://www.youtube.com/watch?v='+ytId,format:'youtube',audioSource:'YouTube Video'};
  if(song.directStreamUrl)return {...song,youtubeVideoId:ytId,streamUrl:song.directStreamUrl,format:'audio',audioSource:song.audioSource||MUSIC_SOURCES[song.provider]};
  if(song.provider==='audius'&&!song.id.startsWith('audius_'))return {...song,streamUrl:'https://api.audius.co/v1/tracks/'+encodeURIComponent(song.id)+'/stream?app_name=LyricFlow',audioSource:song.audioSource||'Audius (Direct Stream)'};
  const root=resolverBase(base);

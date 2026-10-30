@@ -12,8 +12,7 @@ import {AUDIO_ONLY_SCENES,buildCinematicSchedule,byId,resolveThemePalette,sceneA
 import {NO_AUDIO,type Pulse} from './paint';
 import {drawInstrumentalMark} from './typography';
 import {GraphicCompositions,type GraphicSystem} from './procedural/GraphicCompositions';
-import {useYouTubeAuth} from '../../music/youtubeAuth';
-import {useYouTubeAdBlocker,recordSkippedYouTubeAd,recordRemovedAntiAdblockPopup} from '../../music/youtubeAdBlocker';
+import {useYouTubeAuth,setYouTubeInteractivePlayer} from '../../music/youtubeAuth';
 
 export type Quality='High'|'Balanced'|'Performance';
 export const CAMERA_VIEWS=['Front'] as const;
@@ -454,15 +453,11 @@ export default function CinematicStage(props:CinematicProps){
  const ytReadyRef=useRef<boolean>(false);
  const ytEndedFiredRef=useRef<boolean>(false);
  const loadedVideoIdRef=useRef<string|null>(null);
- const inAdFastForwardRef=useRef(false);
- const mainVideoDurationRef=useRef(0);
  const latestPropsRef=useRef(props);
  latestPropsRef.current=props;
  const ytAuth=useYouTubeAuth();
- const ytAdBlocker=useYouTubeAdBlocker();
- const ytAdBlockerRef=useRef(ytAdBlocker);
- ytAdBlockerRef.current=ytAdBlocker;
- const [errorRetryNonce,setErrorRetryNonce]=useState(0);
+ const [playbackError,setPlaybackError]=useState('');
+const [errorRetryNonce,setErrorRetryNonce]=useState(0);
  const {host,canvas,effects}=useCinematicRenderer(props,ytWrapRef);
 
  const ytId=props.youtubeVideoId||null;
@@ -473,6 +468,7 @@ export default function CinematicStage(props:CinematicProps){
  // Reuse the authenticated YouTube IFrame Player via loadVideoById when ready so playing multiple
  // videos in a row never triggers YouTube's /embed/ cold-load bot limiter or loses autoplay permission.
  useEffect(()=>{
+  setPlaybackError('');
   if(!ytId){
    loadedVideoIdRef.current=null;
    setMountedVideoId(null);
@@ -552,6 +548,7 @@ export default function CinematicStage(props:CinematicProps){
     sendYouTubeCommand(iframe,'addEventListener',['onReady']);
     sendYouTubeCommand(iframe,'addEventListener',['onStateChange']);
     sendYouTubeCommand(iframe,'addEventListener',['onError']);
+     sendYouTubeCommand(iframe,'addEventListener',['onAutoplayBlocked']);
    }catch{
     // Ignore before iframe ready
    }
@@ -560,7 +557,8 @@ export default function CinematicStage(props:CinematicProps){
   let pollId=0;
   const onMessage=(event:MessageEvent)=>{
    if(!ytIframeRef.current||event.source!==ytIframeRef.current.contentWindow)return;
-   if(typeof event.data!=='string')return;
+   if(event.origin&&!/^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com$/.test(event.origin))return;
+    if(typeof event.data!=='string')return;
    let data:Record<string,unknown>;
    try{
     data=JSON.parse(event.data) as Record<string,unknown>;
@@ -573,9 +571,8 @@ export default function CinematicStage(props:CinematicProps){
     if(pollId)window.clearInterval(pollId);
     syncYtPlayerState();
    }else if(evt==='onError'){
-    if(ytAdBlockerRef.current.enabled&&ytAdBlockerRef.current.removeAdblockThingEnabled){
-     recordRemovedAntiAdblockPopup();
-    }
+    const code=Number(data.info);
+     setPlaybackError(code===101||code===150?'This video does not allow embedded playback. Choose another video.':code===153?'YouTube could not verify this player. Try reloading or choose another video.':'YouTube could not play this video. Try reloading or choose another video.');
     // If loadVideoById hit a transient error, remount iframe once with the current video ID
     const curVid=latestPropsRef.current.youtubeVideoId;
     if(curVid&&mountedVideoId!==curVid){
@@ -584,7 +581,10 @@ export default function CinematicStage(props:CinematicProps){
      setMountedVideoId(curVid);
      setErrorRetryNonce(n=>n+1);
     }
-   }else if(evt==='onStateChange'&&typeof data.info==='number'){
+   }else if(evt==='onAutoplayBlocked'){
+     setPlaybackError('Tap Play video to start YouTube audio.');
+    }else if(evt==='onStateChange'&&typeof data.info==='number'){
+     if(data.info===1)setPlaybackError('');
     if(data.info===0&&!ytEndedFiredRef.current){
      ytEndedFiredRef.current=true;
      if(!latestPropsRef.current.hasSeparateAudioStream)latestPropsRef.current.onYoutubeEnded?.();
@@ -600,32 +600,13 @@ export default function CinematicStage(props:CinematicProps){
     }
     const ct=typeof info.currentTime==='number'&&Number.isFinite(info.currentTime)?info.currentTime:undefined;
     const dur=typeof info.duration==='number'&&Number.isFinite(info.duration)&&info.duration>0?info.duration:undefined;
-    if(dur&&dur>45){
-     mainVideoDurationRef.current=dur;
-    }
     const videoData=info.videoData&&typeof info.videoData==='object'?(info.videoData as Record<string,unknown>):undefined;
-    const playingVidId=typeof videoData?.video_id==='string'?videoData.video_id:'';
-    const targetVidId=latestPropsRef.current.youtubeVideoId||'';
-    const isInterruptingAd=
-     info.adState===1||
-     info.isAdPlaying===true||
-     Boolean(playingVidId&&targetVidId&&playingVidId!==targetVidId)||
-     Boolean(ytAdBlockerRef.current.skipEmbeddedAdsEnabled&&dur&&dur>=5&&dur<=32&&mainVideoDurationRef.current>45);
-    if(isInterruptingAd&&ytAdBlockerRef.current.enabled&&ytAdBlockerRef.current.removeAdblockThingEnabled&&ytIframeRef.current){
-     sendYouTubeCommand(ytIframeRef.current,'mute');
-     sendYouTubeCommand(ytIframeRef.current,'setPlaybackRate',[16]);
-     if(dur&&dur>0)sendYouTubeCommand(ytIframeRef.current,'seekTo',[dur,true]);
-     if(!inAdFastForwardRef.current){
-      inAdFastForwardRef.current=true;
-      recordSkippedYouTubeAd();
-     }
-     return;
-    }else if(inAdFastForwardRef.current&&ytIframeRef.current){
-     inAdFastForwardRef.current=false;
-     sendYouTubeCommand(ytIframeRef.current,'setPlaybackRate',[1]);
-     syncYtPlayerState();
-    }
-    if(ct!==undefined){
+     const playingVidId=typeof videoData?.video_id==='string'?videoData.video_id:'';
+     // A reused iframe can report the previous video while loadVideoById is pending.
+     // Ignore that clock; it is not evidence of an advertisement.
+     if(playingVidId&&playingVidId!==latestPropsRef.current.youtubeVideoId)return;
+     if(info.adState===1||info.isAdPlaying===true)return;
+     if(ct!==undefined){
      lastSyncTimeRef.current=ct;
      if(!latestPropsRef.current.hasSeparateAudioStream)latestPropsRef.current.onYoutubeTimeUpdate?.(ct,dur);
      if(dur&&dur>15&&ct>=dur-0.45&&!ytEndedFiredRef.current){
@@ -708,7 +689,7 @@ export default function CinematicStage(props:CinematicProps){
      width:'100%',
      height:'100%',
      overflow:'hidden',
-     zIndex:ytAuth.interactivePlayer?4:0,
+     zIndex:0,
      opacity:showYtBg?1:0,
      visibility:showYtBg?'visible':'hidden',
      pointerEvents:ytAuth.interactivePlayer?'auto':'none',
@@ -751,7 +732,12 @@ export default function CinematicStage(props:CinematicProps){
     />
    </div>
   )}
-  {showYtBg&&(
+  {playbackError&&<div className="youtube-playback-notice" role="status">
+    <span>{playbackError}</span>
+    <button type="button" onClick={()=>{setYouTubeInteractivePlayer(true);setPlaybackError('');sendYouTubeCommand(ytIframeRef.current,'playVideo');}}>Play video</button>
+    <button type="button" onClick={()=>{setPlaybackError('');setErrorRetryNonce(n=>n+1);}}>Reload video</button>
+   </div>}
+   {showYtBg&&(
    <div
     className="youtube-video-black-overlay"
     aria-hidden="true"

@@ -180,3 +180,47 @@ it('shows External Player as Not available in web on browsers and enables Notifi
   expect(host.textContent).toContain('Mic');
   setAndroidAppOverrideForTest(null);
 });
+
+it('keeps interactive YouTube below the transparent lyrics canvas',async()=>{
+  const {setYouTubeInteractivePlayer}=await import('../music/youtubeAuth');
+  await act(async()=>setYouTubeInteractivePlayer(true));
+  try {
+    await act(async()=>root.render(<CinematicStage {...base}/>));
+    const video=host.querySelector<HTMLElement>('.youtube-stage-backdrop')!;
+    const lyrics=host.querySelector<HTMLCanvasElement>('.cinematic-canvas')!;
+    expect(Number(video.style.zIndex)).toBeLessThan(Number(lyrics.style.zIndex));
+    expect(lyrics.style.pointerEvents).toBe('none');
+    expect(lyrics.style.background).toBe('transparent');
+  } finally { await act(async()=>setYouTubeInteractivePlayer(false)); }
+});
+
+it('ignores stale video clocks during a track change without treating them as ads',async()=>{
+  const clock=vi.fn(),ended=vi.fn();
+  await act(async()=>root.render(<CinematicStage {...base} hasSeparateAudioStream={false} onYoutubeTimeUpdate={clock} onYoutubeEnded={ended}/>));
+  const frame=host.querySelector('iframe')!;
+  const send=vi.spyOn(frame.contentWindow!,'postMessage');
+  const deliver=(id:string,time:number)=>window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,data:JSON.stringify({event:'infoDelivery',info:{currentTime:time,duration:200,videoData:{video_id:id}}})}));
+  await act(async()=>deliver('abcdefghijk',10));
+  send.mockClear();clock.mockClear();
+  await act(async()=>deliver('oldVideo123',199));
+  expect(clock).not.toHaveBeenCalled();
+  expect(ended).not.toHaveBeenCalled();
+  expect(send.mock.calls.map(args=>JSON.parse(String(args[0]))).some(c=>c.func==='setPlaybackRate'||(c.func==='seekTo'&&c.args[0]===200))).toBe(false);
+  await act(async()=>deliver('abcdefghijk',11));
+  expect(clock).toHaveBeenCalledWith(11,200);
+});
+
+it('plays a selected YouTube video without an audio resolver',async()=>{
+  const {resolveSong}=await import('../music/providers');
+  const fetcher=vi.spyOn(globalThis,'fetch').mockRejectedValue(Error('resolver offline'));
+  const song={id:'yt_abcdefghijk',title:'Original',artist:'Author',album:'',duration:200,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk',youtubeVideoId:'abcdefghijk'};
+  const playable=await resolveSong(song,'');
+  expect(playable.format).toBe('youtube');
+  expect(playable.youtubeVideoId).toBe('abcdefghijk');
+  expect(fetcher).not.toHaveBeenCalled();
+});
+
+it('allows ordinary Google video streams regardless of ctier metadata',async()=>{
+  const {evaluateBlockyUrl}=await import('../music/youtubeAdBlocker');
+  expect(evaluateBlockyUrl('https://r1.googlevideo.com/videoplayback?ctier=L&id=music').blocked).toBe(false);
+});

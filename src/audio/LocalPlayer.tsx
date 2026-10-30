@@ -130,6 +130,7 @@ function LocalPlayer(
   const [inlineOnlineOpen, setInlineOnlineOpen] = useState(false);
   const [youtubeOnlyClock, setYoutubeOnlyClock] = useState(false);
   const ytClockRef = useRef(0);
+  const ytLastClockSyncRef = useRef(0);
   const lastUiTimeUpdateRef = useRef(0);
 
   // Song Queue (Q) state
@@ -235,6 +236,8 @@ function LocalPlayer(
       const now = performance.now();
       const dt = Math.max(0, (now - lastTick) / 1000);
       lastTick = now;
+      // Never invent progress before YouTube starts, or while its clock stalls.
+      if (!ytLastClockSyncRef.current || now - ytLastClockSyncRef.current > 750) return;
       const maxDur = duration > 0 ? duration : 600;
       let next = Math.min(maxDur, ytClockRef.current + dt);
 
@@ -276,6 +279,7 @@ function LocalPlayer(
     setYoutubeOnlyClock(false);
     setVirtualMediaTime(null);
     ytClockRef.current = 0;
+    ytLastClockSyncRef.current = 0;
     if (urlRef.current) {
       URL.revokeObjectURL(urlRef.current);
       urlRef.current = null;
@@ -516,6 +520,7 @@ function LocalPlayer(
       onDurationChange(totalDuration);
     }
     if (Number.isFinite(currentTime) && currentTime >= 0) {
+      ytLastClockSyncRef.current = performance.now();
       ytClockRef.current = currentTime;
       setTime(currentTime);
       onTimeChange(currentTime);

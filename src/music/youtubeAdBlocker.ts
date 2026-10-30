@@ -148,7 +148,6 @@ export const YOUTUBE_AD_URL_PATTERNS: readonly RegExp[] = [
   /\/youtubei\/v1\/log_event\b.*ad/i,
   /\/api\/activeview\b/i,
   /[?&](?:ad_type|adformat|ad_cpn|ad_tag|oad)=/i,
-  /googlevideo\.com\/videoplayback.*[?&]ctier=L\b/i,
   /googlevideo\.com\/initplayback.*[?&]oad=/i,
 ];
 
@@ -597,7 +596,7 @@ export function installYouTubeAdBlocker(): void {
         const check = evaluateBlockyUrl(urlStr);
         if (check.blocked) {
           recordBlockedAdRequest(check.host || urlStr);
-          return new Response('', {
+          return new Response(null, {
             status: 204,
             statusText: 'Blocked by LyricFlow Blocky AdBlocker',
             headers: { 'X-Blocky-Blocked': check.reason || 'denylist' },

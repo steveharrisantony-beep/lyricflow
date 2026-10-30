@@ -23,8 +23,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Same-origin API and streaming proxy + native 0xERR0R/blocky ad-domain sinkhole
- * and TheRealJoelmatic/RemoveAdblockThing YouTube ad skipper & anti-adblock popup remover.
+ * Same-origin API and streaming proxy with explicit ad-domain filtering.
  */
 final class LocalBackendWebViewClient extends BridgeWebViewClient {
     private static final Set<String> BLOCKY_DENYLIST_DOMAINS = new HashSet<>(Arrays.asList(
@@ -69,22 +68,6 @@ final class LocalBackendWebViewClient extends BridgeWebViewClient {
         "quantserve.com"
     ));
 
-    static final String REMOVE_ADBLOCK_THING_JS =
-        "(function(){" +
-        "if(window.__lyricflowRemoveAdblockThingInstalled)return;" +
-        "window.__lyricflowRemoveAdblockThingInstalled=true;" +
-        "try{Object.defineProperty(window,'__ytplayer_adblockDetected',{configurable:true,get:function(){return false;},set:function(){}});}catch(e){window.__ytplayer_adblockDetected=false;}" +
-        "var skipSels=['.ytp-ad-skip-button','.ytp-ad-skip-button-modern','.ytp-skip-ad-button','.ytp-ad-skip-button-slot button','.ytp-ad-overlay-close-button'];" +
-        "var adSels=['ytd-ad-slot-renderer','ytd-in-feed-ad-layout-renderer','ytd-banner-promo-renderer','ytd-promoted-sparkles-web-renderer','ytd-display-ad-renderer','#masthead-ad','#player-ads','.ytp-featured-product','.ytp-ad-overlay-container'];" +
-        "var popupSels=['ytd-enforcement-message-view-model','tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)'];" +
-        "setInterval(function(){try{" +
-        "for(var i=0;i<popupSels.length;i++){var ps=document.querySelectorAll(popupSels[i]);for(var j=0;j<ps.length;j++){ps[j].remove();var v=document.querySelector('video');if(v&&v.paused)v.play().catch(function(){});}}" +
-        "for(var k=0;k<skipSels.length;k++){var bs=document.querySelectorAll(skipSels[k]);for(var m=0;m<bs.length;m++){if(bs[m]&&bs[m].click)bs[m].click();}}" +
-        "var adP=document.querySelector('.ad-showing,.ad-interrupting');if(adP){var vid=adP.querySelector('video')||document.querySelector('video.html5-main-video');if(vid){vid.muted=true;try{vid.playbackRate=16;}catch(e){}if(isFinite(vid.duration)&&vid.duration>0&&vid.currentTime<vid.duration-0.1){try{vid.currentTime=vid.duration;}catch(e){}}}}" +
-        "for(var n=0;n<adSels.length;n++){var as=document.querySelectorAll(adSels[n]);for(var p=0;p<as.length;p++)as[p].remove();}" +
-        "}catch(e){}},400);" +
-        "})();";
-
     private final String appHost;
     private final String appOrigin;
 
@@ -123,8 +106,7 @@ final class LocalBackendWebViewClient extends BridgeWebViewClient {
         }
 
         if (lowerHost.endsWith(".googlevideo.com")) {
-            if ((path.contains("/videoplayback") && query.contains("ctier=l"))
-                || (path.contains("/initplayback") && query.contains("oad="))) {
+            if (path.contains("/initplayback") && query.contains("oad=")) {
                 return true;
             }
             return false;
@@ -173,17 +155,6 @@ final class LocalBackendWebViewClient extends BridgeWebViewClient {
         headers.put("Cache-Control", "no-store");
         return new WebResourceResponse("application/json", "UTF-8", status, "Service unavailable",
             headers, new ByteArrayInputStream(data));
-    }
-
-    @Override
-    public void onPageFinished(WebView view, String url) {
-        super.onPageFinished(view, url);
-        if (view != null) {
-            try {
-                view.evaluateJavascript(REMOVE_ADBLOCK_THING_JS, null);
-            } catch (Throwable ignored) {
-            }
-        }
     }
 
     @Override
