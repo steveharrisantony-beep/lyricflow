@@ -1844,7 +1844,7 @@ export default function App({ user = null }: { user?: User | null }) {
           setSelectedSubtitleTrackId(undefined);
         }}
         onTrackChange={track => {
-          if(track?.provider==='local')setSourceMode('local');
+          if(track)setSourceMode(track.provider==='local'?'local':'online');
           setLocalTrack(track);
           setIncoming(null);
           setAvailableLyricEngines([]);

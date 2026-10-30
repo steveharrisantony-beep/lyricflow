@@ -120,7 +120,7 @@ it('switches external advertisements to themes, aborts video search and unmounts
   const capture=vi.spyOn(external,'startExternalAudioCapture').mockResolvedValue({ok:true,activeMode:'internal',message:'Fixture capture'});
   const stop=vi.spyOn(external,'stopExternalAudioCapture').mockResolvedValue();
   const find=vi.spyOn(finder,'default').mockImplementation(()=> <span data-testid="lyrics-lookup"/>);
-  const draw=vi.spyOn(stage,'default').mockImplementation(props=><span data-testid="stage-ad" data-ad={String(props.advertisementPlaying)} data-video={props.youtubeVideoId||''} data-mode={props.youtubeBackgroundMode}/>);
+  const draw=vi.spyOn(stage,'default').mockImplementation(props=><span data-testid="stage-ad" data-ad={String(props.advertisementPlaying)} data-external={String(props.externalPlayer)} data-video={props.youtubeVideoId||''} data-mode={props.youtubeBackgroundMode}/>);
   external.setAndroidAppOverrideForTest(true);
   try{
     await act(async()=>host.querySelector<HTMLButtonElement>('.stage-source-button')!.click());
@@ -138,5 +138,10 @@ it('switches external advertisements to themes, aborts video search and unmounts
     expect(host.querySelector('[data-testid="stage-ad"]')?.getAttribute('data-mode')).toBe('theme');
     expect(vi.mocked(searchStashCatalog).mock.calls.length).toBe(count);
     expect(searchSignal?.aborted).toBe(true);
+    await act(async()=>click('Load JioSaavn fixture'));
+    expect(host.querySelector('[data-testid="stage-ad"]')?.getAttribute('data-ad')).toBe('false');
+    expect(host.querySelector('[data-testid="stage-ad"]')?.getAttribute('data-external')).toBe('false');
+    await act(async()=>deliver!({...media,title:'Advertisement',isAd:true},true));
+    expect(host.querySelector('[data-testid="stage-ad"]')?.getAttribute('data-ad')).toBe('false');
   }finally{external.setAndroidAppOverrideForTest(null);subscribe.mockRestore();capture.mockRestore();stop.mockRestore();find.mockRestore();draw.mockRestore();}
 });
