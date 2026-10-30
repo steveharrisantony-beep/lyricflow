@@ -216,9 +216,6 @@ public class ExternalMediaPlugin extends Plugin {
                         super.onPageFinished(view, url);
                         try {
                             CookieManager.getInstance().flush();
-                            if (view != null) {
-                                view.evaluateJavascript(LocalBackendWebViewClient.REMOVE_ADBLOCK_THING_JS, null);
-                            }
                         } catch (Throwable ignored) {
                         }
                         String cookie = readMergedYouTubeCookies();

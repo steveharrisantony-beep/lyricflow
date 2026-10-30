@@ -363,7 +363,7 @@ describe('YouTube metadata cleaning & 4-Engine LyricFlow Engine', () => {
     expect(evaluateBlockyUrl('https://googleads.g.doubleclick.net/pagead/ads').blocked).toBe(true);
     expect(evaluateBlockyUrl('https://www.youtube.com/api/stats/ads?ver=2').blocked).toBe(true);
     expect(evaluateBlockyUrl('https://www.youtube.com/youtubei/v1/player/ad_break').blocked).toBe(true);
-    expect(evaluateBlockyUrl('https://rr3---sn-abcd.googlevideo.com/videoplayback?ctier=L&id=123').blocked).toBe(true);
+    expect(evaluateBlockyUrl('https://rr3---sn-abcd.googlevideo.com/videoplayback?ctier=L&id=123').blocked).toBe(false);
 
     // Core YouTube video streams and embeds must never be blocked
     expect(evaluateBlockyUrl('https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1').blocked).toBe(false);

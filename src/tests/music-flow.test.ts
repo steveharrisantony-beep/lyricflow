@@ -44,11 +44,11 @@ describe('music source boundaries',()=>{
  });
  it('never accepts an arbitrary stream redirect from the resolver',async()=>{
   vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({streamPath:'https://untrusted.example/audio'})}));
-  await expect(resolveSong(song,'https://resolver.example')).rejects.toThrow('Invalid');
+  await expect(resolveSong({...song,provider:'jiosaavn'},'https://resolver.example')).rejects.toThrow('Invalid');
  });
  it('resolves into a shared-player URL and uses richer recording metadata',async()=>{
   vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({streamPath:'/audio/abcdefghijk',audioSource:'YouTube · JioSaavn 320kbps AAC',track:{...song,artist:'Verified Artist'}})}));
-  const resolved=await resolveSong(song,'https://resolver.example');
+  const resolved=await resolveSong({...song,provider:'jiosaavn'},'https://resolver.example');
   expect(resolved.streamUrl).toBe('https://resolver.example/audio/abcdefghijk');expect(resolved.artist).toBe('Verified Artist');
   expect(resolved.audioSource).toBe('YouTube · JioSaavn 320kbps AAC');
   expect(resolved.youtubeVideoId).toBe('abcdefghijk');

@@ -27,3 +27,6 @@ android/capacitor-cordova-android-plugins/
 # Local Firebase emulator output
 *-debug.log
 .firebase/
+
+# AI Studio generated plans and temporary media are not application source
+.aistudio/artifacts/

@@ -24,8 +24,44 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      release: ${{ steps.signing.outputs.release }}
+      version_code: ${{ steps.version.outputs.code }}
+      version_name: ${{ steps.version.outputs.name }}
     steps:
       - uses: actions/checkout@v4
+      - name: Set app version
+        id: version
+        shell: bash
+        run: |
+          code=$((1000 + GITHUB_RUN_NUMBER))
+          name="1.1.${GITHUB_RUN_NUMBER}"
+          echo "LYRICFLOW_VERSION_CODE=$code" >> "$GITHUB_ENV"
+          echo "LYRICFLOW_VERSION_NAME=$name" >> "$GITHUB_ENV"
+          echo "VITE_APP_VERSION_CODE=$code" >> "$GITHUB_ENV"
+          echo "VITE_APP_VERSION=$name" >> "$GITHUB_ENV"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+      - name: Prepare persistent release signing
+        id: signing
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_SIGNING_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] && [ -z "$STORE_PASSWORD" ] && [ -z "$KEY_ALIAS" ] && [ -z "$KEY_PASSWORD" ]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "Signing is not configured; building a test APK. In-app releases require a persistent private signing key."
+            exit 0
+          fi
+          test -n "$KEYSTORE_BASE64" && test -n "$STORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/lyricflow-release.jks"
+          chmod 600 "$RUNNER_TEMP/lyricflow-release.jks"
+          echo "LYRICFLOW_KEYSTORE=$RUNNER_TEMP/lyricflow-release.jks" >> "$GITHUB_ENV"
+          echo "release=true" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -48,19 +84,31 @@ jobs:
         run: npm run android:sync
       - name: Test bundled on-device backend
         run: npm run test:backend
-      - name: Build installable debug APK
+      - name: Build installable APK
         working-directory: android
+        env:
+          LYRICFLOW_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
+          LYRICFLOW_KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
+          LYRICFLOW_KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug
+          if [ -n "$LYRICFLOW_KEYSTORE" ]; then
+            ./gradlew --no-daemon assembleRelease
+          else
+            ./gradlew --no-daemon assembleDebug
+          fi
       - name: Name the APK
         run: |
           mkdir -p artifacts
-          cp android/app/build/outputs/apk/debug/app-debug.apk artifacts/LyricFlow-Android-debug.apk
+          if [ -n "$LYRICFLOW_KEYSTORE" ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk artifacts/LyricFlow-Android.apk
+          else
+            cp android/app/build/outputs/apk/debug/app-debug.apk artifacts/LyricFlow-Android.apk
+          fi
       - uses: actions/upload-artifact@v4
         with:
-          name: LyricFlow-Android-debug
-          path: artifacts/LyricFlow-Android-debug.apk
+          name: LyricFlow-Android
+          path: artifacts/LyricFlow-Android.apk
           if-no-files-found: error
           retention-days: 30
       - name: Enable emulator hardware acceleration
@@ -80,3 +128,30 @@ jobs:
           name: Android-device-test-reports
           path: android/app/build/reports/androidTests/
           if-no-files-found: ignore
+
+  publish-update:
+    needs: apk
+    if: needs.apk.outputs.release == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: LyricFlow-Android
+          path: release
+      - name: Publish tested signed update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION_CODE: ${{ needs.apk.outputs.version_code }}
+          VERSION_NAME: ${{ needs.apk.outputs.version_name }}
+        shell: bash
+        run: |
+          tag="android-${VERSION_CODE}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "This version has already been published; leaving its APK unchanged."
+            exit 0
+          fi
+          printf '%s\n' "LyricFlow ${VERSION_NAME}" "" "Signed Android update. Install through App updates inside LyricFlow or download the APK directly." > "$RUNNER_TEMP/update-notes.md"
+          gh release create "$tag" release/LyricFlow-Android.apk --target "$GITHUB_SHA" --title "LyricFlow ${VERSION_NAME}" --notes-file "$RUNNER_TEMP/update-notes.md"

@@ -13,9 +13,9 @@ Launcher name: `LyricFlow`
 2. Select **Build Android APK**. A build starts automatically after a push to `main`.
    To build again, choose **Run workflow**, leave branch `main`, then **Run workflow**.
 3. Wait for the run to finish successfully and open the run.
-4. Under **Artifacts**, download **LyricFlow-Android-debug** (GitHub requires sign-in).
+4. Under **Artifacts**, download **LyricFlow-Android** (GitHub requires sign-in).
 5. Extract the downloaded ZIP using your tablet's Files app.
-6. Open `LyricFlow-Android-debug.apk` and allow installation from that Files app
+6. Open `LyricFlow-Android.apk` and allow installation from that Files app
    if Android asks. Then launch **LyricFlow**.
 
 This is a debug-signed APK for device testing, not a Google Play release. A release
@@ -113,3 +113,7 @@ lyric import and signed delay, bundled fonts, portrait layout and page errors.
 Older `smoke:*` scripts contain assertions for the previous 40-scene interface;
 they are retained in the separate **Legacy visual smoke (manual)** workflow and
 are not represented as passing checks of the current 23-theme UI.
+
+## Updates from inside the app
+
+See [Android app updates](ANDROID_UPDATES.md) for the in-app checker, verified APK download, Android installation confirmation and one-time permanent signing setup. The browser preview cannot install an Android update.

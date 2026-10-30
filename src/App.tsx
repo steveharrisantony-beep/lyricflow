@@ -101,6 +101,7 @@ import {
 
 import AccountControls from './auth/AccountControls';
 import YouTubeAccountControl from './auth/YouTubeAccountControl';
+import AppUpdateControl from './updates/AppUpdateControl';
 import YouTubeBackgroundPicker from './music/YouTubeBackgroundPicker';
 import CorrectionControls from './firebase/CorrectionControls';
 import { useSongMapping, importGuestSongMappings } from './firebase/songMappings';
@@ -854,6 +855,7 @@ export default function App({ user = null }: { user?: User | null }) {
           <small>Lyrics: {incoming?.source || 'LyricFlow Engine (YT Subtitles + Apple Word-Sync)'}</small>
         </div>
         <div className="header-right">
+          <AppUpdateControl />
           <YouTubeAccountControl compact />
           <AccountControls user={user} syncStatus={syncStatus} onImportGuest={() => {
             try {
@@ -920,6 +922,9 @@ export default function App({ user = null }: { user?: User | null }) {
           }}
         />
 
+        {hideStageLyricsForVideo && !isAdPlaying && (
+          <button className="show-video-lyrics" type="button" onClick={() => setAutoHideYoutubeLyrics(false)}>Show LyricFlow lyrics over video</button>
+        )}
         {!performance && (
           <div className="stage-source-bar">
             <button
