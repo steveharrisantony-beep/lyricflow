@@ -575,3 +575,9 @@ body {
 .app-update-notes{white-space:pre-wrap;max-height:160px;overflow:auto}
 
 .show-video-lyrics{position:absolute;left:14px;top:14px;z-index:9;max-width:45%;padding:10px 12px;background:#101925ed;color:#d4f5fa;border:1px solid #597181;border-radius:10px;cursor:pointer}
+
+/* Keep tablet and phone headers within the viewport as account/update controls grow. */
+.header .track{flex:1;min-width:0;max-height:44px;overflow:hidden;flex-wrap:wrap}
+.header-right{gap:8px;flex-shrink:0}
+@media(max-width:1100px){.header .track{display:none}}
+@media(max-width:620px){.header{height:auto;min-height:67px;flex-wrap:wrap;padding:10px 0}.header-right{width:100%;max-width:100%;flex-wrap:wrap;justify-content:space-between}}
