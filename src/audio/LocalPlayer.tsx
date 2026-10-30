@@ -129,6 +129,13 @@ function LocalPlayer(
   const [remote, setRemote] = useState(false);
   const [inlineOnlineOpen, setInlineOnlineOpen] = useState(false);
   const [youtubeOnlyClock, setYoutubeOnlyClock] = useState(false);
+  const youtubeOnlyClockRef=useRef(false);
+  const setYouTubeClockMode=(enabled:boolean)=>{
+    youtubeOnlyClockRef.current=enabled;
+    setYoutubeOnlyClock(enabled);
+  };
+  // Events queued by the previous audio element must not pause a new iframe/external source.
+  const ignoreAudioElementEvent=()=>youtubeOnlyClockRef.current||sourceMode==='external';
   const ytClockRef = useRef(0);
   const ytLastClockSyncRef = useRef(0);
   const lastUiTimeUpdateRef = useRef(0);
@@ -276,7 +283,7 @@ function LocalPlayer(
     hlsRef.current = null;
     player.pause();
     setLocalAudioPlaying(false);
-    setYoutubeOnlyClock(false);
+    setYouTubeClockMode(false);
     setVirtualMediaTime(null);
     ytClockRef.current = 0;
     ytLastClockSyncRef.current = 0;
@@ -314,7 +321,7 @@ function LocalPlayer(
     setInlineOnlineOpen(false);
 
     if (song.format === 'youtube') {
-      setYoutubeOnlyClock(true);
+      setYouTubeClockMode(true);
       onAudioStreamModeChange?.(false);
       setVirtualMediaTime(0);
       setActive(true);
@@ -447,7 +454,7 @@ function LocalPlayer(
     hlsRef.current?.destroy();
     hlsRef.current = null;
     player.pause();
-    setYoutubeOnlyClock(false);
+    setYouTubeClockMode(false);
     setVirtualMediaTime(null);
     onAudioStreamModeChange?.(true);
     setLocalAudioPlaying(false);
@@ -486,7 +493,7 @@ function LocalPlayer(
       URL.revokeObjectURL(urlRef.current);
       urlRef.current = null;
     }
-    setYoutubeOnlyClock(false);
+    setYouTubeClockMode(false);
     setVirtualMediaTime(null);
     setLocalAudioPlaying(false);
     setLocalMediaElement(null);
@@ -560,6 +567,7 @@ function LocalPlayer(
         ref={audioRef}
         preload="metadata"
         onTimeUpdate={e => {
+          if(ignoreAudioElementEvent())return;
           const ct = e.currentTarget.currentTime;
           const now = performance.now();
           if (now - lastUiTimeUpdateRef.current >= 120 || ct === 0 || (duration > 0 && ct >= duration - 0.15)) {
@@ -569,6 +577,7 @@ function LocalPlayer(
           }
         }}
         onLoadedMetadata={e => {
+          if(ignoreAudioElementEvent())return;
           const d = e.currentTarget.duration;
           setDuration(d);
           if (Number.isFinite(d)) {
@@ -577,22 +586,25 @@ function LocalPlayer(
           }
         }}
         onPlay={() => {
+          if(ignoreAudioElementEvent())return;
           setLocalAudioPlaying(true);
           setActive(true);
           onActiveChange(true);
         }}
         onPause={() => {
+          if(ignoreAudioElementEvent())return;
           setLocalAudioPlaying(false);
           setActive(false);
           onActiveChange(false);
         }}
         onEnded={() => {
+          if(ignoreAudioElementEvent())return;
           setLocalAudioPlaying(false);
           setActive(false);
           onActiveChange(false);
         }}
         onError={() => {
-          if (!youtubeOnlyClock) {
+          if (!ignoreAudioElementEvent()) {
             setError('This audio format could not be decoded by the browser.');
           }
         }}

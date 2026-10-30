@@ -10,13 +10,20 @@ const page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[];p
 const rate=8000,frames=rate*200,wav=Buffer.alloc(44+frames*2);wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVE',8);wav.write('fmt ',12);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(rate,24);wav.writeUInt32LE(rate*2,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(frames*2,40);for(let n=0;n<frames;n++)wav.writeInt16LE(Math.round(Math.sin(n*2*Math.PI*220/rate)*4000),44+n*2);
 const song={id:'saavn_fixture',title:'Test Song',artist:'Test Author',album:'Test',duration:200,provider:'jiosaavn',sourceUrl:'https://www.jiosaavn.com/song/test',audioSource:'JioSaavn'};
 const video={...song,id:'yt_abcdefghijk',provider:'resolver',youtubeVideoId:'abcdefghijk',sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk'};
+const clip=Buffer.from(wav.subarray(0,44+rate*8*2));clip.writeUInt32LE(clip.length-8,4);clip.writeUInt32LE(clip.length-44,40);
 let lastQuery='';
 await page.route('**/music/**',r=>r.fulfill({status:404,json:{detail:'Fixture has no automatic lyrics'}}));
 await page.route('https://lrclib.net/**',r=>r.fulfill({json:[]}));
 await page.route('**/music/search**',route=>{const p=new URL(route.request().url()).searchParams;lastQuery=p.get('q')||'';return route.fulfill({json:{data:[p.get('provider')==='youtube'?video:song]}});});
 await page.route('**/music/resolve/**',route=>route.fulfill({json:{streamPath:'/audio/jiofixture',format:'audio',audioSource:'JioSaavn',track:song}}));
 await page.route('**/music/audio/jiofixture',route=>route.fulfill({contentType:'audio/wav',body:wav}));
-await page.route('https://www.youtube.com/**',route=>route.fulfill({contentType:'text/html',body:`<script>window.commands=[];window.holdPlayback=true;addEventListener('message',event=>{try{const d=JSON.parse(event.data);if(d.func)commands.push(d);if(d.event==='listening')parent.postMessage(JSON.stringify({event:'onReady'}),'*');if(d.func==='playVideo'&&!window.holdPlayback)parent.postMessage(JSON.stringify({event:'onStateChange',info:1}),'*')}catch{}})</script>`}));
+await page.route('https://www.youtube.com/**',route=>route.fulfill({contentType:'text/html',body:`<script>
+window.commands=[];window.holdPlayback=true;
+const audio=window.fixtureAudio=new Audio('data:audio/wav;base64,${clip.toString('base64')}');audio.loop=true;audio.muted=new URL(location).searchParams.get('mute')==='1';
+const send=(event,info)=>parent.postMessage(JSON.stringify({event,info}),'*');
+addEventListener('message',event=>{try{const d=JSON.parse(event.data);if(d.func)commands.push(d);if(d.event==='listening')send('onReady');if(d.func==='mute')audio.muted=true;if(d.func==='unMute')audio.muted=false;if(d.func==='setVolume')audio.volume=d.args[0]/100;if(d.func==='pauseVideo')audio.pause();if(d.func==='seekTo')audio.currentTime=d.args[0]%8;if(d.func==='playVideo'&&!window.holdPlayback)audio.play().then(()=>send('onStateChange',1));}catch{}});
+setInterval(()=>{if(!audio.paused)send('infoDelivery',{currentTime:audio.currentTime,duration:200,playerState:1,videoData:{video_id:'abcdefghijk'}})},150);
+</script>`}));
 await page.addInitScript(()=>{
  localStorage.setItem('lyricflow.youtubeAuth.v1',JSON.stringify({interactivePlayer:true}));
  const drawImage=CanvasRenderingContext2D.prototype.drawImage;
@@ -77,6 +84,27 @@ try{
   const video=document.querySelector('.youtube-stage-backdrop'),theme=document.querySelector('.theme-layer'),lyrics=document.querySelector('.cinematic-canvas');
   return Number(getComputedStyle(video).zIndex)<Number(getComputedStyle(theme).zIndex)&&Number(getComputedStyle(theme).zIndex)<Number(getComputedStyle(lyrics).zIndex)&&getComputedStyle(lyrics).pointerEvents==='none'&&(window.__lyricBackgroundCopies||0)===0;
  }));
+ // Switch from a playing audio element to the selected YouTube iframe as the sole audio source.
+ await page.getByRole('button',{name:'Search JioSaavn & YouTube',exact:true}).click();
+ await page.getByRole('button',{name:'YouTube (Video + Lyrics)',exact:true}).click();
+ await page.getByLabel('Search songs',{exact:true}).fill('Test Song');
+ await page.locator('.song-search-form button[type=submit]').click();
+ await page.locator('.song-result').first().getByRole('button',{name:'Play now Test Song',exact:true}).click();
+ const primary=page.frames().find(f=>f.url().includes('youtube.com/embed/'));
+ await primary.evaluate(()=>{window.holdPlayback=false;parent.postMessage(JSON.stringify({event:'onReady'}),'*');});
+ await primary.waitForFunction(()=>window.fixtureAudio.currentTime>.2&&!window.fixtureAudio.paused&&!window.fixtureAudio.muted);
+ assert.equal(await page.locator('audio').evaluate(a=>a.paused&&!a.getAttribute('src')),true);
+ assert.ok(!(await page.locator('iframe').getAttribute('src')).includes('mute=1'));
+ await page.locator('audio').evaluate(a=>a.dispatchEvent(new Event('pause')));
+ await delay(300);
+ assert.equal(await primary.evaluate(()=>window.fixtureAudio.paused),false,'A queued pause from the old audio element must not pause YouTube');
+ await page.getByRole('slider',{name:'Use YouTube video or built-in themes as background',exact:true}).press('End');
+ await page.waitForFunction(()=>getComputedStyle(document.querySelector('.theme-layer')).opacity==='1');
+ assert.equal(await primary.evaluate(()=>window.fixtureAudio.paused||window.fixtureAudio.muted),false);
+ await page.getByRole('button',{name:'Pause track',exact:true}).click();
+ await primary.waitForFunction(()=>window.fixtureAudio.paused);
+ await page.getByRole('button',{name:'Play track',exact:true}).click();
+ await primary.waitForFunction(()=>!window.fixtureAudio.paused);
  assert.deepEqual(errors,[]);
- console.log('PASS: Permanent video/theme/lyrics layer order; loading themes and animated toggles retain JioSaavn audio; no themes painted onto lyrics; both exact video queries; selected video stays muted; separate signed delays and source/video mappings saved.');
+ console.log('PASS: Permanent video/theme/lyrics layer order; loading themes and animated toggles retain JioSaavn audio; no themes painted onto lyrics; both exact video queries; selected video stays muted; separate signed delays and source/video mappings saved; YouTube is the sole audio source under themes, ignores old audio events and responds to play/pause.');
 }catch(error){console.error('Mapping diagnostics',await page.evaluate(()=>({mappings:localStorage.getItem('lyricflow.v3.guest.songMappings'),corrections:localStorage.getItem('lyricflow.v3.guest.corrections')})));throw error;}finally{await browser.close();server.kill();}
