@@ -17,6 +17,7 @@ await page.route('**/music/search**',route=>{const p=new URL(route.request().url
 await page.route('**/music/resolve/**',route=>route.fulfill({json:{streamPath:'/audio/jiofixture',format:'audio',audioSource:'JioSaavn',track:song}}));
 await page.route('**/music/audio/jiofixture',route=>route.fulfill({contentType:'audio/wav',body:wav}));
 await page.route('https://www.youtube.com/**',route=>route.fulfill({contentType:'text/html',body:`<script>window.commands=[];addEventListener('message',event=>{try{const d=JSON.parse(event.data);if(d.func)commands.push(d);if(d.event==='listening')parent.postMessage(JSON.stringify({event:'onReady'}),'*')}catch{}})</script>`}));
+await page.addInitScript(()=>localStorage.setItem('lyricflow.youtubeAuth.v1',JSON.stringify({interactivePlayer:true})));
 try{
  await page.goto('http://127.0.0.1:5175');
  await page.getByRole('button',{name:'Search JioSaavn & YouTube',exact:true}).click();
@@ -53,6 +54,13 @@ try{
  assert.ok(frame);
  await frame.waitForFunction(()=>window.commands?.some(c=>c.func==='mute'));
  assert.equal(await frame.evaluate(()=>window.commands.some(c=>c.func==='unMute')),false);
+ // Verify actual lyric rendering above an interactive iframe, not just DOM presence.
+ await page.evaluate(async()=>{const audio=document.querySelector('audio');audio.currentTime=.1;await audio.play();});
+ await page.waitForFunction(()=>Number(document.querySelector('.cinematic-canvas')?.dataset.lyricDraws)>0);
+ assert.ok(await page.evaluate(()=>{
+  const video=document.querySelector('.youtube-stage-backdrop'),lyrics=document.querySelector('.cinematic-canvas');
+  return Number(getComputedStyle(video).zIndex)<Number(getComputedStyle(lyrics).zIndex)&&getComputedStyle(lyrics).pointerEvents==='none';
+ }));
  assert.deepEqual(errors,[]);
  console.log('PASS: JioSaavn audio retained; both exact video queries; selected video stays muted; separate signed delays and source/video mappings saved.');
 }catch(error){console.error('Mapping diagnostics',await page.evaluate(()=>({mappings:localStorage.getItem('lyricflow.v3.guest.songMappings'),corrections:localStorage.getItem('lyricflow.v3.guest.corrections')})));throw error;}finally{await browser.close();server.kill();}

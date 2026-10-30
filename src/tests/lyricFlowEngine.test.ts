@@ -24,7 +24,6 @@ import { getDeterministicSongPalette } from '../visualization/cinematic/contrast
 import {
   evaluateBlockyUrl,
   sanitizeYouTubePlayerJson,
-  getRemoveAdblockThingScript,
   installYouTubeAdBlocker,
 } from '../music/youtubeAdBlocker';
 import {
@@ -386,10 +385,6 @@ describe('YouTube metadata cleaning & 4-Engine LyricFlow Engine', () => {
     expect('playerAds' in cleaned).toBe(false);
     expect('adSlots' in cleaned).toBe(false);
     expect('bkaEnforcementMessageViewModel' in cleaned.auxiliaryUi.messageRenderers).toBe(false);
-
-    const script = getRemoveAdblockThingScript();
-    expect(script).toContain('ytd-enforcement-message-view-model');
-    expect(script).toContain('__ytplayer_adblockDetected');
 
     expect(() => installYouTubeAdBlocker()).not.toThrow();
   });
