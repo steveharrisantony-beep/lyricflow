@@ -69,6 +69,11 @@ in the APK. All `VITE_` values are public build configuration.
 
 ## Developer commands
 
+When editing in AI Studio, keep `package-lock.json` in the repository. GitHub
+Actions uses npm and `npm ci`; a `bun.lock` file does not replace npm's lockfile.
+If dependencies change, regenerate and commit `package-lock.json` with npm before
+pushing. Removing it prevents both the APK build and the web checks from starting.
+
 Use Node 22+, JDK 21 and Android SDK platform 36, NDK 27.2.12479018 and CMake 3.22.1 with the build tools required by
 the checked-in Gradle project. Android Studio is optional for command-line builds.
 The GitHub Actions workflow supplies the native build environment.
