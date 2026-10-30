@@ -51,6 +51,17 @@ export type LyricPlacementMode=
  |'diagonal'
  |'center';
 
+export const ALL_PLACEMENT_MODES:readonly Exclude<LyricPlacementMode,'auto'>[]=[
+ 'alternating',
+ 'left',
+ 'right',
+ 'bottom-right',
+ 'bottom-left',
+ 'top-left',
+ 'diagonal',
+ 'center'
+] as const;
+
 export const LYRIC_PLACEMENT_MODES:readonly {id:LyricPlacementMode;label:string;detail:string}[]=[
  {id:'auto',label:'Dynamic Stage (Auto)',detail:'Cycles Left, Right, Bottom-Right, Bottom-Left, Diagonal & Center with opposing line entries'},
  {id:'alternating',label:'Alternating Left ↔ Right',detail:'Line 1 enters from Left, Line 2 enters from Right; alternates stage sides'},
@@ -119,8 +130,9 @@ export function lyricMotionFor(scene:DirectedScene,text:string,enabledMotions?:r
 }
 
 const packs:readonly FontPack[]=['impact','rounded','ultra','glass','industrial','tech','noir','cyber'];
-export function lyricFontFor(scene:DirectedScene,text:string):FontPack{
- return packs[hash(scene.id+'|'+text)%packs.length];
+export function lyricFontFor(scene:DirectedScene,text:string,enabledFonts?:readonly FontPack[]):FontPack{
+ const pool=enabledFonts&&enabledFonts.length>0?enabledFonts:packs;
+ return pool[hash(scene.id+'|'+text)%pool.length];
 }
 
 export interface LyricRun {
@@ -192,11 +204,14 @@ export function computeBackgroundAdaptiveLyricColors(
  foregroundHex:string,
  accentHex:string,
  customAccentOverride?:string,
- forceLightText=false
+ forceLightText=false,
+ customBaseOverride?:string
 ):{baseColor:string;sungColor:string;effectiveBgHex:string}{
  if(forceLightText){
   const darkVideoBg='#07090e';
-  const baseColor='#f8fafc';
+  const baseColor=customBaseOverride&&/^#[0-9a-f]{6}$/i.test(customBaseOverride)
+   ?readableChromaticInk(darkVideoBg,customBaseOverride)
+   :'#f8fafc';
   const targetAccent=customAccentOverride&&/^#[0-9a-f]{6}$/i.test(customAccentOverride)
    ?customAccentOverride
    :'#72efdd';
@@ -206,7 +221,9 @@ export function computeBackgroundAdaptiveLyricColors(
   }
   return {baseColor,sungColor,effectiveBgHex:darkVideoBg};
  }
- const baseColor=readableInk(backgroundHex,foregroundHex);
+ const baseColor=customBaseOverride&&/^#[0-9a-f]{6}$/i.test(customBaseOverride)
+  ?readableChromaticInk(backgroundHex,customBaseOverride)
+  :readableInk(backgroundHex,foregroundHex);
  const targetAccent=customAccentOverride&&/^#[0-9a-f]{6}$/i.test(customAccentOverride)
   ?customAccentOverride
   :accentHex;
@@ -254,8 +271,11 @@ export interface KineticArgs {
  project?:ProjectPoint;
  animated?:boolean;
  enabledMotions?:readonly LyricMotion[];
+ enabledPlacements?:readonly Exclude<LyricPlacementMode,'auto'>[];
+ enabledFonts?:readonly FontPack[];
  paletteId?:string;
  customAccentColor?:string;
+ customBaseColor?:string;
  bpm?:number;
  fillPaceMode?:LyricFillPaceMode;
  minFontSize?:number;
@@ -616,20 +636,12 @@ function paintWordWithSequentialColor(
 export function resolveCuePlacement(
  cue:LyricCue,
  scene:DirectedScene,
- mode:LyricPlacementMode='auto'
+ mode:LyricPlacementMode='auto',
+ enabledPlacements?:readonly Exclude<LyricPlacementMode,'auto'>[]
 ):Exclude<LyricPlacementMode,'auto'>{
  if(mode!=='auto')return mode;
  const cueSeed=hash(cue.text+'|'+Math.round(cue.time*10));
- const pool:readonly Exclude<LyricPlacementMode,'auto'>[]=[
-  'alternating',
-  'left',
-  'right',
-  'bottom-right',
-  'bottom-left',
-  'diagonal',
-  'top-left',
-  'center'
- ];
+ const pool=enabledPlacements&&enabledPlacements.length>0?enabledPlacements:ALL_PLACEMENT_MODES;
  return pool[(cueSeed+scene.variation)%pool.length];
 }
 
@@ -661,8 +673,11 @@ export function drawKineticLyrics({
  project=makeLyricProjection(w,h,STILL_CAMERA),
  animated=true,
  enabledMotions,
+ enabledPlacements,
+ enabledFonts,
  paletteId,
  customAccentColor,
+ customBaseColor,
  bpm=0,
  fillPaceMode='auto',
  minFontSize=26,
@@ -672,7 +687,7 @@ export function drawKineticLyrics({
  duetSide
 }:KineticArgs):KineticResult{
  const motion=lyricMotionFor(scene,cue.text,enabledMotions);
- const font=lyricFontFor(scene,cue.text);
+ const font=lyricFontFor(scene,cue.text,enabledFonts);
  const baseTemplate=byId[scene.id]||TEMPLATES[0];
  const theme=resolveThemePalette(baseTemplate.id,paletteId);
  const unit=Math.min(w,h);
@@ -681,7 +696,7 @@ export function drawKineticLyrics({
  const hasWordSync=cue.timing==='sourced';
  const activePlacement:Exclude<LyricPlacementMode,'auto'>=duetSide
   ?duetSide
-  :resolveCuePlacement(cue,scene,placementMode);
+  :resolveCuePlacement(cue,scene,placementMode,enabledPlacements);
  const cueParity=hash(cue.text+'|'+Math.round(cue.time*5))%2;
 
  const safeMinFont=clamp(Math.min(minFontSize,maxFontSize),16,120);
@@ -741,7 +756,8 @@ export function drawKineticLyrics({
   theme.foreground,
   theme.accent,
   effectiveAccentOverride,
-  forceLightText
+  forceLightText,
+  customBaseColor
  );
  const fillPace:'letter'|'word'|'line'=hasWordSync
   ?resolveLyricFillPace(runs,bpm,fillPaceMode)

@@ -1,6 +1,7 @@
 import {providerRequest} from '../network/request';
 import {
  extractYouTubeVideoId,
+ hasValidLrcTimestamps,
  normalizeTrackForLyricsLookup as normalizeTrackMetaForLyricsLookup,
  rankCandidate,
  type TrackInfo,
@@ -16,47 +17,54 @@ import {
 
 export interface LyricProvider {
  id:string; label:string;
- search(track:TrackInfo, signal?:AbortSignal):Promise<TrackCandidate[]>;
+ search(track:TrackInfo, signal?:AbortSignal, rawOverride?:boolean):Promise<TrackCandidate[]>;
 }
 const isRecord=(x:unknown):x is Record<string,unknown>=>typeof x==='object'&&x!==null;
 const str=(x:unknown)=>typeof x==='string'?x:'';
 const num=(x:unknown)=>typeof x==='number'&&Number.isFinite(x)?x:0;
 const record=(v:unknown):SearchRecord|null=>{
  if(!isRecord(v)||!Number.isSafeInteger(v.id)||!str(v.trackName))return null;
+ const synced=typeof v.syncedLyrics==='string'&&hasValidLrcTimestamps(v.syncedLyrics)?v.syncedLyrics:null;
  return {id:num(v.id),trackName:str(v.trackName),artistName:str(v.artistName),
  albumName:str(v.albumName),duration:num(v.duration),instrumental:v.instrumental===true,
- syncedLyrics:typeof v.syncedLyrics==='string'?v.syncedLyrics:null,hasWordSync:v.hasWordSync===true || (typeof v.syncedLyrics==='string'&&v.syncedLyrics.includes('<'))};
+ syncedLyrics:synced,hasWordSync:Boolean(synced&&(v.hasWordSync===true||synced.includes('<')))};
 };
 export const lrclibProvider:LyricProvider={
  id:'lrclib',label:'LRCLIB (track candidates)',
- async search(track,signal){
-  const normalized=normalizeTrackForLyricsLookup(track);
+ async search(track,signal,rawOverride=false){
+  const normalized=normalizeTrackForLyricsLookup(track,rawOverride);
   if(normalized.title.trim().length<2)return [];
-  const isYt=track.provider==='resolver'||Boolean(track.youtubeVideoId);
-  const p=new URLSearchParams({track_name:cleanLyricMetadata(normalized.title.trim())});
-  if(!isYt&&normalized.artist.trim())p.set('artist_name',cleanLyricMetadata(normalized.artist));
+  const isYt=!rawOverride&&(track.provider==='resolver'||Boolean(track.youtubeVideoId));
+  const queryTitle=rawOverride?normalized.title.trim():cleanLyricMetadata(normalized.title.trim());
+  const p=new URLSearchParams({track_name:queryTitle});
+  if((rawOverride||!isYt)&&normalized.artist.trim()){
+   p.set('artist_name',rawOverride?normalized.artist.trim():cleanLyricMetadata(normalized.artist));
+  }
   const res=await providerRequest('https://lrclib.net/api/search?'+p.toString(),signal);
   if(res.status===429)throw new Error('Lyrics search rate limited. Wait before retrying.');
   if(!res.ok)throw new Error('Lyrics search unavailable (HTTP '+res.status+').');
   const data:unknown=await res.json();
   if(!Array.isArray(data))throw new Error('Unexpected lyrics search response.');
   return data.slice(0,25).map(record).filter((r):r is SearchRecord=>r!==null)
-   .map(r=>rankCandidate(normalized,r)).filter(r=>r.confidence>=.45)
-   .sort((a,b)=>b.confidence-a.confidence).slice(0,8);
+   .map(r=>rankCandidate(normalized,r,rawOverride)).filter(r=>rawOverride?r.confidence>=0.12:r.confidence>=.45)
+   .sort((a,b)=>b.confidence-a.confidence).slice(0,10);
  }
 };
 export async function retrievePermittedLyrics(candidate:TrackCandidate, signal?:AbortSignal){
  if(!Number.isSafeInteger(candidate.id)||candidate.id<=0)throw new Error('Invalid lyrics ID');
  signal?.throwIfAborted();
- if(candidate.syncedLyrics)return {synced:candidate.syncedLyrics,plain:'',source:candidate.hasWordSync?'LRCLIB · Word-Synced':'LRCLIB',sourceUrl:candidate.url,license:'Rights supplied by user'};
+ if(candidate.syncedLyrics&&hasValidLrcTimestamps(candidate.syncedLyrics))return {synced:candidate.syncedLyrics,plain:'',source:candidate.provider==='apple'?(candidate.hasWordSync?'Apple Library · Word-Synced':'Apple Library · Synced'):(candidate.hasWordSync?'LRCLIB · Word-Synced':'LRCLIB'),sourceUrl:candidate.url,license:'Rights supplied by user'};
  const response=await providerRequest('https://lrclib.net/api/get/'+candidate.id,signal);
  if(!response.ok)throw new Error('Lyrics provider returned HTTP '+response.status);
  const data:unknown=await response.json();
  const valid=record(data);
  if(!valid||valid.id!==candidate.id)throw new Error('Invalid lyrics provider result');
  const lyrics=data as Record<string,unknown>;
- return {synced:typeof lyrics.syncedLyrics==='string'?lyrics.syncedLyrics:'',
-   plain:typeof lyrics.plainLyrics==='string'?lyrics.plainLyrics:'',
+ const rawSynced=typeof lyrics.syncedLyrics==='string'?lyrics.syncedLyrics:'';
+ const validSynced=hasValidLrcTimestamps(rawSynced)?rawSynced:'';
+ const plainFallback=typeof lyrics.plainLyrics==='string'?lyrics.plainLyrics:(!validSynced&&rawSynced?rawSynced:'');
+ return {synced:validSynced,
+   plain:plainFallback,
    source:'LRCLIB',sourceUrl:candidate.url,license:'Rights supplied by user, not verified by LRCLIB'};
 }
 
@@ -391,8 +399,8 @@ export async function resolveStashLyricsChain(
  * Normalize track metadata for lyrics lookup:
  * Delegates to trackInfo's normalizeTrackForLyricsLookup so `videoTitle` and `channelHint` are preserved.
  */
-export function normalizeTrackForLyricsLookup(track:TrackInfo):TrackInfo{
- return normalizeTrackMetaForLyricsLookup(track);
+export function normalizeTrackForLyricsLookup(track:TrackInfo, rawOverride=false):TrackInfo{
+ return normalizeTrackMetaForLyricsLookup(track, rawOverride);
 }
 
 /** Remove upload packaging only; preserve live/remix/acoustic/version identity. */

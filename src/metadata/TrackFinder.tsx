@@ -1,9 +1,15 @@
 import type {LyricsSourceReference, LyricsSelection} from '../firebase/correctionModel';
 import {useEffect,useRef,useState} from 'react';
-import type {TrackInfo, TrackCandidate} from '../metadata/trackInfo';
+import {
+ hasValidLrcTimestamps,
+ isAdvertisementTrack,
+ normalizeTrackForLyricsLookup,
+ type TrackInfo,
+ type TrackCandidate
+} from '../metadata/trackInfo';
 import {lrclibProvider,retrievePermittedLyrics,resolveStashLyricsChain} from '../lyrics/providers';
 import {findUserLyrics,type LibraryEntry} from '../lyrics/userLibrary';
-import {fetchAppleMusicWordSyncedLyrics} from '../lyrics/appleLyrics';
+import {fetchAppleMusicCandidates,fetchAppleMusicWordSyncedLyrics} from '../lyrics/appleLyrics';
 import {
  LYRIC_ENGINE_OPTIONS,
  cleanYouTubeTitleForLyrics,
@@ -51,6 +57,17 @@ export default function TrackFinder({
  const [subtitleTracks,setSubtitleTracks]=useState<YouTubeSubtitleTrackItem[]>([]);
  const [busy,setBusy]=useState(false);
  const [message,setMessage]=useState('');
+ const [manualTitle,setManualTitle]=useState(()=>track?.title||'');
+ const [manualArtist,setManualArtist]=useState(()=>track?.artist||'');
+ const [manualAlbum,setManualAlbum]=useState(()=>track?.album||'');
+ const [overrideBracketFilter,setOverrideBracketFilter]=useState(true);
+ const [autoSearchedSummary,setAutoSearchedSummary]=useState<{title:string;artist:string;album:string;isYt:boolean}>({
+  title:'',
+  artist:'',
+  album:'',
+  isYt:false
+ });
+
  const latestLyrics=useRef(onLyricsFound);latestLyrics.current=onLyricsFound;
  const latestStatus=useRef(onStatusChange);latestStatus.current=onStatusChange;
  const latestAvailableEngines=useRef(onAvailableLyricEnginesChange);latestAvailableEngines.current=onAvailableLyricEnginesChange;
@@ -70,21 +87,57 @@ export default function TrackFinder({
   automaticRequest.current?.abort();
  },[]);
 
- const key=track?[track.title,track.artist,Math.round(track.duration),track.videoId||''].join('|'):'';
+ // Stable song identity for automatic search so typing in Manual Search inputs does not re-trigger auto-search or close the Android keyboard
+ const autoTrackKey=track
+  ?track.source==='manual'
+   ?''
+   :[track.title,track.artist,Math.round(track.duration),track.videoId||'',track.sourceTrackId||'',track.isAd?'ad':''].join('|')
+  :'';
 
- // Automatic lyrics lookup across the 4 selectable Lyrics Engine options:
- // 1. lyricflow ("LyricFlow Engine"): Hybrid YouTube Subtitles + Apple Library word-sync (with fallback to YT Subtitles or LRC Library)
- // 2. apple ("Apple Library"): Direct Apple Music word-synced TTML/syllable library
- // 3. lrclib ("LRC Library"): Direct LRCLIB timed LRC library
- // 4. youtube ("YouTube Subtitles"): Creator-uploaded YouTube video closed captions
+ // Pre-fill the manual search box with what was searched automatically before whenever a new automatic song loads
  useEffect(()=>{
-  if(!track||track.title.trim().length<2)return;
+  if(!track||track.source==='manual')return;
+  const isYt=Boolean(track.videoId||track.youtubeVideoId||track.provider==='resolver');
+  const autoNorm=normalizeTrackForLyricsLookup(track,false);
+  const searchedTitle=isYt
+   ?cleanYouTubeTitleForLyrics(track.videoTitle||track.title,track.artist)
+   :autoNorm.title||track.title;
+  const searchedArtist=isYt?'':autoNorm.artist||track.artist;
+  const searchedAlbum=isYt?'':autoNorm.album||track.album;
+
+  setAutoSearchedSummary({
+   title:searchedTitle,
+   artist:searchedArtist,
+   album:searchedAlbum,
+   isYt
+  });
+  setManualTitle(searchedTitle||track.title);
+  setManualArtist(track.artist||'');
+  setManualAlbum(track.album||'');
+ },[autoTrackKey]);
+
+ // Automatic lyrics lookup across the 4 selectable Lyrics Engine options
+ useEffect(()=>{
+  if(!track||track.source==='manual'||track.title.trim().length<2)return;
+  if(isAdvertisementTrack(track)){
+   automaticRequest.current?.abort();
+   pending.current?.abort();
+   setCandidates([]);
+   setAvailableEngines([]);
+   setSubtitleTracks([]);
+   latestAvailableEngines.current?.([]);
+   latestSubtitleTracks.current?.([]);
+   updateStatus('Advertisement playing — showing built-in themes (lyrics & video search paused).');
+   return;
+  }
   if(savedCustomLrc&&savedCustomLrc.trim()){
+   const hasTimed=hasValidLrcTimestamps(savedCustomLrc);
    latestLyrics.current({
-    original:savedCustomLrc,
+    original:hasTimed?savedCustomLrc:'',
+    plain:hasTimed?undefined:savedCustomLrc,
     romanized:'',
     source:'Saved Custom Override',
-    hasWordSync:savedCustomLrc.includes('<')
+    hasWordSync:hasTimed&&savedCustomLrc.includes('<')
    });
    updateStatus('Loaded your saved custom lyrics for this track.');
    return;
@@ -94,11 +147,13 @@ export default function TrackFinder({
    entry=>entry.original&&entry.title.toLowerCase()===track.title.toLowerCase()
   );
   if(saved.length>=1&&!preferredSelection){
+   const hasTimed=hasValidLrcTimestamps(saved[0].original);
    latestLyrics.current({
-    original:saved[0].original,
+    original:hasTimed?saved[0].original:'',
+    plain:hasTimed?undefined:saved[0].original,
     romanized:saved[0].romanized,
     source:'Saved Library',
-    hasWordSync:saved[0].original.includes('<')
+    hasWordSync:hasTimed&&saved[0].original.includes('<')
    });
    updateStatus('Synchronized from your saved lyrics library.');
    return;
@@ -122,12 +177,11 @@ export default function TrackFinder({
     if(selectedId){
      const lyric=await retrievePermittedLyrics({id:selectedId,title:track.title,artist:track.artist,album:track.album,duration:track.duration,instrumental:false,hasSynced:true,hasWordSync:false,url:`https://lrclib.net/api/get/${selectedId}`,confidence:1},controller.signal);
      if(!lyric.synced&&!lyric.plain)throw new Error('Saved lyrics selection is unavailable. Use default lyrics selection or choose another match.');
-     return {original:lyric.synced,romanized:'',plain:lyric.plain,source:lyric.source,sourceUrl:lyric.sourceUrl,hasWordSync:lyric.synced.includes('<'),candidates:[],availableEngines:['lrclib' as LyricEngineOption],subtitleTracks:[] as YouTubeSubtitleTrackItem[]};
+     return {original:lyric.synced,romanized:'',plain:lyric.plain,source:lyric.source,sourceUrl:lyric.sourceUrl,hasWordSync:Boolean(lyric.synced&&lyric.synced.includes('<')),candidates:[],availableEngines:['lrclib' as LyricEngineOption],subtitleTracks:[] as YouTubeSubtitleTrackItem[]};
     }
     return resolveStashLyricsChain(track,controller.signal,lyricEngineOption,leadingNonMusicOffsetSec,selectedSubtitleTrackId);
    };
-   void resolvePreferred(
-   )
+   void resolvePreferred()
     .then(resolved=>{
      if(controller.signal.aborted)return;
      if(resolved){
@@ -142,18 +196,21 @@ export default function TrackFinder({
        latestEngineChange.current?.(nextEngines[0]);
       }
       setCandidates(resolved.candidates);
+      const hasTimedLines=hasValidLrcTimestamps(resolved.original);
       latestLyrics.current({
-       original:resolved.original,
-       romanized:resolved.romanized,
-       plain:resolved.plain,
+       original:hasTimedLines?resolved.original:'',
+       romanized:hasTimedLines?resolved.romanized:'',
+       plain:resolved.plain||(!hasTimedLines&&resolved.original?resolved.original:undefined),
        source:resolved.source,
        sourceUrl:resolved.sourceUrl,
-       hasWordSync:resolved.hasWordSync
+       hasWordSync:hasTimedLines&&resolved.hasWordSync
       });
       updateStatus(
-       resolved.hasWordSync
+       hasTimedLines&&resolved.hasWordSync
         ?`${resolved.source} — word-by-word sync active.`
-        :`${resolved.source} — line-by-line sync active.`
+        :hasTimedLines
+        ?`${resolved.source} — line-by-line sync active.`
+        :`${resolved.source} — plain lyrics loaded (no line timestamps available).`
       );
      }else{
       setAvailableEngines([]);
@@ -174,45 +231,76 @@ export default function TrackFinder({
    clearTimeout(timer);
    controller.abort();
   };
- },[key,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,preferredSelection?.lrclibId,preferredSourceFile?.url,Math.round(leadingNonMusicOffsetSec)]);
+ },[autoTrackKey,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,preferredSelection?.lrclibId,preferredSourceFile?.url,Math.round(leadingNonMusicOffsetSec)]);
 
- const canSearch=Boolean(track&&track.title.trim().length>=2);
+ const canSearch=Boolean(track&&manualTitle.trim().length>=2);
 
  useEffect(()=>{
+  if(!autoTrackKey)return;
   pending.current?.abort();
   setBusy(false);
   setMatches(track?findUserLyrics(track):[]);
- },[key]);
+ },[autoTrackKey]);
 
  async function search(){
   if(!track||!canSearch)return;
+  const searchTrack:TrackInfo={
+   ...track,
+   title:manualTitle.trim(),
+   videoTitle:manualTitle.trim(),
+   artist:manualArtist.trim(),
+   album:manualAlbum.trim(),
+   source:'manual',
+   confidence:1
+  };
+  onMetadataChange(searchTrack);
   setBusy(true);
-  updateStatus('Searching Apple Music word-sync & LRCLIB candidates…');
+  updateStatus(
+   overrideBracketFilter
+    ?`Searching Apple Library & LRCLIB with exact query "${searchTrack.title}" (bracket filter overridden)…`
+    :`Searching Apple Library & LRCLIB for "${searchTrack.title}"…`
+  );
   setCandidates([]);
   automaticRequest.current?.abort();
   pending.current?.abort();
   const controller=new AbortController();
   pending.current=controller;
   try{
-   const [apple,found]=await Promise.all([
-    fetchAppleMusicWordSyncedLyrics(track,controller.signal).catch(()=>null),
-    lrclibProvider.search(track,controller.signal).catch(()=>[])
+   const [appleDirect,appleCands,lrcCands]=await Promise.all([
+    fetchAppleMusicWordSyncedLyrics(searchTrack,controller.signal,'apple',overrideBracketFilter).catch(()=>null),
+    fetchAppleMusicCandidates(searchTrack,controller.signal,overrideBracketFilter).catch(()=>[]),
+    lrclibProvider.search(searchTrack,controller.signal,overrideBracketFilter).catch(()=>[])
    ]);
    if(controller.signal.aborted)return;
-   setCandidates(found);
-   if(apple&&apple.lrc){
+   const combinedCandidates=[...appleCands,...lrcCands];
+   setCandidates(combinedCandidates);
+   if(appleDirect&&(appleDirect.lrc||appleDirect.plain)){
+    const hasTimed=hasValidLrcTimestamps(appleDirect.lrc);
     onLyricsFound({
-     original:apple.lrc,
-     romanized:apple.romanizedLrc||'',
-     source:apple.source,
-     sourceUrl:apple.sourceUrl,
-     hasWordSync:apple.hasWordSync
+     original:hasTimed?appleDirect.lrc:'',
+     plain:appleDirect.plain||(!hasTimed&&appleDirect.lrc?appleDirect.lrc:undefined),
+     romanized:hasTimed?(appleDirect.romanizedLrc||''):'',
+     source:appleDirect.source,
+     sourceUrl:appleDirect.sourceUrl,
+     hasWordSync:hasTimed&&appleDirect.hasWordSync
     });
-    updateStatus(`Loaded ${apple.source}. ${found.length} alternative LRCLIB candidate(s) listed below.`);
+    updateStatus(
+     `Loaded ${appleDirect.source} (${hasTimed?(appleDirect.hasWordSync?'Word timestamps':'Line timestamps'):'Plain lyrics'}). ${combinedCandidates.length} Apple Library & LRCLIB candidate(s) listed below.`
+    );
+   }else if(appleCands.length>0&&appleCands[0].syncedLyrics){
+    const topApple=appleCands[0];
+    onLyricsFound({
+     original:topApple.syncedLyrics!,
+     romanized:'',
+     source:topApple.hasWordSync?'Apple Library · Word-Synced TTML':'Apple Library · Synced',
+     sourceUrl:topApple.url,
+     hasWordSync:Boolean(topApple.hasWordSync)
+    });
+    updateStatus(`Loaded Apple Library lyrics for "${topApple.title}". ${combinedCandidates.length} candidate(s) listed below.`);
    }else{
     updateStatus(
-     found.length
-      ?`${found.length} candidate(s) found. Select a version below if the default lyrics did not match.`
+     combinedCandidates.length
+      ?`${combinedCandidates.length} candidate(s) found across Apple Library & LRCLIB. Select a version below.`
       :'No matching candidates found; paste custom LRC in the editor below.'
     );
    }
@@ -237,16 +325,25 @@ export default function TrackFinder({
     updateStatus('The selected candidate has no lyric text.');
     return;
    }
+   const hasTimed=hasValidLrcTimestamps(lyric.synced);
    onLyricsFound({
-    original:lyric.synced,
+    original:hasTimed?lyric.synced:'',
     romanized:'',
-    plain:lyric.plain,
+    plain:lyric.plain||(!hasTimed&&lyric.synced?lyric.synced:undefined),
     source:lyric.source,
     sourceUrl:lyric.sourceUrl,
-    hasWordSync:lyric.synced.includes('<')
+    hasWordSync:hasTimed&&lyric.synced.includes('<')
    });
-   onSelectionChange?.({engine:'lrclib',lrclibId:c.id,subtitleTrackId:null});
-   updateStatus(lyric.synced?'Alternative timed lyrics loaded.':'Plain lyrics loaded — click "Create approximate timestamps" below.');
+   onSelectionChange?.({
+    engine:c.provider==='apple'?'apple':'lrclib',
+    lrclibId:c.provider==='apple'?null:c.id,
+    subtitleTrackId:null
+   });
+   updateStatus(
+    hasTimed
+     ?`Loaded ${lyric.source} (${lyric.synced.includes('<')?'Word timestamps':'Line timestamps'}).`
+     :'Plain lyrics loaded (no line timestamps available) — click "Create approximate timestamps" below.'
+   );
   }catch(e){
    if(!controller.signal.aborted)updateStatus(e instanceof Error?e.message:'Unable to load lyrics.');
   }finally{
@@ -266,7 +363,7 @@ export default function TrackFinder({
     <span className="heading-icon">⌕</span>
     <div>
      <b>CHANGE LYRICS MATCH ({visibleEngineOptions.length>0?`${visibleEngineOptions.length} AVAILABLE`:'OVERRIDE'})</b>
-     <small>Choose between available lyrics engines or select an alternative candidate</small>
+     <small>Choose between available lyrics engines or manually search Apple Library &amp; LRCLIB</small>
     </div>
    </div>
    <span className="local-badge">ALTERNATIVE MATCHER</span>
@@ -325,29 +422,80 @@ export default function TrackFinder({
      </div>
     </div>}
    </div>}
+
+   {autoSearchedSummary.title&&<div style={{marginBottom:10,padding:'8px 12px',borderRadius:8,background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.22)',fontSize:12,color:'#e2e8f0'}}>
+    <strong>Automatically searched before:</strong>{' '}
+    <code>"{autoSearchedSummary.title}"</code>
+    {autoSearchedSummary.artist?<> · Artist: <code>"{autoSearchedSummary.artist}"</code></>:autoSearchedSummary.isYt?' (artist & album skipped for YouTube automatic search)':''}
+    {autoSearchedSummary.album?<> · Album: <code>"{autoSearchedSummary.album}"</code></>:''}
+   </div>}
+
    <div className="track-form">
-    <label>Song title<input value={track.title} onChange={e=>onMetadataChange({...track,title:e.target.value,source:'manual',confidence:1})}/></label>
-    <label>Artist<input value={track.artist} placeholder="Enter artist" onChange={e=>onMetadataChange({...track,artist:e.target.value,source:'manual',confidence:1})}/></label>
-    <label>Album / version<input value={track.album} placeholder="Optional" onChange={e=>onMetadataChange({...track,album:e.target.value,source:'manual',confidence:1})}/></label>
+    <label>Song title
+     <input
+      type="text"
+      inputMode="text"
+      autoComplete="off"
+      value={manualTitle}
+      onKeyDown={e=>{e.stopPropagation();if(e.key==='Enter')void search();}}
+      onChange={e=>setManualTitle(e.target.value)}
+     />
+    </label>
+    <label>Artist
+     <input
+      type="text"
+      inputMode="text"
+      autoComplete="off"
+      value={manualArtist}
+      placeholder="Enter artist"
+      onKeyDown={e=>{e.stopPropagation();if(e.key==='Enter')void search();}}
+      onChange={e=>setManualArtist(e.target.value)}
+     />
+    </label>
+    <label>Album / version
+     <input
+      type="text"
+      inputMode="text"
+      autoComplete="off"
+      value={manualAlbum}
+      placeholder="Optional"
+      onKeyDown={e=>{e.stopPropagation();if(e.key==='Enter')void search();}}
+      onChange={e=>setManualAlbum(e.target.value)}
+     />
+    </label>
+   </div>
+   <div style={{margin:'6px 0 10px',display:'flex',alignItems:'center',gap:8,fontSize:12,color:'#cbd5e1'}}>
+    <label style={{display:'inline-flex',alignItems:'center',gap:6,cursor:'pointer'}}>
+     <input
+      type="checkbox"
+      checked={overrideBracketFilter}
+      onChange={e=>setOverrideBracketFilter(e.target.checked)}
+     />
+     Override bracket/tag filter in manual search (keep brackets &amp; exact text)
+    </label>
    </div>
    <div className="track-search-row">
     <span>
      Metadata source: {track.source} · {track.duration?Math.round(track.duration)+'s':''}
-     {track.videoId?` · Cleaned YT Query: "${cleanYouTubeTitleForLyrics(track.videoTitle||track.title,track.artist)}"`:''}
+     {autoSearchedSummary.title?` · Auto Query: "${autoSearchedSummary.title}"`:''}
     </span>
     <button className="upload-button" disabled={busy||!canSearch} onClick={()=>void search()}>{busy?'Searching…':'Re-fetch Apple Music / LRCLIB Lyrics'}</button>
    </div>
    {matches.length>0&&<div className="library-match">
     <strong>Saved in your library</strong>
-    {matches.map(e=><button key={e.id} onClick={()=>{automaticRequest.current?.abort();pending.current?.abort();onLyricsFound({original:e.original,romanized:e.romanized,source:'My library',hasWordSync:e.original.includes('<')});updateStatus('Loaded saved library lyrics.')}}>{e.title} — {e.artist||'Unknown artist'}</button>)}
+    {matches.map(e=><button key={e.id} onClick={()=>{automaticRequest.current?.abort();pending.current?.abort();const hasTimed=hasValidLrcTimestamps(e.original);onLyricsFound({original:hasTimed?e.original:'',plain:hasTimed?undefined:e.original,romanized:e.romanized,source:'My library',hasWordSync:hasTimed&&e.original.includes('<')});updateStatus('Loaded saved library lyrics.')}}>{e.title} — {e.artist||'Unknown artist'}</button>)}
    </div>}
    {candidates.length>0&&<div className="track-candidates">
-    <div className="candidate-heading">Alternative recordings ({candidates.length}) <small>Choose if the auto-loaded lyrics do not match your audio</small></div>
-    {candidates.map(c=><div className="candidate" key={c.id}>
+    <div className="candidate-heading">Alternative recordings ({candidates.length}) <small>Apple Library &amp; LRCLIB results — choose if the auto-loaded lyrics do not match</small></div>
+    {candidates.map(c=><div className="candidate" key={`${c.provider||'lrclib'}-${c.id}`}>
       <div>
        <strong>{c.title}</strong>
        <small>{c.artist} {c.album?'· '+c.album:''} · {Math.round(c.duration)}s · {Math.round(c.confidence*100)}% match</small>
-       <small>{c.instrumental?'Instrumental':c.hasWordSync?'Word timestamps':'Line timestamps'} · <a href={c.url} target="_blank" rel="noreferrer">Source ↗</a></small>
+       <small>
+        {c.provider==='apple'?'[Apple Library] ':'[LRC Library] '}
+        {c.instrumental?'Instrumental':c.hasWordSync?'Word timestamps':c.hasSynced?'Line timestamps':'Plain lyrics (no timestamps)'}
+        {c.url?<> · <a href={c.url} target="_blank" rel="noreferrer">Source ↗</a></>:null}
+       </small>
       </div>
       <button className="upload-button" disabled={busy||c.instrumental} onClick={()=>void selectCandidate(c)}>Use this version</button>
      </div>)}
@@ -356,4 +504,5 @@ export default function TrackFinder({
   </>}
  </section>;
 }
+
 

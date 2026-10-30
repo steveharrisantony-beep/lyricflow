@@ -1,6 +1,6 @@
 import {backendOrigin} from '../network/backend';
 import { providerRequest } from '../network/request';
-import type { TrackInfo } from '../metadata/trackInfo';
+import { hasValidLrcTimestamps, type TrackCandidate, type TrackInfo } from '../metadata/trackInfo';
 import { cleanLyricMetadata } from './providers';
 import {
   scoreCandidateAgainstRawMetadata,
@@ -348,15 +348,16 @@ export async function fetchYouTubeSubtitlesForTrack(
 export async function fetchAppleMusicWordSyncedLyrics(
   track: TrackInfo,
   signal?: AbortSignal,
-  requestedSource: 'all' | 'apple' | 'lrclib' | 'youtube' = 'all'
+  requestedSource: 'all' | 'apple' | 'lrclib' | 'youtube' = 'all',
+  rawOverride = false
 ): Promise<AppleLyricResult | null> {
-  const isYt = track.provider === 'resolver' || Boolean(track.youtubeVideoId);
-  const title = cleanLyricMetadata(track.title.trim());
-  // Skip artist and album names when searching lyrics of songs sourced from YouTube
-  const artist = isYt ? '' : cleanLyricMetadata(track.artist.trim());
+  const isYt = !rawOverride && (track.provider === 'resolver' || Boolean(track.youtubeVideoId));
+  const title = rawOverride ? track.title.trim() : cleanLyricMetadata(track.title.trim());
+  // Skip artist and album names when searching lyrics of songs sourced from YouTube unless rawOverride is active
+  const artist = rawOverride ? track.artist.trim() : isYt ? '' : cleanLyricMetadata(track.artist.trim());
   if (title.length < 2) return null;
 
-  const rawOriginalTitle = (track.videoTitle || track.title).trim();
+  const rawOriginalTitle = rawOverride ? title : (track.videoTitle || track.title).trim();
 
   // Step 1: Query our server-side Stash multi-source lyrics endpoint (/music/lyrics)
   // Pass the full raw original title for YouTube tracks so the server can both clean it for search
@@ -371,7 +372,8 @@ export async function fetchAppleMusicWordSyncedLyrics(
         source: requestedSource,
       });
       if (isYt) params.set('isYouTube', '1');
-      if (track.youtubeVideoId) params.set('videoId', track.youtubeVideoId);
+      if (rawOverride) params.set('rawOverride', '1');
+      if (track.youtubeVideoId && !rawOverride) params.set('videoId', track.youtubeVideoId);
       const serverUrl = `${backendOrigin()}/music/lyrics?${params.toString()}`;
       const res = await fetch(serverUrl, {
         headers: { Accept: 'application/json' },
@@ -389,7 +391,7 @@ export async function fetchAppleMusicWordSyncedLyrics(
         };
         if (typeof data.ttml === 'string' && data.ttml.includes('<p')) {
           const parsed = convertTtmlToEnhancedLrc(data.ttml);
-          if (parsed.lrc) {
+          if (parsed.lrc && hasValidLrcTimestamps(parsed.lrc)) {
             return {
               lrc: parsed.lrc,
               romanizedLrc: parsed.romanizedLrc,
@@ -399,7 +401,7 @@ export async function fetchAppleMusicWordSyncedLyrics(
             };
           }
         }
-        if (typeof data.lrc === 'string' && data.lrc.includes('[')) {
+        if (typeof data.lrc === 'string' && hasValidLrcTimestamps(data.lrc)) {
           return {
             lrc: data.lrc,
             hasWordSync: Boolean(data.hasWordSync || data.lrc.includes('<')),
@@ -468,7 +470,7 @@ export async function fetchAppleMusicWordSyncedLyrics(
           );
           return { item, score };
         })
-        .filter(x => x.score >= 0.45)
+        .filter(x => rawOverride || x.score >= 0.45)
         .sort((a, b) => b.score - a.score);
 
       const best = scored[0]?.item;
@@ -480,7 +482,7 @@ export async function fetchAppleMusicWordSyncedLyrics(
           appleDuration = Math.round(Number(best.trackTimeMillis) / 1000);
         }
         appleTrackViewUrl = String(best.trackViewUrl || '');
-      } else if (results.length > 0) {
+      } else if (results.length > 0 && !rawOverride) {
         // iTunes returned candidates, but none matched the cleaned title — abort so wrong lyrics aren't fetched
         return null;
       }
@@ -509,7 +511,7 @@ export async function fetchAppleMusicWordSyncedLyrics(
       if (contentType.includes('xml') || contentType.includes('ttml')) {
         const xml = await response.text();
         const parsed = convertTtmlToEnhancedLrc(xml);
-        if (parsed.lrc) {
+        if (parsed.lrc && hasValidLrcTimestamps(parsed.lrc)) {
           return {
             lrc: parsed.lrc,
             romanizedLrc: parsed.romanizedLrc,
@@ -521,7 +523,7 @@ export async function fetchAppleMusicWordSyncedLyrics(
       } else {
         const json = await response.json();
         const parsed = convertStructuredAppleJsonToLrc(json);
-        if (parsed.lrc) {
+        if (parsed.lrc && hasValidLrcTimestamps(parsed.lrc)) {
           return {
             lrc: parsed.lrc,
             hasWordSync: parsed.hasWordSync,
@@ -536,5 +538,106 @@ export async function fetchAppleMusicWordSyncedLyrics(
   }
 
   return null;
+}
+
+/**
+ * Fetch selectable Apple Music word-synced / timed lyrics candidates for Manual Search.
+ */
+export async function fetchAppleMusicCandidates(
+  track: TrackInfo,
+  signal?: AbortSignal,
+  rawOverride = true
+): Promise<TrackCandidate[]> {
+  const title = rawOverride ? track.title.trim() : cleanLyricMetadata(track.title.trim());
+  const artist = rawOverride ? track.artist.trim() : cleanLyricMetadata(track.artist.trim());
+  if (title.length < 2) return [];
+
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    try {
+      signal?.throwIfAborted();
+      const params = new URLSearchParams({
+        title,
+        artist,
+        duration: String(Math.round(track.duration || 0)),
+      });
+      if (rawOverride) params.set('rawOverride', '1');
+      const res = await fetch(`${backendOrigin()}/music/apple-candidates?${params.toString()}`, {
+        headers: { Accept: 'application/json' },
+        signal,
+      });
+      if (res.ok) {
+        const data = (await res.json()) as {
+          candidates?: Array<{
+            id: number;
+            title: string;
+            artist: string;
+            album?: string;
+            duration: number;
+            ttml?: string;
+            lrc?: string;
+            source?: string;
+            sourceUrl?: string;
+            confidence?: number;
+          }>;
+        };
+        const rawList = Array.isArray(data.candidates) ? data.candidates : [];
+        const out: TrackCandidate[] = [];
+        for (const item of rawList) {
+          let syncedLyrics: string | undefined;
+          let hasWordSync = false;
+          if (item.ttml && item.ttml.includes('<p')) {
+            const parsed = convertTtmlToEnhancedLrc(item.ttml);
+            if (parsed.lrc && hasValidLrcTimestamps(parsed.lrc)) {
+              syncedLyrics = parsed.lrc;
+              hasWordSync = parsed.hasWordSync;
+            }
+          } else if (item.lrc && hasValidLrcTimestamps(item.lrc)) {
+            syncedLyrics = item.lrc;
+            hasWordSync = item.lrc.includes('<');
+          }
+          if (!syncedLyrics) continue;
+          out.push({
+            id: Number.isSafeInteger(item.id) ? item.id : 900_000_000 + out.length + 1,
+            title: item.title || title,
+            artist: item.artist || artist,
+            album: item.album ? `${item.album} · Apple Library` : 'Apple Library',
+            duration: Number(item.duration) || Math.round(track.duration || 0),
+            confidence: typeof item.confidence === 'number' ? item.confidence : 0.92,
+            hasSynced: true,
+            hasWordSync,
+            instrumental: false,
+            syncedLyrics,
+            provider: 'apple',
+            url: item.sourceUrl || 'https://music.apple.com',
+          });
+        }
+        if (out.length > 0) return out;
+      }
+    } catch (err) {
+      if (signal?.aborted) throw err;
+    }
+  }
+
+  // Fallback: single Apple lookup wrapped as a selectable candidate
+  const single = await fetchAppleMusicWordSyncedLyrics(track, signal, 'apple', rawOverride).catch(() => null);
+  if (single && single.lrc && hasValidLrcTimestamps(single.lrc)) {
+    return [
+      {
+        id: 900_000_001,
+        title: track.title.trim(),
+        artist: track.artist.trim() || 'Apple Music',
+        album: `${track.album || 'Single'} · Apple Library`,
+        duration: Math.round(track.duration || 0),
+        confidence: 0.94,
+        hasSynced: true,
+        hasWordSync: single.hasWordSync,
+        instrumental: false,
+        syncedLyrics: single.lrc,
+        provider: 'apple',
+        url: single.sourceUrl || 'https://music.apple.com',
+      },
+    ];
+  }
+  return [];
 }
 

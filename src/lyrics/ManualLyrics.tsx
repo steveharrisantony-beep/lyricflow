@@ -1,6 +1,6 @@
 import {useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import type {TrackInfo} from '../metadata/trackInfo';
-import {detectLanguage,romanizeText,hasDistinctRomanized} from '../romanization/romanize';
+import {detectLanguage,romanizeText,romanizeLrcTextAsync,isLatinScript,hasDistinctRomanized} from '../romanization/romanize';
 import {parseLRC,type TimedWord} from './lrc';
 import {buildCues,computeNaturalLineEnd,setLyricTimeline} from './lyricTimeline';
 import {analyzeSections} from './sceneDirector';
@@ -10,6 +10,7 @@ import {
  resolveLyricFillPace,
  type LyricFillPaceMode
 } from '../visualization/cinematic/kineticTypography';
+import type {AlbumArtLyricPalette} from '../visualization/cinematic/contrast';
 import {saveUserLyrics} from './userLibrary';
 import {clampLyricDelay,effectiveLyricTime,formatLyricDelay} from './lyricTiming';
 import {convertTtmlToEnhancedLrc} from './appleLyrics';
@@ -203,9 +204,10 @@ export function describeAudioSource(
  };
 }
 
-export type LyricColorMode='auto'|'cyan'|'rose'|'gold'|'emerald'|'violet'|'coral'|'white';
+export type LyricColorMode='auto'|'album'|'cyan'|'rose'|'gold'|'emerald'|'violet'|'coral'|'white';
 
 export const LYRIC_COLOR_MAP:Record<Exclude<LyricColorMode,'auto'>,{main:string;highlight:string;label:string}>={
+ album:{main:'#38bdf8',highlight:'#bae6fd',label:'Album Art Colour (Per Song)'},
  cyan:{main:'#72efdd',highlight:'#aef8ff',label:'Cyan Glow'},
  rose:{main:'#ff6b8b',highlight:'#ffc2d1',label:'Neon Rose'},
  gold:{main:'#ffd166',highlight:'#fff0a8',label:'Solar Gold'},
@@ -234,6 +236,8 @@ export default function ManualLyrics({
  themePalettes,
  lyricColorMode:controlledColorMode,
  onLyricColorModeChange,
+ albumArtPalette,
+ isVideoBackground=false,
  lyricFillPaceMode:controlledFillPaceMode,
  onLyricFillPaceModeChange,
  displayMode:controlledDisplayMode,
@@ -260,6 +264,8 @@ export default function ManualLyrics({
  themePalettes?:Record<string,string>;
  lyricColorMode?:LyricColorMode;
  onLyricColorModeChange?:(mode:LyricColorMode)=>void;
+ albumArtPalette?:AlbumArtLyricPalette|null;
+ isVideoBackground?:boolean;
  lyricFillPaceMode?:LyricFillPaceMode;
  onLyricFillPaceModeChange?:(pace:LyricFillPaceMode)=>void;
  displayMode?:'original'|'romanized'|'both';
@@ -334,6 +340,22 @@ export default function ManualLyrics({
   setMessage(`Auto-loaded from ${incoming.source}.`);
  },[incoming?.token]);
 
+ // Upgrade non-Latin lyrics with haroldalan/spotify-karaoke Google phonetic romanization (dt=rm)
+ useEffect(()=>{
+  if(!raw||!autoRoman||corrected)return;
+  const plainBody=raw.replace(/\[[^\]]*\]/g,'').replace(/<[^>]*>/g,'').trim();
+  if(!plainBody||isLatinScript(plainBody))return;
+  const controller=new AbortController();
+  void romanizeLrcTextAsync(raw,controller.signal)
+   .then(upgraded=>{
+    if(!controller.signal.aborted&&upgraded&&upgraded.trim()){
+     setRoman(upgraded);
+    }
+   })
+   .catch(()=>{});
+  return()=>controller.abort();
+ },[raw,autoRoman,corrected]);
+
  useEffect(()=>{if(!trackLoaded)setOffset(0)},[trackLoaded]);
 
  function updateRaw(value:string){
@@ -358,7 +380,13 @@ export default function ManualLyrics({
   if(!raw){setMessage('Add original lyrics before romanization.');return}
   setRoman(romanizeText(raw).text);
   setCorrected(false);
-  setMessage('Romanization generated locally.');
+  setMessage('Generating phonetic romanization…');
+  void romanizeLrcTextAsync(raw).then(upgraded=>{
+   if(upgraded&&upgraded.trim()){
+    setRoman(upgraded);
+    setMessage('Romanization generated (Spotify-Karaoke phonetic engine).');
+   }
+  }).catch(()=>{});
  }
 
  async function importLocal(){
@@ -490,6 +518,12 @@ export default function ManualLyrics({
  // 2. `sungColor` is applied sequentially (letter-by-letter for slow songs, word-by-word for fast songs)
  //    only when real word-by-word sync is available.
  const {baseLineColor,sungAccentColor}=useMemo(()=>{
+  if(albumArtPalette&&(lyricColorMode==='album'||(lyricColorMode==='auto'&&isVideoBackground))){
+   return {
+    baseLineColor:albumArtPalette.baseColor,
+    sungAccentColor:albumArtPalette.sungColor
+   };
+  }
   const scheduledScene=storyboard.find(s=>lyricTime>=s.start&&lyricTime<s.end)?.id||activeSceneId;
   const resolvedSceneId=byId[scheduledScene]?scheduledScene:'holographic-tide';
   const palette=resolveThemePalette(resolvedSceneId,themePalettes?.[resolvedSceneId]);
@@ -501,7 +535,7 @@ export default function ManualLyrics({
    customOverride
   );
   return {baseLineColor:baseColor,sungAccentColor:sungColor};
- },[lyricColorMode,storyboard,lyricTime,activeSceneId,themePalettes]);
+ },[lyricColorMode,albumArtPalette,isVideoBackground,storyboard,lyricTime,activeSceneId,themePalettes]);
 
  // Only build word-by-word tokens when REAL sourced word-sync is available for this line!
  // Never predict/estimate word sync when only line-synced lyrics are available.
@@ -570,9 +604,13 @@ export default function ManualLyrics({
      <b>AUTOMATIC WORD-SYNCED &amp; LINE-SYNCED LYRICS</b>
      <small>
       {lyricProviderInfo.detail} ·{' '}
-      {hasWordTags
+      {hasWordTags&&lines.length>0
        ? `Word-sync active (${activeFillPace==='letter'?'Slow pace: Letter-by-letter fill':'Fast pace: Word-by-word fill'})`
-       : 'Line-level synchronization (uniform line colour · no fake word prediction)'}
+       : lines.length>0
+       ? 'Line-level synchronization (uniform line colour · no fake word prediction)'
+       : plain.trim()
+       ? 'Plain untimed lyrics (no line timestamps available)'
+       : 'Awaiting timed lyrics'}
      </small>
     </div>
    </div>
@@ -807,7 +845,7 @@ export default function ManualLyrics({
    </label>
    <label>Visual genre preset<select value={genre} onChange={e=>setGenre(e.target.value)}><option value="">Auto / unknown</option>{['Ambient','Cinematic','Pop','EDM','Rock','Hip-hop','Ballad','Classical'].map(g=><option key={g}>{g}</option>)}</select></label>
    <label>Song delay (sec)<input aria-label="Lyrics delay seconds" type="number" step=".05" min="-30" max="30" value={delay} onChange={e=>onDelayChange(clampLyricDelay(Number(e.target.value)))}/></label>
-   <span>{lines.length} timed lines · {lyricProviderInfo.providerName} · {hasWordTags?'Word-synced':'Line-synced'} · {language} · Font {minFontSize}–{maxFontSize}px · Delay {formatLyricDelay(delay)}</span>
+   <span>{lines.length} timed lines · {lyricProviderInfo.providerName} · {hasWordTags&&lines.length>0?'Word-synced':lines.length>0?'Line-synced':plain.trim()?'Plain text (no timestamps)':'No timestamps'} · {language} · Font {minFontSize}–{maxFontSize}px · Delay {formatLyricDelay(delay)}</span>
   </div>
 
   {plain&&!lines.length&&<div className="plain-lyrics-fallback">

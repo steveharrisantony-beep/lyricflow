@@ -167,6 +167,7 @@ public class MediaNotificationService extends NotificationListenerService {
 
         String pkg = safeString(controller.getPackageName());
         String appName = resolveAppLabel(context, pkg);
+        boolean isAd = isAdvertisementMetadata(pkg, appName, title, artist, album, durationSec);
 
         JSObject obj = new JSObject();
         obj.put("title", title);
@@ -177,6 +178,7 @@ public class MediaNotificationService extends NotificationListenerService {
         obj.put("playing", playing);
         obj.put("packageName", pkg);
         obj.put("appName", appName);
+        obj.put("isAd", isAd);
         obj.put("updatedAt", System.currentTimeMillis());
         return obj;
     }
@@ -214,6 +216,7 @@ public class MediaNotificationService extends NotificationListenerService {
         String album = subTextCs != null ? subTextCs.toString().trim() : "";
         String pkg = safeString(sbn.getPackageName());
         String appName = resolveAppLabel(context, pkg);
+        boolean isAd = isAdvertisementMetadata(pkg, appName, title, artist, album, 0.0);
 
         JSObject obj = new JSObject();
         obj.put("title", title);
@@ -224,8 +227,40 @@ public class MediaNotificationService extends NotificationListenerService {
         obj.put("playing", true);
         obj.put("packageName", pkg);
         obj.put("appName", appName);
+        obj.put("isAd", isAd);
         obj.put("updatedAt", System.currentTimeMillis());
         return obj;
+    }
+
+    private static boolean isAdvertisementMetadata(
+            String pkg,
+            String appName,
+            String title,
+            String artist,
+            String album,
+            double durationSec
+    ) {
+        String t = safeString(title).toLowerCase();
+        String a = safeString(artist).toLowerCase();
+        String alb = safeString(album).toLowerCase();
+        String p = safeString(pkg).toLowerCase();
+        String app = safeString(appName).toLowerCase();
+        if (t.equals("advertisement") || t.equals("ad") || t.equals("sponsored")
+                || t.equals("spotify") || t.equals("spotify free")
+                || t.equals("audio ad") || t.equals("video ad")
+                || t.startsWith("advertisement ·") || t.startsWith("advertisement -")
+                || t.contains("sponsored message")) {
+            return true;
+        }
+        if (a.equals("advertisement") || a.equals("sponsored") || a.equals("spotify ad")) {
+            return true;
+        }
+        boolean isSpotify = p.contains("spotify") || app.contains("spotify");
+        if (isSpotify) {
+            if (a.equals("spotify") || alb.equals("advertisement")) return true;
+            if (durationSec > 0.0 && durationSec <= 35.0 && a.isEmpty()) return true;
+        }
+        return false;
     }
 
     private static String resolveAppLabel(Context context, String packageName) {

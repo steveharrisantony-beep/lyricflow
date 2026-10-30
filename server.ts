@@ -1,10 +1,12 @@
 import express, { type Request, type Response } from 'express';
 import { createHash } from 'node:crypto';
 import dns from 'node:dns';
+import nodeHttp, { type Server } from 'node:http';
+import nodeHttps from 'node:https';
+import nodeTls from 'node:tls';
 import { Readable } from 'node:stream';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Server } from 'node:http';
 
 // Match Stash LyricsDns.kt: prefer IPv4 first to avoid IPv6 blackholes on lyrics.paxsenix.org, lrc.red, etc.
 try {
@@ -662,99 +664,424 @@ function scoreCandidateMatch(target: TrackMetadata, cand: TrackMetadata): number
   return score;
 }
 
-async function searchYouTubeMusic(
+interface YouTubeAuthContext {
+  accessToken?: string;
+  cookie?: string;
+}
+
+let serverYouTubeAuth: YouTubeAuthContext = {
+  accessToken: process.env.YOUTUBE_ACCESS_TOKEN || '',
+  cookie: process.env.YOUTUBE_COOKIE || '',
+};
+
+function extractRequestYouTubeAuth(req?: Request): YouTubeAuthContext {
+  const headerToken = req
+    ? String(req.headers['x-youtube-token'] || '').trim().replace(/^Bearer\s+/i, '')
+    : '';
+  const headerCookie = req ? String(req.headers['x-youtube-cookie'] || '').trim() : '';
+  return {
+    accessToken: headerToken || serverYouTubeAuth.accessToken || '',
+    cookie: headerCookie || serverYouTubeAuth.cookie || '',
+  };
+}
+
+function buildYouTubeAuthHeaders(
+  auth?: YouTubeAuthContext,
+  origin = 'https://www.youtube.com'
+): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (!auth) return headers;
+  const token = (auth.accessToken || '').trim();
+  const cookie = (auth.cookie || '').trim();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  if (cookie) {
+    headers.Cookie = cookie;
+    headers['X-Origin'] = origin;
+    headers['X-Goog-AuthUser'] = '0';
+    const sapisidMatch =
+      cookie.match(/(?:^|;\s*)SAPISID=([^;]+)/) ||
+      cookie.match(/(?:^|;\s*)__Secure-3PAPISID=([^;]+)/);
+    if (sapisidMatch?.[1] && !headers.Authorization) {
+      const sapisid = sapisidMatch[1].trim();
+      const ts = Math.floor(Date.now() / 1000);
+      const digest = createHash('sha1')
+        .update(`${ts} ${sapisid} ${origin}`)
+        .digest('hex');
+      const tokenHash = `${ts}_${digest}`;
+      headers.Authorization = `SAPISIDHASH ${tokenHash} SAPISID1PHASH ${tokenHash} SAPISID3PHASH ${tokenHash}`;
+    }
+  }
+  return headers;
+}
+
+function extractDirectVideoIdFromQuery(query: string): string | null {
+  const q = query.trim();
+  if (/^[a-zA-Z0-9_-]{11}$/.test(q)) return q;
+  const match = q.match(
+    /(?:youtube\.com\/(?:watch\?.*?\bv=|embed\/|shorts\/|live\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i
+  );
+  return match?.[1] || null;
+}
+
+async function resolveDirectYouTubeVideoQuery(videoId: string): Promise<TrackMetadata | null> {
+  try {
+    const oembedRes = await fetch(
+      `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`,
+      {
+        headers: { 'User-Agent': USER_AGENT },
+        signal: AbortSignal.timeout(6000),
+      }
+    );
+    if (oembedRes.ok) {
+      const data = (await oembedRes.json()) as { title?: string; author_name?: string };
+      const title = decodeHtmlEntities(String(data.title || '').trim());
+      const author = decodeHtmlEntities(String(data.author_name || 'YouTube').trim());
+      if (title) {
+        const trackId = `yt_${videoId}`;
+        const meta: TrackMetadata = {
+          id: trackId,
+          rawId: videoId,
+          provider: 'youtube',
+          title,
+          artist: author.replace(/\s*[-–]\s*Topic$/i, '').trim() || 'YouTube',
+          album: '',
+          duration: 0,
+          videoType: 'OMV',
+          sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
+          artwork: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        };
+        setTrackMetaCache(trackId, meta);
+        return meta;
+      }
+    }
+  } catch {
+    // Fall back to search
+  }
+  return null;
+}
+
+async function fetchYouTubeDataApiVideos(
   query: string,
-  provider: 'ytmusic' | 'youtube',
-  limit = 12
+  accessToken: string,
+  limit = 16
 ): Promise<TrackMetadata[]> {
-  // When searching YouTube (video mode), query www.youtube.com/youtubei/v1/search first
-  // so we get real YouTube videos with full titles (including "Lyric Video", "Lyrical", "Lyrics") and 11-char videoIds
-  if (provider === 'youtube') {
+  if (!accessToken.trim()) return [];
+  try {
+    const searchUrl =
+      'https://www.googleapis.com/youtube/v3/search?' +
+      new URLSearchParams({
+        part: 'snippet',
+        type: 'video',
+        maxResults: String(Math.min(25, Math.max(10, limit))),
+        q: query.trim(),
+      }).toString();
+    const res = await fetch(searchUrl, {
+      headers: {
+        Authorization: `Bearer ${accessToken.trim()}`,
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      items?: Array<{
+        id?: { videoId?: string };
+        snippet?: { title?: string; channelTitle?: string };
+      }>;
+    };
+    const items = Array.isArray(data.items) ? data.items : [];
+    const tracks: TrackMetadata[] = [];
+    for (const item of items) {
+      const videoId = String(item.id?.videoId || '').trim();
+      const rawTitle = decodeHtmlEntities(String(item.snippet?.title || '').trim());
+      const rawChannel = decodeHtmlEntities(String(item.snippet?.channelTitle || 'YouTube').trim());
+      if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId) || !rawTitle) continue;
+      const isTopic = /\s*[-–]\s*Topic$/i.test(rawChannel);
+      const channelName = rawChannel.replace(/\s*[-–]\s*Topic$/i, '').trim();
+      const trackId = `yt_${videoId}`;
+      const meta: TrackMetadata = {
+        id: trackId,
+        rawId: videoId,
+        provider: 'youtube',
+        title: rawTitle,
+        artist: isTopic ? `${channelName} - Topic` : channelName,
+        album: isTopic ? 'Audio Track' : '',
+        duration: 0,
+        videoType: isTopic ? 'ATV' : 'OMV',
+        sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
+        artwork: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+      };
+      setTrackMetaCache(trackId, meta);
+      tracks.push(meta);
+      if (tracks.length >= limit) break;
+    }
+    return tracks;
+  } catch {
+    return [];
+  }
+}
+
+function extractTextFromRunsOrSimple(field: unknown): string {
+  if (!field || typeof field !== 'object') return '';
+  const rec = field as Record<string, unknown>;
+  if (typeof rec.simpleText === 'string') return rec.simpleText;
+  if (typeof rec.content === 'string') return rec.content;
+  if (Array.isArray(rec.runs)) {
+    return rec.runs
+      .map(r => (r && typeof r === 'object' ? String((r as Record<string, unknown>).text || '') : ''))
+      .join('');
+  }
+  return '';
+}
+
+function parseYouTubeSearchTree(root: unknown, limit: number): TrackMetadata[] {
+  const webTracks: TrackMetadata[] = [];
+  const seenWebIds = new Set<string>();
+
+  const walkWeb = (node: unknown) => {
+    if (!node || typeof node !== 'object' || webTracks.length >= limit) return;
+    if (Array.isArray(node)) {
+      for (const child of node) walkWeb(child);
+      return;
+    }
+    const rec = node as Record<string, unknown>;
+    const renderer =
+      (rec.videoRenderer as Record<string, unknown> | undefined) ||
+      (rec.videoWithContextRenderer as Record<string, unknown> | undefined) ||
+      (rec.compactVideoRenderer as Record<string, unknown> | undefined);
+
+    if (renderer && typeof renderer === 'object') {
+      const videoId = String(renderer.videoId || '').trim();
+      if (/^[a-zA-Z0-9_-]{11}$/.test(videoId) && !seenWebIds.has(videoId)) {
+        const rawTitle = decodeHtmlEntities(
+          extractTextFromRunsOrSimple(renderer.title || renderer.headline).trim()
+        );
+        const rawChannel = decodeHtmlEntities(
+          (
+            extractTextFromRunsOrSimple(renderer.ownerText) ||
+            extractTextFromRunsOrSimple(renderer.longBylineText) ||
+            extractTextFromRunsOrSimple(renderer.shortBylineText) ||
+            'YouTube'
+          ).trim()
+        );
+        const isTopicChannel = /\s*[-–]\s*Topic$/i.test(rawChannel);
+        const channelName = rawChannel.replace(/\s*[-–]\s*Topic$/i, '').trim();
+        const lengthText = extractTextFromRunsOrSimple(renderer.lengthText);
+        const duration = parseDurationText(lengthText);
+        const viewCount = parseViewCountFromRenderer(renderer);
+        if (rawTitle && (duration === 0 || duration >= 45)) {
+          seenWebIds.add(videoId);
+          const trackId = `yt_${videoId}`;
+          const meta: TrackMetadata = {
+            id: trackId,
+            rawId: videoId,
+            provider: 'youtube',
+            title: rawTitle,
+            artist: isTopicChannel ? `${channelName} - Topic` : channelName,
+            album: isTopicChannel ? 'Audio Track' : '',
+            duration,
+            viewCount,
+            videoType: isTopicChannel ? 'ATV' : 'OMV',
+            sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
+            artwork: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+          };
+          setTrackMetaCache(trackId, meta);
+          webTracks.push(meta);
+        }
+      }
+    }
+    for (const val of Object.values(rec)) walkWeb(val);
+  };
+
+  walkWeb(root);
+  return webTracks;
+}
+
+async function fetchPipedOrInvidiousVideos(query: string, limit = 16): Promise<TrackMetadata[]> {
+  const q = encodeURIComponent(query.trim());
+  const endpoints = [
+    { url: `https://pipedapi.kavin.rocks/search?q=${q}&filter=videos`, type: 'piped' as const },
+    { url: `https://api.piped.private.coffee/search?q=${q}&filter=videos`, type: 'piped' as const },
+    { url: `https://inv.nadeko.net/api/v1/search?q=${q}&type=video`, type: 'invidious' as const },
+    { url: `https://invidious.nerdvpn.de/api/v1/search?q=${q}&type=video`, type: 'invidious' as const },
+  ];
+
+  for (const ep of endpoints) {
     try {
-      const ytWebRes = await fetch('https://www.youtube.com/youtubei/v1/search?prettyPrint=false', {
+      const res = await fetch(ep.url, {
+        headers: {
+          'User-Agent': USER_AGENT,
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(6500),
+      });
+      if (!res.ok) continue;
+      const data = (await res.json()) as unknown;
+      const items: Array<Record<string, unknown>> =
+        ep.type === 'piped' && data && typeof data === 'object' && Array.isArray((data as Record<string, unknown>).items)
+          ? ((data as Record<string, unknown>).items as Array<Record<string, unknown>>)
+          : Array.isArray(data)
+            ? (data as Array<Record<string, unknown>>)
+            : [];
+
+      const tracks: TrackMetadata[] = [];
+      const seen = new Set<string>();
+      for (const item of items) {
+        if (!item || typeof item !== 'object') continue;
+        const urlStr = String(item.url || '');
+        const videoId = String(
+          item.videoId ||
+            (urlStr.match(/(?:v=|\/watch\?v=|\/)([a-zA-Z0-9_-]{11})(?:[&?]|$)/)?.[1] ?? '')
+        ).trim();
+        if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId) || seen.has(videoId)) continue;
+        const title = decodeHtmlEntities(String(item.title || '').trim());
+        if (!title) continue;
+        const rawAuthor = decodeHtmlEntities(
+          String(item.uploaderName || item.author || 'YouTube').trim()
+        );
+        const isTopic = /\s*[-–]\s*Topic$/i.test(rawAuthor);
+        const artist = rawAuthor.replace(/\s*[-–]\s*Topic$/i, '').trim() || 'YouTube';
+        const duration = Number(item.duration ?? item.lengthSeconds ?? 0);
+        if (duration > 0 && duration < 45) continue;
+        const views = Number(item.views ?? item.viewCount ?? 0);
+        seen.add(videoId);
+        const trackId = `yt_${videoId}`;
+        const meta: TrackMetadata = {
+          id: trackId,
+          rawId: videoId,
+          provider: 'youtube',
+          title,
+          artist: isTopic ? `${artist} - Topic` : artist,
+          album: isTopic ? 'Audio Track' : '',
+          duration: Number.isFinite(duration) && duration > 0 ? duration : 0,
+          viewCount: Number.isFinite(views) && views > 0 ? views : undefined,
+          videoType: isTopic ? 'ATV' : 'OMV',
+          sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
+          artwork: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        };
+        setTrackMetaCache(trackId, meta);
+        tracks.push(meta);
+        if (tracks.length >= limit) break;
+      }
+      if (tracks.length > 0) return tracks;
+    } catch {
+      // Try next mirror
+    }
+  }
+  return [];
+}
+
+async function fetchYouTubeWebVideos(
+  query: string,
+  limit = 16,
+  ytAuth?: YouTubeAuthContext
+): Promise<TrackMetadata[]> {
+  const directVideoId = extractDirectVideoIdFromQuery(query);
+  if (directVideoId) {
+    const directMeta = await resolveDirectYouTubeVideoQuery(directVideoId);
+    if (directMeta) return [directMeta];
+  }
+
+  // 1. If user signed in with YouTube OAuth token, query official YouTube Data API v3 first
+  if (ytAuth?.accessToken) {
+    const apiTracks = await fetchYouTubeDataApiVideos(query, ytAuth.accessToken, limit);
+    if (apiTracks.length > 0) return apiTracks;
+  }
+
+  const authHeaders = buildYouTubeAuthHeaders(ytAuth, 'https://www.youtube.com');
+
+  // 2. Try WEB Innertube client (with user's YouTube session cookies / SAPISIDHASH if signed in)
+  const innertubeClients = [
+    {
+      name: 'WEB',
+      version: '2.20250219.01.00',
+      ua: USER_AGENT,
+      extra: {},
+    },
+    {
+      name: 'IOS',
+      version: '20.10.4',
+      ua: 'com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_1 like Mac OS X;)',
+      extra: { deviceMake: 'Apple', deviceModel: 'iPhone16,2', osName: 'iPhone', osVersion: '18.3.1.22D72' },
+    },
+    {
+      name: 'ANDROID',
+      version: '20.10.38',
+      ua: 'com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip',
+      extra: { androidSdkVersion: 34, osName: 'Android', osVersion: '14' },
+    },
+  ];
+
+  for (const clientCfg of innertubeClients) {
+    try {
+      const ytRes = await fetch('https://www.youtube.com/youtubei/v1/search?prettyPrint=false', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': USER_AGENT,
+          'User-Agent': clientCfg.ua,
           Origin: 'https://www.youtube.com',
+          ...(clientCfg.name === 'WEB' ? authHeaders : {}),
         },
         body: JSON.stringify({
           context: {
             client: {
-              clientName: 'WEB',
-              clientVersion: '2.20250219.01.00',
+              clientName: clientCfg.name,
+              clientVersion: clientCfg.version,
               hl: 'en',
               gl: 'US',
+              ...clientCfg.extra,
             },
           },
           query: query.trim(),
         }),
-        signal: AbortSignal.timeout(9000),
+        signal: AbortSignal.timeout(8000),
       });
-      if (ytWebRes.ok) {
-        const rawWeb = await ytWebRes.json();
-        const webTracks: TrackMetadata[] = [];
-        const seenWebIds = new Set<string>();
-        const walkWeb = (node: unknown) => {
-          if (!node || typeof node !== 'object' || webTracks.length >= limit) return;
-          if (Array.isArray(node)) {
-            for (const child of node) walkWeb(child);
-            return;
-          }
-          const rec = node as Record<string, unknown>;
-          if (rec.videoRenderer && typeof rec.videoRenderer === 'object') {
-            const vr = rec.videoRenderer as Record<string, unknown>;
-            const videoId = String(vr.videoId || '').trim();
-            if (/^[a-zA-Z0-9_-]{11}$/.test(videoId) && !seenWebIds.has(videoId)) {
-              const titleRuns = Array.isArray((vr.title as Record<string, unknown>)?.runs)
-                ? ((vr.title as Record<string, unknown>).runs as Array<Record<string, unknown>>)
-                : [];
-              const rawTitle = decodeHtmlEntities(
-                titleRuns.map(r => String(r?.text || '')).join('').trim()
-              );
-              const ownerRuns = Array.isArray((vr.ownerText as Record<string, unknown>)?.runs)
-                ? ((vr.ownerText as Record<string, unknown>).runs as Array<Record<string, unknown>>)
-                : Array.isArray((vr.longBylineText as Record<string, unknown>)?.runs)
-                  ? ((vr.longBylineText as Record<string, unknown>).runs as Array<Record<string, unknown>>)
-                  : [];
-              const channelName = decodeHtmlEntities(
-                String(ownerRuns[0]?.text || 'YouTube').replace(/\s*[-–]\s*Topic$/i, '').trim()
-              );
-              const lengthText = String(
-                (vr.lengthText as Record<string, unknown>)?.simpleText || ''
-              );
-              const duration = parseDurationText(lengthText);
-              const viewCount = parseViewCountFromRenderer(vr);
-              if (rawTitle && (duration === 0 || duration >= 45)) {
-                seenWebIds.add(videoId);
-                const trackId = `yt_${videoId}`;
-                const meta: TrackMetadata = {
-                  id: trackId,
-                  rawId: videoId,
-                  provider: 'youtube',
-                  title: rawTitle,
-                  artist: channelName,
-                  album: '',
-                  duration,
-                  viewCount,
-                  videoType: 'OMV',
-                  sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
-                  artwork: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-                };
-                setTrackMetaCache(trackId, meta);
-                webTracks.push(meta);
-              }
-            }
-          }
-          for (const val of Object.values(rec)) walkWeb(val);
-        };
-        walkWeb(rawWeb);
-        if (webTracks.length > 0) {
-          return webTracks.slice(0, limit);
+      if (!ytRes.ok) continue;
+      const rawJson = await ytRes.json();
+      const tracks = parseYouTubeSearchTree(rawJson, limit);
+      if (tracks.length > 0) return tracks;
+    } catch {
+      // Try next Innertube client
+    }
+  }
+
+  // 3. Fallback to Piped / Invidious public video search mirrors if YouTube Innertube is rate-limited
+  return fetchPipedOrInvidiousVideos(query, limit);
+}
+
+async function searchYouTubeMusic(
+  query: string,
+  provider: 'ytmusic' | 'youtube',
+  limit = 16,
+  ytAuth?: YouTubeAuthContext
+): Promise<TrackMetadata[]> {
+  if (provider === 'youtube') {
+    const trimmed = query.trim();
+    const strippedQuery = trimmed
+      .replace(/\b(?:official\s*)?music\s*video$/i, '')
+      .replace(/\(from\s+["']?[^)"']+["']?\)/gi, ' ')
+      .replace(/\[from\s+["']?[^\]"']+["']?\]/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const queries =
+      strippedQuery && strippedQuery.toLowerCase() !== trimmed.toLowerCase() && !/\blyric(?:s|al)?\s*video$/i.test(trimmed)
+        ? [strippedQuery, trimmed]
+        : [trimmed];
+    const batches = await Promise.all(queries.map(q => fetchYouTubeWebVideos(q, limit, ytAuth)));
+    const merged: TrackMetadata[] = [];
+    const seenIds = new Set<string>();
+    for (const list of batches) {
+      for (const item of list) {
+        if (!seenIds.has(item.rawId)) {
+          seenIds.add(item.rawId);
+          merged.push(item);
         }
       }
-    } catch {
-      // Fall through to YouTube Music search
+    }
+    if (merged.length > 0) {
+      return merged.slice(0, limit);
     }
   }
 
@@ -773,12 +1100,14 @@ async function searchYouTubeMusic(
       params: provider === 'ytmusic' ? 'EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D' : undefined,
     };
 
+    const musicAuthHeaders = buildYouTubeAuthHeaders(ytAuth, 'https://music.youtube.com');
     const res = await fetch('https://music.youtube.com/youtubei/v1/search?prettyPrint=false', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'User-Agent': USER_AGENT,
         Origin: 'https://music.youtube.com',
+        ...musicAuthHeaders,
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(10000),
@@ -858,7 +1187,7 @@ async function searchYouTubeMusic(
                 rawId: videoId,
                 provider,
                 title,
-                artist,
+                artist: videoType === 'ATV' && provider === 'youtube' ? `${artist} - Topic` : artist,
                 album,
                 duration,
                 videoType,
@@ -878,8 +1207,14 @@ async function searchYouTubeMusic(
 
       walk(raw);
       if (tracks.length > 0) {
-        // Prioritize official album audio tracks (MUSIC_VIDEO_TYPE_ATV) first, matching Stash & ytmusicapi
-        tracks.sort((a, b) => (a.videoType === 'ATV' ? -1 : 1) - (b.videoType === 'ATV' ? -1 : 1));
+        if (provider === 'ytmusic') {
+          // Prioritize official album audio tracks (MUSIC_VIDEO_TYPE_ATV) for YouTube Music audio mode
+          tracks.sort((a, b) => (a.videoType === 'ATV' ? -1 : 1) - (b.videoType === 'ATV' ? -1 : 1));
+        } else {
+          // Prioritize Official Music Videos (MUSIC_VIDEO_TYPE_OMV) over static audio tracks when searching for YouTube videos
+          const rankType = (t: TrackMetadata['videoType']) => (t === 'OMV' ? 0 : t === 'UGC' ? 1 : 2);
+          tracks.sort((a, b) => rankType(a.videoType) - rankType(b.videoType));
+        }
         return tracks.slice(0, limit);
       }
     }
@@ -1119,30 +1454,46 @@ function scoreServerCandidateAgainstContext(
     rawArtist: string;
     durationSec: number;
     isYouTube: boolean;
+    rawOverride?: boolean;
   }
 ): number {
   const cleanTarget = normalizeServerText(ctx.cleanTitle);
-  const cleanCandTitle = normalizeServerText(cleanServerYouTubeTitle(cand.title) || cand.title);
+  const cleanCandTitle = normalizeServerText(
+    ctx.rawOverride ? cand.title : cleanServerYouTubeTitle(cand.title) || cand.title
+  );
+  const strippedCandTitle = normalizeServerText(cleanServerYouTubeTitle(cand.title) || cand.title);
   const rawCandTitle = normalizeServerText(cand.title);
-  if (!cleanTarget || !cleanCandTitle) return -1;
+  if (!cleanTarget || (!cleanCandTitle && !rawCandTitle)) return -1;
 
-  if (!sameVersionSignature(ctx.rawTitle || ctx.cleanTitle, cand.title)) return -1;
+  if (!ctx.rawOverride && !sameVersionSignature(ctx.rawTitle || ctx.cleanTitle, cand.title)) {
+    return -1;
+  }
 
   const targetWords = new Set(cleanTarget.split(' ').filter(Boolean));
-  const candWords = new Set(cleanCandTitle.split(' ').filter(Boolean));
+  const candWords = new Set((rawCandTitle || cleanCandTitle).split(' ').filter(Boolean));
+  const strippedWords = new Set(strippedCandTitle.split(' ').filter(Boolean));
   let commonTitleWords = 0;
-  for (const w of targetWords) if (candWords.has(w)) commonTitleWords++;
-  const titleOverlap = (2 * commonTitleWords) / Math.max(1, targetWords.size + candWords.size);
+  for (const w of targetWords) {
+    if (candWords.has(w) || strippedWords.has(w)) commonTitleWords++;
+  }
+  const denom = Math.max(1, Math.min(targetWords.size + candWords.size, targetWords.size + strippedWords.size));
+  const titleOverlap = (2 * commonTitleWords) / denom;
 
   let score = 0;
-  if (cleanCandTitle === cleanTarget || rawCandTitle === cleanTarget) {
+  if (
+    cleanCandTitle === cleanTarget ||
+    rawCandTitle === cleanTarget ||
+    strippedCandTitle === cleanTarget
+  ) {
     score += 55;
   } else if (
     cleanCandTitle.startsWith(cleanTarget + ' ') ||
-    rawCandTitle.startsWith(cleanTarget + ' ')
+    rawCandTitle.startsWith(cleanTarget + ' ') ||
+    strippedCandTitle.startsWith(cleanTarget + ' ') ||
+    (ctx.rawOverride && (rawCandTitle.includes(cleanTarget) || cleanTarget.includes(strippedCandTitle)))
   ) {
-    score += 44;
-  } else if (titleOverlap >= 0.72) {
+    score += 46;
+  } else if (titleOverlap >= (ctx.rawOverride ? 0.5 : 0.72)) {
     score += Math.round(titleOverlap * 45);
   } else {
     return -1;
@@ -1171,7 +1522,7 @@ function scoreServerCandidateAgainstContext(
       }
       if (matched > 0) {
         score += 15 + Math.round((matched / artistTokens.length) * 24);
-      } else if (!ctx.isYouTube && ctx.rawArtist) {
+      } else if (!ctx.isYouTube && !ctx.rawOverride && ctx.rawArtist) {
         score -= 25;
       }
     }
@@ -1195,10 +1546,10 @@ function scoreServerCandidateAgainstContext(
 
   const candDur = Number(cand.duration || 0);
   if (ctx.durationSec > 0 && candDur > 0) {
-    if (!isDurationCompatible(candDur, ctx.durationSec, ctx.isYouTube)) {
+    if (!ctx.rawOverride && !isDurationCompatible(candDur, ctx.durationSec, ctx.isYouTube)) {
       return -1;
     }
-    const dist = durationDistanceScore(candDur, ctx.durationSec, ctx.isYouTube);
+    const dist = durationDistanceScore(candDur, ctx.durationSec, ctx.isYouTube || Boolean(ctx.rawOverride));
     score += Math.max(0, 20 - Math.round(dist * 1.2));
   }
 
@@ -1213,7 +1564,7 @@ function isDurationCompatible(
 ): boolean {
   if (targetDurSec <= 0 || candidateDurSec <= 0) return true;
   if (!isYouTube) {
-    return Math.abs(candidateDurSec - targetDurSec) <= 12;
+    return Math.abs(candidateDurSec - targetDurSec) <= 15;
   }
   return candidateDurSec >= 45 && candidateDurSec <= targetDurSec + 45;
 }
@@ -1239,16 +1590,18 @@ async function fetchIsrcWordSyncedTtml(
   durationSec: number,
   isYouTube = false,
   rawTitle = '',
-  rawArtist = ''
+  rawArtist = '',
+  rawOverride = false
 ): Promise<ServerLyricsResponse | null> {
   const isrcCandidates: string[] = [];
-  const effectiveArtist = isYouTube ? '' : artist;
+  const effectiveArtist = isYouTube && !rawOverride ? '' : artist;
   const matchCtx = {
     cleanTitle: title,
     rawTitle: rawTitle || title,
     rawArtist: rawArtist || artist,
     durationSec,
     isYouTube,
+    rawOverride,
   };
 
   // Step 1: Resolve ISRC via lrc.red/api/v1 (Stash IsrcResolver.kt primary)
@@ -1406,17 +1759,19 @@ async function fetchItunesPaxsenixLyrics(
   durationSec: number,
   isYouTube = false,
   rawTitle = '',
-  rawArtist = ''
+  rawArtist = '',
+  rawOverride = false
 ): Promise<{ appleTrackViewUrl?: string; lyrics?: ServerLyricsResponse }> {
   let songId = '';
   let trackViewUrl = '';
-  const effectiveArtist = isYouTube ? '' : artist;
+  const effectiveArtist = isYouTube && !rawOverride ? '' : artist;
   const matchCtx = {
     cleanTitle: title,
     rawTitle: rawTitle || title,
     rawArtist: rawArtist || artist,
     durationSec,
     isYouTube,
+    rawOverride,
   };
   try {
     const itunesUrl =
@@ -1527,15 +1882,17 @@ async function fetchLrclibServerLyrics(
   durationSec: number,
   isYouTube = false,
   rawTitle = '',
-  rawArtist = ''
+  rawArtist = '',
+  rawOverride = false
 ): Promise<ServerLyricsResponse | null> {
-  const effectiveArtist = isYouTube ? '' : artist;
+  const effectiveArtist = isYouTube && !rawOverride ? '' : artist;
   const matchCtx = {
     cleanTitle: title,
     rawTitle: rawTitle || title,
     rawArtist: rawArtist || artist,
     durationSec,
     isYouTube,
+    rawOverride,
   };
   try {
     if (!isYouTube && effectiveArtist && durationSec > 0) {
@@ -2212,6 +2569,126 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
     return [];
   };
 
+  // ============================================================================
+  // YTBSD (https://github.com/roundyyy/yt-bulk-subtitles-downloader) Subtitle Engine:
+  // Direct ANDROID Innertube Transcript API + ProxyPool Rotation from free-proxy-list.net
+  // ============================================================================
+  let ytbsdProxyList: string[] = [];
+  let ytbsdProxyFetchedAt = 0;
+  let ytbsdVerifiedProxy: string | null = null;
+  const ytbsdFailedProxies = new Set<string>();
+
+  const downloadFreshYtbsdProxies = async (): Promise<string[]> => {
+    if (ytbsdProxyList.length > 0 && Date.now() - ytbsdProxyFetchedAt < 15 * 60_000) {
+      return ytbsdProxyList;
+    }
+    try {
+      const r = await fetch('https://free-proxy-list.net/en/', {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36',
+        },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (!r.ok) return ytbsdProxyList;
+      const html = await r.text();
+      const match = html.match(/<textarea[^>]*>([\s\S]*?)<\/textarea>/i);
+      const content = match ? match[1] : html;
+      const proxies = [...new Set(content.match(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+/g) || [])];
+      if (proxies.length > 0) {
+        ytbsdProxyList = proxies;
+        ytbsdProxyFetchedAt = Date.now();
+        ytbsdFailedProxies.clear();
+      }
+    } catch {
+      // Ignore proxy scrape error
+    }
+    return ytbsdProxyList;
+  };
+
+  const httpsRequestViaProxy = (
+    proxyStr: string,
+    targetUrl: string,
+    options: { method?: string; headers?: Record<string, string>; body?: string } = {},
+    timeoutMs = 6000
+  ): Promise<{ status: number; body: string }> => {
+    return new Promise((resolve, reject) => {
+      const [proxyHost, proxyPortStr] = proxyStr.split(':');
+      const proxyPort = Number(proxyPortStr);
+      if (!proxyHost || !proxyPort) {
+        reject(new Error('Invalid proxy'));
+        return;
+      }
+      const parsed = new URL(targetUrl);
+      let settled = false;
+      const finish = (fn: (v: never) => void, val: unknown) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          fn(val as never);
+        }
+      };
+      const timer = setTimeout(() => {
+        connectReq.destroy();
+        finish(reject, new Error('Proxy timeout'));
+      }, timeoutMs);
+
+      const connectReq = nodeHttp.request({
+        host: proxyHost,
+        port: proxyPort,
+        method: 'CONNECT',
+        path: `${parsed.hostname}:443`,
+        headers: { Host: `${parsed.hostname}:443` },
+      });
+
+      connectReq.on('connect', (res, socket) => {
+        if (res.statusCode !== 200) {
+          socket.destroy();
+          finish(reject, new Error(`CONNECT ${res.statusCode}`));
+          return;
+        }
+        const tlsSocket = nodeTls.connect({
+          socket,
+          servername: parsed.hostname,
+          rejectUnauthorized: false,
+        });
+        tlsSocket.on('error', err => finish(reject, err));
+        const req = nodeHttps.request(
+          {
+            hostname: parsed.hostname,
+            path: parsed.pathname + parsed.search,
+            method: options.method || 'GET',
+            headers: {
+              'User-Agent':
+                'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
+              'Accept-Encoding': 'identity',
+              'Accept-Language': 'en-US,en;q=0.9',
+              ...(options.headers || {}),
+            },
+            createConnection: () => tlsSocket,
+          },
+          resp => {
+            const chunks: Buffer[] = [];
+            resp.on('data', (c: Buffer) => chunks.push(c));
+            resp.on('end', () =>
+              finish(resolve, {
+                status: resp.statusCode || 0,
+                body: Buffer.concat(chunks).toString('utf8'),
+              })
+            );
+            resp.on('error', err => finish(reject, err));
+          }
+        );
+        req.on('error', err => finish(reject, err));
+        if (options.body) req.write(options.body);
+        req.end();
+      });
+
+      connectReq.on('error', err => finish(reject, err));
+      connectReq.end();
+    });
+  };
+
   const fetchYouTubeSubtitlesLrc = async (videoId: string): Promise<ServerLyricsResponse | null> => {
     if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) return null;
     interface CapTrack {
@@ -2222,10 +2699,9 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       name?: { simpleText?: string; runs?: Array<{ text?: string }> };
     }
     let tracks: CapTrack[] = [];
+    let winningProxy: string | null = null;
 
-    // 1. Follow jdepoix/youtube-transcript-api flow:
-    // Fetch watch HTML with CONSENT=YES+cb cookie, extract INNERTUBE_API_KEY (and any inline captionTracks),
-    // then query https://www.youtube.com/youtubei/v1/player?key={apiKey} with ANDROID client.
+    // 1. Direct connection first (ytbsd.py / youtube-transcript-api ANDROID + IOS + watch HTML)
     let apiKey = '';
     let watchPageTracks: CapTrack[] = [];
     try {
@@ -2235,7 +2711,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
           'Accept-Language': 'en-US,en;q=0.9',
           Cookie: 'CONSENT=YES+cb',
         },
-        signal: AbortSignal.timeout(4500),
+        signal: AbortSignal.timeout(4000),
       });
       if (wRes.ok) {
         const html = await wRes.text();
@@ -2254,7 +2730,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
         }
       }
     } catch {
-      // Ignore watch HTML error and proceed to InnerTube player fallback
+      // Proceed to InnerTube player fallback
     }
 
     const playerEndpoint = apiKey
@@ -2266,7 +2742,12 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
         clientName: 'ANDROID',
         clientVersion: '20.10.38',
         androidSdkVersion: 34,
-        ua: 'com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip',
+        ua: 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
+      },
+      {
+        clientName: 'ANDROID_VR',
+        clientVersion: '1.65.10',
+        ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
       },
       {
         clientName: 'IOS',
@@ -2318,6 +2799,71 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       tracks = watchPageTracks;
     }
 
+    // 2. YTBSD ProxyPool Fallback (`roundyyy/yt-bulk-subtitles-downloader`):
+    // When direct connection gets LOGIN_REQUIRED on cloud/datacenter IPs, use ProxyPool from free-proxy-list.net
+    if (tracks.length === 0) {
+      const playerBody = JSON.stringify({
+        context: { client: { clientName: 'ANDROID', clientVersion: '20.10.38' } },
+        videoId,
+      });
+
+      const tryProxyForTracks = async (proxy: string): Promise<{ proxy: string; tracks: CapTrack[] }> => {
+        const res = await httpsRequestViaProxy(
+          proxy,
+          'https://www.youtube.com/youtubei/v1/player?prettyPrint=false',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
+            },
+            body: playerBody,
+          },
+          5500
+        );
+        const data = JSON.parse(res.body) as {
+          playabilityStatus?: { status?: string };
+          captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: CapTrack[] } };
+        };
+        const found = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+        if (Array.isArray(found) && found.length > 0) {
+          return { proxy, tracks: found };
+        }
+        if (data?.playabilityStatus?.status === 'OK') {
+          // Video genuinely has no captions
+          return { proxy, tracks: [] };
+        }
+        throw new Error('Blocked or no tracks');
+      };
+
+      // Try cached verified proxy first for instant <500ms response
+      if (ytbsdVerifiedProxy && !ytbsdFailedProxies.has(ytbsdVerifiedProxy)) {
+        try {
+          const hit = await tryProxyForTracks(ytbsdVerifiedProxy);
+          tracks = hit.tracks;
+          winningProxy = hit.proxy;
+        } catch {
+          ytbsdFailedProxies.add(ytbsdVerifiedProxy);
+          ytbsdVerifiedProxy = null;
+        }
+      }
+
+      if (tracks.length === 0 && !winningProxy) {
+        const proxies = (await downloadFreshYtbsdProxies()).filter(p => !ytbsdFailedProxies.has(p));
+        const candidateBatch = proxies.slice(0, 36);
+        if (candidateBatch.length > 0) {
+          try {
+            const winner = await Promise.any(candidateBatch.map(p => tryProxyForTracks(p)));
+            tracks = winner.tracks;
+            winningProxy = winner.proxy;
+            ytbsdVerifiedProxy = winner.proxy;
+          } catch {
+            // Fall through to Nadeko fallback
+          }
+        }
+      }
+    }
+
     // Prefer ONLY creator-uploaded captions (exclude auto-generated ASR tracks).
     // Auto-generated captions have kind === 'asr' or vssId starting with 'a.'
     const creatorTracks = tracks.filter(t => {
@@ -2338,18 +2884,43 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
     };
 
     const fetchSingleTrackLrc = async (tr: CapTrack): Promise<string> => {
-      // Follow youtube-transcript-api: strip &fmt=srv3 and try raw XML first, then json3/srv1
+      // Follow youtube-transcript-api / ytbsd.py: strip &fmt=srv3 and try raw XML first, then json3/srv1
       const rawBase = String(tr.baseUrl || '').replace(/&fmt=srv3\b/g, '');
       const candidateUrls = [
         rawBase,
         `${rawBase}${rawBase.includes('?') ? '&' : '?'}fmt=json3`,
         `${rawBase}${rawBase.includes('?') ? '&' : '?'}fmt=srv1`,
       ];
+
+      // If we obtained captionTracks via a working YTBSD proxy, try fetching the XML via that proxy first
+      if (winningProxy) {
+        for (const url of candidateUrls.slice(0, 2)) {
+          try {
+            const pr = await httpsRequestViaProxy(
+              winningProxy,
+              url,
+              {
+                headers: {
+                  'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
+                },
+              },
+              5500
+            );
+            if (pr.status === 200 && pr.body.trim()) {
+              const lrc = parseSubtitlesToLrc(pr.body);
+              if (lrc && lrc.includes('[')) return lrc;
+            }
+          } catch {
+            continue;
+          }
+        }
+      }
+
       for (const url of candidateUrls) {
         try {
           const r = await fetch(url, {
             headers: {
-              'User-Agent': USER_AGENT,
+              'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
               'Accept-Language': 'en-US,en;q=0.9',
               Cookie: 'CONSENT=YES+cb',
             },
@@ -2396,8 +2967,6 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       });
     }
 
-    // Fallback for Cloud Run / datacenter IPs where direct youtubei/v1/player returns LOGIN_REQUIRED:
-    // Fetch creator-uploaded WebVTT subtitles via Companion signed caption tracks
     if (collectedTracks.length === 0) {
       collectedTracks = await fetchNadekoCreatorSubtitles(videoId);
     }
@@ -2414,6 +2983,225 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       hasWordSync: false,
       subtitleTracks: collectedTracks,
     };
+  };
+
+  // ============================================================================
+  // Spotify-Karaoke (https://github.com/haroldalan/spotify-karaoke) Romanizer API
+  // ============================================================================
+  const googleRomanizeServerChunk = async (
+    text: string,
+    sourceLang = 'auto'
+  ): Promise<string | null> => {
+    const endpoints = [
+      'https://translate.google.com/translate_a/single?client=at',
+      'https://translate.googleapis.com/translate_a/single?client=gtx',
+    ];
+    for (const base of endpoints) {
+      try {
+        const params = new URLSearchParams({ sl: sourceLang, tl: 'en', q: text });
+        params.append('dt', 't');
+        params.append('dt', 'rm');
+        const res = await fetch(`${base}&${params.toString()}`, {
+          headers: {
+            'User-Agent': USER_AGENT,
+            Accept: 'application/json',
+            Referer: 'https://translate.google.com/',
+          },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!res.ok) continue;
+        const data = (await res.json()) as unknown[];
+        const allSegments = ((data?.[0] as unknown[]) ?? []) as unknown[][];
+        if (allSegments.length > 0) {
+          const lastBlock = allSegments[allSegments.length - 1];
+          if (Array.isArray(lastBlock) && !lastBlock[0] && !lastBlock[1]) {
+            const firstString = lastBlock.find(val => typeof val === 'string');
+            if (typeof firstString === 'string' && firstString.trim()) {
+              return firstString
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '');
+            }
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  };
+
+  const handleRomanize = async (req: Request, res: Response) => {
+    try {
+      const rawLines = Array.isArray(req.body?.lines)
+        ? (req.body.lines as unknown[]).map(l => String(l ?? ''))
+        : typeof req.query.q === 'string'
+          ? String(req.query.q).split('\n')
+          : [];
+      const sourceLang = String(req.body?.sourceLang || req.query.sl || 'auto').trim() || 'auto';
+      if (rawLines.length === 0) {
+        res.json({ romanized: [] });
+        return;
+      }
+      // Chunk into 500-char blocks like spotify-karaoke
+      const chunks: string[][] = [];
+      let cur: string[] = [];
+      let curLen = 0;
+      for (const line of rawLines) {
+        const nextLen = cur.length === 0 ? line.length : curLen + 1 + line.length;
+        if (cur.length > 0 && nextLen > 500) {
+          chunks.push(cur);
+          cur = [line];
+          curLen = line.length;
+        } else {
+          cur.push(line);
+          curLen = nextLen;
+        }
+      }
+      if (cur.length > 0) chunks.push(cur);
+
+      const out: string[] = [];
+      for (const chunk of chunks) {
+        const rom = await googleRomanizeServerChunk(chunk.join('\n'), sourceLang);
+        if (rom && rom.trim()) {
+          const split = rom.trim().split('\n');
+          for (let i = 0; i < chunk.length; i++) {
+            out.push(split[i]?.trim() || chunk[i]);
+          }
+        } else {
+          out.push(...chunk);
+        }
+      }
+      res.json({ romanized: out });
+    } catch (err) {
+      res.status(502).json({
+        detail: err instanceof Error ? err.message : 'Romanization failed.',
+      });
+    }
+  };
+
+  // Apple Music candidate search for Manual Search in TrackFinder.tsx
+  const handleAppleCandidates = async (req: Request, res: Response) => {
+    const rawTitle = String(req.query.title || '').trim();
+    const rawArtist = String(req.query.artist || '').trim();
+    const duration = Number(req.query.duration || 0);
+    if (rawTitle.length < 2) {
+      res.json({ candidates: [] });
+      return;
+    }
+    try {
+      const candidates: Array<{
+        id: number;
+        title: string;
+        artist: string;
+        album: string;
+        duration: number;
+        instrumental: boolean;
+        hasSynced: boolean;
+        hasWordSync: boolean;
+        url: string;
+        confidence: number;
+        ttml?: string;
+        syncedLyrics?: string;
+        sourceLabel?: string;
+      }> = [];
+
+      // 1. Check lrc.red & Binimum ISRC word-sync TTML
+      const isrcMatch = await fetchIsrcWordSyncedTtml(
+        rawTitle,
+        rawArtist,
+        duration,
+        false,
+        rawTitle,
+        rawArtist,
+        true
+      ).catch(() => null);
+      if (isrcMatch?.ttml) {
+        candidates.push({
+          id: -1001,
+          title: rawTitle,
+          artist: rawArtist || 'Apple Music',
+          album: 'Apple Music Word-Synced TTML',
+          duration: duration || 200,
+          instrumental: false,
+          hasSynced: true,
+          hasWordSync: true,
+          url: isrcMatch.sourceUrl || 'https://music.apple.com',
+          confidence: 0.98,
+          ttml: isrcMatch.ttml,
+          sourceLabel: isrcMatch.source,
+        });
+      }
+
+      // 2. Search iTunes catalog and check Paxsenix for top matches
+      const itunesUrl =
+        'https://itunes.apple.com/search?' +
+        new URLSearchParams({
+          term: `${rawTitle} ${rawArtist}`.trim(),
+          media: 'music',
+          entity: 'song',
+          limit: '6',
+        }).toString();
+      const itunesRes = await fetch(itunesUrl, {
+        headers: { 'User-Agent': STASH_ANDROID_UA, Accept: 'application/json' },
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => null);
+
+      if (itunesRes?.ok) {
+        const data = (await itunesRes.json()) as { results?: Array<Record<string, unknown>> };
+        const items = (Array.isArray(data.results) ? data.results : []).slice(0, 4);
+        await Promise.all(
+          items.map(async (item, idx) => {
+            const songId = String(item.trackId || '').trim();
+            if (!songId || Date.now() < paxsenixSkipUntilMs) return;
+            const trackName = String(item.trackName || rawTitle);
+            const artistName = String(item.artistName || rawArtist);
+            const albumName = String(item.collectionName || '');
+            const dur = Math.round(Number(item.trackTimeMillis || 0) / 1000);
+            const viewUrl = String(item.trackViewUrl || 'https://music.apple.com');
+            try {
+              const paxRes = await fetch(
+                `https://lyrics.paxsenix.org/apple-music/lyrics?id=${encodeURIComponent(songId)}&ttml=true`,
+                {
+                  headers: { 'User-Agent': STASH_ANDROID_UA },
+                  signal: AbortSignal.timeout(4500),
+                }
+              );
+              if (!paxRes.ok) return;
+              const body = await paxRes.text();
+              let ttml = '';
+              if (body.includes('<tt') || body.includes('<p')) {
+                ttml = body;
+              } else if (body.trim().startsWith('{')) {
+                const parsed = JSON.parse(body) as Record<string, unknown>;
+                ttml = String(parsed.ttmlContent || parsed.ttml || '');
+              }
+              if (ttml.includes('<p')) {
+                candidates.push({
+                  id: -(Number(songId) || 2000 + idx),
+                  title: `${trackName} [Apple Library]`,
+                  artist: artistName,
+                  album: albumName,
+                  duration: dur,
+                  instrumental: false,
+                  hasSynced: true,
+                  hasWordSync: ttml.includes('<span'),
+                  url: viewUrl,
+                  confidence: Math.max(0.75, 0.95 - idx * 0.04),
+                  ttml,
+                  sourceLabel: 'Apple Music · Word-Synced TTML (Paxsenix)',
+                });
+              }
+            } catch {
+              // Ignore individual candidate timeout
+            }
+          })
+        );
+      }
+
+      res.json({ candidates });
+    } catch {
+      res.json({ candidates: [] });
+    }
   };
 
   const handleYouTubeSubtitles = async (req: Request, res: Response) => {
@@ -2442,18 +3230,26 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
     const rawArtist = String(req.query.artist || '').trim();
     const duration = Number(req.query.duration || 0);
     const videoId = String(req.query.videoId || '').trim();
-    const isYouTube = req.query.isYouTube === '1' || req.query.isYouTube === 'true' || Boolean(videoId);
+    const rawOverride = req.query.rawOverride === '1' || req.query.rawOverride === 'true';
+    const isYouTube =
+      !rawOverride &&
+      (req.query.isYouTube === '1' || req.query.isYouTube === 'true' || Boolean(videoId));
     const requestedSource = String(req.query.source || 'all').toLowerCase();
 
-    const title = isYouTube ? cleanServerYouTubeTitle(rawTitle, rawArtist) : rawTitle;
-    const artist = isYouTube ? '' : rawArtist;
+    // When rawOverride is true (Manual Search), do NOT delete brackets or wipe artist
+    const title = rawOverride
+      ? rawTitle
+      : isYouTube
+        ? cleanServerYouTubeTitle(rawTitle, rawArtist)
+        : rawTitle;
+    const artist = rawOverride ? rawArtist : isYouTube ? '' : rawArtist;
 
     if (title.length < 2 && !videoId) {
       res.status(400).json({ detail: 'Track title is required.' });
       return;
     }
 
-    const cacheKey = `${requestedSource}|${isYouTube ? 'yt' : 'std'}|${title.toLowerCase()}|${artist.toLowerCase()}|${Math.round(duration)}|${videoId}`;
+    const cacheKey = `${requestedSource}|${rawOverride ? 'raw' : isYouTube ? 'yt' : 'std'}|${title.toLowerCase()}|${artist.toLowerCase()}|${Math.round(duration)}|${videoId}`;
     const cached = lyricsCache.get(cacheKey);
     if (cached && Date.now() - cached.createdAt < 30 * 60_000) {
       res.json(cached.data);
@@ -2473,7 +3269,15 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       }
 
       if (requestedSource === 'lrclib') {
-        const lrclibOnly = await fetchLrclibServerLyrics(title, artist, duration, isYouTube, rawTitle, rawArtist);
+        const lrclibOnly = await fetchLrclibServerLyrics(
+          title,
+          artist,
+          duration,
+          isYouTube,
+          rawTitle,
+          rawArtist,
+          rawOverride
+        );
         if (lrclibOnly) {
           setLyricsCache(cacheKey, lrclibOnly);
           res.json(lrclibOnly);
@@ -2484,7 +3288,15 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       }
 
       // 1. Word-synced Apple Music TTML via ISRC (lrc.red & Binimum)
-      const isrcTtml = await fetchIsrcWordSyncedTtml(title, artist, duration, isYouTube, rawTitle, rawArtist);
+      const isrcTtml = await fetchIsrcWordSyncedTtml(
+        title,
+        artist,
+        duration,
+        isYouTube,
+        rawTitle,
+        rawArtist,
+        rawOverride
+      );
       if (isrcTtml) {
         setLyricsCache(cacheKey, isrcTtml);
         res.json(isrcTtml);
@@ -2492,7 +3304,15 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       }
 
       // 2. Apple Music TTML via iTunes Song ID + Paxsenix
-      const paxResult = await fetchItunesPaxsenixLyrics(title, artist, duration, isYouTube, rawTitle, rawArtist);
+      const paxResult = await fetchItunesPaxsenixLyrics(
+        title,
+        artist,
+        duration,
+        isYouTube,
+        rawTitle,
+        rawArtist,
+        rawOverride
+      );
       if (paxResult.lyrics) {
         setLyricsCache(cacheKey, paxResult.lyrics);
         res.json(paxResult.lyrics);
@@ -2505,7 +3325,15 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       }
 
       // 3. LRCLIB synced / word-synced recording lookup
-      const lrclibResult = await fetchLrclibServerLyrics(title, artist, duration, isYouTube, rawTitle, rawArtist);
+      const lrclibResult = await fetchLrclibServerLyrics(
+        title,
+        artist,
+        duration,
+        isYouTube,
+        rawTitle,
+        rawArtist,
+        rawOverride
+      );
       if (lrclibResult) {
         if (paxResult.appleTrackViewUrl && !lrclibResult.sourceUrl) {
           lrclibResult.sourceUrl = paxResult.appleTrackViewUrl;
@@ -2555,6 +3383,101 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
     }
   };
 
+  const handleYouTubeAuth = async (req: Request, res: Response) => {
+    const body = (req.body || {}) as { accessToken?: string; cookie?: string };
+    const headerAuth = extractRequestYouTubeAuth(req);
+    const queryToken = typeof req.query.accessToken === 'string' ? req.query.accessToken.trim() : '';
+    const queryCookie = typeof req.query.cookie === 'string' ? req.query.cookie.trim() : '';
+    const nextToken =
+      typeof body.accessToken === 'string'
+        ? body.accessToken.trim().replace(/^Bearer\s+/i, '')
+        : queryToken || headerAuth.accessToken || '';
+    const nextCookie =
+      typeof body.cookie === 'string'
+        ? body.cookie.trim()
+        : queryCookie || headerAuth.cookie || '';
+    serverYouTubeAuth = {
+      accessToken: nextToken,
+      cookie: nextCookie,
+    };
+    res.json({
+      authenticated: Boolean(serverYouTubeAuth.accessToken || serverYouTubeAuth.cookie),
+      hasAccessToken: Boolean(serverYouTubeAuth.accessToken),
+      hasCookie: Boolean(serverYouTubeAuth.cookie),
+    });
+  };
+
+  let blockyCache: { hosts: string[]; syncedSources: string[]; updatedAt: number } | null = null;
+
+  const handleAdBlockSync = async (_req: Request, res: Response) => {
+    if (blockyCache && Date.now() - blockyCache.updatedAt < 30 * 60_000) {
+      res.json({
+        ok: true,
+        engine: '0xERR0R/blocky + TheRealJoelmatic/RemoveAdblockThing',
+        rulesCount: blockyCache.hosts.length,
+        syncedSources: blockyCache.syncedSources,
+        hosts: blockyCache.hosts.slice(0, 250),
+      });
+      return;
+    }
+
+    const hostsSet = new Set<string>([
+      'doubleclick.net',
+      'googlesyndication.com',
+      'googleadservices.com',
+      'adservice.google.com',
+      'pagead2.googlesyndication.com',
+      'ads.youtube.com',
+      's.youtube.com',
+      '2mdn.net',
+      'innovid.com',
+      'moatads.com',
+      'fwmrm.net',
+      'imasdk.googleapis.com',
+      'fundingchoicesmessages.google.com',
+      'google-analytics.com',
+      'googletagmanager.com',
+      'scorecardresearch.com',
+      'quantserve.com',
+    ]);
+    const syncedSources: string[] = ['0xERR0R/blocky built-in YouTube ad & telemetry list'];
+
+    try {
+      const disconnectRes = await fetch('https://s3.amazonaws.com/lists.disconnect.me/simple_ad.txt', {
+        headers: { 'User-Agent': USER_AGENT },
+        signal: AbortSignal.timeout(4500),
+      });
+      if (disconnectRes.ok) {
+        const text = await disconnectRes.text();
+        for (const rawLine of text.split(/\r?\n/)) {
+          const line = rawLine.trim().toLowerCase();
+          if (!line || line.startsWith('#')) continue;
+          if (/^[a-z0-9.-]+\.[a-z]{2,}$/.test(line) && !line.endsWith('youtube.com') && !line.endsWith('googlevideo.com')) {
+            hostsSet.add(line);
+          }
+        }
+        syncedSources.push('s3.amazonaws.com/lists.disconnect.me/simple_ad.txt');
+      }
+    } catch {
+      // Non-fatal fallback to built-in list
+    }
+
+    const hosts = [...hostsSet];
+    blockyCache = {
+      hosts,
+      syncedSources,
+      updatedAt: Date.now(),
+    };
+
+    res.json({
+      ok: true,
+      engine: '0xERR0R/blocky + TheRealJoelmatic/RemoveAdblockThing',
+      rulesCount: hosts.length,
+      syncedSources,
+      hosts: hosts.slice(0, 250),
+    });
+  };
+
   const handleSearch = async (req: Request, res: Response) => {
     const q = String(req.query.q || '').trim();
     const rawProvider = String(req.query.provider || 'jiosaavn').toLowerCase();
@@ -2574,6 +3497,8 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
               ? 'youtube'
               : 'jiosaavn';
 
+    const ytAuth = extractRequestYouTubeAuth(req);
+
     try {
       let results: TrackMetadata[] = [];
       if (provider === 'jiosaavn') {
@@ -2581,7 +3506,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       } else if (provider === 'soundcloud') {
         results = await searchSoundCloud(q, 12);
       } else if (provider === 'ytmusic' || provider === 'youtube') {
-        results = await searchYouTubeMusic(q, provider, 12);
+        results = await searchYouTubeMusic(q, provider, 12, ytAuth);
       } else if (provider === 'audius') {
         results = await searchAudius(q, 12);
       }
@@ -2900,8 +3825,16 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
   };
 
   // Mount under both /music/* and root /* for full compatibility
+  app.use(express.json({ limit: '512kb' }));
   app.get(['/music/health', '/health'], handleHealth);
+  app.post(['/music/yt-auth', '/yt-auth'], handleYouTubeAuth);
+  app.get(['/music/yt-auth', '/yt-auth'], handleYouTubeAuth);
+  app.post(['/music/adblock/sync', '/adblock/sync', '/music/adblock/status', '/adblock/status'], handleAdBlockSync);
+  app.get(['/music/adblock/sync', '/adblock/sync', '/music/adblock/status', '/adblock/status'], handleAdBlockSync);
   app.get(['/music/lyrics', '/lyrics'], handleLyrics);
+  app.get(['/music/apple-candidates', '/apple-candidates'], handleAppleCandidates);
+  app.post(['/music/romanize', '/romanize'], handleRomanize);
+  app.get(['/music/romanize', '/romanize'], handleRomanize);
   app.get(['/music/yt-subtitles', '/yt-subtitles', '/music/yt-subtitles/:videoId'], handleYouTubeSubtitles);
   app.get(['/music/sponsorblock/:videoId', '/sponsorblock/:videoId', '/music/sponsorblock'], handleSponsorBlock);
   app.get(['/music/search', '/search'], handleSearch);

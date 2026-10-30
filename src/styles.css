@@ -531,6 +531,11 @@ body {
 .account-panel :focus-visible, .correction-controls :focus-visible { outline: 2px solid #6ee7f9; outline-offset: 3px; }
 
 .youtube-background-picker select{display:block;min-height:44px;margin:8px 0;padding:10px;background:#121e2c;color:#eef4ff;border:1px solid #52647a;border-radius:8px;max-width:100%}
+.yt-custom-search-row{display:flex;gap:8px;align-items:center;margin:8px 0}
+.yt-custom-search-row input{flex:1;min-width:180px;min-height:42px;background:#0b131f;color:#eef4ff;border:1px solid #485e74;border-radius:8px;padding:8px 12px;font-size:12px}
+.video-candidate{display:flex;align-items:center;gap:12px}
+.candidate-thumb{width:88px;height:50px;object-fit:cover;border-radius:8px;flex-shrink:0;background:#0e1722;border:1px solid #33485c}
+.candidate-meta{flex:1;min-width:0}
 
 /* Three-Card Source Selector & External Player (Android Only) + JioSaavn Background Prefs */
 .source-three-card-grid{grid-template-columns:repeat(3,minmax(0,1fr))}

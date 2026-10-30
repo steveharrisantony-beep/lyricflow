@@ -12,9 +12,54 @@ export interface TrackInfo {
   videoId?:string;
   videoTitle?:string;
   sponsorblockOffsetSec?:number;
+  isAd?:boolean;
 }
 
 const LYRIC_VIDEO_PATTERN=/\b(?:lyrical|lyrics|lyric\s*video|official\s*lyric|with\s*lyrics|lyrical\s*video|lyrics\s*video)\b/i;
+const AD_TITLE_EXACT_PATTERN=/^(?:advertisement|ad|ads|sponsored|spotify|spotify\s+free|audio\s*ad|video\s*ad|commercial|promoted|sponsored\s+message|learn\s+more|listen\s+now)(?:\s*[-·•:|]\s*.*)?$/i;
+const AD_KEYWORD_PATTERN=/\b(?:advertisement|sponsored\s+by|audio\s+ad|video\s+ad|ad\s+break|commercial\s+break)\b/i;
+const AD_ARTIST_PATTERN=/^(?:advertisement|sponsored|spotify|spotify\s+ad|audio\s+ad)$/i;
+
+/**
+ * Detects whether a track or external media notification is an advertisement (e.g., Spotify Free ads).
+ * During advertisements, lyrics lookup and YouTube background video search are skipped and built-in themes are shown.
+ */
+export function isAdvertisementTrack(
+ item?: {
+  title?:string;
+  artist?:string;
+  album?:string;
+  duration?:number;
+  packageName?:string;
+  appName?:string;
+  audioSource?:string;
+  isAd?:boolean;
+ }|null
+):boolean{
+ if(!item)return false;
+ if(item.isAd===true)return true;
+ const title=(item.title||'').trim();
+ const artist=(item.artist||'').trim();
+ const album=(item.album||'').trim();
+ const pkg=(item.packageName||'').toLowerCase();
+ const app=(item.appName||'').toLowerCase();
+ const src=(item.audioSource||'').toLowerCase();
+ if(!title)return false;
+ if(AD_TITLE_EXACT_PATTERN.test(title))return true;
+ if(AD_KEYWORD_PATTERN.test(title)||AD_KEYWORD_PATTERN.test(album))return true;
+ if(artist&&AD_ARTIST_PATTERN.test(artist)){
+  if(title.toLowerCase()==='spotify'||title.toLowerCase()==='advertisement'||!album||/spotify|ad|sponsor/i.test(title)){
+   return true;
+  }
+ }
+ const isSpotify=pkg.includes('spotify')||app.includes('spotify')||src.includes('spotify');
+ if(isSpotify){
+  if(title.toLowerCase()==='spotify'||artist.toLowerCase()==='spotify')return true;
+  const dur=typeof item.duration==='number'?item.duration:0;
+  if(dur>0&&dur<=35&&(!artist||/^(?:spotify|advertisement|sponsored)$/i.test(artist)))return true;
+ }
+ return false;
+}
 
 /**
  * Extracts an 11-character YouTube video ID from a TrackInfo or SongResult if the source is YouTube.
@@ -69,32 +114,51 @@ export function isLyricVideoTrack(
 }
 
 /**
+ * Returns true ONLY when the text contains at least one valid [mm:ss.xx] LRC line timestamp.
+ */
+export function hasValidLrcTimestamps(text?: string | null): boolean {
+  if (!text || typeof text !== 'string') return false;
+  return /\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]/.test(text);
+}
+
+/**
  * Prepares a TrackInfo for lyrics lookup:
- * - For YouTube-sourced tracks (`provider === 'resolver'` or `youtubeVideoId` present):
+ * - When `rawOverride` is true (e.g. Manual Search with bracket filter override), preserves the exact user-entered
+ *   `track.title`, `track.artist`, and `track.album` without stripping brackets `(...)`/`[...]` or using `videoTitle`.
+ * - For YouTube-sourced tracks (`provider === 'resolver'` or `youtubeVideoId` present) in automatic mode:
  *   cleans noisy YouTube titles (`@handle`, brackets `(...)`/`[...]` and everything after, pipes `|`)
  *   and skips `artist` and `album` because YouTube channel names are unreliable as artist names.
- * - For JioSaavn / local tracks: cleans any `@handle` or bracket suffixes on the title while preserving artist/album.
+ * - For JioSaavn / local tracks in automatic mode: cleans any `@handle` or bracket suffixes on the title while preserving artist/album.
  */
-export function normalizeTrackForLyricsLookup(track: TrackInfo): TrackInfo {
- const isYt = track.provider === 'resolver' || Boolean(track.youtubeVideoId);
- const rawOriginalTitle = track.videoTitle || track.title;
- const cleanedTitle = cleanYouTubeTitleForLyrics(rawOriginalTitle, isYt ? track.artist : '');
- if (isYt) {
+export function normalizeTrackForLyricsLookup(track: TrackInfo, rawOverride = false): TrackInfo {
+  if (rawOverride) {
+    return {
+      ...track,
+      title: track.title.trim(),
+      videoTitle: track.title.trim(),
+      artist: track.artist.trim(),
+      album: track.album.trim(),
+    };
+  }
+  const isYt = track.provider === 'resolver' || Boolean(track.youtubeVideoId);
+  const rawOriginalTitle = track.videoTitle || track.title;
+  const cleanedTitle = cleanYouTubeTitleForLyrics(rawOriginalTitle, isYt ? track.artist : '');
+  if (isYt) {
+    return {
+      ...track,
+      title: cleanedTitle || track.title.trim(),
+      videoTitle: rawOriginalTitle,
+      artist: '',
+      album: '',
+    };
+  }
   return {
-   ...track,
-   title: cleanedTitle || track.title.trim(),
-   videoTitle: rawOriginalTitle,
-   artist: '',
-   album: '',
+    ...track,
+    title: cleanedTitle || stripTags(track.title),
+    videoTitle: rawOriginalTitle,
+    artist: stripTags(track.artist),
+    album: stripTags(track.album),
   };
- }
- return {
-  ...track,
-  title: cleanedTitle || stripTags(track.title),
-  videoTitle: rawOriginalTitle,
-  artist: stripTags(track.artist),
-  album: stripTags(track.album),
- };
 }
 
 const stripTags=(text:string)=>text
@@ -117,6 +181,7 @@ export function normalizeTrack(text:string){
 }
 export interface TrackCandidate {
   syncedLyrics?: string;
+  plainLyrics?: string;
   id: number;
   title: string;
   artist: string;
@@ -127,6 +192,8 @@ export interface TrackCandidate {
   hasWordSync: boolean;
   url: string;
   confidence: number;
+  sourceLabel?: string;
+  provider?: string;
 }
 export interface SearchRecord {
   id: number;
@@ -136,13 +203,16 @@ export interface SearchRecord {
   duration: number;
   instrumental: boolean;
   syncedLyrics: string | null;
+  plainLyrics?: string | null;
   hasSynced?: boolean;
   hasWordSync?: boolean;
 }
-export function rankCandidate(track: TrackInfo, candidate: SearchRecord): TrackCandidate {
-  const isYt = track.provider === 'resolver' || Boolean(track.youtubeVideoId);
-  const t = normalizeTrack(cleanYouTubeTitleForLyrics(track.title));
-  const c = normalizeTrack(cleanYouTubeTitleForLyrics(candidate.trackName) || candidate.trackName);
+export function rankCandidate(track: TrackInfo, candidate: SearchRecord, rawOverride = false): TrackCandidate {
+  const isYt = !rawOverride && (track.provider === 'resolver' || Boolean(track.youtubeVideoId));
+  const t = normalizeTrack(rawOverride ? track.title : cleanYouTubeTitleForLyrics(track.title));
+  const c = normalizeTrack(
+    rawOverride ? candidate.trackName : cleanYouTubeTitleForLyrics(candidate.trackName) || candidate.trackName
+  );
   const a = isYt ? '' : normalizeTrack(track.artist);
   const ca = normalizeTrack(candidate.artistName);
   const calb = normalizeTrack(candidate.albumName);
@@ -159,11 +229,14 @@ export function rankCandidate(track: TrackInfo, candidate: SearchRecord): TrackC
       ? 0.78
       : (c.startsWith(t + ' ') || t.startsWith(c + ' ')) && Math.min(t.length, c.length) >= 3
         ? 0.70
-        : overlap >= 0.65
+        : overlap >= (rawOverride ? 0.45 : 0.65)
           ? 0.68 * overlap
-          : 0;
+          : rawOverride && (c.includes(t) || t.includes(c)) && Math.min(t.length, c.length) >= 3
+            ? 0.55
+            : 0;
 
   let confidence = titleConfidence;
+  const validSynced = hasValidLrcTimestamps(candidate.syncedLyrics) || Boolean(candidate.hasSynced && !candidate.syncedLyrics);
 
   if (titleConfidence > 0) {
     if (a) {
@@ -201,7 +274,7 @@ export function rankCandidate(track: TrackInfo, candidate: SearchRecord): TrackC
 
     if (track.duration > 0 && candidate.duration > 0) {
       const delta = Math.abs(track.duration - candidate.duration);
-      if (!isYt) {
+      if (!isYt && !rawOverride) {
         confidence +=
           delta <= 2
             ? 0.16
@@ -215,26 +288,28 @@ export function rankCandidate(track: TrackInfo, candidate: SearchRecord): TrackC
       } else {
         if (candidate.duration <= track.duration + 15 && candidate.duration >= 60) {
           confidence += delta <= 12 ? 0.10 : delta <= 60 ? 0.06 : 0.03;
-        } else if (candidate.duration > track.duration + 60) {
+        } else if (candidate.duration > track.duration + 60 && !rawOverride) {
           confidence -= 0.12;
         }
       }
     }
-    if (candidate.hasSynced || Boolean(candidate.syncedLyrics)) confidence += 0.04;
-    if (candidate.hasWordSync) confidence += 0.04;
+    if (validSynced) confidence += 0.04;
+    if (candidate.hasWordSync && validSynced) confidence += 0.04;
     if (candidate.instrumental) confidence -= 0.08;
   }
   return {
-    syncedLyrics: candidate.syncedLyrics || undefined,
+    syncedLyrics: validSynced && candidate.syncedLyrics ? candidate.syncedLyrics : undefined,
+    plainLyrics: candidate.plainLyrics || undefined,
     id: candidate.id,
     title: candidate.trackName,
     artist: candidate.artistName,
     album: candidate.albumName,
     duration: candidate.duration,
-    hasSynced: Boolean(candidate.syncedLyrics),
-    hasWordSync: Boolean(candidate.hasWordSync),
+    hasSynced: validSynced,
+    hasWordSync: Boolean(candidate.hasWordSync && validSynced),
     instrumental: candidate.instrumental,
     url: 'https://lrclib.net/api/get/' + candidate.id,
     confidence: Math.max(0, Math.min(1, confidence)),
   };
 }
+

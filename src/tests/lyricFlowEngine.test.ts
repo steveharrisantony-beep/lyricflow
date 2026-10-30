@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   cleanYouTubeTitleForLyrics,
   alignAppleWordSyncWithYouTubeSubtitles,
+  computeVideoDelayFromSubtitles,
   LYRIC_ENGINE_OPTIONS,
 } from '../lyrics/lyricFlowEngine';
-import { normalizeTrackForLyricsLookup, rankCandidate } from '../metadata/trackInfo';
+import {
+  hasValidLrcTimestamps,
+  normalizeTrackForLyricsLookup,
+  rankCandidate,
+} from '../metadata/trackInfo';
 import {
   findActiveSkipSegment,
   computeLeadingNonMusicOffset,
@@ -15,6 +20,19 @@ import {
   resolveCuePlacement,
   LYRIC_PLACEMENT_MODES,
 } from '../visualization/cinematic/kineticTypography';
+import { getDeterministicSongPalette } from '../visualization/cinematic/contrast';
+import {
+  evaluateBlockyUrl,
+  sanitizeYouTubePlayerJson,
+  getRemoveAdblockThingScript,
+  installYouTubeAdBlocker,
+} from '../music/youtubeAdBlocker';
+import {
+  detectScript,
+  preserveCasing,
+  stripDiacritics,
+  romanizeText,
+} from '../romanization/romanize';
 import { parseLRC } from '../lyrics/lrc';
 import { buildCues, setLyricTimeline, getLyricState } from '../lyrics/lyricTimeline';
 import { TEMPLATES, buildCinematicSchedule } from '../visualization/cinematic/catalog';
@@ -255,5 +273,126 @@ describe('YouTube metadata cleaning & 4-Engine LyricFlow Engine', () => {
     expect(findActiveSkipSegment(segments, 50.0)).toBeNull();
     expect(findActiveSkipSegment(segments, 125.0)?.uuid).toBe('seg-2');
   });
+
+  it('computes background video delay from creator-uploaded subtitles when language matches and ignores auto-generated or mismatched language', () => {
+    const songLyrics = [
+      '[00:10.00]Walking down the city street tonight',
+      '[00:15.00]Underneath the glowing neon light',
+      '[00:20.00]Hear the distant thunder in the sky',
+      '[00:25.00]We are never going to say goodbye',
+    ].join('\n');
+
+    // Video has a 14.5s cinematic intro before the music starts, so subtitles are +14.5s later
+    const videoSubLrc = [
+      '[00:24.50]Walking down the city street tonight',
+      '[00:29.50]Underneath the glowing neon light',
+      '[00:34.50]Hear the distant thunder in the sky',
+      '[00:39.50]We are never going to say goodbye',
+    ].join('\n');
+
+    // Auto-generated subtitles (id starts with a. or label has auto-generated) must be ignored
+    const autoTrack = {
+      id: 'a.en',
+      languageCode: 'en',
+      label: 'English (auto-generated)',
+      lrc: videoSubLrc,
+      lineCount: 4,
+    };
+    expect(computeVideoDelayFromSubtitles(songLyrics, [autoTrack]).matched).toBe(false);
+
+    // Mismatched language (e.g., Malayalam lyrics vs English translated subtitles) must be ignored
+    const malayalamLyrics = [
+      '[00:10.00]മഴ പെയ്യുന്നു രാത്രിയിൽ',
+      '[00:15.00]കാറ്റിൽ ആടുന്നു മരങ്ങൾ',
+      '[00:20.00]നിലാവ് ഉദിക്കുന്നു മാനത്ത്',
+      '[00:25.00]പാടുന്നു നമ്മൾ ഒന്നായി',
+    ].join('\n');
+    const creatorEnglishTrack = {
+      id: 'en',
+      languageCode: 'en',
+      label: 'English',
+      lrc: videoSubLrc,
+      lineCount: 4,
+    };
+    expect(computeVideoDelayFromSubtitles(malayalamLyrics, [creatorEnglishTrack]).matched).toBe(false);
+
+    // Creator-uploaded subtitles in matching language compute videoDelaySeconds = -14.5s
+    const synced = computeVideoDelayFromSubtitles(songLyrics, [creatorEnglishTrack]);
+    expect(synced.matched).toBe(true);
+    expect(synced.videoDelaySeconds).toBeCloseTo(-14.5, 2);
+    expect(synced.anchorCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it('supports rawOverride bracket preservation in manual search and validates true LRC timestamps', () => {
+    const rawTrack = {
+      title: 'Aasa Kooda (Acoustic Version) [Live]',
+      artist: 'Sai Abhyankkar (feat. Sai Smriti)',
+      album: 'Single',
+      duration: 215,
+      source: 'manual' as const,
+      confidence: 1,
+    };
+    const cleaned = normalizeTrackForLyricsLookup(rawTrack, false);
+    expect(cleaned.title).toBe('Aasa Kooda');
+
+    const overridden = normalizeTrackForLyricsLookup(rawTrack, true);
+    expect(overridden.title).toBe('Aasa Kooda (Acoustic Version) [Live]');
+    expect(overridden.artist).toBe('Sai Abhyankkar (feat. Sai Smriti)');
+
+    expect(hasValidLrcTimestamps('Plain text without timestamps\nSecond line')).toBe(false);
+    expect(hasValidLrcTimestamps('[ar:Artist]\n[ti:Title]\nPlain body only')).toBe(false);
+    expect(hasValidLrcTimestamps('[00:12.40]Timed lyric line')).toBe(true);
+  });
+
+  it('implements spotify-karaoke script detection, case preservation, diacritic stripping, and deterministic song palettes', () => {
+    expect(detectScript(['മഴ പെയ്യുന്നു'])).toBe('malayalam');
+    expect(detectScript(['அன்பே വാ'])).toBe('tamil');
+    expect(preserveCasing('Hello WORLD', 'hello world')).toBe('Hello WORLD');
+    expect(stripDiacritics('āīūēō ṇ ṭ')).toBe('aiueo n t');
+    const rom = romanizeText('[00:05.00]മഴ പെയ്യുന്നു');
+    expect(rom.changed).toBe(true);
+    expect(rom.text.startsWith('[00:05.00]')).toBe(true);
+
+    const paletteA = getDeterministicSongPalette('Aasa Kooda::Sai Abhyankkar');
+    const paletteB = getDeterministicSongPalette('Illuminati::Sushin Shyam');
+    expect(paletteA.accentHex).not.toBe(paletteB.accentHex);
+    expect(paletteA.sungColor).not.toBe(paletteB.sungColor);
+  });
+
+  it('blocks YouTube ad domains & ad paths via 0xERR0R/blocky while preserving core video streams and sanitizes player JSON via RemoveAdblockThing', () => {
+    expect(evaluateBlockyUrl('https://googleads.g.doubleclick.net/pagead/ads').blocked).toBe(true);
+    expect(evaluateBlockyUrl('https://www.youtube.com/api/stats/ads?ver=2').blocked).toBe(true);
+    expect(evaluateBlockyUrl('https://www.youtube.com/youtubei/v1/player/ad_break').blocked).toBe(true);
+    expect(evaluateBlockyUrl('https://rr3---sn-abcd.googlevideo.com/videoplayback?ctier=L&id=123').blocked).toBe(true);
+
+    // Core YouTube video streams and embeds must never be blocked
+    expect(evaluateBlockyUrl('https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1').blocked).toBe(false);
+    expect(evaluateBlockyUrl('https://rr3---sn-abcd.googlevideo.com/videoplayback?id=123&itag=140').blocked).toBe(false);
+
+    const dirtyPlayer = {
+      videoDetails: { videoId: 'dQw4w9WgXcQ', title: 'Test Song' },
+      adPlacements: [{ adPlacementRenderer: {} }],
+      playerAds: [{ playerLegacyDesktopWatchAdsRenderer: {} }],
+      adSlots: [{ adSlotRenderer: {} }],
+      auxiliaryUi: {
+        messageRenderers: {
+          bkaEnforcementMessageViewModel: { text: 'Ad blockers are not allowed' },
+        },
+      },
+    };
+    const cleaned = sanitizeYouTubePlayerJson(dirtyPlayer);
+    expect(cleaned.videoDetails.videoId).toBe('dQw4w9WgXcQ');
+    expect('adPlacements' in cleaned).toBe(false);
+    expect('playerAds' in cleaned).toBe(false);
+    expect('adSlots' in cleaned).toBe(false);
+    expect('bkaEnforcementMessageViewModel' in cleaned.auxiliaryUi.messageRenderers).toBe(false);
+
+    const script = getRemoveAdblockThingScript();
+    expect(script).toContain('ytd-enforcement-message-view-model');
+    expect(script).toContain('__ytplayer_adblockDetected');
+
+    expect(() => installYouTubeAdBlocker()).not.toThrow();
+  });
 });
+
 

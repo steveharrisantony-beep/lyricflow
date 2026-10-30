@@ -74,19 +74,78 @@ it('keeps an unsaved signed video delay while a background mapping catches up',a
   expect(choose).toHaveBeenCalledWith('abcdefghijk',-2);
 });
 
-it('ranks YouTube background candidates by most views for Music Video vs Lyrical Video',async()=>{
+it('ranks YouTube background candidates by most views for Music Video vs Lyrical Video and deprioritizes static audio-only Topic tracks',async()=>{
   const {rankYouTubeBackgroundCandidates}=await import('../music/providers');
   const track={title:'Starboy',artist:'The Weeknd',album:'Starboy',duration:230,source:'provider' as const,confidence:1,provider:'jiosaavn' as const};
   const candidates=[
-    {id:'vid_low_views',title:'The Weeknd - Starboy (Official Video)',artist:'The Weeknd',album:'YouTube',duration:232,provider:'resolver' as const,sourceLabel:'YouTube',streamUrl:null,sourceUrl:'https://www.youtube.com/watch?v=vidLowViews1',viewCount:450_000},
-    {id:'vid_most_views',title:'The Weeknd - Starboy ft. Daft Punk (Official Music Video)',artist:'The Weeknd',album:'YouTube',duration:273,provider:'resolver' as const,sourceLabel:'YouTube',streamUrl:null,sourceUrl:'https://www.youtube.com/watch?v=34Na4j8AVgA',viewCount:2_400_000_000},
-    {id:'vid_lyric_most',title:'The Weeknd - Starboy (Official Lyric Video)',artist:'The Weeknd',album:'YouTube',duration:230,provider:'resolver' as const,sourceLabel:'YouTube',streamUrl:null,sourceUrl:'https://www.youtube.com/watch?v=lyricMost11',viewCount:85_000_000},
-    {id:'vid_lyric_low',title:'The Weeknd - Starboy Lyrics',artist:'The Weeknd',album:'YouTube',duration:230,provider:'resolver' as const,sourceLabel:'YouTube',streamUrl:null,sourceUrl:'https://www.youtube.com/watch?v=lyricLow111',viewCount:120_000},
+    {id:'vid_audio_topic',title:'Starboy (Official Audio)',artist:'The Weeknd - Topic',album:'Audio Track',duration:230,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v=audioTopic1',viewCount:3_000_000_000},
+    {id:'vid_low_views',title:'The Weeknd - Starboy (Official Video)',artist:'The Weeknd',album:'YouTube',duration:232,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v=vidLowViews1',viewCount:450_000},
+    {id:'vid_most_views',title:'The Weeknd - Starboy ft. Daft Punk',artist:'The Weeknd',album:'YouTube',duration:273,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v=34Na4j8AVgA',viewCount:2_400_000_000},
+    {id:'vid_lyric_most',title:'The Weeknd - Starboy (Official Lyric Video)',artist:'The Weeknd',album:'YouTube',duration:230,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v=lyricMost11',viewCount:85_000_000},
+    {id:'vid_lyric_low',title:'The Weeknd - Starboy Lyrics',artist:'The Weeknd',album:'YouTube',duration:230,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v=lyricLow111',viewCount:120_000},
   ];
   const musicRanked=rankYouTubeBackgroundCandidates(candidates,track,'music');
   expect(musicRanked[0].id).toBe('vid_most_views');
+  expect(musicRanked.at(-1)?.id).toBe('vid_audio_topic');
   const lyricRanked=rankYouTubeBackgroundCandidates(candidates,track,'lyrics');
   expect(lyricRanked[0].id).toBe('vid_lyric_most');
+});
+
+it('renders video thumbnails in YouTubeBackgroundPicker custom video finding',async()=>{
+  const providers=await import('../music/providers');
+  vi.spyOn(providers,'searchStashCatalog').mockResolvedValue([
+    {
+      id:'yt_34Na4j8AVgA',
+      title:'The Weeknd - Starboy ft. Daft Punk (Official Video)',
+      artist:'The Weeknd',
+      album:'',
+      duration:273,
+      provider:'resolver',
+      sourceUrl:'https://www.youtube.com/watch?v=34Na4j8AVgA',
+      artwork:'https://i.ytimg.com/vi/34Na4j8AVgA/hqdefault.jpg',
+      viewCount:2_400_000_000
+    }
+  ]);
+  const {default:YouTubeBackgroundPicker}=await import('../music/YouTubeBackgroundPicker');
+  const track={title:'Starboy',artist:'The Weeknd',album:'Starboy',duration:230,source:'provider' as const,confidence:1,provider:'jiosaavn' as const};
+  await act(async()=>root.render(
+    <YouTubeBackgroundPicker
+      track={track}
+      activeVideoId={null}
+      preference="music"
+      onPreferenceChange={vi.fn()}
+      onChoose={vi.fn()}
+    />
+  ));
+  const findBtn=Array.from(host.querySelectorAll('button')).find(b=>b.textContent?.includes('Find YouTube video background'))!;
+  await act(async()=>findBtn.click());
+  const thumb=host.querySelector<HTMLImageElement>('img.candidate-thumb');
+  expect(thumb).not.toBeNull();
+  expect(thumb?.src).toContain('https://i.ytimg.com/vi/34Na4j8AVgA/hqdefault.jpg');
+});
+
+it('detects Spotify advertisements and pauses lyrics lookup during ads',async()=>{
+  const {isAdvertisementTrack}=await import('../metadata/trackInfo');
+  expect(isAdvertisementTrack({title:'Advertisement',artist:'Spotify',packageName:'com.spotify.music'})).toBe(true);
+  expect(isAdvertisementTrack({title:'Spotify',artist:'Spotify',packageName:'com.spotify.music',duration:30})).toBe(true);
+  expect(isAdvertisementTrack({title:'Sponsored Message',artist:'',packageName:'com.spotify.music',duration:20})).toBe(true);
+  expect(isAdvertisementTrack({title:'Starboy',artist:'The Weeknd',packageName:'com.spotify.music',duration:230})).toBe(false);
+
+  const {default:TrackFinder}=await import('../metadata/TrackFinder');
+  const onLyricsFound=vi.fn();
+  const onStatusChange=vi.fn();
+  const adTrack={title:'Advertisement',artist:'Spotify',album:'',duration:30,source:'provider' as const,confidence:1,provider:'external' as const,isAd:true};
+  await act(async()=>root.render(
+    <TrackFinder
+      track={adTrack}
+      customEditOpen={true}
+      onMetadataChange={vi.fn()}
+      onLyricsFound={onLyricsFound}
+      onStatusChange={onStatusChange}
+    />
+  ));
+  expect(onLyricsFound).not.toHaveBeenCalled();
+  expect(onStatusChange).toHaveBeenCalledWith(expect.stringContaining('Advertisement playing'));
 });
 
 it('shows External Player as Not available in web on browsers and enables Notification + Mic/Internal Audio on Android app',async()=>{

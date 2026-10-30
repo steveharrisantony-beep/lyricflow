@@ -8,10 +8,12 @@ import {
   VOXELWALL_CATEGORIES,
   byId,
   resolveThemePalette,
+  type FontPack,
   type SceneId,
   type VoxelWallCategory,
 } from './visualization/cinematic/catalog';
 import {
+  ALL_PLACEMENT_MODES,
   VOXELVERSE_STYLES,
   VOXELVERSE_FAMILIES,
   LYRIC_PLACEMENT_MODES,
@@ -22,11 +24,19 @@ import {
 } from './visualization/cinematic/kineticTypography';
 import {
   LYRIC_ENGINE_OPTIONS,
+  computeVideoDelayFromSubtitles,
   type LyricEngineOption,
   type YouTubeSubtitleTrackItem,
 } from './lyrics/lyricFlowEngine';
+import { fetchYouTubeSubtitlesForTrack } from './lyrics/appleLyrics';
+import { fetchSponsorBlockSegments, computeLeadingNonMusicOffset } from './music/sponsorBlock';
+import {
+  extractAlbumArtPalette,
+  getDeterministicSongPalette,
+  type AlbumArtLyricPalette,
+} from './visualization/cinematic/contrast';
 import { computeBassThreshold } from './visualization/cinematic/cameraRig';
-import { fontLabel } from './visualization/cinematic/fonts';
+import { FONT_SHOWCASE, fontLabel } from './visualization/cinematic/fonts';
 import {
   setAudioSensitivity,
   getAudioFrequencyBands,
@@ -54,6 +64,7 @@ import ManualLyrics, {
 import TrackFinder from './metadata/TrackFinder';
 import {
   extractYouTubeVideoId,
+  isAdvertisementTrack,
   isLyricVideoTrack,
   type TrackInfo,
 } from './metadata/trackInfo';
@@ -67,6 +78,7 @@ import {
   type UserPreferencesData,
   ALL_SCENE_IDS,
   ALL_KINETIC_MOTIONS,
+  ALL_FONT_PACKS,
 } from './firebase/firebaseClient';
 import {
   AudioLines,
@@ -88,6 +100,7 @@ import {
 } from 'lucide-react';
 
 import AccountControls from './auth/AccountControls';
+import YouTubeAccountControl from './auth/YouTubeAccountControl';
 import YouTubeBackgroundPicker from './music/YouTubeBackgroundPicker';
 import CorrectionControls from './firebase/CorrectionControls';
 import { useSongMapping, importGuestSongMappings } from './firebase/songMappings';
@@ -142,7 +155,15 @@ export default function App({ user = null }: { user?: User | null }) {
   const [autoScenes, setAutoScenes] = useState(initialPrefs.autoScenes);
   const [spatialTypography, setSpatialTypography] = useState(initialPrefs.spatialTypography);
   const [enabledScenes, setEnabledScenes] = useState<SceneId[]>(initialPrefs.enabledScenes);
+  const [autoKineticMotion, setAutoKineticMotion] = useState<boolean>(initialPrefs.autoKineticMotion ?? true);
+  const [manualKineticMotion, setManualKineticMotion] = useState<LyricMotion>(initialPrefs.manualKineticMotion || 'ship');
   const [enabledKineticMotions, setEnabledKineticMotions] = useState<LyricMotion[]>(initialPrefs.enabledKineticMotions);
+  const [enabledPlacements, setEnabledPlacements] = useState<Exclude<LyricPlacementMode, 'auto'>[]>(
+    initialPrefs.enabledPlacements || [...ALL_PLACEMENT_MODES]
+  );
+  const [autoFonts, setAutoFonts] = useState<boolean>(initialPrefs.autoFonts ?? true);
+  const [manualFont, setManualFont] = useState<FontPack>(initialPrefs.manualFont || 'impact');
+  const [enabledFonts, setEnabledFonts] = useState<FontPack[]>(initialPrefs.enabledFonts || [...ALL_FONT_PACKS]);
   const [cameraShakeEnabled, setCameraShakeEnabled] = useState<boolean>(initialPrefs.cameraShakeEnabled);
   const [cameraShakeSensitivity, setCameraShakeSensitivity] = useState<number>(initialPrefs.cameraShakeSensitivity);
   const [lyricMinFontSize, setLyricMinFontSize] = useState<number>(initialPrefs.lyricMinFontSize);
@@ -158,6 +179,13 @@ export default function App({ user = null }: { user?: User | null }) {
   const [playerVolume, setPlayerVolume] = useState<number>(initialPrefs.display.playerVolume);
   const [sponsorBlockEnabled, setSponsorBlockEnabled] = useState<boolean>(initialPrefs.display.sponsorBlockEnabled);
   const [leadingNonMusicOffsetSec, setLeadingNonMusicOffsetSec] = useState<number>(0);
+
+  // Background video subtitles & SponsorBlock auto-sync state for JioSaavn / External Player
+  const [bgVideoSubtitles, setBgVideoSubtitles] = useState<YouTubeSubtitleTrackItem[]>([]);
+  const [bgVideoSponsorOffsetSec, setBgVideoSponsorOffsetSec] = useState<number>(0);
+  const [autoVideoDelaySeconds, setAutoVideoDelaySeconds] = useState<number>(0);
+  const [autoVideoSyncStatus, setAutoVideoSyncStatus] = useState<string>('');
+  const [albumArtPalette, setAlbumArtPalette] = useState<AlbumArtLyricPalette | null>(null);
 
   // Shared lyric display, available engine options, subtitle tracks, spatial placement & color controls
   const [lyricEngineOption, setLyricEngineOption] = useState<LyricEngineOption>('lyricflow');
@@ -230,7 +258,14 @@ export default function App({ user = null }: { user?: User | null }) {
     setIntensity(prefs.intensity); setSpeed(prefs.speed); setSensitivity(prefs.sensitivity);
     setSpectrumControl(prefs.spectrumGain); setMotionBlur(prefs.motionBlur); setQuality(prefs.quality);
     setAutoScenes(prefs.autoScenes); setSpatialTypography(prefs.spatialTypography);
-    setEnabledScenes(prefs.enabledScenes); setEnabledKineticMotions(prefs.enabledKineticMotions);
+    setEnabledScenes(prefs.enabledScenes);
+    setAutoKineticMotion(prefs.autoKineticMotion ?? true);
+    setManualKineticMotion(prefs.manualKineticMotion || 'ship');
+    setEnabledKineticMotions(prefs.enabledKineticMotions);
+    setEnabledPlacements(prefs.enabledPlacements || [...ALL_PLACEMENT_MODES]);
+    setAutoFonts(prefs.autoFonts ?? true);
+    setManualFont(prefs.manualFont || 'impact');
+    setEnabledFonts(prefs.enabledFonts || [...ALL_FONT_PACKS]);
     setCameraShakeEnabled(prefs.cameraShakeEnabled); setCameraShakeSensitivity(prefs.cameraShakeSensitivity);
     setLyricMinFontSize(prefs.lyricMinFontSize); setLyricMaxFontSize(prefs.lyricMaxFontSize);
     setThemePalettes(prefs.themePalettes);
@@ -257,7 +292,9 @@ export default function App({ user = null }: { user?: User | null }) {
         sponsorBlockEnabled, lyricPlacementMode, lyricColorMode, lyricFillPaceMode, lyricDisplayMode },
       intensity, speed, sensitivity, spectrumGain: spectrumSensitivity, motionBlur, quality,
       autoScenes, spatialTypography, narrativeObjects: false, cameraMode: 'Front', enabledScenes,
-      enabledKineticMotions, enabledCameraViews: ['Front'], cameraShakeEnabled, cameraShakeSensitivity,
+      autoKineticMotion, manualKineticMotion, enabledKineticMotions, enabledPlacements,
+      autoFonts, manualFont, enabledFonts,
+      enabledCameraViews: ['Front'], cameraShakeEnabled, cameraShakeSensitivity,
       lyricMinFontSize, lyricMaxFontSize, themePalettes,
     };
     try { saveLocalPreferences(prefs, uid); }
@@ -272,7 +309,8 @@ export default function App({ user = null }: { user?: User | null }) {
     }, 600);
     return () => window.clearTimeout(timer);
   }, [intensity, speed, sensitivity, spectrumSensitivity, motionBlur, quality, autoScenes, spatialTypography,
-    enabledScenes, enabledKineticMotions, cameraShakeEnabled, cameraShakeSensitivity, lyricMinFontSize,
+    enabledScenes, autoKineticMotion, manualKineticMotion, enabledKineticMotions, enabledPlacements,
+    autoFonts, manualFont, enabledFonts, cameraShakeEnabled, cameraShakeSensitivity, lyricMinFontSize,
     lyricMaxFontSize, themePalettes, uid, cloudReady, preferredVideoType, scene, reducedMotion, youtubeBackgroundMode, videoOverlayOpacity,
     autoHideYoutubeLyrics, playerVolume, sponsorBlockEnabled, lyricPlacementMode, lyricColorMode, lyricFillPaceMode, lyricDisplayMode]);
 
@@ -452,6 +490,33 @@ export default function App({ user = null }: { user?: User | null }) {
     });
   };
 
+  const togglePlacementEnabled = (pm: Exclude<LyricPlacementMode, 'auto'>) => {
+    setEnabledPlacements(prev => {
+      if (prev.includes(pm)) {
+        if (prev.length <= 1) return prev;
+        return prev.filter(item => item !== pm);
+      }
+      return [...prev, pm];
+    });
+  };
+
+  const toggleFontEnabled = (font: FontPack) => {
+    setEnabledFonts(prev => {
+      if (prev.includes(font)) {
+        if (prev.length <= 1) return prev;
+        return prev.filter(item => item !== font);
+      }
+      return [...prev, font];
+    });
+  };
+
+  const effectiveKineticMotions: readonly LyricMotion[] = autoKineticMotion
+    ? enabledKineticMotions
+    : [manualKineticMotion];
+  const effectiveFonts: readonly FontPack[] = autoFonts
+    ? enabledFonts
+    : [manualFont];
+
   const enabledChoices = choices.filter(c => enabledScenes.includes(c.id));
   const stepperPool = enabledChoices.length > 0 ? enabledChoices : choices;
   const activeTemplate = byId[scene] || choices[0];
@@ -463,15 +528,22 @@ export default function App({ user = null }: { user?: User | null }) {
     return style.family === verseFamilyFilter;
   });
 
-  const customLyricAccentHex =
-    lyricColorMode !== 'auto' ? LYRIC_COLOR_MAP[lyricColorMode].main : undefined;
+  const isAdPlaying = Boolean(
+    (sourceMode === 'external' && (externalMedia?.isAd || isAdvertisementTrack(externalMedia))) ||
+      isAdvertisementTrack(localTrack)
+  );
 
-  const activeYoutubeVideoId = (hasSeparateAudioStream ? videoFix.correction?.youtubeVideoId || songMapping.video?.youtubeVideoId : null) || extractYouTubeVideoId(localTrack);
+  const activeYoutubeVideoId = isAdPlaying
+    ? null
+    : (hasSeparateAudioStream ? videoFix.correction?.youtubeVideoId || songMapping.video?.youtubeVideoId : null) ||
+      extractYouTubeVideoId(localTrack);
 
   // Automatically find the highest-viewed matching YouTube video when JioSaavn or External Player is the source
   useEffect(() => {
     if (
       !localTrack ||
+      isAdPlaying ||
+      isAdvertisementTrack(localTrack) ||
       !hasSeparateAudioStream ||
       (localTrack.provider !== 'jiosaavn' && localTrack.provider !== 'external')
     ) {
@@ -497,6 +569,8 @@ export default function App({ user = null }: { user?: User | null }) {
     localTrack?.artist,
     localTrack?.duration,
     localTrack?.provider,
+    localTrack?.isAd,
+    isAdPlaying,
     hasSeparateAudioStream,
     preferredVideoType,
   ]);
@@ -511,12 +585,17 @@ export default function App({ user = null }: { user?: User | null }) {
       setNotificationAccessGranted(granted);
       setExternalMedia(media);
       if (media && media.title) {
+        const adDetected = Boolean(media.isAd || isAdvertisementTrack(media));
         setLocalLoaded(true);
         setHasSeparateAudioStream(true);
         setLocalPlaying(Boolean(media.playing));
         if (typeof media.position === 'number' && Number.isFinite(media.position)) {
           setLocalTime(media.position);
           setVirtualMediaTime(media.position);
+        }
+        if (adDetected) {
+          setAutoYoutubeVideoId(null);
+          setIncoming(null);
         }
         setLocalTrack(prev => {
           const nextTitle = media.title.trim();
@@ -532,10 +611,11 @@ export default function App({ user = null }: { user?: User | null }) {
             prev.provider === 'external' &&
             prev.title === nextTitle &&
             prev.artist === nextArtist &&
-            prev.album === nextAlbum
+            prev.album === nextAlbum &&
+            Boolean(prev.isAd) === adDetected
           ) {
             if (nextDur && prev.duration !== nextDur) {
-              return { ...prev, duration: nextDur, audioSource: nextAudioSource };
+              return { ...prev, duration: nextDur, audioSource: nextAudioSource, isAd: adDetected };
             }
             return prev;
           }
@@ -553,6 +633,7 @@ export default function App({ user = null }: { user?: User | null }) {
             provider: 'external',
             audioSource: nextAudioSource,
             confidence: 1,
+            isAd: adDetected,
           };
         });
       }
@@ -600,14 +681,119 @@ export default function App({ user = null }: { user?: User | null }) {
     return () => window.clearInterval(id);
   }, [sourceMode, localPlaying, localTrack?.duration]);
 
-  const stageYoutubeVideoId =
-    activeYoutubeVideoId ||
-    (hasSeparateAudioStream &&
-    (localTrack?.provider === 'jiosaavn' || localTrack?.provider === 'external')
-      ? autoYoutubeVideoId
-      : null);
+  const stageYoutubeVideoId = isAdPlaying
+    ? null
+    : activeYoutubeVideoId ||
+      (hasSeparateAudioStream &&
+      (localTrack?.provider === 'jiosaavn' || localTrack?.provider === 'external')
+        ? autoYoutubeVideoId
+        : null);
 
-  const videoDelaySeconds = hasSeparateAudioStream ? videoFix.correction?.videoDelaySeconds ?? songMapping.video?.delaySeconds ?? 0 : 0;
+  const effectiveYoutubeBackgroundMode: YouTubeBackgroundMode = isAdPlaying
+    ? 'theme'
+    : youtubeBackgroundMode;
+
+  const isYtVideoBackgroundActive = Boolean(
+    stageYoutubeVideoId && effectiveYoutubeBackgroundMode === 'video'
+  );
+
+  // Extract per-song Album Art colour palette so YouTube video backgrounds (and 'album' colour mode)
+  // adapt vibrantly to each song instead of staying the same colour
+  useEffect(() => {
+    const songSeed = `${localTrack?.title || ''}|${localTrack?.artist || ''}|${stageYoutubeVideoId || ''}`;
+    const artworkUrl =
+      localTrack?.artwork ||
+      (stageYoutubeVideoId ? `https://i.ytimg.com/vi/${stageYoutubeVideoId}/hqdefault.jpg` : undefined);
+    setAlbumArtPalette(getDeterministicSongPalette(songSeed));
+    let cancelled = false;
+    void extractAlbumArtPalette(artworkUrl, songSeed).then(pal => {
+      if (!cancelled) setAlbumArtPalette(pal);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [localTrack?.title, localTrack?.artist, localTrack?.artwork, stageYoutubeVideoId]);
+
+  const useAlbumArtColors = Boolean(
+    albumArtPalette &&
+      (lyricColorMode === 'album' || (lyricColorMode === 'auto' && isYtVideoBackgroundActive))
+  );
+  const customLyricAccentHex = useAlbumArtColors
+    ? albumArtPalette?.sungColor
+    : lyricColorMode !== 'auto'
+      ? LYRIC_COLOR_MAP[lyricColorMode].main
+      : undefined;
+  const customLyricBaseHex = useAlbumArtColors ? albumArtPalette?.baseColor : undefined;
+
+  // Automatic Background YouTube Video Sync for JioSaavn & External Player:
+  // 1. Download creator-uploaded (non-auto-generated) subtitles for stageYoutubeVideoId in background
+  //    AND fetch SponsorBlock leading non-music segments.
+  useEffect(() => {
+    if (!hasSeparateAudioStream || !stageYoutubeVideoId || isAdPlaying) {
+      setBgVideoSubtitles([]);
+      setBgVideoSponsorOffsetSec(0);
+      setAutoVideoDelaySeconds(0);
+      setAutoVideoSyncStatus('');
+      return;
+    }
+    const controller = new AbortController();
+    void Promise.all([
+      fetchYouTubeSubtitlesForTrack(stageYoutubeVideoId, controller.signal).catch(() => null),
+      fetchSponsorBlockSegments(stageYoutubeVideoId, controller.signal).catch(() => []),
+    ]).then(([subRes, sbSegments]) => {
+      if (controller.signal.aborted) return;
+      setBgVideoSubtitles(subRes?.subtitleTracks || []);
+      setBgVideoSponsorOffsetSec(computeLeadingNonMusicOffset(Array.isArray(sbSegments) ? sbSegments : []));
+    });
+    return () => controller.abort();
+  }, [hasSeparateAudioStream, stageYoutubeVideoId, isAdPlaying]);
+
+  // 2. Match song's lyrics timestamps with background video's creator subtitles (only when language matches);
+  //    otherwise cut leading non-music parts using SponsorBlock so video starts in sync with music!
+  useEffect(() => {
+    if (!hasSeparateAudioStream || !stageYoutubeVideoId || isAdPlaying) {
+      setAutoVideoDelaySeconds(0);
+      setAutoVideoSyncStatus('');
+      return;
+    }
+    if (incoming?.original && bgVideoSubtitles.length > 0) {
+      const subMatch = computeVideoDelayFromSubtitles(incoming.original, bgVideoSubtitles);
+      if (subMatch.matched) {
+        setAutoVideoDelaySeconds(subMatch.videoDelaySeconds);
+        setAutoVideoSyncStatus(
+          `Synced via creator YT subtitles (${subMatch.languageCode || 'same language'} · ${subMatch.anchorCount} anchors · ${subMatch.videoDelaySeconds > 0 ? '+' : ''}${subMatch.videoDelaySeconds}s)`
+        );
+        return;
+      }
+    }
+    if (bgVideoSponsorOffsetSec > 0.25) {
+      // Negative videoDelaySeconds jumps the video past the leading non-music intro at t=0
+      const cutDelay = -Number(bgVideoSponsorOffsetSec.toFixed(2));
+      setAutoVideoDelaySeconds(cutDelay);
+      setAutoVideoSyncStatus(
+        `Cut ${bgVideoSponsorOffsetSec.toFixed(1)}s leading non-music intro via SponsorBlock`
+      );
+    } else {
+      setAutoVideoDelaySeconds(0);
+      setAutoVideoSyncStatus('Direct start (0s offset · adjust manual video delay if needed)');
+    }
+  }, [
+    hasSeparateAudioStream,
+    stageYoutubeVideoId,
+    isAdPlaying,
+    incoming?.original,
+    bgVideoSubtitles,
+    bgVideoSponsorOffsetSec,
+  ]);
+
+  const hasManualVideoDelay =
+    videoFix.correction?.videoDelaySeconds !== undefined ||
+    songMapping.video?.delaySeconds !== undefined;
+  const videoDelaySeconds = hasSeparateAudioStream
+    ? videoFix.correction?.videoDelaySeconds ??
+      songMapping.video?.delaySeconds ??
+      autoVideoDelaySeconds
+    : 0;
   const isLyricVideoDetected = Boolean(
     stageYoutubeVideoId &&
       !videoFix.correction &&
@@ -615,15 +801,17 @@ export default function App({ user = null }: { user?: User | null }) {
         (hasSeparateAudioStream && !activeYoutubeVideoId && preferredVideoType === 'lyrics'))
   );
   const hideStageLyricsForVideo = Boolean(
-    stageYoutubeVideoId &&
-      youtubeBackgroundMode === 'video' &&
-      autoHideYoutubeLyrics &&
-      isLyricVideoDetected
+    isAdPlaying ||
+      (stageYoutubeVideoId &&
+        effectiveYoutubeBackgroundMode === 'video' &&
+        autoHideYoutubeLyrics &&
+        isLyricVideoDetected)
   );
   const showStageVideoController = Boolean(
-    stageYoutubeVideoId ||
-      (hasSeparateAudioStream &&
-        (localTrack?.provider === 'jiosaavn' || localTrack?.provider === 'external'))
+    !isAdPlaying &&
+      (stageYoutubeVideoId ||
+        (hasSeparateAudioStream &&
+          (localTrack?.provider === 'jiosaavn' || localTrack?.provider === 'external')))
   );
 
   useEffect(() => {
@@ -635,8 +823,10 @@ export default function App({ user = null }: { user?: User | null }) {
     songMapping.savePart('lyrics', { sourceFile, selection, delaySeconds: lyricDelay });
   }, [recordingKey, lyricsKey, activeLyrics.name, activeLyrics.url, effectiveLyricsEngine, effectiveSubtitleTrackId, lyricDelay]);
   useEffect(() => {
-    if (localTrack && activeYoutubeVideoId) songMapping.savePart('video', { youtubeVideoId: activeYoutubeVideoId, delaySeconds: videoDelaySeconds });
-  }, [recordingKey, activeYoutubeVideoId, videoDelaySeconds]);
+    if (localTrack && activeYoutubeVideoId && hasManualVideoDelay) {
+      songMapping.savePart('video', { youtubeVideoId: activeYoutubeVideoId, delaySeconds: videoDelaySeconds });
+    }
+  }, [recordingKey, activeYoutubeVideoId, hasManualVideoDelay, videoDelaySeconds]);
   const activeBassThresholdPct = Math.round(computeBassThreshold(cameraShakeSensitivity) * 100);
 
   return (
@@ -664,6 +854,7 @@ export default function App({ user = null }: { user?: User | null }) {
           <small>Lyrics: {incoming?.source || 'LyricFlow Engine (YT Subtitles + Apple Word-Sync)'}</small>
         </div>
         <div className="header-right">
+          <YouTubeAccountControl compact />
           <AccountControls user={user} syncStatus={syncStatus} onImportGuest={() => {
             try {
               remotePreferences.current = '';
@@ -701,12 +892,15 @@ export default function App({ user = null }: { user?: User | null }) {
           spatialTypography={spatialTypography}
           motionBlur={motionBlur}
           enabledScenes={enabledScenes}
-          enabledKineticMotions={enabledKineticMotions}
+          enabledKineticMotions={effectiveKineticMotions}
+          enabledPlacements={enabledPlacements}
+          enabledFonts={effectiveFonts}
           enabledCameraViews={['Front']}
           cameraShakeEnabled={cameraShakeEnabled}
           cameraShakeSensitivity={cameraShakeSensitivity}
           themePalettes={themePalettes}
           customLyricAccentColor={customLyricAccentHex}
+          customLyricBaseColor={customLyricBaseHex}
           lyricFillPaceMode={lyricFillPaceMode}
           lyricMinFontSize={lyricMinFontSize}
           lyricMaxFontSize={lyricMaxFontSize}
@@ -715,7 +909,7 @@ export default function App({ user = null }: { user?: User | null }) {
           audioPaused={Boolean(localLoaded && !localPlaying)}
           youtubeVideoId={stageYoutubeVideoId}
           videoDelaySeconds={videoDelaySeconds}
-          youtubeBackgroundMode={youtubeBackgroundMode}
+          youtubeBackgroundMode={effectiveYoutubeBackgroundMode}
           hideStageLyrics={hideStageLyricsForVideo}
           playbackTime={localTime}
           hasSeparateAudioStream={hasSeparateAudioStream}
@@ -1508,7 +1702,7 @@ export default function App({ user = null }: { user?: User | null }) {
                   ? stageYoutubeVideoId
                     ? hideStageLyricsForVideo
                       ? 'Playing YouTube video background (Built-in themes unloaded) · Lyric Video detected — stage lyrics auto-hidden'
-                      : `Playing YouTube video background (Most Views · ${preferredVideoType === 'music' ? 'Music Video' : 'Lyrical Video'}) · ${Math.round(videoOverlayOpacity * 100)}% Black Overlay`
+                      : `Playing YouTube video background (Most Views · ${preferredVideoType === 'music' ? 'Music Video' : 'Lyrical Video'}) · ${Math.round(videoOverlayOpacity * 100)}% Black Overlay${hasSeparateAudioStream && autoVideoSyncStatus ? ` · ${autoVideoSyncStatus}` : ''}`
                     : 'Finding highest-viewed YouTube background video for this track…'
                   : 'Built-in VoxelWall themes loaded as background with VoxelVerse lyrics engine'}
               </small>
@@ -1687,7 +1881,15 @@ export default function App({ user = null }: { user?: User | null }) {
       />
 
       {/* 5. MULTI-ENGINE LYRICS RESOLVER (LYRICFLOW HYBRID / APPLE / LRC / YOUTUBE SUBTITLES) & CUSTOM EDIT */}
-      {localTrack && hasSeparateAudioStream && (
+      {isAdPlaying && (
+        <section className="local-player" role="status" aria-label="Advertisement active">
+          <strong>Advertisement playing · Built-in Themes active</strong>
+          <p>
+            Lyrics and YouTube background video searches are paused while an advertisement is playing in your external player.
+          </p>
+        </section>
+      )}
+      {localTrack && hasSeparateAudioStream && !isAdPlaying && (
         <YouTubeBackgroundPicker
           key={'video-picker-' + recordingKey}
           track={localTrack}
@@ -1710,7 +1912,7 @@ export default function App({ user = null }: { user?: User | null }) {
       {songMapping.error && <p role="status">{songMapping.error}</p>}
       {privateLyrics.error && <p role="status">{privateLyrics.error}</p>}
       <TrackFinder
-        key={'finder-' + (lyricsFix.context?.recordingKey || 'no-track')}
+        key={'finder-' + fileEpoch}
         track={localTrack}
         preferredSelection={lyricsFix.correction?.selection || songMapping.lyrics?.selection || null}
         preferredSourceFile={lyricsFix.source === 'personal' ? null : songMapping.lyrics?.sourceFile || null}
@@ -1750,6 +1952,8 @@ export default function App({ user = null }: { user?: User | null }) {
         themePalettes={themePalettes}
         lyricColorMode={lyricColorMode}
         onLyricColorModeChange={setLyricColorMode}
+        albumArtPalette={albumArtPalette}
+        isVideoBackground={isYtVideoBackgroundActive}
         lyricFillPaceMode={lyricFillPaceMode}
         onLyricFillPaceModeChange={setLyricFillPaceMode}
         displayMode={lyricDisplayMode}
@@ -1761,7 +1965,7 @@ export default function App({ user = null }: { user?: User | null }) {
         bpm={audioReadout.bpm}
       />
 
-      {/* 6. VOXELVERSE LYRIC STYLES, SPATIAL PLACEMENTS & VOXELWALL BACKGROUND CUSTOMIZER */}
+      {/* 6. VOXELVERSE LYRIC STYLES, SPATIAL PLACEMENTS, FONTS & VOXELWALL BACKGROUND CUSTOMIZER */}
       <section className="control-panel" aria-label="VoxelWall themes and VoxelVerse lyric animation toggles">
         <div className="control-heading">
           <div className="heading-left">
@@ -1769,60 +1973,37 @@ export default function App({ user = null }: { user?: User | null }) {
               <Sparkles size={16} />
             </span>
             <div>
-              <b>VOXELVERSE LYRIC ANIMATION STYLES &amp; STAGE PLACEMENTS ({enabledKineticMotions.length}/{VOXELVERSE_STYLES.length} ACTIVE)</b>
+              <b>
+                VOXELVERSE LYRIC ANIMATION STYLES (
+                {autoKineticMotion
+                  ? `AUTO · ${enabledKineticMotions.length}/${VOXELVERSE_STYLES.length} ENABLED`
+                  : `SINGLE · ${manualKineticMotion.toUpperCase()}`}
+                )
+              </b>
               <small>
-                19 VoxelVerse lyric styles + 9 dynamic stage placements (Left, Right, Bottom-Right, Alternating Left↔Right, Diagonal &amp; Center)
+                Click any card to preview that single animation style, or toggle ON/OFF to include multiple styles in Auto rotation
               </small>
             </div>
           </div>
-          <div className="toggle-batch-actions">
+          <div className="toggle-batch-actions" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <label className="auto-scenes" style={{ margin: 0 }}>
+              <input
+                type="checkbox"
+                checked={autoKineticMotion}
+                onChange={e => setAutoKineticMotion(e.target.checked)}
+              />{' '}
+              Auto-rotate enabled styles ({enabledKineticMotions.length})
+            </label>
             <button
               type="button"
               className="upload-button"
-              onClick={() => setEnabledKineticMotions([...ALL_KINETIC_MOTIONS])}
+              onClick={() => {
+                setEnabledKineticMotions([...ALL_KINETIC_MOTIONS]);
+                setAutoKineticMotion(true);
+              }}
             >
               Enable All 19 Styles
             </button>
-          </div>
-        </div>
-
-        {/* Spatial Stage Placement & Line Entry Motion Selector */}
-        <div
-          style={{
-            marginBottom: 14,
-            padding: '10px 14px',
-            borderRadius: 10,
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid rgba(255,255,255,0.08)',
-          }}
-        >
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', color: '#94a3b8', marginBottom: 8 }}>
-            LYRIC STAGE PLACEMENT &amp; DIRECTIONAL LINE ENTRY (LEFT / RIGHT / BOTTOM-RIGHT / ALTERNATING):
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {LYRIC_PLACEMENT_MODES.map(pm => {
-              const activePm = lyricPlacementMode === pm.id;
-              return (
-                <button
-                  key={pm.id}
-                  type="button"
-                  onClick={() => setLyricPlacementMode(pm.id)}
-                  title={pm.detail}
-                  style={{
-                    padding: '6px 11px',
-                    borderRadius: 7,
-                    fontSize: 12,
-                    fontWeight: activePm ? 700 : 500,
-                    border: activePm ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.12)',
-                    background: activePm ? 'rgba(56,189,248,0.18)' : 'rgba(255,255,255,0.03)',
-                    color: activePm ? '#e0f2fe' : '#cbd5e1',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {pm.label}
-                </button>
-              );
-            })}
           </div>
         </div>
 
@@ -1856,20 +2037,40 @@ export default function App({ user = null }: { user?: User | null }) {
         <div className="kinetic-motion-grid">
           {filteredVerseStyles.map(style => {
             const isEnabled = enabledKineticMotions.includes(style.id);
+            const isSelectedSingle = !autoKineticMotion && manualKineticMotion === style.id;
             return (
               <div
                 key={style.id}
-                className={'kinetic-motion-card ' + (isEnabled ? 'enabled' : 'disabled')}
+                className={
+                  'kinetic-motion-card ' +
+                  (isEnabled ? 'enabled ' : 'disabled ') +
+                  (isSelectedSingle ? 'selected' : '')
+                }
+                style={{
+                  cursor: 'pointer',
+                  outline: isSelectedSingle ? '2px solid #38bdf8' : undefined,
+                  background: isSelectedSingle ? 'rgba(56,189,248,0.14)' : undefined,
+                }}
+                onClick={() => {
+                  setManualKineticMotion(style.id);
+                  setAutoKineticMotion(false);
+                }}
               >
                 <div className="kinetic-motion-top">
-                  <strong>{style.name.toUpperCase()}</strong>
+                  <strong>
+                    {style.name.toUpperCase()}
+                    {isSelectedSingle ? ' · ACTIVE' : ''}
+                  </strong>
                   <button
                     type="button"
                     role="switch"
                     aria-checked={isEnabled}
                     aria-label={`Toggle ${style.name} VoxelVerse lyric animation`}
                     className={'theme-toggle-pill ' + (isEnabled ? 'on' : 'off')}
-                    onClick={() => toggleKineticMotionEnabled(style.id)}
+                    onClick={e => {
+                      e.stopPropagation();
+                      toggleKineticMotionEnabled(style.id);
+                    }}
                   >
                     {isEnabled ? (
                       <>
@@ -1884,6 +2085,208 @@ export default function App({ user = null }: { user?: User | null }) {
               </div>
             );
           })}
+        </div>
+
+        {/* Spatial Stage Placement Selector (Single View + Multi-Select Auto) */}
+        <div
+          style={{
+            marginTop: 18,
+            marginBottom: 14,
+            padding: '12px 14px',
+            borderRadius: 10,
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid rgba(255,255,255,0.08)',
+          }}
+        >
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', color: '#f8fafc' }}>
+                LYRIC STAGE PLACEMENT (
+                {lyricPlacementMode === 'auto'
+                  ? `AUTO · ${enabledPlacements.length}/${ALL_PLACEMENT_MODES.length} ENABLED`
+                  : `SINGLE · ${lyricPlacementMode.toUpperCase()}`}
+                )
+              </div>
+              <small style={{ fontSize: 11, color: '#94a3b8' }}>
+                Click any placement card to view that single placement, or toggle ON/OFF to include multiple placements in Auto rotation
+              </small>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={lyricPlacementMode === 'auto'}
+                  onChange={e =>
+                    setLyricPlacementMode(
+                      e.target.checked ? 'auto' : enabledPlacements[0] || 'center'
+                    )
+                  }
+                />
+                Auto-rotate enabled placements ({enabledPlacements.length})
+              </label>
+              <button
+                type="button"
+                className="upload-button"
+                onClick={() => {
+                  setEnabledPlacements([...ALL_PLACEMENT_MODES]);
+                  setLyricPlacementMode('auto');
+                }}
+              >
+                Enable All Placements
+              </button>
+            </div>
+          </div>
+
+          <div className="kinetic-motion-grid">
+            {LYRIC_PLACEMENT_MODES.filter(pm => pm.id !== 'auto').map(pm => {
+              const pid = pm.id as Exclude<LyricPlacementMode, 'auto'>;
+              const isEnabled = enabledPlacements.includes(pid);
+              const isSelectedSingle = lyricPlacementMode === pid;
+              return (
+                <div
+                  key={pm.id}
+                  className={
+                    'kinetic-motion-card ' +
+                    (isEnabled ? 'enabled ' : 'disabled ') +
+                    (isSelectedSingle ? 'selected' : '')
+                  }
+                  style={{
+                    cursor: 'pointer',
+                    outline: isSelectedSingle ? '2px solid #38bdf8' : undefined,
+                    background: isSelectedSingle ? 'rgba(56,189,248,0.14)' : undefined,
+                  }}
+                  onClick={() => setLyricPlacementMode(pid)}
+                >
+                  <div className="kinetic-motion-top">
+                    <strong>
+                      {pm.label}
+                      {isSelectedSingle ? ' · ACTIVE' : ''}
+                    </strong>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isEnabled}
+                      aria-label={`Toggle ${pm.label} placement`}
+                      className={'theme-toggle-pill ' + (isEnabled ? 'on' : 'off')}
+                      onClick={e => {
+                        e.stopPropagation();
+                        togglePlacementEnabled(pid);
+                      }}
+                    >
+                      {isEnabled ? (
+                        <>
+                          <Check size={12} /> ON
+                        </>
+                      ) : (
+                        'OFF'
+                      )}
+                    </button>
+                  </div>
+                  <small>{pm.detail}</small>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Lyric Fonts Selector (Single View + Multi-Select Auto) */}
+        <div
+          style={{
+            marginTop: 14,
+            marginBottom: 14,
+            padding: '12px 14px',
+            borderRadius: 10,
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid rgba(255,255,255,0.08)',
+          }}
+        >
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', color: '#f8fafc' }}>
+                LYRIC TYPOGRAPHY FONTS (
+                {autoFonts
+                  ? `AUTO · ${enabledFonts.length}/${FONT_SHOWCASE.length} ENABLED`
+                  : `SINGLE · ${manualFont.toUpperCase()} (${fontLabel(manualFont)})`}
+                )
+              </div>
+              <small style={{ fontSize: 11, color: '#94a3b8' }}>
+                Click any font card to preview that single font, or toggle ON/OFF to include multiple fonts in Auto rotation
+              </small>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={autoFonts}
+                  onChange={e => setAutoFonts(e.target.checked)}
+                />
+                Auto-rotate enabled fonts ({enabledFonts.length})
+              </label>
+              <button
+                type="button"
+                className="upload-button"
+                onClick={() => {
+                  setEnabledFonts([...ALL_FONT_PACKS]);
+                  setAutoFonts(true);
+                }}
+              >
+                Enable All {FONT_SHOWCASE.length} Fonts
+              </button>
+            </div>
+          </div>
+
+          <div className="kinetic-motion-grid">
+            {FONT_SHOWCASE.map(fontId => {
+              const isEnabled = enabledFonts.includes(fontId);
+              const isSelectedSingle = !autoFonts && manualFont === fontId;
+              return (
+                <div
+                  key={fontId}
+                  className={
+                    'kinetic-motion-card ' +
+                    (isEnabled ? 'enabled ' : 'disabled ') +
+                    (isSelectedSingle ? 'selected' : '')
+                  }
+                  style={{
+                    cursor: 'pointer',
+                    outline: isSelectedSingle ? '2px solid #38bdf8' : undefined,
+                    background: isSelectedSingle ? 'rgba(56,189,248,0.14)' : undefined,
+                  }}
+                  onClick={() => {
+                    setManualFont(fontId);
+                    setAutoFonts(false);
+                  }}
+                >
+                  <div className="kinetic-motion-top">
+                    <strong style={{ fontFamily: fontLabel(fontId) }}>
+                      {fontId.toUpperCase()}
+                      {isSelectedSingle ? ' · ACTIVE' : ''}
+                    </strong>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isEnabled}
+                      aria-label={`Toggle ${fontId} font`}
+                      className={'theme-toggle-pill ' + (isEnabled ? 'on' : 'off')}
+                      onClick={e => {
+                        e.stopPropagation();
+                        toggleFontEnabled(fontId);
+                      }}
+                    >
+                      {isEnabled ? (
+                        <>
+                          <Check size={12} /> ON
+                        </>
+                      ) : (
+                        'OFF'
+                      )}
+                    </button>
+                  </div>
+                  <small style={{ fontFamily: fontLabel(fontId) }}>{fontLabel(fontId)}</small>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         <div className="control-heading" style={{ marginTop: 28 }}>

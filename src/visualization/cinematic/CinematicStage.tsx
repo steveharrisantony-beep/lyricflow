@@ -5,13 +5,15 @@ import {drawSceneTransition,transitionProgress,sceneEntryPose} from './transitio
 import {drawKineticLyrics,lyricWordHit,type LyricMotion,type LyricFillPaceMode,type LyricPlacementMode} from './kineticTypography';
 import {MusicCameraRig,makeLyricProjection} from './cameraRig';
 import {getSpectrumSensitivity} from '../../audio/audioSignal';
-import {useEffect,useRef} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {getLyricState,getLyricTimelineSnapshot} from '../../lyrics/lyricTimeline';
 import {getInputSource,getLocalMediaTime,readLocalAudio} from '../../audio/audioSignal';
-import {AUDIO_ONLY_SCENES,buildCinematicSchedule,byId,resolveThemePalette,sceneAt,type DirectedScene,type SceneId} from './catalog';
+import {AUDIO_ONLY_SCENES,buildCinematicSchedule,byId,resolveThemePalette,sceneAt,type DirectedScene,type FontPack,type SceneId} from './catalog';
 import {NO_AUDIO,type Pulse} from './paint';
 import {drawInstrumentalMark} from './typography';
 import {GraphicCompositions,type GraphicSystem} from './procedural/GraphicCompositions';
+import {useYouTubeAuth} from '../../music/youtubeAuth';
+import {useYouTubeAdBlocker,recordSkippedYouTubeAd,recordRemovedAntiAdblockPopup} from '../../music/youtubeAdBlocker';
 
 export type Quality='High'|'Balanced'|'Performance';
 export const CAMERA_VIEWS=['Front'] as const;
@@ -25,11 +27,14 @@ export interface CinematicProps{
  spatialTypography:boolean;narrativeObjects?:boolean;motionBlur:number;
  enabledScenes?:readonly SceneId[];
  enabledKineticMotions?:readonly LyricMotion[];
+ enabledPlacements?:readonly Exclude<LyricPlacementMode,'auto'>[];
+ enabledFonts?:readonly FontPack[];
  enabledCameraViews?:readonly CameraView[];
  cameraShakeEnabled?:boolean;
  cameraShakeSensitivity?:number;
  themePalettes?:Record<string,string>;
  customLyricAccentColor?:string;
+ customLyricBaseColor?:string;
  lyricFillPaceMode?:LyricFillPaceMode;
  lyricMinFontSize?:number;
  lyricMaxFontSize?:number;
@@ -339,8 +344,11 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      project,
      animated:config.spatialTypography,
      enabledMotions:config.enabledKineticMotions,
+     enabledPlacements:config.enabledPlacements,
+     enabledFonts:config.enabledFonts,
      paletteId:activePaletteId,
      customAccentColor:config.customLyricAccentColor,
+     customBaseColor:config.customLyricBaseColor,
      bpm:measured?.bpm||0,
      fillPaceMode:config.lyricFillPaceMode,
      minFontSize:config.lyricMinFontSize,
@@ -365,8 +373,11 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
       project,
       animated:config.spatialTypography,
       enabledMotions:config.enabledKineticMotions,
+      enabledPlacements:config.enabledPlacements,
+      enabledFonts:config.enabledFonts,
       paletteId:activePaletteId,
       customAccentColor:config.customLyricAccentColor,
+      customBaseColor:config.customLyricBaseColor,
       bpm:measured?.bpm||0,
       fillPaceMode:config.lyricFillPaceMode,
       minFontSize:config.lyricMinFontSize,
@@ -442,18 +453,73 @@ export default function CinematicStage(props:CinematicProps){
  const videoWaitingRef=useRef(false);
  const ytReadyRef=useRef<boolean>(false);
  const ytEndedFiredRef=useRef<boolean>(false);
+ const loadedVideoIdRef=useRef<string|null>(null);
+ const inAdFastForwardRef=useRef(false);
+ const mainVideoDurationRef=useRef(0);
  const latestPropsRef=useRef(props);
  latestPropsRef.current=props;
+ const ytAuth=useYouTubeAuth();
+ const ytAdBlocker=useYouTubeAdBlocker();
+ const ytAdBlockerRef=useRef(ytAdBlocker);
+ ytAdBlockerRef.current=ytAdBlocker;
+ const [errorRetryNonce,setErrorRetryNonce]=useState(0);
  const {host,canvas,effects}=useCinematicRenderer(props,ytWrapRef);
 
  const ytId=props.youtubeVideoId||null;
+ const [mountedVideoId,setMountedVideoId]=useState<string|null>(ytId);
  const showYtBg=Boolean(ytId&&(props.youtubeBackgroundMode??'video')==='video');
  const blackOverlayOpacity=Math.max(0,Math.min(0.92,props.videoOverlayOpacity??0.45));
+
+ // Reuse the authenticated YouTube IFrame Player via loadVideoById when ready so playing multiple
+ // videos in a row never triggers YouTube's /embed/ cold-load bot limiter or loses autoplay permission.
+ useEffect(()=>{
+  if(!ytId){
+   loadedVideoIdRef.current=null;
+   setMountedVideoId(null);
+   return;
+  }
+  if(!mountedVideoId||!ytReadyRef.current||!ytIframeRef.current){
+   loadedVideoIdRef.current=ytId;
+   setMountedVideoId(ytId);
+   return;
+  }
+  if(loadedVideoIdRef.current!==ytId){
+   loadedVideoIdRef.current=ytId;
+   ytEndedFiredRef.current=false;
+   const target=videoSyncTarget(props.playbackTime??0,props.videoDelaySeconds,Boolean(props.hasSeparateAudioStream));
+   sendYouTubeCommand(ytIframeRef.current,'loadVideoById',[ytId,Math.max(0,target.time)]);
+   if(props.hasSeparateAudioStream){
+    sendYouTubeCommand(ytIframeRef.current,'mute');
+   }else{
+    sendYouTubeCommand(ytIframeRef.current,'unMute');
+    sendYouTubeCommand(ytIframeRef.current,'setVolume',[props.playerVolume??85]);
+   }
+   if(props.audioPaused||target.waiting){
+    sendYouTubeCommand(ytIframeRef.current,'pauseVideo');
+   }else{
+    sendYouTubeCommand(ytIframeRef.current,'playVideo');
+   }
+  }
+ },[ytId,mountedVideoId]);
+
+ // When user signs into YouTube account or clicks Reload Video, remount with current ytId
+ useEffect(()=>{
+  if(ytId){
+   ytReadyRef.current=false;
+   loadedVideoIdRef.current=ytId;
+   setMountedVideoId(ytId);
+  }
+ },[ytAuth.reloadNonce,ytAuth.useNoCookieDomain]);
 
  const syncYtPlayerState=()=>{
   const iframe=ytIframeRef.current;
   if(!iframe)return;
   const cur=latestPropsRef.current;
+  if(cur.youtubeVideoId&&loadedVideoIdRef.current&&loadedVideoIdRef.current!==cur.youtubeVideoId){
+   loadedVideoIdRef.current=cur.youtubeVideoId;
+   const startTarget=videoSyncTarget(cur.playbackTime??0,cur.videoDelaySeconds,Boolean(cur.hasSeparateAudioStream));
+   sendYouTubeCommand(iframe,'loadVideoById',[cur.youtubeVideoId,Math.max(0,startTarget.time)]);
+  }
   if(cur.hasSeparateAudioStream){
    sendYouTubeCommand(iframe,'mute');
   }else{
@@ -473,7 +539,7 @@ export default function CinematicStage(props:CinematicProps){
  useEffect(()=>{
   ytReadyRef.current=false;
   ytEndedFiredRef.current=false;
-  if(!ytId)return;
+  if(!mountedVideoId)return;
 
   const sendListening=()=>{
    const iframe=ytIframeRef.current;
@@ -485,6 +551,7 @@ export default function CinematicStage(props:CinematicProps){
     );
     sendYouTubeCommand(iframe,'addEventListener',['onReady']);
     sendYouTubeCommand(iframe,'addEventListener',['onStateChange']);
+    sendYouTubeCommand(iframe,'addEventListener',['onError']);
    }catch{
     // Ignore before iframe ready
    }
@@ -505,6 +572,18 @@ export default function CinematicStage(props:CinematicProps){
     ytReadyRef.current=true;
     if(pollId)window.clearInterval(pollId);
     syncYtPlayerState();
+   }else if(evt==='onError'){
+    if(ytAdBlockerRef.current.enabled&&ytAdBlockerRef.current.removeAdblockThingEnabled){
+     recordRemovedAntiAdblockPopup();
+    }
+    // If loadVideoById hit a transient error, remount iframe once with the current video ID
+    const curVid=latestPropsRef.current.youtubeVideoId;
+    if(curVid&&mountedVideoId!==curVid){
+     ytReadyRef.current=false;
+     loadedVideoIdRef.current=curVid;
+     setMountedVideoId(curVid);
+     setErrorRetryNonce(n=>n+1);
+    }
    }else if(evt==='onStateChange'&&typeof data.info==='number'){
     if(data.info===0&&!ytEndedFiredRef.current){
      ytEndedFiredRef.current=true;
@@ -521,6 +600,31 @@ export default function CinematicStage(props:CinematicProps){
     }
     const ct=typeof info.currentTime==='number'&&Number.isFinite(info.currentTime)?info.currentTime:undefined;
     const dur=typeof info.duration==='number'&&Number.isFinite(info.duration)&&info.duration>0?info.duration:undefined;
+    if(dur&&dur>45){
+     mainVideoDurationRef.current=dur;
+    }
+    const videoData=info.videoData&&typeof info.videoData==='object'?(info.videoData as Record<string,unknown>):undefined;
+    const playingVidId=typeof videoData?.video_id==='string'?videoData.video_id:'';
+    const targetVidId=latestPropsRef.current.youtubeVideoId||'';
+    const isInterruptingAd=
+     info.adState===1||
+     info.isAdPlaying===true||
+     Boolean(playingVidId&&targetVidId&&playingVidId!==targetVidId)||
+     Boolean(ytAdBlockerRef.current.skipEmbeddedAdsEnabled&&dur&&dur>=5&&dur<=32&&mainVideoDurationRef.current>45);
+    if(isInterruptingAd&&ytAdBlockerRef.current.enabled&&ytAdBlockerRef.current.removeAdblockThingEnabled&&ytIframeRef.current){
+     sendYouTubeCommand(ytIframeRef.current,'mute');
+     sendYouTubeCommand(ytIframeRef.current,'setPlaybackRate',[16]);
+     if(dur&&dur>0)sendYouTubeCommand(ytIframeRef.current,'seekTo',[dur,true]);
+     if(!inAdFastForwardRef.current){
+      inAdFastForwardRef.current=true;
+      recordSkippedYouTubeAd();
+     }
+     return;
+    }else if(inAdFastForwardRef.current&&ytIframeRef.current){
+     inAdFastForwardRef.current=false;
+     sendYouTubeCommand(ytIframeRef.current,'setPlaybackRate',[1]);
+     syncYtPlayerState();
+    }
     if(ct!==undefined){
      lastSyncTimeRef.current=ct;
      if(!latestPropsRef.current.hasSeparateAudioStream)latestPropsRef.current.onYoutubeTimeUpdate?.(ct,dur);
@@ -555,7 +659,7 @@ export default function CinematicStage(props:CinematicProps){
    window.removeEventListener('message',onMessage);
    if(pollId)window.clearInterval(pollId);
   };
- },[ytId]);
+ },[mountedVideoId,ytAuth.reloadNonce,errorRetryNonce]);
 
  // Video timing is independent of the audio clock and lyric timing.
  useEffect(()=>{
@@ -586,12 +690,15 @@ export default function CinematicStage(props:CinematicProps){
  const originParam=typeof window!=='undefined'&&window.location?.origin
   ?`&origin=${encodeURIComponent(window.location.origin)}&widget_referrer=${encodeURIComponent(window.location.origin)}`
   :'';
- const embedSrc=ytId
-  ?`https://www.youtube.com/embed/${encodeURIComponent(ytId)}?autoplay=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&enablejsapi=1${props.hasSeparateAudioStream?'&mute=1':''}${originParam}`
+ const embedHost=ytAuth.useNoCookieDomain?'https://www.youtube-nocookie.com':'https://www.youtube.com';
+ const activeEmbedVid=mountedVideoId||ytId;
+ const controlsParam=ytAuth.interactivePlayer?'1':'0';
+ const embedSrc=activeEmbedVid
+  ?`${embedHost}/embed/${encodeURIComponent(activeEmbedVid)}?autoplay=1&controls=${controlsParam}&disablekb=${ytAuth.interactivePlayer?'0':'1'}&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&enablejsapi=1${props.hasSeparateAudioStream?'&mute=1':''}${originParam}`
   :'';
 
  return <div className="cinematic-stack" ref={host}>
-  {ytId&&(
+  {activeEmbedVid&&(
    <div
     ref={ytWrapRef}
     className="youtube-stage-backdrop"
@@ -601,10 +708,10 @@ export default function CinematicStage(props:CinematicProps){
      width:'100%',
      height:'100%',
      overflow:'hidden',
-     zIndex:0,
+     zIndex:ytAuth.interactivePlayer?4:0,
      opacity:showYtBg?1:0,
      visibility:showYtBg?'visible':'hidden',
-     pointerEvents:'none',
+     pointerEvents:ytAuth.interactivePlayer?'auto':'none',
      transition:'opacity 240ms ease',
      background:'#04070f'
     }}
@@ -612,7 +719,7 @@ export default function CinematicStage(props:CinematicProps){
    >
     <iframe
      ref={ytIframeRef}
-     key={ytId}
+     key={`yt-${mountedVideoId||ytId}-${ytAuth.reloadNonce}-${ytAuth.useNoCookieDomain?'nc':'std'}-${errorRetryNonce}`}
      src={embedSrc}
      title="YouTube video background"
      referrerPolicy="strict-origin-when-cross-origin"
@@ -621,11 +728,11 @@ export default function CinematicStage(props:CinematicProps){
       position:'absolute',
       top:'50%',
       left:'50%',
-      width:'116%',
-      height:'116%',
+      width:ytAuth.interactivePlayer?'100%':'116%',
+      height:ytAuth.interactivePlayer?'100%':'116%',
       transform:'translate(-50%, -50%)',
       border:0,
-      pointerEvents:'none'
+      pointerEvents:ytAuth.interactivePlayer?'auto':'none'
      }}
      onLoad={()=>{
       try{
@@ -635,6 +742,7 @@ export default function CinematicStage(props:CinematicProps){
        );
        sendYouTubeCommand(ytIframeRef.current,'addEventListener',['onReady']);
        sendYouTubeCommand(ytIframeRef.current,'addEventListener',['onStateChange']);
+       sendYouTubeCommand(ytIframeRef.current,'addEventListener',['onError']);
       }catch{}
       syncYtPlayerState();
       window.setTimeout(syncYtPlayerState,250);

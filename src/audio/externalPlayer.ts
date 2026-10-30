@@ -17,9 +17,10 @@ export interface ExternalMediaState {
   packageName: string;
   appName: string;
   updatedAt: number;
+  isAd?: boolean;
 }
 
-interface ExternalMediaPluginInterface {
+export interface ExternalMediaPluginInterface {
   checkNotificationAccess(): Promise<{ granted: boolean }>;
   openNotificationSettings(): Promise<{ opened: boolean }>;
   getCurrentMedia(): Promise<{ granted: boolean; media: ExternalMediaState | null }>;
@@ -27,6 +28,9 @@ interface ExternalMediaPluginInterface {
   stopListening(): Promise<{ listening: boolean }>;
   startAudioCapture(options: { mode: ExternalAudioCaptureMode }): Promise<{ started: boolean; mode: ExternalAudioCaptureMode }>;
   stopAudioCapture(): Promise<{ stopped: boolean }>;
+  getYouTubeAuthStatus(): Promise<{ signedIn: boolean; cookie?: string }>;
+  openYouTubeSignIn(): Promise<{ signedIn: boolean; cookie?: string }>;
+  signOutYouTube(): Promise<{ signedIn: boolean }>;
   addListener(
     eventName: 'mediaChange',
     listenerFunc: (state: ExternalMediaState) => void
@@ -37,7 +41,7 @@ interface ExternalMediaPluginInterface {
   ): Promise<PluginListenerHandle>;
 }
 
-const ExternalMedia = registerPlugin<ExternalMediaPluginInterface>('ExternalMedia');
+export const ExternalMedia = registerPlugin<ExternalMediaPluginInterface>('ExternalMedia');
 
 let androidOverrideForTest: boolean | null = null;
 

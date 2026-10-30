@@ -8,8 +8,9 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache,
   doc, onSnapshot, setDoc, serverTimestamp, connectFirestoreEmulator, type Firestore,
 } from 'firebase/firestore';
-import { TEMPLATES, type SceneId } from '../visualization/cinematic/catalog';
-import { LYRIC_MOTIONS, type LyricMotion } from '../visualization/cinematic/kineticTypography';
+import { TEMPLATES, type FontPack, type SceneId } from '../visualization/cinematic/catalog';
+import { FONT_SHOWCASE } from '../visualization/cinematic/fonts';
+import { ALL_PLACEMENT_MODES, LYRIC_MOTIONS, type LyricMotion, type LyricPlacementMode } from '../visualization/cinematic/kineticTypography';
 import { CAMERA_VIEWS, type Quality, type CameraMode, type CameraView } from '../visualization/cinematic/CinematicStage';
 import { readDevice, writeDevice, scopedKey } from './deviceStore';
 
@@ -70,7 +71,7 @@ export interface DisplayPreferences {
   scene: SceneId; reducedMotion: boolean; youtubeBackgroundMode: 'video' | 'theme';
   videoOverlayOpacity: number; autoHideYoutubeLyrics: boolean; playerVolume: number; sponsorBlockEnabled: boolean;
   lyricPlacementMode: 'auto' | 'alternating' | 'left' | 'right' | 'bottom-right' | 'bottom-left' | 'top-left' | 'diagonal' | 'center';
-  lyricColorMode: 'auto' | 'cyan' | 'rose' | 'gold' | 'emerald' | 'violet' | 'coral' | 'white';
+  lyricColorMode: 'auto' | 'album' | 'cyan' | 'rose' | 'gold' | 'emerald' | 'violet' | 'coral' | 'white';
   lyricFillPaceMode: 'auto' | 'letter' | 'word'; lyricDisplayMode: 'original' | 'romanized' | 'both';
 }
 export const DEFAULT_DISPLAY_PREFERENCES: DisplayPreferences = {
@@ -91,7 +92,13 @@ export interface UserPreferencesData {
   narrativeObjects: boolean;
   cameraMode: CameraMode;
   enabledScenes: SceneId[];
+  autoKineticMotion?: boolean;
+  manualKineticMotion?: LyricMotion;
   enabledKineticMotions: LyricMotion[];
+  enabledPlacements?: Exclude<LyricPlacementMode, 'auto'>[];
+  autoFonts?: boolean;
+  manualFont?: FontPack;
+  enabledFonts?: FontPack[];
   enabledCameraViews: CameraView[];
   cameraShakeEnabled: boolean;
   cameraShakeSensitivity: number;
@@ -115,6 +122,7 @@ export const LEGACY_DELAYS_KEY = 'lyricflow.songDelays.v2';
 
 export const ALL_SCENE_IDS: SceneId[] = TEMPLATES.map(t => t.id);
 export const ALL_KINETIC_MOTIONS: LyricMotion[] = [...LYRIC_MOTIONS];
+export const ALL_FONT_PACKS: FontPack[] = [...FONT_SHOWCASE];
 export const ALL_CAMERA_VIEWS: CameraView[] = [...CAMERA_VIEWS];
 
 export const DEFAULT_USER_PREFERENCES: UserPreferencesData = {
@@ -130,7 +138,13 @@ export const DEFAULT_USER_PREFERENCES: UserPreferencesData = {
   narrativeObjects: false,
   cameraMode: 'Front',
   enabledScenes: [...ALL_SCENE_IDS],
+  autoKineticMotion: true,
+  manualKineticMotion: 'ship',
   enabledKineticMotions: [...ALL_KINETIC_MOTIONS],
+  enabledPlacements: [...ALL_PLACEMENT_MODES],
+  autoFonts: true,
+  manualFont: 'impact',
+  enabledFonts: [...ALL_FONT_PACKS],
   enabledCameraViews: ['Front'],
   cameraShakeEnabled: true,
   cameraShakeSensitivity: 50,
@@ -157,7 +171,7 @@ function sanitizeDisplay(raw: Partial<DisplayPreferences> | null | undefined): D
     playerVolume: clampNum(r.playerVolume, 0, 100, 85),
     sponsorBlockEnabled: typeof r.sponsorBlockEnabled === 'boolean' ? r.sponsorBlockEnabled : true,
     lyricPlacementMode: oneOf(r.lyricPlacementMode, ['auto','alternating','left','right','bottom-right','bottom-left','top-left','diagonal','center'], 'auto'),
-    lyricColorMode: oneOf(r.lyricColorMode, ['auto','cyan','rose','gold','emerald','violet','coral','white'], 'auto'),
+    lyricColorMode: oneOf(r.lyricColorMode, ['auto','album','cyan','rose','gold','emerald','violet','coral','white'], 'auto'),
     lyricFillPaceMode: oneOf(r.lyricFillPaceMode, ['auto','letter','word'], 'auto'),
     lyricDisplayMode: oneOf(r.lyricDisplayMode, ['original','romanized','both'], 'both'),
   };
@@ -170,6 +184,18 @@ export function sanitizePreferences(raw: Partial<UserPreferencesData> | null | u
   const validMotions = Array.isArray(raw.enabledKineticMotions)
     ? raw.enabledKineticMotions.filter((m): m is LyricMotion => ALL_KINETIC_MOTIONS.includes(m as LyricMotion)).slice(0, ALL_KINETIC_MOTIONS.length)
     : [];
+  const validPlacements = Array.isArray(raw.enabledPlacements)
+    ? raw.enabledPlacements.filter((p): p is Exclude<LyricPlacementMode, 'auto'> => ALL_PLACEMENT_MODES.includes(p as Exclude<LyricPlacementMode, 'auto'>)).slice(0, ALL_PLACEMENT_MODES.length)
+    : [];
+  const validFonts = Array.isArray(raw.enabledFonts)
+    ? raw.enabledFonts.filter((f): f is FontPack => ALL_FONT_PACKS.includes(f as FontPack)).slice(0, ALL_FONT_PACKS.length)
+    : [];
+  const manualKineticMotion = raw.manualKineticMotion && ALL_KINETIC_MOTIONS.includes(raw.manualKineticMotion)
+    ? raw.manualKineticMotion
+    : 'ship';
+  const manualFont = raw.manualFont && ALL_FONT_PACKS.includes(raw.manualFont)
+    ? raw.manualFont
+    : 'impact';
   const quality: Quality = raw.quality === 'High' || raw.quality === 'Balanced' || raw.quality === 'Performance'
     ? raw.quality
     : 'Balanced';
@@ -198,7 +224,13 @@ export function sanitizePreferences(raw: Partial<UserPreferencesData> | null | u
     narrativeObjects: false,
     cameraMode,
     enabledScenes: validScenes.length > 0 ? validScenes : [...ALL_SCENE_IDS],
+    autoKineticMotion: typeof raw.autoKineticMotion === 'boolean' ? raw.autoKineticMotion : true,
+    manualKineticMotion,
     enabledKineticMotions: validMotions.length > 0 ? validMotions : [...ALL_KINETIC_MOTIONS],
+    enabledPlacements: validPlacements.length > 0 ? validPlacements : [...ALL_PLACEMENT_MODES],
+    autoFonts: typeof raw.autoFonts === 'boolean' ? raw.autoFonts : true,
+    manualFont,
+    enabledFonts: validFonts.length > 0 ? validFonts : [...ALL_FONT_PACKS],
     enabledCameraViews: ['Front'],
     cameraShakeEnabled: typeof raw.cameraShakeEnabled === 'boolean' ? raw.cameraShakeEnabled : DEFAULT_USER_PREFERENCES.cameraShakeEnabled,
     cameraShakeSensitivity: clampNum(raw.cameraShakeSensitivity, 0, 100, DEFAULT_USER_PREFERENCES.cameraShakeSensitivity),

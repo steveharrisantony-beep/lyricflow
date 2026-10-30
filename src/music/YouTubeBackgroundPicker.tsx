@@ -7,6 +7,7 @@ import {
 } from './providers';
 import { extractYouTubeVideoId, type TrackInfo } from '../metadata/trackInfo';
 import type { YouTubeBackgroundMode } from '../visualization/cinematic/CinematicStage';
+import YouTubeAccountControl from '../auth/YouTubeAccountControl';
 
 export default function YouTubeBackgroundPicker({
   track,
@@ -27,10 +28,11 @@ export default function YouTubeBackgroundPicker({
 }) {
   const [results, setResults] = useState<SongResult[]>([]),
     [busy, setBusy] = useState(false),
-    [message, setMessage] = useState('');
+    [message, setMessage] = useState(''),
+    [customQuery, setCustomQuery] = useState('');
   const pending = useRef<AbortController | null>(null);
   useEffect(() => () => pending.current?.abort(), []);
-  const search = async () => {
+  const runSearch = async (overrideQuery?: string) => {
     pending.current?.abort();
     const controller = new AbortController();
     pending.current = controller;
@@ -39,19 +41,27 @@ export default function YouTubeBackgroundPicker({
     try {
       const base =
         localStorage.getItem('lyricflow.resolver') || import.meta.env.VITE_MUSIC_RESOLVER || '';
+      const defaultQuery = `${track.title} ${track.artist} ${
+        preference === 'music' ? 'music video' : 'lyrics video'
+      }`;
+      const effectiveQuery = overrideQuery && overrideQuery.trim().length >= 2
+        ? overrideQuery.trim()
+        : defaultQuery;
       const songs = await searchStashCatalog(
-        `${track.title} ${track.artist} ${preference === 'music' ? 'music video' : 'lyrics video'}`,
+        effectiveQuery,
         'resolver',
         base,
         controller.signal
       );
       if (controller.signal.aborted) return;
-      const ranked = rankYouTubeBackgroundCandidates(songs, track, preference);
+      const ranked = overrideQuery && overrideQuery.trim().length >= 2
+        ? songs.filter(s => Boolean(extractYouTubeVideoId(s)))
+        : rankYouTubeBackgroundCandidates(songs, track, preference);
       setResults(ranked);
       setMessage(
         ranked.length
-          ? 'Sorted by most views first. Choose the same recording; adjust video delay if it has an intro.'
-          : 'No videos found. Retry or paste a YouTube URL under Saved fixes & community corrections.'
+          ? 'Sorted by most views first. Choose the original music video or lyrical video; adjust video delay if it has an intro.'
+          : 'No videos found. Sign in to YouTube above, retry, or paste a YouTube video link directly.'
       );
     } catch (error) {
       if (!controller.signal.aborted)
@@ -62,7 +72,10 @@ export default function YouTubeBackgroundPicker({
   };
   return (
     <section className="local-player youtube-background-picker" aria-label="Muted YouTube background">
-      <strong>YouTube video background · muted</strong>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <strong>YouTube video background · muted</strong>
+        <YouTubeAccountControl compact onSignedIn={() => void runSearch(customQuery)} />
+      </div>
       <p>
         {track.provider === 'jiosaavn'
           ? 'JioSaavn keeps playing the audio while the highest-viewed matching YouTube video plays muted in the background.'
@@ -101,8 +114,8 @@ export default function YouTubeBackgroundPicker({
           </select>
         </label>
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-        <button type="button" className="upload-button" disabled={busy} onClick={() => void search()}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+        <button type="button" className="upload-button" disabled={busy} onClick={() => void runSearch()}>
           {busy
             ? 'Finding videos…'
             : activeVideoId
@@ -115,14 +128,41 @@ export default function YouTubeBackgroundPicker({
           </button>
         )}
       </div>
+      <form
+        className="yt-custom-search-row"
+        onSubmit={e => {
+          e.preventDefault();
+          void runSearch(customQuery || `${track.title} ${track.artist}`.trim());
+        }}
+      >
+        <input
+          type="search"
+          aria-label="Custom YouTube video search"
+          value={customQuery}
+          placeholder={`Custom YouTube video search or paste URL (e.g. ${track.title} ${track.artist})`}
+          onKeyDown={e => e.stopPropagation()}
+          onChange={e => setCustomQuery(e.target.value)}
+        />
+        <button type="submit" className="upload-button" disabled={busy}>
+          Search YouTube
+        </button>
+      </form>
       {message && <p role="status">{message}</p>}
       <div className="track-candidates">
         {results.map(song => {
           const id = extractYouTubeVideoId(song)!;
           const viewsLabel = formatViewCount(song.viewCount);
+          const thumbUrl = song.artwork || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
           return (
-            <div className="candidate" key={id}>
-              <div>
+            <div className="candidate video-candidate" key={id}>
+              <img
+                className="candidate-thumb"
+                src={thumbUrl}
+                alt={song.title}
+                loading="lazy"
+                referrerPolicy="no-referrer"
+              />
+              <div className="candidate-meta">
                 <strong>{song.title}</strong>
                 <small>
                   {song.artist} ·{' '}

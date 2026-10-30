@@ -644,3 +644,168 @@ export function alignAppleWordSyncWithYouTubeSubtitles(
     syncMethod: 'direct-apple',
   };
 }
+
+/**
+ * Detect script/language family of LRC lyrics or subtitle text for language matching.
+ */
+function detectLyricScriptFamily(text: string): string {
+  const body = text.replace(/\[[^\]]*\]/g, '').replace(/<[^>]*>/g, '');
+  const counts: Record<string, number> = {};
+  for (const ch of body) {
+    const cp = ch.codePointAt(0)!;
+    let sc = '';
+    if (cp >= 0x0d00 && cp <= 0x0d7f) sc = 'ml';
+    else if (cp >= 0x0b80 && cp <= 0x0bff) sc = 'ta';
+    else if (cp >= 0x0900 && cp <= 0x097f) sc = 'hi';
+    else if (cp >= 0x0c00 && cp <= 0x0c7f) sc = 'te';
+    else if (cp >= 0x0c80 && cp <= 0x0cff) sc = 'kn';
+    else if (cp >= 0x0980 && cp <= 0x09ff) sc = 'bn';
+    else if (cp >= 0x0a00 && cp <= 0x0a7f) sc = 'pa';
+    else if (cp >= 0x0a80 && cp <= 0x0aff) sc = 'gu';
+    else if ((cp >= 0xac00 && cp <= 0xd7af) || (cp >= 0x1100 && cp <= 0x11ff)) sc = 'ko';
+    else if (cp >= 0x3040 && cp <= 0x30ff) sc = 'ja';
+    else if (cp >= 0x4e00 && cp <= 0x9fff) sc = 'zh';
+    else if (cp >= 0x0400 && cp <= 0x04ff) sc = 'ru';
+    else if (cp >= 0x0600 && cp <= 0x06ff) sc = 'ar';
+    else if ((cp >= 0x0041 && cp <= 0x005a) || (cp >= 0x0061 && cp <= 0x007a) || (cp >= 0x00c0 && cp <= 0x024f)) sc = 'latin';
+    if (sc) counts[sc] = (counts[sc] || 0) + 1;
+  }
+  let best = 'latin';
+  let bestCount = 0;
+  for (const [k, v] of Object.entries(counts)) {
+    if (v > bestCount) {
+      best = k;
+      bestCount = v;
+    }
+  }
+  return best;
+}
+
+/**
+ * When JioSaavn or External Player is the audio source, the song's audio and lyrics are authoritative,
+ * while the background YouTube video often has a studio logo, dramatic intro, or dialogue before the song starts.
+ *
+ * This function matches the song's timed lyrics against creator-uploaded (non-ASR) YouTube subtitle tracks:
+ * - Only matches if the language/script of the original lyrics file and the subtitle track are the same.
+ * - Computes the median timestamp delta `videoDelaySeconds = songLyricTime - ytSubtitleTime`
+ *   (so `targetVideoTime = audioTime - videoDelaySeconds`: when the YouTube video starts lyrics at 22s
+ *   and the song audio starts lyrics at 8s, `videoDelaySeconds = -14s`, jumping the video forward by 14s!).
+ */
+export function computeVideoDelayFromSubtitles(
+  songLyricsLrc: string,
+  subtitleTracks: readonly YouTubeSubtitleTrackItem[]
+): {
+  matched: boolean;
+  videoDelaySeconds: number;
+  languageCode?: string;
+  anchorCount: number;
+} {
+  const songLines = parseLRC(songLyricsLrc).filter(l => l.text.trim().length > 0);
+  if (songLines.length < 2 || !subtitleTracks || subtitleTracks.length === 0) {
+    return { matched: false, videoDelaySeconds: 0, anchorCount: 0 };
+  }
+
+  const songScript = detectLyricScriptFamily(songLyricsLrc);
+
+  for (const track of subtitleTracks) {
+    // Never use auto-generated (ASR) subtitles
+    if (/auto-generated|asr/i.test(track.label || '') || /^a\./i.test(track.id || '')) {
+      continue;
+    }
+    const subScript = detectLyricScriptFamily(track.lrc);
+    const subLangPrefix = (track.languageCode || '').toLowerCase().split(/[-_]/)[0];
+
+    // Check that the language of original lyrics and subtitle track is the same
+    const isSameLanguage =
+      songScript === subScript ||
+      (songScript !== 'latin' && songScript === subLangPrefix);
+
+    if (!isSameLanguage) continue;
+
+    const ytLines = parseLRC(track.lrc).filter(
+      l =>
+        l.text.trim().length > 0 &&
+        !/^\[(?:music|applause|laughter|instrumental|intro|outro|silence)\]$/i.test(l.text.trim())
+    );
+    if (ytLines.length < 2) continue;
+
+    // Match lines using monotonic DP
+    const n = songLines.length;
+    const m = ytLines.length;
+    const THRESHOLD = 0.45;
+    const sim: number[][] = Array.from({ length: n }, () => new Array(m).fill(0));
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < m; j++) {
+        let s = computeLyricLineSimilarity(songLines[i].text, ytLines[j].text);
+        if (j + 1 < m) {
+          const joined = `${ytLines[j].text} ${ytLines[j + 1].text}`;
+          s = Math.max(s, computeLyricLineSimilarity(songLines[i].text, joined) * 0.94);
+        }
+        sim[i][j] = s;
+      }
+    }
+
+    const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+    const choice: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+    for (let i = 1; i <= n; i++) {
+      for (let j = 1; j <= m; j++) {
+        let best = dp[i - 1][j];
+        let act = 1;
+        if (dp[i][j - 1] > best) {
+          best = dp[i][j - 1];
+          act = 2;
+        }
+        const s = sim[i - 1][j - 1];
+        if (s >= THRESHOLD) {
+          const matchScore = dp[i - 1][j - 1] + s;
+          if (matchScore >= best) {
+            best = matchScore;
+            act = 3;
+          }
+        }
+        dp[i][j] = best;
+        choice[i][j] = act;
+      }
+    }
+
+    const deltas: number[] = [];
+    let ci = n;
+    let cj = m;
+    while (ci > 0 && cj > 0) {
+      const act = choice[ci][cj];
+      if (act === 3) {
+        const sIdx = ci - 1;
+        const yIdx = cj - 1;
+        // videoDelaySeconds is added as `targetVideoTime = audioTime - videoDelaySeconds`
+        // so `videoDelaySeconds = songTime - ytTime`
+        deltas.push(songLines[sIdx].time - ytLines[yIdx].time);
+        ci--;
+        cj--;
+      } else if (act === 1) {
+        ci--;
+      } else {
+        cj--;
+      }
+    }
+
+    if (deltas.length >= 2) {
+      deltas.sort((a, b) => a - b);
+      const medianDelta = deltas[Math.floor(deltas.length / 2)];
+      const inliers = deltas.filter(d => Math.abs(d - medianDelta) <= 25);
+      if (inliers.length >= 2) {
+        const finalDelay = Number(
+          Math.max(-300, Math.min(300, inliers[Math.floor(inliers.length / 2)])).toFixed(2)
+        );
+        return {
+          matched: true,
+          videoDelaySeconds: finalDelay,
+          languageCode: track.languageCode,
+          anchorCount: inliers.length,
+        };
+      }
+    }
+  }
+
+  return { matched: false, videoDelaySeconds: 0, anchorCount: 0 };
+}
+

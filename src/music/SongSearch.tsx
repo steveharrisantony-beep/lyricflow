@@ -4,6 +4,7 @@ import {Search,Play,ExternalLink,Disc3,Video,ListPlus,Check} from 'lucide-react'
 import {BUILTIN_PLAYER_SOURCES,MUSIC_SOURCES,searchStashCatalog,resolveSong,resolverBase,type SongResult,type PlayableSong} from './providers';
 import {isLyricVideoTrack} from '../metadata/trackInfo';
 import {cleanYouTubeTitleForLyrics} from '../lyrics/lyricFlowEngine';
+import YouTubeAccountControl from '../auth/YouTubeAccountControl';
 
 const initialBase=()=>{try{return resolverBase(localStorage.getItem('lyricflow.resolver')||import.meta.env.VITE_MUSIC_RESOLVER||'')}catch{return ''}};
 
@@ -35,7 +36,7 @@ export default function SongSearch({
      ? provider==='resolver'
        ? `${result.length} YouTube videos found · click "Play Now" or "+ Queue" to build your video song queue`
        : `${result.length} JioSaavn tracks found · click "Play Now" or "+ Queue" to stream 320kbps AAC`
-     : 'No playable songs found for this query. Try switching between JioSaavn and YouTube.'
+     : 'No playable songs found for this query. Try signing in to your YouTube account or pasting a YouTube video link.'
    );
   }catch(e){
    if(!controller.signal.aborted)setMessage(e instanceof Error?e.message:'Search unavailable.');
@@ -79,10 +80,13 @@ export default function SongSearch({
     <b><Disc3 size={15} style={{verticalAlign:'-2px',marginRight:6}}/>BUILT-IN ONLINE PLAYER (JIOSAAVN &amp; YOUTUBE VIDEO)</b>
     <small>Stream JioSaavn 320kbps AAC or play YouTube video backgrounds with VoxelVerse lyrics &amp; Queue (Q)</small>
    </div>
-   <button type="button" onClick={()=>setSettings(v=>!v)}>{settings?'Hide resolver':'Resolver settings'}</button>
+   <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+    <YouTubeAccountControl compact onSignedIn={()=>{if(query.trim().length>=2&&provider==='resolver')void search();}}/>
+    <button type="button" onClick={()=>setSettings(v=>!v)}>{settings?'Hide resolver':'Resolver settings'}</button>
+   </div>
   </div>
   <form className="song-search-form" onSubmit={e=>{e.preventDefault();void search()}}>
-   <Search size={18}/><input aria-label="Search songs" value={query} placeholder={provider==='resolver'?'Search YouTube songs, music videos, or lyric videos…':'Search JioSaavn songs, artists, or albums…'} maxLength={180} onChange={e=>{cancel();setQuery(e.target.value)}}/>
+   <Search size={18}/><input aria-label="Search songs" value={query} placeholder={provider==='resolver'?'Search YouTube songs, music videos, or paste a YouTube URL…':'Search JioSaavn songs, artists, or albums…'} maxLength={180} onKeyDown={e=>e.stopPropagation()} onChange={e=>{cancel();setQuery(e.target.value)}}/>
    <button className="source-primary" type="submit" disabled={busy||query.trim().length<2}>{busy?'Searching…':'Search'}</button>
   </form>
   <div className="song-source-tabs" role="tablist" aria-label="Online catalog sources">
@@ -99,7 +103,7 @@ export default function SongSearch({
   </div>
   {settings&&<div className="song-search-settings">
    <label>Optional custom resolver URL
-    <input aria-label="Music resolver URL" value={base} onChange={e=>{cancel();setBase(e.target.value)}} placeholder="https://your-music-resolver.example"/>
+    <input aria-label="Music resolver URL" value={base} onKeyDown={e=>e.stopPropagation()} onChange={e=>{cancel();setBase(e.target.value)}} placeholder="https://your-music-resolver.example"/>
    </label>
    <button type="button" onClick={()=>{try{const valid=resolverBase(base);localStorage.setItem('lyricflow.resolver',valid);setBase(valid);setMessage(valid?'Custom resolver saved.':'Using built-in JioSaavn & YouTube resolver.')}catch(e){setMessage(e instanceof Error?e.message:'Unable to save resolver.')}}}>Save resolver</button>
    <p>Built-in Online Player supports JioSaavn (320kbps AAC) and YouTube (plays the YouTube video as the stage background with SponsorBlock non-music skipping, Queue management, and LyricFlow hybrid word-sync).</p>

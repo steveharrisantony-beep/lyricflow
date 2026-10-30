@@ -22,6 +22,7 @@ import {
   type ExternalMediaState,
 } from './externalPlayer';
 import type { YouTubeBackgroundMode } from '../visualization/cinematic/CinematicStage';
+import { isAdvertisementTrack } from '../metadata/trackInfo';
 
 export interface AudioSourceHubHandle {
   stop: () => void;
@@ -352,14 +353,23 @@ function AudioSourceHub(
                           <span className="external-app-pill">
                             {externalMedia.appName || 'External Player'} ·{' '}
                             {externalMedia.playing ? 'Playing' : 'Paused'}
+                            {externalMedia.isAd || isAdvertisementTrack(externalMedia)
+                              ? ' · AD (BUILT-IN THEMES ACTIVE)'
+                              : ''}
                           </span>
                           <strong>{externalMedia.title}</strong>
                           <small>
-                            {externalMedia.artist || 'Unknown artist'}
-                            {externalMedia.album ? ` · ${externalMedia.album}` : ''}
-                            {externalMedia.duration > 0
-                              ? ` · ${Math.floor(externalMedia.duration / 60)}:${String(Math.floor(externalMedia.duration % 60)).padStart(2, '0')}`
-                              : ''}
+                            {externalMedia.isAd || isAdvertisementTrack(externalMedia)
+                              ? 'Advertisement detected — lyrics & background video search paused; showing built-in themes.'
+                              : `${externalMedia.artist || 'Unknown artist'}${
+                                  externalMedia.album ? ` · ${externalMedia.album}` : ''
+                                }${
+                                  externalMedia.duration > 0
+                                    ? ` · ${Math.floor(externalMedia.duration / 60)}:${String(
+                                        Math.floor(externalMedia.duration % 60)
+                                      ).padStart(2, '0')}`
+                                    : ''
+                                }`}
                           </small>
                         </div>
                       ) : (
