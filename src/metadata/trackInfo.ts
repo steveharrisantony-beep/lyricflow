@@ -20,7 +20,7 @@ export function isYouTubeAudioTrack(track:Pick<TrackInfo,'provider'|'youtubeVide
  return (!track.provider||track.provider==='resolver'||track.provider==='ytmusic')&&(track.provider==='resolver'||Boolean(track.youtubeVideoId||track.videoId));
 }
 
-const LYRIC_VIDEO_PATTERN=/\b(?:lyrical|lyrics|lyric\s*video|official\s*lyric|with\s*lyrics|lyrical\s*video|lyrics\s*video)\b/i;
+const LYRIC_VIDEO_PATTERN=/\b(?:lyrical|lyrics|lyric|lirics|liric|lyric\s*video|official\s*lyric|with\s*lyrics|lyrical\s*video|lyrics\s*video)\b/i;
 const AD_TITLE_EXACT_PATTERN=/^(?:advertisement|ad|ads|sponsored|spotify|spotify\s+free|audio\s*ad|video\s*ad|commercial|promoted|sponsored\s+message|learn\s+more|listen\s+now)(?:\s*[-·•:|]\s*.*)?$/i;
 const AD_KEYWORD_PATTERN=/\b(?:advertisement|sponsored\s+by|audio\s+ad|video\s+ad|ad\s+break|commercial\s+break)\b/i;
 const AD_ARTIST_PATTERN=/^(?:advertisement|sponsored|spotify|spotify\s+ad|audio\s+ad)$/i;

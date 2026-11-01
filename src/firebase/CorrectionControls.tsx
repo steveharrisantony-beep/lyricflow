@@ -47,13 +47,14 @@ export default function CorrectionControls({ user, track, delay, lyrics, video, 
       event.preventDefault();
       const id = /^[\w-]{11}$/.test(videoInput.trim()) ? videoInput.trim() : extractYouTubeVideoId({ sourceUrl: videoInput.trim() });
       if (!id) { setMessage('Enter a valid YouTube watch/share URL or video ID.'); return; }
-      const seconds = Number(videoDelay);
-      if (!videoDelay.trim() || !Number.isFinite(seconds) || Math.abs(seconds) > 300) { setMessage('Video delay must be between −300 and +300 seconds.'); return; }
+      const normalizedDelay = videoDelay.trim().replace(/−/g, '-');
+      const seconds = Number(normalizedDelay);
+      if (!normalizedDelay || !Number.isFinite(seconds) || Math.abs(seconds) > 300) { setMessage('Video delay must be between −300 and +300 seconds.'); return; }
       editing.current = false;
       onVideoChange(id, seconds); setMessage('Background video saved for you. Your audio source is unchanged.');
     }}>
       <label>Correct background video<input value={videoInput} onChange={e => { editing.current = true; setVideoInput(e.target.value); }} placeholder="YouTube URL or video ID" disabled={!canChangeVideo} /></label>
-      <label>Video delay (seconds)<input aria-label="Video delay seconds" type="number" min="-300" max="300" step="0.05" value={videoDelay} onChange={e => { editing.current = true; setVideoDelay(e.target.value); }} disabled={!canChangeVideo} /></label>
+      <label>Video delay (seconds)<input aria-label="Video delay seconds" type="text" inputMode="decimal" value={videoDelay} onChange={e => { editing.current = true; setVideoDelay(e.target.value.replace(/−/g, '-')); }} disabled={!canChangeVideo} /></label>
       <button type="submit" disabled={!canChangeVideo || !videoInput.trim()}>Save background video</button>
     </form>
     {canChangeVideo&&savedVideoId&&<div className="correction-actions">

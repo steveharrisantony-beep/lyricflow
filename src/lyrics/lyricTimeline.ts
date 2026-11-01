@@ -6,6 +6,7 @@ export type LyricMood=Mood;
 export type LyricCue={
  time:number;
  end:number;
+ naturalEnd?:number;
  text:string;
  romanized:string;
  mood:Mood;
@@ -105,6 +106,7 @@ export function buildCues(original:TimedLine[],romanized:TimedLine[],genre=''):L
   out.push({
    time:line.time,
    end,
+   naturalEnd:end,
    text:line.text,
    romanized:romanized[i]?.text||'',
    mood:planAt(plans,line.time)?.mood||'abstract',
@@ -112,12 +114,15 @@ export function buildCues(original:TimedLine[],romanized:TimedLine[],genre=''):L
    timing:hasSourced?'sourced':'estimated'
   });
  }
- // Lock simultaneous dual-singer pairs so if one side finishes first, neither side changes
- // position, animation, or color until the line on the second side is finished.
+ // Lock simultaneous dual-singer pairs on two separate sides ('left' and 'right').
+ // Each cue retains its individual `naturalEnd` so when one side finishes early it hides cleanly,
+ // while `end` is extended to `sharedEnd` so the ongoing side never changes colour, position, animation, or font.
  for(let i=0;i<out.length-1;i++){
   if(out[i].end>out[i+1].time+0.12){
    const sharedEnd=Math.max(out[i].end,out[i+1].end);
    const groupKey=out[i].duetGroupKey||`duet:${out[i].time.toFixed(2)}:${out[i].text}`;
+   out[i].naturalEnd=out[i].naturalEnd??out[i].end;
+   out[i+1].naturalEnd=out[i+1].naturalEnd??out[i+1].end;
    out[i].end=sharedEnd;
    out[i+1].end=sharedEnd;
    if(!out[i].duetSide)out[i].duetSide='left';

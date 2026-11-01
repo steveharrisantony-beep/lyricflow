@@ -4,10 +4,9 @@ import {drawMotionGraphics,MOTION_SCENES} from './procedural/MotionGraphics';
 import {drawSceneTransition,transitionProgress,sceneEntryPose,TRANSITION_SECONDS} from './transitions';
 import {drawKineticLyrics,lyricWordHit,type LyricMotion,type LyricFillPaceMode,type LyricPlacementMode} from './kineticTypography';
 import {MusicCameraRig,makeLyricProjection} from './cameraRig';
-import {getSpectrumSensitivity} from '../../audio/audioSignal';
+import {getSpectrumSensitivity,getInputSource,getLocalMediaTime,readLocalAudio,setVirtualMediaTime} from '../../audio/audioSignal';
 import {useEffect,useRef,useState} from 'react';
 import {getLyricState,getLyricTimelineSnapshot} from '../../lyrics/lyricTimeline';
-import {getInputSource,getLocalMediaTime,readLocalAudio} from '../../audio/audioSignal';
 import {AUDIO_ONLY_SCENES,buildCinematicSchedule,byId,resolveThemePalette,sceneAt,type DirectedScene,type FontPack,type SceneId} from './catalog';
 import {NO_AUDIO,type Pulse} from './paint';
 import {drawInstrumentalMark} from './typography';
@@ -20,6 +19,7 @@ export const CAMERA_VIEWS=['Front'] as const;
 export type CameraView=typeof CAMERA_VIEWS[number];
 export type CameraMode='Automatic'|'Front';
 export type YouTubeBackgroundMode='video'|'theme';
+export type VideoFitMode='default'|'stretch';
 
 export interface CinematicProps{
  quality:Quality;intensity:number;speed:number;reducedMotion:boolean;
@@ -28,18 +28,26 @@ export interface CinematicProps{
  enabledScenes?:readonly SceneId[];
  enabledKineticMotions?:readonly LyricMotion[];
  enabledPlacements?:readonly Exclude<LyricPlacementMode,'auto'>[];
+ enabledVideoPlacements?:readonly Exclude<LyricPlacementMode,'auto'>[];
+ enabledThemePlacements?:readonly Exclude<LyricPlacementMode,'auto'>[];
  enabledFonts?:readonly FontPack[];
  enabledCameraViews?:readonly CameraView[];
  cameraShakeEnabled?:boolean;
  cameraShakeSensitivity?:number;
  themePalettes?:Record<string,string>;
+ autoRandomizeThemePalettes?:boolean;
+ themeDurationLines?:number;
+ themeDurationSeconds?:number;
  customLyricAccentColor?:string;
  customLyricBaseColor?:string;
  lyricFillPaceMode?:LyricFillPaceMode;
  lyricMinFontSize?:number;
  lyricMaxFontSize?:number;
  lyricPlacementMode?:LyricPlacementMode;
+ videoPlacementMode?:LyricPlacementMode;
+ themePlacementMode?:LyricPlacementMode;
  videoOverlayOpacity?:number;
+ videoFitMode?:VideoFitMode;
  audioPaused?:boolean;
  youtubeVideoId?:string|null;
  videoDelaySeconds?:number;
@@ -50,6 +58,7 @@ export interface CinematicProps{
  playerVolume?:number;
  onYoutubeTimeUpdate?:(currentTime:number,duration?:number)=>void;
  onYoutubeEnded?:()=>void;
+ onRejectBackgroundVideo?:(videoId:string)=>void;
  recordingKey?:string;
  externalPlayer?:boolean;
  videoSearchPending?:boolean;
@@ -68,14 +77,50 @@ export function visualSystemFor(id:SceneId):GraphicSystem|'motion2d'{
  return 'motion2d';
 }
 
-const sceneForAudio=(time:number,manual:SceneId,auto:boolean,enabledScenes?:readonly SceneId[]):DirectedScene=>{
- const index=Math.max(0,Math.floor(time/13));
+function hashSeed(input:string):number{
+ let h=2166136261;
+ for(let i=0;i<input.length;i++)h=Math.imul(h^input.charCodeAt(i),16777619);
+ return h>>>0;
+}
+
+const sceneForAudio=(
+ time:number,
+ manual:SceneId,
+ auto:boolean,
+ enabledScenes?:readonly SceneId[],
+ durationSeconds=12,
+ seedKey=''
+):DirectedScene=>{
+ const span=Math.max(4,Math.min(120,Number(durationSeconds)||12));
+ const index=Math.max(0,Math.floor(time/span));
  const allowed=enabledScenes&&enabledScenes.length>0?AUDIO_ONLY_SCENES.filter(s=>enabledScenes.includes(s)):AUDIO_ONLY_SCENES;
- const pool=allowed.length>0?allowed:AUDIO_ONLY_SCENES;
- const id=auto?pool[index%pool.length]:(byId[manual]?manual:pool[0]);
+ const basePool=allowed.length>0?[...allowed]:[...AUDIO_ONLY_SCENES];
+ // Deterministically shuffle each cycle of basePool so all enabled themes are visited in random order without repeating only a few
+ const cycle=Math.floor(index/Math.max(1,basePool.length));
+ const shuffled=[...basePool];
+ for(let i=shuffled.length-1;i>0;i--){
+  const j=hashSeed(`${seedKey}:cycle:${cycle}:${i}`)%(i+1);
+  const tmp=shuffled[i];
+  shuffled[i]=shuffled[j];
+  shuffled[j]=tmp;
+ }
+ const id=auto?shuffled[index%shuffled.length]:(byId[manual]?manual:basePool[0]);
  const template=byId[id];
- return {id,start:index*13,end:(index+1)*13,font:template.font,layout:template.layout,camera:template.camera,
- transition:template.transition,variation:index%5,section:index,reason:'audio-only visualizer'};
+ const palSeed=hashSeed(`${seedKey}:pal:${index}:${id}`);
+ const paletteObj=template.palettes[palSeed%template.palettes.length];
+ return {
+  id,
+  start:index*span,
+  end:(index+1)*span,
+  font:template.font,
+  layout:template.layout,
+  camera:template.camera,
+  transition:template.transition,
+  variation:index%5,
+  section:index,
+  reason:'audio-only visualizer',
+  paletteId:paletteObj?.id
+ };
 };
 
 function sendYouTubeCommand(iframe:HTMLIFrameElement|null,func:string,args:unknown[]=[]){
@@ -187,7 +232,9 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
     setData('renderScale',String(Math.round(adaptiveScale*100)));
     frames=0;fpsTime=now;
    }
-   const rawMediaTime=getLocalMediaTime();
+   const signalMediaTime=getLocalMediaTime();
+   const fallbackPlaybackTime=typeof config.playbackTime==='number'&&Number.isFinite(config.playbackTime)&&config.playbackTime>0?config.playbackTime:null;
+   const rawMediaTime=signalMediaTime!==null&&signalMediaTime>0?signalMediaTime:(fallbackPlaybackTime??signalMediaTime);
    if(rawMediaTime!==null){
     if(config.audioPaused){
      smoothMediaClock=rawMediaTime;
@@ -195,16 +242,25 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
     }else if(
      smoothMediaClock===null||
      lastRawMediaTime===null||
-     Math.abs(rawMediaTime-smoothMediaClock)>0.18||
-     rawMediaTime<lastRawMediaTime-0.02
+     rawMediaTime<lastRawMediaTime-0.05
     ){
      smoothMediaClock=rawMediaTime;
      lastRawMediaTime=rawMediaTime;
-    }else{
-     smoothMediaClock+=dt;
-     const drift=rawMediaTime-smoothMediaClock;
-     smoothMediaClock+=drift*Math.min(1,dt*10);
+    }else if(rawMediaTime!==lastRawMediaTime){
+     // A fresh time sample arrived from the audio/YouTube player
+     if(Math.abs(rawMediaTime-smoothMediaClock)>0.45){
+      smoothMediaClock=rawMediaTime;
+     }else{
+      smoothMediaClock+=dt;
+      const drift=rawMediaTime-smoothMediaClock;
+      smoothMediaClock+=drift*Math.min(1,dt*12);
+     }
      lastRawMediaTime=rawMediaTime;
+    }else{
+     // Between player time samples (e.g. YouTube 250ms infoDelivery ticks), advance smoothly forward
+     if(smoothMediaClock-rawMediaTime<1.35){
+      smoothMediaClock+=dt;
+     }
     }
    }else{
     smoothMediaClock=null;
@@ -212,26 +268,26 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
    }
    const mediaTime=smoothMediaClock,time=mediaTime??elapsed;
    const snapshot=getLyricTimelineSnapshot();
-   const currentScenesKey=(config.enabledScenes||[]).join(',');
+   const currentScenesKey=`${(config.enabledScenes||[]).join(',')}|${config.themeDurationLines??0}|${config.recordingKey||''}`;
    if(snapshot.revision!==revision||currentScenesKey!==enabledScenesKey){
     revision=snapshot.revision;
     enabledScenesKey=currentScenesKey;
-    const key=snapshot.cues.map(c=>c.text).join('|').slice(0,1500);
-    sequence=buildCinematicSchedule(snapshot.sections,snapshot.cues,snapshot.genre,key,config.enabledScenes);
+    const key=`${config.recordingKey||''}:${snapshot.cues.map(c=>c.text).join('|').slice(0,1500)}`;
+    sequence=buildCinematicSchedule(snapshot.sections,snapshot.cues,snapshot.genre,key,config.enabledScenes,config.themeDurationLines);
     (element as unknown as {_lockedCueKey?:string;_lockedScene?:DirectedScene|null})._lockedCueKey='';
     (element as unknown as {_lockedCueKey?:string;_lockedScene?:DirectedScene|null})._lockedScene=null;
    }
    let lyric=getLyricState(time);
    const activeCueNow=(config.audioPaused||config.hideStageLyrics)?null:lyric.cue;
    const directed=config.autoScenes&&sequence.length>0?sceneAt(sequence,lyric.position):null;
-   const candidateScene=directed??sceneForAudio(time,config.manualScene,config.autoScenes,config.enabledScenes);
+   const candidateScene=directed??sceneForAudio(time,config.manualScene,config.autoScenes,config.enabledScenes,config.themeDurationSeconds??12,config.recordingKey||'');
    const lockHolder=element as unknown as {_lockedCueKey?:string;_lockedScene?:DirectedScene|null};
    let scene:DirectedScene;
    if(!config.autoScenes){
     scene=candidateScene;
     lockHolder._lockedCueKey='';
     lockHolder._lockedScene=candidateScene;
-    }else if(activeCueNow){
+   }else if(activeCueNow){
     const cueKey=activeCueNow.duetGroupKey||`${activeCueNow.time.toFixed(2)}:${activeCueNow.text}`;
     if(lockHolder._lockedCueKey===cueKey&&lockHolder._lockedScene){
      scene=lockHolder._lockedScene;
@@ -279,6 +335,17 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
     ytWrapRef.current.style.transform='none';
    }
 
+   const resolveScenePaletteId=(targetSceneId:SceneId,directedPaletteId?:string)=>{
+    if(config.autoRandomizeThemePalettes){
+     if(directedPaletteId)return directedPaletteId;
+     const tpl=byId[targetSceneId];
+     if(tpl&&tpl.palettes.length>0){
+      return tpl.palettes[hashSeed(`${config.recordingKey||''}:${targetSceneId}:${scene.section}`)%tpl.palettes.length]?.id;
+     }
+    }
+    return config.themePalettes?.[targetSceneId];
+   };
+
    // Draw themes only while visible or transitioning. This canvas is permanently between video and lyrics.
    const fx=effects.current;
    const paintCtx=!useYtVideoBg&&fx?fx.getContext('2d',{alpha:false}):null;
@@ -297,7 +364,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
     }
     const background=(id:SceneId,target:CanvasRenderingContext2D,art:GraphicCompositions,old=false)=>{
      const mode=visualSystemFor(id);
-     const paletteId=config.themePalettes?.[id];
+     const paletteId=resolveScenePaletteId(id,id===scene.id?scene.paletteId:undefined);
      const resolvedPal=resolveThemePalette(id,paletteId);
      target.setTransform(outgoing.width/w,0,0,outgoing.height/h,0,0);
      if(!old)target.setTransform(fx.width/w,0,0,fx.height/h,0,0);
@@ -330,9 +397,15 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
    const secondaryCue=(config.audioPaused||config.hideStageLyrics)?null:lyric.secondaryCue;
    if(activeCue){
     const project=makeLyricProjection(w,h,cameraFrame);
-    const activePaletteId=config.themePalettes?.[scene.id];
+    const activePaletteId=resolveScenePaletteId(scene.id,scene.paletteId);
     const isDuet=Boolean(secondaryCue||activeCue.duetSide);
     const primaryDuetSide=activeCue.duetSide??(secondaryCue?'left':undefined);
+    const activePlacementMode=useYtVideoBg
+     ?(config.videoPlacementMode??config.lyricPlacementMode??'bottom-right')
+     :(config.themePlacementMode??config.lyricPlacementMode??'center');
+    const activeEnabledPlacements=useYtVideoBg
+     ?(config.enabledVideoPlacements??config.enabledPlacements)
+     :(config.enabledThemePlacements??config.enabledPlacements);
     const result=drawKineticLyrics({
      c:textCtx,
      scene,
@@ -347,7 +420,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      project,
      animated:config.spatialTypography,
      enabledMotions:config.enabledKineticMotions,
-     enabledPlacements:config.enabledPlacements,
+     enabledPlacements:activeEnabledPlacements,
      enabledFonts:config.enabledFonts,
      paletteId:activePaletteId,
      customAccentColor:config.customLyricAccentColor,
@@ -357,7 +430,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      minFontSize:config.lyricMinFontSize,
      maxFontSize:config.lyricMaxFontSize,
      forceLightText:useYtVideoBg,
-     placementMode:config.lyricPlacementMode??'auto',
+     placementMode:activePlacementMode,
      duetSide:primaryDuetSide
     });
     if(secondaryCue){
@@ -376,7 +449,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
       project,
       animated:config.spatialTypography,
       enabledMotions:config.enabledKineticMotions,
-      enabledPlacements:config.enabledPlacements,
+      enabledPlacements:activeEnabledPlacements,
       enabledFonts:config.enabledFonts,
       paletteId:activePaletteId,
       customAccentColor:config.customLyricAccentColor,
@@ -386,16 +459,16 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
       minFontSize:config.lyricMinFontSize,
       maxFontSize:config.lyricMaxFontSize,
       forceLightText:useYtVideoBg,
-      placementMode:config.lyricPlacementMode??'auto',
+      placementMode:activePlacementMode,
       duetSide:secondaryDuetSide
      });
      setData('lyricLayout',config.spatialTypography?result.motion:'classic');
      setData('lyricPlacement','duet-split');
-     setData('lyricText',`${result.text} | ${rightResult.text}`);
+     setData('lyricText',`${result.drawn>0?result.text:''}${result.drawn>0&&rightResult.drawn>0?' | ':''}${rightResult.drawn>0?rightResult.text:''}`);
      setData('lyricWords',String(result.words+rightResult.words));
      setData('lyricDraws',String(result.drawn+rightResult.drawn));
      setData('lyricHighlights',String(result.highlights+rightResult.highlights));
-     setData('lyricFont',result.font);
+     setData('lyricFont',result.drawn>0?result.font:rightResult.font);
      setData('lyricFillPace',result.fillPace||'line');
     }else{
      setData('lyricLayout',config.spatialTypography?result.motion:'classic');
@@ -571,10 +644,30 @@ export default function CinematicStage(props:CinematicProps){
      // A reused iframe can report the previous video while loadVideoById is pending.
      // Ignore that clock; it is not evidence of an advertisement.
      if(playingVidId&&playingVidId!==latestPropsRef.current.youtubeVideoId)return;
+     if(latestPropsRef.current.hasSeparateAudioStream&&videoData){
+      const vdAuthor=typeof videoData.author==='string'?videoData.author:'';
+      const vdTitle=typeof videoData.title==='string'?videoData.title:'';
+      if(
+       /(?:^|[\s\-–—])Topic\b/i.test(vdAuthor)||
+       /\b(?:official\s+audio|audio\s+only|full\s+audio|audio\s+track|provided\s+to\s+youtube\s+by|auto-generated\s+by\s+youtube)\b/i.test(`${vdTitle} ${vdAuthor}`)
+      ){
+       sendYouTubeCommand(ytIframeRef.current,'pauseVideo');
+       const rejectedId=playingVidId||latestPropsRef.current.youtubeVideoId||'';
+       if(rejectedId)latestPropsRef.current.onRejectBackgroundVideo?.(rejectedId);
+       return;
+      }
+     }
      if(info.adState===1||info.isAdPlaying===true)return;
      if(ct!==undefined){
      lastSyncTimeRef.current=ct;
-     if(!latestPropsRef.current.hasSeparateAudioStream)latestPropsRef.current.onYoutubeTimeUpdate?.(ct,dur);
+     if(!latestPropsRef.current.hasSeparateAudioStream){
+      setVirtualMediaTime(ct);
+      latestPropsRef.current.onYoutubeTimeUpdate?.(ct,dur);
+     }
+     if(ct>0.02&&!latestPropsRef.current.audioPaused){
+      setPlaybackError('');
+      setPlayingVideoKey(playbackKey);
+     }
      if(dur&&dur>15&&ct>=dur-0.45&&!ytEndedFiredRef.current){
       ytEndedFiredRef.current=true;
       if(!latestPropsRef.current.hasSeparateAudioStream)latestPropsRef.current.onYoutubeEnded?.();
@@ -635,6 +728,28 @@ export default function CinematicStage(props:CinematicProps){
   sendYouTubeCommand(ytIframeRef.current,mustPauseVideo(props,target.waiting)?'pauseVideo':'playVideo');
  },[ytId,props.playbackTime,props.videoDelaySeconds,props.hasSeparateAudioStream,props.audioPaused,props.playerVolume,props.youtubeBackgroundMode,props.videoSearchPending,props.advertisementPlaying,nativePolicy.allowed]);
 
+ const [stageAspect,setStageAspect]=useState<number>(16/9);
+ useEffect(()=>{
+  const el=host.current;
+  if(!el)return;
+  const updateAspect=()=>{
+   const w=el.clientWidth;
+   const h=el.clientHeight;
+   if(w>0&&h>0)setStageAspect(w/h);
+  };
+  updateAspect();
+  window.addEventListener('resize',updateAspect);
+  if(typeof ResizeObserver!=='undefined'){
+   const ro=new ResizeObserver(updateAspect);
+   ro.observe(el);
+   return()=>{
+    window.removeEventListener('resize',updateAspect);
+    ro.disconnect();
+   };
+  }
+  return()=>window.removeEventListener('resize',updateAspect);
+ },[]);
+
  const originParam=typeof window!=='undefined'&&window.location?.origin
   ?`&origin=${encodeURIComponent(window.location.origin)}&widget_referrer=${encodeURIComponent(window.location.origin)}`
   :'';
@@ -645,15 +760,28 @@ export default function CinematicStage(props:CinematicProps){
   ?`${embedHost}/embed/${encodeURIComponent(activeEmbedVid)}?autoplay=0&controls=${controlsParam}&disablekb=${ytAuth.interactivePlayer?'0':'1'}&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&enablejsapi=1${props.hasSeparateAudioStream?'&mute=1':''}${originParam}`
   :'';
 
- return <div className="cinematic-stack" ref={host} data-background-state={showThemes?'themes':'video'} data-video-ready={playingVideoKey===playbackKey?'yes':'no'}>
+ const fitMode:VideoFitMode=props.videoFitMode||'default';
+ const standardAspect=16/9;
+ const stretchScaleX=fitMode==='stretch'
+  ?Math.max(1.36,stageAspect>standardAspect?stageAspect/standardAspect:1.36)
+  :1;
+ const stretchScaleY=fitMode==='stretch'
+  ?Math.max(1.06,stageAspect<standardAspect?standardAspect/Math.max(0.25,stageAspect):1.06)
+  :1;
+ const iframeTransform=fitMode==='stretch'
+  ?`translate(-50%, -50%) scale(${stretchScaleX.toFixed(3)}, ${stretchScaleY.toFixed(3)})`
+  :'translate(-50%, -50%) scale(1, 1)';
+ const allowIframePointer=!showThemes&&ytAuth.interactivePlayer&&(!props.hasSeparateAudioStream||Boolean(playbackError));
+
+ return <div className="cinematic-stack" ref={host} data-background-state={showThemes?'themes':'video'} data-video-ready={playingVideoKey===playbackKey?'yes':'no'} data-video-fit={fitMode}>
   {activeEmbedVid&&nativePolicy.allowed&&(
-   <div ref={ytWrapRef} className="youtube-stage-backdrop" data-layer="video"
-    style={{position:'absolute',inset:0,width:'100%',height:'100%',overflow:'hidden',zIndex:0,background:'#04070f',pointerEvents:!showThemes&&ytAuth.interactivePlayer?'auto':'none'}}>
+   <div ref={ytWrapRef} className="youtube-stage-backdrop" data-layer="video" data-video-fit={fitMode}
+    style={{position:'absolute',inset:0,width:'100%',height:'100%',overflow:'hidden',zIndex:0,background:'#04070f',pointerEvents:allowIframePointer?'auto':'none'}}>
     <iframe ref={ytIframeRef}
      key={`yt-${props.recordingKey||''}-${mountedVideoId||ytId}-${ytAuth.reloadNonce}-${ytAuth.useNoCookieDomain?'nc':'std'}-${errorRetryNonce}-${props.hasSeparateAudioStream?'muted':'audio'}`}
      src={embedSrc} title="YouTube video background" referrerPolicy="strict-origin-when-cross-origin"
      allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-     style={{position:'absolute',top:'50%',left:'50%',width:ytAuth.interactivePlayer?'100%':'116%',height:ytAuth.interactivePlayer?'100%':'116%',transform:'translate(-50%, -50%)',border:0,pointerEvents:!showThemes&&ytAuth.interactivePlayer?'auto':'none'}}
+     style={{position:'absolute',top:'50%',left:'50%',width:'100%',height:'100%',transform:iframeTransform,transformOrigin:'center center',border:0,pointerEvents:allowIframePointer?'auto':'none'}}
      onLoad={()=>{
       try{
        ytIframeRef.current?.contentWindow?.postMessage(JSON.stringify({event:'listening',id:'lyricflow-yt',channel:'widget'}),'*');

@@ -64,19 +64,30 @@ export default function YouTubeBackgroundPicker({
       const base =
         localStorage.getItem('lyricflow.resolver') || import.meta.env.VITE_MUSIC_RESOLVER || '';
       const defaultQuery = `${track.title} ${track.artist} ${
-        preference === 'music' ? 'music video' : 'lyrics video'
+        preference === 'music' ? 'Official Video' : 'Official Lyric Video'
       }`;
       const effectiveQuery = overrideQuery && overrideQuery.trim().length >= 2
         ? overrideQuery.trim()
         : defaultQuery;
       const custom=Boolean(overrideQuery&&overrideQuery.trim().length>=2);
       const search=custom?null:await findYouTubeBackgrounds(track,preference,base,controller.signal);
-      const ranked=search?.videos||((await searchStashCatalog(effectiveQuery,'resolver',base,controller.signal)).filter(song=>isYouTubeBackgroundVideo(song)&&(preference!=='lyrics'||isLyricalVideo(song))));
+      const ranked=search?.videos||((await searchStashCatalog(effectiveQuery,'resolver',base,controller.signal))
+        .filter(song=>isYouTubeBackgroundVideo(song)&&(preference!=='lyrics'||isLyricalVideo(song)))
+        .sort((a,b)=>{
+          if(preference==='music'&&isLyricalVideo(a)!==isLyricalVideo(b)){
+            return Number(isLyricalVideo(a))-Number(isLyricalVideo(b));
+          }
+          const aOff=a.videoType==='OMV'||/\bofficial\b/i.test(a.title)?1:0;
+          const bOff=b.videoType==='OMV'||/\bofficial\b/i.test(b.title)?1:0;
+          if(aOff!==bOff)return bOff-aOff;
+          return (b.viewCount||0)-(a.viewCount||0);
+        })
+        .slice(0,15));
       if (controller.signal.aborted) return;
       setResults(ranked);
       setMessage(
         ranked.length
-          ? `Compared ${search?.candidateCount||ranked.length} candidates by title, artist, duration and video type.${search?.usedLyricalFallback?' No suitable music video found; showing lyrical videos.':''} Adjust video delay if it has an intro.`
+          ? `Compared ${search?.candidateCount||ranked.length} candidates by title, artist, views, duration and video type.${search?.usedLyricalFallback?' No suitable music video found; showing lyrical videos.':''} Adjust video delay if it has an intro.`
           : 'No videos found. Sign in to YouTube above, retry, or paste a YouTube video link directly.'
       );
     } catch (error) {

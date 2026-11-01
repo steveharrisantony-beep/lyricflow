@@ -41,3 +41,14 @@ it('chooses the right recording over a popular wrong title, cover or distant dur
  expect(results[0].id).toBe('yt_00000000005');
  expect(results).toHaveLength(1);
 });
+it('prefers the explicit Official Music Video over Topic or bare-titled tracks for JioSaavn songs like Run It Up',()=>{
+ const saavnTrack={title:'Run It Up',artist:'Hanumankind',duration:174};
+ const candidates:SongResult[]=[
+  video(10,'Run It Up',{artist:'Hanumankind - Topic',album:'Audio Track',duration:174,videoType:'ATV',viewCount:25_000_000}),
+  video(11,'Run It Up',{artist:'Hanumankind',duration:174,videoType:'UGC',viewCount:15_000_000}),
+  video(12,'Hanumankind - Run It Up ( Prod. By Kalmi ) | (Official Music Video)',{artist:'Hanumankind',duration:193,videoType:'OMV',viewCount:42_000_000}),
+ ];
+ const ranked=rankYouTubeBackgroundCandidates(candidates,saavnTrack,'music');
+ expect(ranked.map(s=>s.id)).toEqual(['yt_00000000012']);
+});
+

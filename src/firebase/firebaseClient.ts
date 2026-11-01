@@ -167,8 +167,7 @@ function sanitizeDisplay(raw: Partial<DisplayPreferences> | null | undefined): D
     reducedMotion: typeof r.reducedMotion === 'boolean' ? r.reducedMotion : false,
     youtubeBackgroundMode: oneOf(r.youtubeBackgroundMode, ['video', 'theme'], 'video'),
     videoOverlayOpacity: clampNum(r.videoOverlayOpacity, 0, 1, .45),
-    // Retained for compatibility with deployed preference rules. Lyrics always remain above video.
-    autoHideYoutubeLyrics: false,
+    autoHideYoutubeLyrics: typeof r.autoHideYoutubeLyrics === 'boolean' ? r.autoHideYoutubeLyrics : false,
     playerVolume: clampNum(r.playerVolume, 0, 100, 85),
     sponsorBlockEnabled: typeof r.sponsorBlockEnabled === 'boolean' ? r.sponsorBlockEnabled : true,
     lyricPlacementMode: oneOf(r.lyricPlacementMode, ['auto','alternating','left','right','bottom-right','bottom-left','top-left','diagonal','center'], 'auto'),
@@ -253,9 +252,33 @@ export async function saveCloudPreferences(user: User, prefs: UserPreferencesDat
   saveLocalPreferences(prefs, user.uid);
   if (!db) return;
   const clean = sanitizePreferences(prefs);
+  const cloudPayload = {
+    display: {
+      ...clean.display,
+      lyricColorMode: clean.display.lyricColorMode === 'album' ? 'auto' : clean.display.lyricColorMode,
+    },
+    intensity: clean.intensity,
+    speed: clean.speed,
+    sensitivity: clean.sensitivity,
+    spectrumGain: clean.spectrumGain,
+    motionBlur: clean.motionBlur,
+    quality: clean.quality,
+    autoScenes: clean.autoScenes,
+    spatialTypography: clean.spatialTypography,
+    narrativeObjects: false,
+    cameraMode: 'Front' as const,
+    enabledScenes: clean.enabledScenes,
+    enabledKineticMotions: clean.enabledKineticMotions,
+    enabledCameraViews: ['Front' as const],
+    cameraShakeEnabled: clean.cameraShakeEnabled,
+    cameraShakeSensitivity: clean.cameraShakeSensitivity,
+    lyricMinFontSize: clean.lyricMinFontSize,
+    lyricMaxFontSize: clean.lyricMaxFontSize,
+    themePalettes: clean.themePalettes,
+  };
   const pendingKey = scopedKey('preferencesPending', user.uid);
   writeDevice(pendingKey, clean);
-  await setDoc(doc(db, 'profiles', user.uid), { preferences: clean, updatedAt: serverTimestamp() });
+  await setDoc(doc(db, 'profiles', user.uid), { preferences: cloudPayload, updatedAt: serverTimestamp() });
   if (JSON.stringify(readDevice(pendingKey, null)) === JSON.stringify(clean)) localStorage.removeItem(pendingKey);
 }
 export function watchCloudPreferences(user: User, next: (prefs: UserPreferencesData) => void, status: (message: string) => void) {

@@ -1,6 +1,6 @@
 import type Hls from 'hls.js';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Upload, Play, Pause, Volume2, Music2, X, Disc3, RefreshCw, Edit3, CheckCircle2, Clock, ListMusic, ArrowUp, ArrowDown, SkipForward, ShieldCheck, Trash2 } from 'lucide-react';
+import { Upload, Play, Pause, Volume2, X, Disc3, RefreshCw, Edit3, CheckCircle2, Clock, ListMusic, ArrowUp, ArrowDown, SkipBack, SkipForward, ShieldCheck, Trash2, ChevronDown, ChevronUp, Shuffle, Repeat } from 'lucide-react';
 import { connectLocalAudio, setLocalAudioPlaying, setLocalMediaElement, setVirtualMediaTime } from './audioSignal';
 import { extractYouTubeVideoId, type TrackInfo } from '../metadata/trackInfo';
 import { MUSIC_SOURCES, type PlayableSong } from '../music/providers';
@@ -18,7 +18,6 @@ import {
 } from '../music/sponsorBlock';
 import {
   LYRIC_ENGINE_OPTIONS,
-  cleanYouTubeTitleForLyrics,
   type LyricEngineOption,
   type YouTubeSubtitleTrackItem,
 } from '../lyrics/lyricFlowEngine';
@@ -140,11 +139,35 @@ function LocalPlayer(
   const ytLastClockSyncRef = useRef(0);
   const lastUiTimeUpdateRef = useRef(0);
 
-  // Song Queue (Q) state
+  // Song Queue (Q) & Previous History state
   const [queue, setQueue] = useState<QueuedSongItem[]>([]);
   const queueRef = useRef<QueuedSongItem[]>([]);
   queueRef.current = queue;
+  const historyRef = useRef<PlayableSong[]>([]);
+  const lastRemoteSongRef = useRef<PlayableSong | null>(null);
   const [dragQueueIndex, setDragQueueIndex] = useState<number | null>(null);
+  const [queueOpen, setQueueOpen] = useState(false);
+  const [lyricsToolsOpen, setLyricsToolsOpen] = useState(false);
+  const [shuffleEnabled, setShuffleEnabled] = useState(false);
+  const [repeatEnabled, setRepeatEnabled] = useState(false);
+  const repeatEnabledRef = useRef(false);
+  repeatEnabledRef.current = repeatEnabled;
+  const shuffleEnabledRef = useRef(false);
+  shuffleEnabledRef.current = shuffleEnabled;
+  const [delayDraft, setDelayDraft] = useState(() => String(lyricDelay));
+  useEffect(() => {
+    setDelayDraft(prev => {
+      const normalized = prev.trim().replace(/−/g, '-');
+      if (normalized === '-' || normalized === '-.' || normalized === '-0.' || normalized === '') {
+        return prev;
+      }
+      const parsed = Number(normalized);
+      if (Number.isFinite(parsed) && Math.abs(parsed - lyricDelay) < 0.001) {
+        return prev;
+      }
+      return String(lyricDelay);
+    });
+  }, [lyricDelay]);
 
   // SponsorBlock state
   const [sponsorSegments, setSponsorSegments] = useState<SponsorBlockSegment[]>([]);
@@ -191,11 +214,36 @@ function LocalPlayer(
 
   const playNextFromQueue = (): boolean => {
     const currentQ = queueRef.current;
-    if (currentQ.length === 0) return false;
-    const [nextItem, ...rest] = currentQ;
+    if (currentQ.length === 0) {
+      if (repeatEnabledRef.current && name) {
+        seekPlayback(0);
+        void play();
+        return true;
+      }
+      return false;
+    }
+    const pickIdx =
+      shuffleEnabledRef.current && currentQ.length > 1
+        ? Math.floor(Math.random() * currentQ.length)
+        : 0;
+    const nextItem = currentQ[pickIdx];
+    const rest = currentQ.filter((_, idx) => idx !== pickIdx);
     setQueue(rest);
     void loadRemote(nextItem.song);
     return true;
+  };
+
+  const playPreviousTrack = () => {
+    if (time > 3) {
+      seekPlayback(0);
+      return;
+    }
+    const prevSong = historyRef.current.pop();
+    if (prevSong) {
+      void loadRemote(prevSong);
+      return;
+    }
+    seekPlayback(0);
   };
 
   useEffect(() => {
@@ -244,7 +292,7 @@ function LocalPlayer(
       const dt = Math.max(0, (now - lastTick) / 1000);
       lastTick = now;
       // Never invent progress before YouTube starts, or while its clock stalls.
-      if (!ytLastClockSyncRef.current || now - ytLastClockSyncRef.current > 750) return;
+      if (!ytLastClockSyncRef.current || now - ytLastClockSyncRef.current > 2500) return;
       const maxDur = duration > 0 ? duration : 600;
       let next = Math.min(maxDur, ytClockRef.current + dt);
 
@@ -278,6 +326,10 @@ function LocalPlayer(
   const loadRemote = async (song: PlayableSong) => {
     const player = audioRef.current;
     if (!player) throw Error('Player unavailable');
+    if (lastRemoteSongRef.current && lastRemoteSongRef.current.id !== song.id) {
+      historyRef.current = [...historyRef.current.slice(-19), lastRemoteSongRef.current];
+    }
+    lastRemoteSongRef.current = song;
     const epoch = ++loadEpoch.current;
     hlsRef.current?.destroy();
     hlsRef.current = null;
@@ -599,9 +651,11 @@ function LocalPlayer(
         }}
         onEnded={() => {
           if(ignoreAudioElementEvent())return;
-          setLocalAudioPlaying(false);
-          setActive(false);
-          onActiveChange(false);
+          if (!playNextFromQueue()) {
+            setLocalAudioPlaying(false);
+            setActive(false);
+            onActiveChange(false);
+          }
         }}
         onError={() => {
           if (!ignoreAudioElementEvent()) {
@@ -621,61 +675,193 @@ function LocalPlayer(
         aria-label="Select local audio file"
       />
 
-      {/* 1. PLAYER DETAILS */}
-      <section className="local-player player-details-section" aria-label="Player details">
-        <div className="player-heading">
-          <div className="heading-left">
-            <span className="heading-icon">
-              {remote || sourceMode === 'online' || sourceMode === 'external' ? <Disc3 size={17} /> : <Music2 size={17} />}
-            </span>
-            <div>
-              <b>PLAYER DETAILS</b>
-              <small>
-                Source:{' '}
-                {currentTrack
-                  ? describeAudioSource(currentTrack, Boolean(name)).detail
-                  : sourceMode === 'external'
-                    ? 'External Player (Android Notification Listener)'
-                    : remote || sourceMode === 'online'
-                      ? 'Built-in Online Player (JioSaavn & YouTube)'
-                      : 'Local Audio Upload'}
-              </small>
+      {/* UNIFIED MUSIC DETAILS & SPOTIFY-STYLE MOBILE PLAYER SECTION (Directly Below Visualizer) */}
+      <section className="local-player yt-music-details-card spotify-player-card" aria-label="Music details and player controls">
+        {/* 1. Top Row: Bold Title + Artist Subtitle on Left */}
+        <div className="spotify-header-row">
+          {artwork && (
+            <div className="song-cover-box spotify-mini-art">
+              <img src={artwork} alt="" referrerPolicy="no-referrer" />
             </div>
+          )}
+
+          <div className="spotify-title-stack">
+            <strong className="spotify-track-title">
+              {currentTrack?.title || name || 'No track loaded yet'}
+            </strong>
+            <span className="spotify-track-artist">
+              {currentTrack?.artist
+                ? currentTrack.artist
+                : name
+                  ? describeAudioSource(currentTrack, Boolean(name)).providerName
+                  : 'Select a song from JioSaavn, YouTube, or Local Audio'}
+            </span>
           </div>
-          <div className="player-heading-actions">
-            <button type="button" className="upload-button" onClick={onOpenSourceSelector}>
-              <RefreshCw size={14} /> Switch Source
-            </button>
+
+          {name && (
+            <div className="spotify-header-actions">
+              <button
+                type="button"
+                className="player-remove spotify-unload-btn"
+                aria-label="Unload track"
+                title="Unload track"
+                onClick={stop}
+              >
+                <X size={15} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* 2. Progress Seek Bar + Left/Right Timestamps Below */}
+        <div className="spotify-seek-block">
+          <input
+            className="spotify-seek-slider"
+            aria-label="Song position"
+            type="range"
+            min="0"
+            max={Number.isFinite(duration) && duration > 0 ? duration : 100}
+            step=".1"
+            disabled={!name}
+            value={Math.min(time, Number.isFinite(duration) && duration > 0 ? duration : 0)}
+            onChange={e => seekPlayback(Number(e.target.value))}
+          />
+          <div className="spotify-time-labels">
+            <span className="timebar-clock">{format(time)}</span>
+            <span className="timebar-clock">{format(duration)}</span>
           </div>
         </div>
 
-        <div className="player-row">
+        {/* 3. Centered 5-Button Transport Row: Shuffle | Previous | Large Play/Pause | Next | Repeat */}
+        <div className="spotify-transport-row">
           <button
             type="button"
-            className="player-round"
+            className={'spotify-aux-btn ' + (shuffleEnabled ? 'is-active' : '')}
+            aria-label="Shuffle queue"
+            aria-pressed={shuffleEnabled}
+            title="Shuffle queue"
+            onClick={() => {
+              setShuffleEnabled(v => {
+                const next = !v;
+                if (next && queue.length > 1) {
+                  setQueue(prev => [...prev].sort(() => Math.random() - 0.5));
+                }
+                return next;
+              });
+            }}
+          >
+            <Shuffle size={20} />
+          </button>
+
+          <button
+            type="button"
+            className="spotify-skip-btn"
+            disabled={!name && historyRef.current.length === 0}
+            aria-label="Previous track"
+            title="Previous / Restart track"
+            onClick={playPreviousTrack}
+          >
+            <SkipBack size={26} fill="currentColor" />
+          </button>
+
+          <button
+            type="button"
+            className="player-round spotify-play-circle"
             disabled={!name}
             aria-label={active ? 'Pause track' : 'Play track'}
             onClick={() => (active ? pausePlayback() : void play())}
           >
-            {active ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
-          </button>
-
-          <button type="button" className="upload-button" onClick={() => fileRef.current?.click()}>
-            <Upload size={16} />
-            {name && !remote ? 'Change Local Audio' : 'Upload Local Audio'}
+            {active ? <Pause size={26} fill="currentColor" /> : <Play size={26} fill="currentColor" />}
           </button>
 
           <button
             type="button"
-            className="upload-button"
-            onClick={() => setInlineOnlineOpen(v => !v)}
+            className="spotify-skip-btn"
+            disabled={queue.length === 0 && !name}
+            aria-label="Next track"
+            title={queue.length > 0 ? 'Play next song in Queue' : 'Open search to add next song'}
+            onClick={() => {
+              if (!playNextFromQueue()) {
+                setInlineOnlineOpen(true);
+              }
+            }}
           >
-            <Disc3 size={16} />
-            {inlineOnlineOpen ? 'Hide Online Player' : 'Search JioSaavn & YouTube'}
+            <SkipForward size={26} fill="currentColor" />
           </button>
 
-          <label className="volume-label" style={{ marginLeft: 'auto' }}>
-            <Volume2 size={16} />
+          <button
+            type="button"
+            className={'spotify-aux-btn ' + (repeatEnabled ? 'is-active' : '')}
+            aria-label="Repeat track"
+            aria-pressed={repeatEnabled}
+            title="Repeat track"
+            onClick={() => {
+              setRepeatEnabled(v => {
+                const next = !v;
+                if (audioRef.current) audioRef.current.loop = next;
+                return next;
+              });
+            }}
+          >
+            <Repeat size={20} />
+          </button>
+        </div>
+
+        {/* 4. Compact Mobile-Optimized Action Grid & Volume */}
+        <div className="yt-player-actions-bar">
+          <button
+            type="button"
+            className={'upload-button ' + (inlineOnlineOpen ? 'active-pill' : '')}
+            onClick={() => setInlineOnlineOpen(v => !v)}
+          >
+            <Disc3 size={14} />
+            <span>{inlineOnlineOpen ? 'Hide Search' : 'Search Songs'}</span>
+          </button>
+
+          <button type="button" className="upload-button" onClick={() => fileRef.current?.click()}>
+            <Upload size={14} />
+            <span>{name && !remote ? 'Change File' : 'Local File'}</span>
+          </button>
+
+          <button type="button" className="upload-button" onClick={onOpenSourceSelector}>
+            <RefreshCw size={14} />
+            <span>Switch Source</span>
+          </button>
+
+          <button
+            type="button"
+            className={'upload-button ' + (queueOpen ? 'active-pill' : '')}
+            aria-expanded={queueOpen}
+            onClick={() => setQueueOpen(v => !v)}
+          >
+            <ListMusic size={14} />
+            <span>Queue ({queue.length})</span>
+            {queueOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </button>
+
+          <button
+            type="button"
+            className={'upload-button ' + (lyricsToolsOpen ? 'active-pill' : '')}
+            aria-expanded={lyricsToolsOpen}
+            onClick={() => setLyricsToolsOpen(v => !v)}
+          >
+            <Clock size={14} />
+            <span>Sync ({formatLyricDelay(lyricDelay)})</span>
+            {lyricsToolsOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </button>
+
+          <button
+            type="button"
+            className={'upload-button ' + (customEditOpen ? 'active-pill' : '')}
+            onClick={onToggleCustomEdit}
+            aria-expanded={customEditOpen}
+          >
+            <Edit3 size={14} />
+            <span>{customEditOpen ? 'Hide Lyrics Editor' : 'Custom Edit / Change Lyrics'}</span>
+          </button>
+
+          <label className="volume-label spotify-volume-row">
+            <Volume2 size={15} />
             <input
               aria-label="Volume"
               type="range"
@@ -691,68 +877,147 @@ function LocalPlayer(
             />
             <span>{volume}%</span>
           </label>
-
-          {name && (
-            <button type="button" className="player-remove" aria-label="Unload track" onClick={stop}>
-              <X size={17} />
-            </button>
-          )}
         </div>
-
-        {inlineOnlineOpen && (
-          <div className="inline-stash-drawer">
-            <SongSearch onPlay={loadRemote} />
-          </div>
-        )}
 
         {error && (
           <p className="player-error" role="alert">
             {error}
           </p>
         )}
-      </section>
 
-      {/* 2. SONG DETAILS */}
-      <section className="local-player song-details-section" aria-label="Song details">
-        <div className="player-heading">
-          <div className="heading-left">
-            <span className="heading-icon">♪</span>
-            <div>
-              <b>SONG DETAILS</b>
-              <small>Track metadata, 4-Engine Lyrics Selector &amp; SponsorBlock status</small>
-            </div>
+        {/* Collapsible Online Search Drawer (Opens Only When Clicked) */}
+        {inlineOnlineOpen && (
+          <div className="inline-stash-drawer">
+            <SongSearch onPlay={loadRemote} onAddToQueue={addSongToQueue} />
           </div>
-          <button
-            type="button"
-            className="upload-button"
-            onClick={onToggleCustomEdit}
-            aria-expanded={customEditOpen}
-          >
-            <Edit3 size={15} />
-            {customEditOpen ? 'Hide Lyrics Override Editor' : 'Custom Edit / Change Lyrics'}
-          </button>
-        </div>
+        )}
 
-        <div className="song-details-grid">
-          <div className="song-cover-box">
-            {artwork ? (
-              <img src={artwork} alt="" referrerPolicy="no-referrer" />
+        {/* Collapsible Queue (Q) Drawer (Opens Only When Clicked) */}
+        <div className={'settings-accordion-body ' + (queueOpen ? 'is-open' : 'is-collapsed')} aria-label="Song queue">
+          <div className="yt-drawer-subpanel">
+            <div className="player-heading" style={{ marginBottom: 8 }}>
+              <div className="heading-left">
+                <div>
+                  <b>QUEUE (Q) · {queue.length} {queue.length === 1 ? 'SONG' : 'SONGS'} UP NEXT</b>
+                  <small>Arrange song order with Up / Down arrows or drag-and-drop; auto-plays when the current song ends</small>
+                </div>
+              </div>
+              <div className="player-heading-actions" style={{ display: 'flex', gap: 6 }}>
+                {queue.length > 0 && (
+                  <>
+                    <button type="button" className="upload-button" onClick={() => playNextFromQueue()}>
+                      <SkipForward size={14} /> Play Next Now
+                    </button>
+                    <button
+                      type="button"
+                      className="upload-button"
+                      onClick={() => setQueue([])}
+                      aria-label="Clear song queue"
+                    >
+                      <Trash2 size={14} /> Clear Queue
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  className="upload-button"
+                  onClick={() => setInlineOnlineOpen(true)}
+                >
+                  + Add Songs to Q
+                </button>
+              </div>
+            </div>
+
+            {queue.length === 0 ? (
+              <p className="player-footnote" style={{ margin: '4px 0 2px' }}>
+                Queue (Q) is empty. Search for songs in JioSaavn or YouTube and click <b>+ Queue</b> to line up multiple songs.
+              </p>
             ) : (
-              <span className="song-cover-placeholder">♫</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                {queue.map((item, idx) => (
+                  <div
+                    key={item.queueId}
+                    draggable
+                    onDragStart={() => setDragQueueIndex(idx)}
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={() => {
+                      if (dragQueueIndex !== null && dragQueueIndex !== idx) {
+                        moveQueueItem(dragQueueIndex, idx);
+                      }
+                      setDragQueueIndex(null);
+                    }}
+                    onDragEnd={() => setDragQueueIndex(null)}
+                    className="yt-queue-row"
+                  >
+                    <span className="yt-queue-index">#{idx + 1}</span>
+                    {item.song.artwork ? (
+                      <img
+                        src={item.song.artwork}
+                        alt=""
+                        style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }}
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <span className="yt-queue-cover-fallback">♪</span>
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="yt-queue-title">{item.song.title}</div>
+                      <div className="yt-queue-sub">
+                        {item.song.artist || 'Unknown artist'} · {format(item.song.duration)} · {MUSIC_SOURCES[item.song.provider]}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                      <button
+                        type="button"
+                        className="upload-button"
+                        disabled={idx === 0}
+                        onClick={() => moveQueueItem(idx, idx - 1)}
+                        aria-label={`Move ${item.song.title} up in queue`}
+                        title="Move Up"
+                        style={{ padding: '4px 7px' }}
+                      >
+                        <ArrowUp size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="upload-button"
+                        disabled={idx === queue.length - 1}
+                        onClick={() => moveQueueItem(idx, idx + 1)}
+                        aria-label={`Move ${item.song.title} down in queue`}
+                        title="Move Down"
+                        style={{ padding: '4px 7px' }}
+                      >
+                        <ArrowDown size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="source-primary"
+                        onClick={() => playQueueItemNow(idx)}
+                        aria-label={`Play ${item.song.title} now`}
+                        style={{ padding: '4px 9px', fontSize: 11 }}
+                      >
+                        <Play size={12} /> Play
+                      </button>
+                      <button
+                        type="button"
+                        className="player-remove"
+                        onClick={() => removeQueueItem(item.queueId)}
+                        aria-label={`Remove ${item.song.title} from queue`}
+                        title="Remove from Queue"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-          <div className="song-meta-main">
-            <strong>{currentTrack?.title || name || 'No track loaded yet'}</strong>
-            <span>
-              {currentTrack?.artist
-                ? `Artist: ${currentTrack.artist}`
-                : 'Select a local file or search a song in JioSaavn / YouTube'}
-              {currentTrack?.album ? ` · Album: ${currentTrack.album}` : ''}
-              {duration > 0 ? ` · Duration: ${format(duration)}` : ''}
-              {isYouTubeTrack && currentTrack?.title
-                ? ` · Cleaned Lyric Query: "${cleanYouTubeTitleForLyrics(currentTrack.videoTitle || currentTrack.title, currentTrack.artist)}"`
-                : ''}
-            </span>
+        </div>
+
+        {/* Collapsible Lyrics Sync, Engine & SponsorBlock Drawer (Opens Only When Clicked) */}
+        <div className={'settings-accordion-body ' + (lyricsToolsOpen ? 'is-open' : 'is-collapsed')}>
+          <div className="yt-drawer-subpanel">
             <div className="song-lyric-sync-line">
               <CheckCircle2 size={14} />
               <b>
@@ -769,13 +1034,6 @@ function LocalPlayer(
               <span>({lyricSourceLabel})</span>
               {hasWordSync && <span className="word-sync-indicator">· Word-by-Word Sync Active</span>}
               {lyricStatusMessage && <small> — {lyricStatusMessage}</small>}
-            </div>
-            <div className="song-audio-source-line">
-              <Disc3 size={14} />
-              <b>
-                Audio Source: {describeAudioSource(currentTrack, Boolean(name)).providerName}
-              </b>
-              <span>({describeAudioSource(currentTrack, Boolean(name)).detail})</span>
               {currentTrack?.sourceUrl && (
                 <a
                   href={currentTrack.sourceUrl}
@@ -788,10 +1046,89 @@ function LocalPlayer(
               )}
             </div>
 
-            {/* Available Lyrics Engine Options per Song (only shown when available) */}
+            <div className="timebar-delay-bar" style={{ marginTop: 10 }}>
+              <div className="timebar-delay-info">
+                <Clock size={15} />
+                <strong>PER-SONG LYRICS DELAY: {formatLyricDelay(lyricDelay)}</strong>
+                <span>{delaySavedStatus}</span>
+              </div>
+              <div className="timebar-delay-controls">
+                <button
+                  type="button"
+                  aria-label="Advance lyrics 0.25 seconds"
+                  onClick={() => onLyricDelayChange(clampLyricDelay(lyricDelay - 0.25))}
+                >
+                  −0.25s
+                </button>
+                <button
+                  type="button"
+                  aria-label="Toggle negative or positive lyric delay"
+                  title="Flip sign (− / +)"
+                  onClick={() => {
+                    if (lyricDelay === 0) {
+                      setDelayDraft('-');
+                    } else {
+                      const flipped = clampLyricDelay(-lyricDelay);
+                      setDelayDraft(String(flipped));
+                      onLyricDelayChange(flipped);
+                    }
+                  }}
+                >
+                  ±
+                </button>
+                <input
+                  aria-label="Player lyrics delay seconds"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="-1.50"
+                  value={delayDraft}
+                  onChange={e => {
+                    const val = e.target.value.replace(/−/g, '-');
+                    if (!/^-?\d*\.?\d*$/.test(val)) return;
+                    setDelayDraft(val);
+                    if (val !== '' && val !== '-' && val !== '-.' && val !== '.') {
+                      const num = Number(val);
+                      if (Number.isFinite(num)) {
+                        onLyricDelayChange(clampLyricDelay(num));
+                      }
+                    }
+                  }}
+                  onBlur={() => {
+                    const normalized = delayDraft.trim().replace(/−/g, '-');
+                    const num = Number(normalized);
+                    if (!normalized || normalized === '-' || !Number.isFinite(num)) {
+                      setDelayDraft(String(lyricDelay));
+                    } else {
+                      const clamped = clampLyricDelay(num);
+                      setDelayDraft(String(clamped));
+                      onLyricDelayChange(clamped);
+                    }
+                  }}
+                  style={{ width: 68, textAlign: 'center', padding: '5px 6px', borderRadius: 7, border: '1px solid #385364', background: '#0e1720', color: '#dceef3', fontSize: 12 }}
+                />
+                <button
+                  type="button"
+                  aria-label="Reset lyric delay"
+                  onClick={() => {
+                    setDelayDraft('0');
+                    onLyricDelayChange(0);
+                  }}
+                >
+                  Reset (0.00s)
+                </button>
+                <button
+                  type="button"
+                  aria-label="Delay lyrics 0.25 seconds"
+                  onClick={() => onLyricDelayChange(clampLyricDelay(lyricDelay + 0.25))}
+                >
+                  +0.25s
+                </button>
+              </div>
+            </div>
+
             {onLyricEngineOptionChange && availableLyricEngines.length > 0 && (
-              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: '#94a3b8', marginBottom: 6 }}>
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-subtle, rgba(255,255,255,0.08))' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', opacity: 0.75, marginBottom: 6 }}>
                   AVAILABLE LYRICS SOURCES ({availableLyricEngines.length}):
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -803,16 +1140,8 @@ function LocalPlayer(
                         type="button"
                         onClick={() => onLyricEngineOptionChange(opt.id)}
                         title={opt.description}
-                        style={{
-                          padding: '5px 10px',
-                          borderRadius: 6,
-                          fontSize: 12,
-                          fontWeight: selected ? 700 : 500,
-                          border: selected ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.12)',
-                          background: selected ? 'rgba(56,189,248,0.18)' : 'rgba(255,255,255,0.04)',
-                          color: selected ? '#e0f2fe' : '#cbd5e1',
-                          cursor: 'pointer',
-                        }}
+                        className={'upload-button ' + (selected ? 'active-pill' : '')}
+                        style={{ padding: '5px 10px', minHeight: 32, fontSize: 11.5 }}
                       >
                         {opt.label} <span style={{ fontSize: 10, opacity: 0.75 }}>({opt.badge})</span>
                       </button>
@@ -821,7 +1150,7 @@ function LocalPlayer(
                 </div>
                 {youtubeSubtitleTracks.length > 1 && onSelectSubtitleTrackId && (
                   <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.75 }}>
                       Subtitle Track ({youtubeSubtitleTracks.length}):
                     </span>
                     {youtubeSubtitleTracks.map(st => {
@@ -831,16 +1160,8 @@ function LocalPlayer(
                           key={st.id}
                           type="button"
                           onClick={() => onSelectSubtitleTrackId(st.id)}
-                          style={{
-                            padding: '3px 8px',
-                            borderRadius: 5,
-                            fontSize: 11,
-                            fontWeight: activeSt ? 700 : 500,
-                            border: activeSt ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.12)',
-                            background: activeSt ? 'rgba(56,189,248,0.18)' : 'rgba(255,255,255,0.04)',
-                            color: activeSt ? '#e0f2fe' : '#cbd5e1',
-                            cursor: 'pointer',
-                          }}
+                          className={'upload-button ' + (activeSt ? 'active-pill' : '')}
+                          style={{ padding: '3px 8px', minHeight: 28, fontSize: 11 }}
                         >
                           {st.label} ({st.lineCount} lines)
                         </button>
@@ -851,35 +1172,26 @@ function LocalPlayer(
               </div>
             )}
 
-            {isYouTubeTrack&&onLyricEngineOptionChange&&(
-              <button type="button" className="upload-button" onClick={()=>onLyricEngineOptionChange('youtube')}>
-                Try video subtitles
-              </button>
+            {isYouTubeTrack && onLyricEngineOptionChange && (
+              <div style={{ marginTop: 8 }}>
+                <button type="button" className="upload-button" onClick={() => onLyricEngineOptionChange('youtube')}>
+                  Try video subtitles
+                </button>
+              </div>
             )}
-            {/* SponsorBlock Non-Music & Sponsor Auto-Skip */}
+
             {isYouTubeTrack && (
               <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, fontSize: 12 }}>
                 <button
                   type="button"
                   onClick={() => onSponsorBlockEnabledChange?.(!sponsorBlockEnabled)}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    padding: '4px 9px',
-                    borderRadius: 6,
-                    fontSize: 11,
-                    fontWeight: 600,
-                    border: sponsorBlockEnabled ? '1px solid #34d399' : '1px solid rgba(255,255,255,0.14)',
-                    background: sponsorBlockEnabled ? 'rgba(16,185,129,0.16)' : 'rgba(255,255,255,0.04)',
-                    color: sponsorBlockEnabled ? '#a7f3d0' : '#94a3b8',
-                    cursor: 'pointer',
-                  }}
+                  className={'upload-button ' + (sponsorBlockEnabled ? 'active-pill' : '')}
+                  style={{ padding: '4px 10px', minHeight: 30, fontSize: 11 }}
                 >
                   <ShieldCheck size={13} />
                   SponsorBlock Auto-Skip: {sponsorBlockEnabled ? 'ON' : 'OFF'}
                 </button>
-                <span style={{ color: '#94a3b8', fontSize: 11 }}>
+                <span style={{ opacity: 0.75, fontSize: 11 }}>
                   {sponsorNotice ||
                     (sponsorSegments.length > 0
                       ? `${sponsorSegments.length} non-music/sponsor segment(s) detected`
@@ -887,212 +1199,6 @@ function LocalPlayer(
                 </span>
               </div>
             )}
-          </div>
-        </div>
-      </section>
-
-      {/* 2B. QUEUE (Q) SECTION — Directly Below Current Song Details */}
-      <section className="local-player song-queue-section" aria-label="Song queue">
-        <div className="player-heading">
-          <div className="heading-left">
-            <span className="heading-icon">
-              <ListMusic size={17} />
-            </span>
-            <div>
-              <b>QUEUE (Q) · {queue.length} {queue.length === 1 ? 'SONG' : 'SONGS'} UP NEXT</b>
-              <small>Arrange song order with Up / Down arrows or drag-and-drop; auto-plays when the current song ends</small>
-            </div>
-          </div>
-          <div className="player-heading-actions" style={{ display: 'flex', gap: 6 }}>
-            {queue.length > 0 && (
-              <>
-                <button type="button" className="upload-button" onClick={() => playNextFromQueue()}>
-                  <SkipForward size={14} /> Play Next Now
-                </button>
-                <button
-                  type="button"
-                  className="upload-button"
-                  onClick={() => setQueue([])}
-                  aria-label="Clear song queue"
-                >
-                  <Trash2 size={14} /> Clear Queue
-                </button>
-              </>
-            )}
-            <button
-              type="button"
-              className="upload-button"
-              onClick={() => setInlineOnlineOpen(true)}
-            >
-              + Add Songs to Q
-            </button>
-          </div>
-        </div>
-
-        {queue.length === 0 ? (
-          <p className="player-footnote" style={{ margin: '6px 0 2px' }}>
-            Queue (Q) is empty. Search for songs in JioSaavn or YouTube and click <b>+ Queue</b> to line up multiple video songs.
-          </p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
-            {queue.map((item, idx) => (
-              <div
-                key={item.queueId}
-                draggable
-                onDragStart={() => setDragQueueIndex(idx)}
-                onDragOver={e => e.preventDefault()}
-                onDrop={() => {
-                  if (dragQueueIndex !== null && dragQueueIndex !== idx) {
-                    moveQueueItem(dragQueueIndex, idx);
-                  }
-                  setDragQueueIndex(null);
-                }}
-                onDragEnd={() => setDragQueueIndex(null)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  background: dragQueueIndex === idx ? 'rgba(56,189,248,0.14)' : 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: '#38bdf8',
-                    minWidth: 24,
-                    textAlign: 'center',
-                  }}
-                >
-                  #{idx + 1}
-                </span>
-                {item.song.artwork ? (
-                  <img
-                    src={item.song.artwork}
-                    alt=""
-                    style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }}
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <span
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 6,
-                      background: 'rgba(255,255,255,0.06)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    ♪
-                  </span>
-                )}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {item.song.title}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {item.song.artist || 'Unknown artist'} · {format(item.song.duration)} · {MUSIC_SOURCES[item.song.provider]}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                  <button
-                    type="button"
-                    className="upload-button"
-                    disabled={idx === 0}
-                    onClick={() => moveQueueItem(idx, idx - 1)}
-                    aria-label={`Move ${item.song.title} up in queue`}
-                    title="Move Up"
-                    style={{ padding: '4px 7px' }}
-                  >
-                    <ArrowUp size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    className="upload-button"
-                    disabled={idx === queue.length - 1}
-                    onClick={() => moveQueueItem(idx, idx + 1)}
-                    aria-label={`Move ${item.song.title} down in queue`}
-                    title="Move Down"
-                    style={{ padding: '4px 7px' }}
-                  >
-                    <ArrowDown size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    className="source-primary"
-                    onClick={() => playQueueItemNow(idx)}
-                    aria-label={`Play ${item.song.title} now`}
-                    style={{ padding: '4px 9px', fontSize: 11 }}
-                  >
-                    <Play size={12} /> Play
-                  </button>
-                  <button
-                    type="button"
-                    className="player-remove"
-                    onClick={() => removeQueueItem(item.queueId)}
-                    aria-label={`Remove ${item.song.title} from queue`}
-                    title="Remove from Queue"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* 3. TIMEBAR & PER-SONG LYRIC DELAY */}
-      <section className="local-player timebar-section" aria-label="Playback timebar and lyric delay">
-        <div className="timebar-row">
-          <span className="timebar-clock">{format(time)}</span>
-          <input
-            aria-label="Song position"
-            type="range"
-            min="0"
-            max={Number.isFinite(duration) && duration > 0 ? duration : 100}
-            step=".1"
-            disabled={!name}
-            value={Math.min(time, Number.isFinite(duration) && duration > 0 ? duration : 0)}
-            onChange={e => seekPlayback(Number(e.target.value))}
-          />
-          <span className="timebar-clock">{format(duration)}</span>
-        </div>
-
-        <div className="timebar-delay-bar">
-          <div className="timebar-delay-info">
-            <Clock size={15} />
-            <strong>PER-SONG LYRICS DELAY: {formatLyricDelay(lyricDelay)}</strong>
-            <span>{delaySavedStatus}</span>
-          </div>
-          <div className="timebar-delay-controls">
-            <button
-              type="button"
-              aria-label="Advance lyrics 0.25 seconds"
-              onClick={() => onLyricDelayChange(clampLyricDelay(lyricDelay - 0.25))}
-            >
-              −0.25s
-            </button>
-            <button
-              type="button"
-              aria-label="Reset lyric delay"
-              onClick={() => onLyricDelayChange(0)}
-            >
-              Reset (0.00s)
-            </button>
-            <button
-              type="button"
-              aria-label="Delay lyrics 0.25 seconds"
-              onClick={() => onLyricDelayChange(clampLyricDelay(lyricDelay + 0.25))}
-            >
-              +0.25s
-            </button>
           </div>
         </div>
       </section>

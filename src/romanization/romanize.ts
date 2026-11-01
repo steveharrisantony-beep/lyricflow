@@ -243,6 +243,104 @@ export function detectLanguage(text: string): string {
   return languageName(detectLanguageCode(text));
 }
 
+export type RomanizationLanguageCode = Exclude<LanguageCode, 'en' | 'unknown'>;
+
+export interface SupportedRomanizationLanguage {
+  code: RomanizationLanguageCode;
+  script: ScriptType;
+  name: string;
+}
+
+export const SUPPORTED_ROMANIZATION_LANGUAGES: readonly SupportedRomanizationLanguage[] = [
+  { code: 'ml', script: 'malayalam', name: 'Malayalam' },
+  { code: 'ta', script: 'tamil', name: 'Tamil' },
+  { code: 'hi', script: 'devanagari', name: 'Hindi / Devanagari' },
+  { code: 'te', script: 'telugu', name: 'Telugu' },
+  { code: 'kn', script: 'kannada', name: 'Kannada' },
+  { code: 'bn', script: 'bengali', name: 'Bengali' },
+  { code: 'gu', script: 'gujarati', name: 'Gujarati' },
+  { code: 'pa', script: 'gurmukhi', name: 'Punjabi (Gurmukhi)' },
+  { code: 'or', script: 'odia', name: 'Odia' },
+  { code: 'ja', script: 'japanese', name: 'Japanese' },
+  { code: 'ko', script: 'korean', name: 'Korean' },
+  { code: 'zh', script: 'chinese', name: 'Chinese' },
+  { code: 'ru', script: 'cyrillic', name: 'Russian / Cyrillic' },
+  { code: 'ar', script: 'arabic', name: 'Arabic' },
+  { code: 'he', script: 'hebrew', name: 'Hebrew' },
+  { code: 'th', script: 'thai', name: 'Thai' },
+] as const;
+
+export const ALL_ROMANIZATION_LANGUAGE_CODES: readonly Exclude<LanguageCode, 'en' | 'unknown'>[] =
+  SUPPORTED_ROMANIZATION_LANGUAGES.map(l => l.code);
+
+let romanizationMasterEnabled = true;
+let enabledRomanizationLangSet = new Set<string>(ALL_ROMANIZATION_LANGUAGE_CODES);
+
+try {
+  if (typeof localStorage !== 'undefined') {
+    const savedMaster = localStorage.getItem('lyricflow.romanizationEnabled');
+    if (savedMaster === 'false') romanizationMasterEnabled = false;
+    const savedLangs = localStorage.getItem('lyricflow.enabledRomanizationLanguages');
+    if (savedLangs) {
+      const parsed = JSON.parse(savedLangs) as unknown;
+      if (Array.isArray(parsed)) {
+        enabledRomanizationLangSet = new Set(parsed.map(x => String(x)));
+      }
+    }
+  }
+} catch {
+  // Ignore localStorage access errors
+}
+
+export function getRomanizationMasterEnabled(): boolean {
+  return romanizationMasterEnabled;
+}
+
+export function setRomanizationMasterEnabled(enabled: boolean): void {
+  romanizationMasterEnabled = Boolean(enabled);
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('lyricflow.romanizationEnabled', String(romanizationMasterEnabled));
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function getEnabledRomanizationLanguages(): RomanizationLanguageCode[] {
+  return [...enabledRomanizationLangSet] as RomanizationLanguageCode[];
+}
+
+export function setEnabledRomanizationLanguages(codes: readonly string[]): void {
+  enabledRomanizationLangSet = new Set(codes);
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(
+        'lyricflow.enabledRomanizationLanguages',
+        JSON.stringify([...enabledRomanizationLangSet])
+      );
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function isLanguageAllowedForRomanization(
+  textOrCode: string,
+  overrideAllowedCodes?: readonly string[]
+): boolean {
+  if (!romanizationMasterEnabled && !overrideAllowedCodes) return false;
+  const code =
+    textOrCode.length <= 3 && ALL_ROMANIZATION_LANGUAGE_CODES.includes(textOrCode as Exclude<LanguageCode, 'en' | 'unknown'>)
+      ? (textOrCode as LanguageCode)
+      : detectLanguageCode(textOrCode);
+  if (code === 'en' || code === 'unknown') return false;
+  if (overrideAllowedCodes) {
+    return overrideAllowedCodes.includes(code);
+  }
+  return enabledRomanizationLangSet.has(code);
+}
+
 // In-memory cache populated by spotify-karaoke async Google dt=rm romanizer & local romanizer
 const romanizeLineCache = new Map<string, string>();
 
@@ -999,12 +1097,14 @@ function romanizeSingleSpanSync(text: string): string {
   return stripDiacritics(preserveCasing(text, out)).replace(/\s{2,}/g, ' ').trim();
 }
 
-function romanizeLocallySync(text: string): string {
+function romanizeLocallySync(text: string, allowedCodes?: readonly string[]): string {
   if (!text || !NON_LATIN_SCRIPT_RE.test(text)) return text;
+  if (!isLanguageAllowedForRomanization(text, allowedCodes)) return text;
   return text
     .split(/\r?\n/)
     .map(line => {
       if (!NON_LATIN_SCRIPT_RE.test(line)) return line;
+      if (!isLanguageAllowedForRomanization(line, allowedCodes)) return line;
       const leadingTagsMatch = line.match(/^((?:\[\d{1,2}:\d{2}(?:\.\d{1,3})?\])+)(.*)$/);
       if (leadingTagsMatch) {
         const [, tags, body] = leadingTagsMatch;
@@ -1021,10 +1121,10 @@ export interface RomanizeResult {
   changed: boolean;
 }
 
-export function romanizeText(text: string): RomanizeResult {
+export function romanizeText(text: string, allowedCodes?: readonly string[]): RomanizeResult {
   const safe = typeof text === 'string' ? text : '';
   const language = detectLanguage(safe);
-  const out = romanizeLocallySync(safe);
+  const out = romanizeLocallySync(safe, allowedCodes);
   return {
     text: out,
     language,
@@ -1082,9 +1182,14 @@ async function googleRomanizeChunkDirect(
  */
 export async function romanizeLinesAsync(
   lines: string[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  allowedCodes?: readonly string[]
 ): Promise<string[]> {
   if (!lines.length || isLatinScript(lines)) {
+    return [...lines];
+  }
+  const joinedText = lines.join('\n');
+  if (!isLanguageAllowedForRomanization(joinedText, allowedCodes)) {
     return [...lines];
   }
 
@@ -1092,12 +1197,14 @@ export async function romanizeLinesAsync(
   const uncachedIndices: number[] = [];
   const uncachedLines: string[] = [];
   const output = lines.map((line, idx) => {
-    if (!line.trim() || isLatinScript([line])) return line;
+    if (!line.trim() || isLatinScript([line]) || !isLanguageAllowedForRomanization(line, allowedCodes)) {
+      return line;
+    }
     const hit = getCachedRomanizedLine(line);
     if (hit) return hit;
     uncachedIndices.push(idx);
     uncachedLines.push(line);
-    return romanizeLocallySync(line);
+    return romanizeLocallySync(line, allowedCodes);
   });
 
   if (uncachedLines.length === 0) {
@@ -1144,11 +1251,11 @@ export async function romanizeLinesAsync(
     if (romText && romText.trim()) {
       const split = romText.trim().split('\n');
       for (let i = 0; i < chunk.length; i++) {
-        romanizedFlat.push(split[i]?.trim() || romanizeLocallySync(chunk[i]));
+        romanizedFlat.push(split[i]?.trim() || romanizeLocallySync(chunk[i], allowedCodes));
       }
     } else {
       for (const l of chunk) {
-        romanizedFlat.push(romanizeLocallySync(l));
+        romanizedFlat.push(romanizeLocallySync(l, allowedCodes));
       }
     }
   }
@@ -1171,9 +1278,11 @@ export async function romanizeLinesAsync(
  */
 export async function romanizeLrcTextAsync(
   lrcText: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  allowedCodes?: readonly string[]
 ): Promise<string> {
   if (!lrcText.trim() || isLatinScript([lrcText])) return '';
+  if (!isLanguageAllowedForRomanization(lrcText, allowedCodes)) return '';
   const rawLines = lrcText.split(/\r?\n/);
   const plainLines = rawLines.map(line =>
     line
@@ -1183,7 +1292,7 @@ export async function romanizeLrcTextAsync(
       .trim()
   );
   if (isLatinScript(plainLines)) return '';
-  const romanizedPlain = await romanizeLinesAsync(plainLines, signal);
+  const romanizedPlain = await romanizeLinesAsync(plainLines, signal, allowedCodes);
   return rawLines
     .map((rawLine, idx) => {
       const timeTags = (rawLine.match(/\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]/g) || []).join('');

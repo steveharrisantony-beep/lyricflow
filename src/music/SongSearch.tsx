@@ -16,7 +16,14 @@ export default function SongSearch({
  onAddToQueue?:(song:PlayableSong)=>void;
 }){
  const [query,setQuery]=useState(''),[base,setBase]=useState(initialBase);
- const [provider,setProvider]=useState<keyof typeof BUILTIN_PLAYER_SOURCES>('jiosaavn');
+ const [provider,setProvider]=useState<keyof typeof BUILTIN_PLAYER_SOURCES>(()=>{
+  try{
+   const saved=localStorage.getItem('lyricflow.onlineProvider');
+   if(saved==='jiosaavn'||saved==='resolver')return saved;
+  }catch{}
+  return 'jiosaavn';
+ });
+ useEffect(()=>{try{localStorage.setItem('lyricflow.onlineProvider',provider);}catch{}},[provider]);
  const [songs,setSongs]=useState<SongResult[]>([]),[busy,setBusy]=useState(false),[playing,setPlaying]=useState('');
  const [queuing,setQueuing]=useState(''),[queuedIds,setQueuedIds]=useState<Record<string,boolean>>({});
  const [message,setMessage]=useState(''),[settings,setSettings]=useState(false);

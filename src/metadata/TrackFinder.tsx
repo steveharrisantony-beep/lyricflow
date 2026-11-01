@@ -25,7 +25,7 @@ export default function TrackFinder({
  preferredSourceFile,
  onSelectionChange,
  savedCustomLrc,
- customEditOpen,
+ customEditOpen=true,
  lyricEngineOption='lyricflow',
  onLyricEngineOptionChange,
  selectedSubtitleTrackId,

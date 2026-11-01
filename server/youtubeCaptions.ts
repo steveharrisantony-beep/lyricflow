@@ -79,23 +79,96 @@ export function captionFormatUrls(base:string):string[]{
   return [...new Set(candidates)];
 }
 
+async function fetchInnertubeCaptionTracks(
+  videoId:string,
+  request:typeof fetch,
+  signal:AbortSignal,
+  extraHeaders?:Record<string,string>
+):Promise<CaptionTrack[]>{
+  const clients=[
+    {
+      name:'ANDROID',
+      version:'20.10.38',
+      ua:'com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip',
+      extra:{androidSdkVersion:34,osName:'Android',osVersion:'14'}
+    },
+    {
+      name:'IOS',
+      version:'20.10.4',
+      ua:'com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_1 like Mac OS X;)',
+      extra:{deviceMake:'Apple',deviceModel:'iPhone16,2',osName:'iPhone',osVersion:'18.3.1.22D72'}
+    },
+    {
+      name:'WEB',
+      version:'2.20250219.01.00',
+      ua:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      extra:{}
+    }
+  ];
+  const results=await Promise.all(
+    clients.map(async client=>{
+      try{
+        const res=await request('https://www.youtube.com/youtubei/v1/player?prettyPrint=false',{
+          method:'POST',
+          headers:{
+            'Content-Type':'application/json',
+            'User-Agent':client.ua,
+            'Accept-Language':'en-US,en;q=0.9',
+            Origin:'https://www.youtube.com',
+            ...(client.name==='WEB'?extraHeaders:{})
+          },
+          body:JSON.stringify({
+            videoId,
+            context:{
+              client:{
+                clientName:client.name,
+                clientVersion:client.version,
+                hl:'en',
+                gl:'US',
+                ...client.extra
+              }
+            },
+            contentCheckOk:true,
+            racyCheckOk:true
+          }),
+          signal
+        });
+        if(!res.ok)return [];
+        const json=(await res.json()) as {
+          captions?:{playerCaptionsTracklistRenderer?:{captionTracks?:CaptionTrack[]}};
+        };
+        const list=json?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+        return Array.isArray(list)?list:[];
+      }catch{
+        return [];
+      }
+    })
+  );
+  for(const list of results){
+    if(list.length>0)return list;
+  }
+  return [];
+}
+
 export async function fetchYouTubeCaptions(videoId:string,options:{headers?:Record<string,string>;signal?:AbortSignal;request?:typeof fetch}={}):Promise<CaptionResult|null>{
   if(!/^[\w-]{11}$/.test(videoId))return null;
+  const isCustomRequest=Boolean(options.request);
   const request=options.request||fetch,deadline=new AbortController();
   const cancel=()=>deadline.abort(options.signal?.reason);
   options.signal?.addEventListener('abort',cancel,{once:true});
   if(options.signal?.aborted)cancel();
   const timer=setTimeout(()=>deadline.abort(new Error('Caption request timed out.')),14000);
   const headers={'User-Agent':'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36','Accept-Language':'en-US,en;q=0.9',...options.headers};
+  const androidHeaders={'User-Agent':'com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip','Accept-Language':'en-US,en;q=0.9',...options.headers};
   let blocked=false;
-  const get=async(url:string)=>{
+  const get=async(url:string,useAndroidUa=false)=>{
     deadline.signal.throwIfAborted();
     const attempt=new AbortController();
     const stop=()=>attempt.abort(deadline.signal.reason);
     deadline.signal.addEventListener('abort',stop,{once:true});
     const timeout=setTimeout(()=>attempt.abort(),4000);
     try{
-      const response=await request(url,{headers,signal:attempt.signal,redirect:'follow'});
+      const response=await request(url,{headers:useAndroidUa?androidHeaders:headers,signal:attempt.signal,redirect:'follow'});
       if([401,403,429].includes(response.status)){blocked=true;throw new CaptionFetchError('YouTube restricted this caption request. Try signing in, retry later, or import a subtitle file.','restricted');}
       if(!response.ok)throw new CaptionFetchError('YouTube captions are temporarily unavailable.','unavailable');
       if(Number(response.headers.get('content-length'))>10_000_000)throw new CaptionFetchError('The caption response was too large.','invalid-response');
@@ -108,24 +181,49 @@ export async function fetchYouTubeCaptions(videoId:string,options:{headers?:Reco
     }finally{clearTimeout(timeout);deadline.signal.removeEventListener('abort',stop);}
   };
   try{
-    const html=await get(`https://www.youtube.com/watch?v=${videoId}`);
-    const metadata=extractCaptionMetadata(html,videoId);
-    if(!metadata.recognized)throw new CaptionFetchError('YouTube did not expose caption metadata to this request. Import a subtitle file or retry later.','restricted');
-    if(!metadata.tracks.length){
-      if(metadata.status==='OK')return null;
+    let rawTracks:CaptionTrack[]=[];
+    let metadataStatus='UNKNOWN';
+    let metadataRecognized=false;
+
+    if(!isCustomRequest){
+      // First query Innertube ANDROID / IOS / WEB player API (roundyyy/yt-bulk-subtitles-downloader)
+      // without checking playabilityStatus or creator download flags.
+      rawTracks=await fetchInnertubeCaptionTracks(videoId,request,deadline.signal,options.headers);
+      if(rawTracks.length>0){
+        metadataRecognized=true;
+        metadataStatus='OK';
+      }
+    }
+
+    if(rawTracks.length===0){
+      const html=await get(`https://www.youtube.com/watch?v=${videoId}`);
+      const metadata=extractCaptionMetadata(html,videoId);
+      rawTracks=metadata.tracks;
+      metadataStatus=metadata.status;
+      metadataRecognized=metadata.recognized;
+    }
+
+    if(!metadataRecognized)throw new CaptionFetchError('YouTube did not expose caption metadata to this request. Import a subtitle file or retry later.','restricted');
+    if(!rawTracks.length){
+      if(metadataStatus==='OK'||!isCustomRequest)return null;
       throw new CaptionFetchError('This video requires access that the caption service does not have.','restricted');
     }
-    const tracks=metadata.tracks.filter(t=>typeof t?.baseUrl==='string').sort((a,b)=>Number(Boolean(a.kind==='asr'||a.vssId?.startsWith('a.')))-Number(Boolean(b.kind==='asr'||b.vssId?.startsWith('a.')))).slice(0,6);
+    const tracks=rawTracks.filter(t=>typeof t?.baseUrl==='string').sort((a,b)=>Number(Boolean(a.kind==='asr'||a.vssId?.startsWith('a.')))-Number(Boolean(b.kind==='asr'||b.vssId?.startsWith('a.')))).slice(0,6);
     const subtitleTracks=(await Promise.all(tracks.map(async(track,index)=>{
       let urls:string[];try{urls=captionFormatUrls(track.baseUrl);}catch{return null;}
       for(const address of urls){
         try{
-          const lrc=parseCaptionBody(await get(address));
+          let body=await get(address,false);
+          let lrc=parseCaptionBody(body);
+          if(!lrc&&!isCustomRequest){
+            body=await get(address,true);
+            lrc=parseCaptionBody(body);
+          }
           if(!lrc)continue;
           const languageCode=track.languageCode||'und',isAutoGenerated=track.kind==='asr'||Boolean(track.vssId?.startsWith('a.'));
           const name=track.name?.simpleText||(track.name?.runs||[]).map(r=>r.text||'').join('')||languageCode.toUpperCase();
           return {id:track.vssId||languageCode+'-'+index,languageCode,label:name+(isAutoGenerated&&!/auto.generated/i.test(name)?' (auto-generated)':''),lrc,lineCount:lrc.split('\n').length,isAutoGenerated};
-        }catch(error){if(deadline.signal.aborted)throw error;if(error instanceof CaptionFetchError&&error.code==='restricted')break;}
+        }catch(error){if(deadline.signal.aborted)throw error;if(error instanceof CaptionFetchError&&error.code==='restricted'&&isCustomRequest)break;}
       }
       return null;
     }))).filter((track):track is NonNullable<typeof track>=>Boolean(track));

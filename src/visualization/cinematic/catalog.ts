@@ -608,6 +608,7 @@ export function resolveThemePalette(id:SceneId,paletteId?:string):ThemePalette {
 export interface DirectedScene {
  id:SceneId;start:number;end:number;layout:Layout;camera:CameraPath;
  font:FontPack;transition:Transition;variation:number;section:number;reason:string;
+ paletteId?:string;
 }
 
 const LAYOUTS:Layout[]=['hero','editorial','left','stack','poster','scattered'];
@@ -621,15 +622,20 @@ function stableHash(input:string):number {
 
 function normalizeGenre(value:string){return value.toLowerCase().replace(/[-_]/g,' ').trim()}
 
-function compareCandidates(a:Template,b:Template,plan:ScenePlan,genre:string,recent:readonly SceneId[],seed:number){
+function compareCandidates(a:Template,b:Template,plan:ScenePlan,genre:string,recent:readonly SceneId[],seed:number,poolSize=23){
+ const isFirstSlot=recent.length===0;
+ const noRepeatWindow=Math.max(3,Math.min(poolSize-1,18));
  const grade=(t:Template)=>{
-  let score=t.moods.includes(plan.mood)?4:0;
-  if(genre&&t.genres.some(g=>genre.includes(g)))score+=3;
-  score+=(1-Math.abs(t.baseEnergy-plan.energy))*1.5;
-  if(t.id===recent[recent.length-1])score-=18;
-  if(recent.slice(-3).includes(t.id))score-=11;
-  if(t.family===byId[recent[recent.length-1]]?.family)score-=2;
-  score+=((stableHash(t.id+seed)%1000)/1000)*.4;
+  let score=isFirstSlot?(t.moods.includes(plan.mood)?12:0):(t.moods.includes(plan.mood)?1.2:0);
+  if(isFirstSlot&&genre&&t.genres.some(g=>genre.includes(g)))score+=3;
+  score+=(1-Math.abs(t.baseEnergy-plan.energy))*0.8;
+  if(t.id===recent[recent.length-1])score-=200;
+  if(recent.slice(-3).includes(t.id))score-=140;
+  if(recent.slice(-noRepeatWindow).includes(t.id))score-=65;
+  const usedCount=recent.filter(id=>id===t.id).length;
+  score-=usedCount*18;
+  if(t.family===byId[recent[recent.length-1]]?.family)score-=3;
+  score+=((stableHash(t.id+':'+seed)%10000)/10000)*9.5;
   return score;
  };
  return grade(b)-grade(a);
@@ -647,8 +653,15 @@ function snapBoundaryToLineEnd(t:number,cues:readonly LyricCue[]):number {
  return snapped;
 }
 
-/** Pure song-level scheduler. Scene choices are stable when seeking or replaying, and boundaries never cut mid-line. */
-export function buildCinematicSchedule(plans:readonly ScenePlan[],cues:readonly LyricCue[],genre='',songKey='',enabledScenes?:readonly SceneId[]):DirectedScene[]{
+/** Pure song-level scheduler. Scene choices are randomized across all enabled themes, stable when seeking, and boundaries never cut mid-line. */
+export function buildCinematicSchedule(
+ plans:readonly ScenePlan[],
+ cues:readonly LyricCue[],
+ genre='',
+ songKey='',
+ enabledScenes?:readonly SceneId[],
+ themeDurationLines?:number
+):DirectedScene[]{
  if(!cues.length)return [];
  const g=normalizeGenre(genre);
  const recent:SceneId[]=[];
@@ -660,6 +673,53 @@ export function buildCinematicSchedule(plans:readonly ScenePlan[],cues:readonly 
   start:cues[0].time,end:cues[cues.length-1].end,mood:'abstract',font:'grotesk',
   motion:'drift',camera:'dolly',confidence:.2,palette:0,reason:'fallback',energy:.35
  } as ScenePlan];
+
+ // When themeDurationLines is specified, step by exact groups of N lyric lines (never cutting mid-line or mid-duet).
+ if(typeof themeDurationLines==='number'&&themeDurationLines>=1){
+  const linesPerScene=Math.max(1,Math.min(32,Math.round(themeDurationLines)));
+  let idx=0;
+  let part=0;
+  let currentStart=Math.min(source[0].start,cues[0].time);
+  while(idx<cues.length){
+   let nextIdx=Math.min(cues.length,idx+linesPerScene);
+   // Never split a simultaneous duet pair across a theme boundary
+   while(nextIdx<cues.length&&cues[nextIdx-1].duetGroupKey&&cues[nextIdx].duetGroupKey===cues[nextIdx-1].duetGroupKey){
+    nextIdx++;
+   }
+   const lastCue=cues[nextIdx-1];
+   const rawFinish=nextIdx<cues.length?Math.max(lastCue.end,cues[nextIdx].time):Math.max(lastCue.end,source[source.length-1].end);
+   const finish=nextIdx<cues.length?snapBoundaryToLineEnd(rawFinish,cues):rawFinish;
+   if(finish>currentStart+0.05){
+    const activePlan=source.find(s=>currentStart>=s.start&&currentStart<s.end)||source[0];
+    const seed=stableHash(songKey+':lines:'+part+':'+idx);
+    const sorted=[...activeTemplates].sort((a,b)=>compareCandidates(a,b,activePlan,g,recent,seed,activeTemplates.length));
+    const chosen=sorted[0];
+    const variation=seed%5;
+    const layout=LAYOUTS[(LAYOUTS.indexOf(chosen.layout)+variation)%LAYOUTS.length];
+    const camera=CAMERAS[(CAMERAS.indexOf(chosen.camera)+(seed%3))%CAMERAS.length];
+    const paletteObj=chosen.palettes[seed%chosen.palettes.length];
+    result.push({
+     id:chosen.id,
+     start:currentStart,
+     end:finish,
+     layout,
+     camera,
+     font:chosen.font,
+     transition:chosen.transition,
+     variation,
+     section:part,
+     reason:activePlan.reason,
+     paletteId:paletteObj?.id
+    });
+    recent.push(chosen.id);
+    currentStart=finish;
+    part++;
+   }
+   idx=nextIdx;
+  }
+  return result;
+ }
+
  let runningStart=source[0].start;
  for(let i=0;i<source.length;i++){
   const section=source[i];
@@ -673,13 +733,14 @@ export function buildCinematicSchedule(plans:readonly ScenePlan[],cues:readonly 
    const finish=part===n-1?rawSectionEnd:Math.min(rawSectionEnd,Math.max(partStart+0.2,snapBoundaryToLineEnd(rawFinish,cues)));
    if(finish<=partStart+0.05)continue;
    const seed=stableHash(songKey+':'+i+':'+part);
-   const sorted=[...activeTemplates].sort((a,b)=>compareCandidates(a,b,section,g,recent,seed));
+   const sorted=[...activeTemplates].sort((a,b)=>compareCandidates(a,b,section,g,recent,seed,activeTemplates.length));
    const chosen=sorted[0];
    const variation=seed%5;
    const layout=LAYOUTS[(LAYOUTS.indexOf(chosen.layout)+variation)%LAYOUTS.length];
    const camera=CAMERAS[(CAMERAS.indexOf(chosen.camera)+(seed%3))%CAMERAS.length];
+   const paletteObj=chosen.palettes[seed%chosen.palettes.length];
    result.push({id:chosen.id,start:partStart,end:finish,layout,camera,font:chosen.font,
-    transition:chosen.transition,variation,section:i,reason:section.reason});
+    transition:chosen.transition,variation,section:i,reason:section.reason,paletteId:paletteObj?.id});
    recent.push(chosen.id);
    partStart=finish;
   }

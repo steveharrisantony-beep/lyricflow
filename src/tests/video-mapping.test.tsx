@@ -290,3 +290,28 @@ it('shows previously loaded video candidates immediately and only searches again
  await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
  expect(search).toHaveBeenCalledWith('A different video query','resolver','',expect.any(AbortSignal));
 });
+
+it('rejects Topic channel videos at runtime before revealing them as a separate-audio background',async()=>{
+ const onReject=vi.fn();
+ await act(async()=>root.render(<CinematicStage {...base} hasSeparateAudioStream={true} onRejectBackgroundVideo={onReject}/>));
+ const frame=host.querySelector('iframe')!;
+ const send=vi.spyOn(frame.contentWindow!,'postMessage');
+ await act(async()=>{
+  window.dispatchEvent(new MessageEvent('message',{
+   source:frame.contentWindow,
+   data:JSON.stringify({
+    event:'infoDelivery',
+    info:{
+     currentTime:5,
+     duration:174,
+     playerState:1,
+     videoData:{video_id:'abcdefghijk',author:'Hanumankind - Topic',title:'Run It Up'}
+    }
+   })
+  }));
+ });
+ expect(onReject).toHaveBeenCalledWith('abcdefghijk');
+ expect(host.querySelector('.cinematic-stack')?.getAttribute('data-background-state')).toBe('themes');
+ expect(send.mock.calls.map(args=>JSON.parse(String(args[0]))).some(c=>c.func==='pauseVideo')).toBe(true);
+});
+

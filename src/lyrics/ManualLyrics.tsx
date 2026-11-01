@@ -1,6 +1,19 @@
 import {useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import type {TrackInfo} from '../metadata/trackInfo';
-import {detectLanguage,romanizeText,romanizeLrcTextAsync,isLatinScript,hasDistinctRomanized} from '../romanization/romanize';
+import {
+ detectLanguage,
+ romanizeText,
+ romanizeLrcTextAsync,
+ isLatinScript,
+ hasDistinctRomanized,
+ SUPPORTED_ROMANIZATION_LANGUAGES,
+ ALL_ROMANIZATION_LANGUAGE_CODES,
+ getRomanizationMasterEnabled,
+ setRomanizationMasterEnabled,
+ getEnabledRomanizationLanguages,
+ setEnabledRomanizationLanguages,
+ type RomanizationLanguageCode,
+} from '../romanization/romanize';
 import {parseLRC,type TimedWord} from './lrc';
 import {buildCues,computeNaturalLineEnd,setLyricTimeline} from './lyricTimeline';
 import {analyzeSections} from './sceneDirector';
@@ -246,7 +259,11 @@ export default function ManualLyrics({
  maxFontSize=88,
  onMinFontSizeChange,
  onMaxFontSizeChange,
- bpm=0
+ bpm=0,
+ romanizationEnabled:controlledRomanEnabled,
+ onRomanizationEnabledChange,
+ enabledRomanizationLanguages:controlledRomanLangs,
+ onEnabledRomanizationLanguagesChange
 }:{
  time:number;
  trackLoaded:boolean;
@@ -275,6 +292,10 @@ export default function ManualLyrics({
  onMinFontSizeChange?:(size:number)=>void;
  onMaxFontSizeChange?:(size:number)=>void;
  bpm?:number;
+ romanizationEnabled?:boolean;
+ onRomanizationEnabledChange?:(enabled:boolean)=>void;
+ enabledRomanizationLanguages?:RomanizationLanguageCode[];
+ onEnabledRomanizationLanguagesChange?:(langs:RomanizationLanguageCode[])=>void;
 }){
  const [raw,setRaw]=useState('');
  const [roman,setRoman]=useState('');
@@ -288,8 +309,39 @@ export default function ManualLyrics({
  const [sourceUrl,setSourceUrl]=useState('');
  const [corrected,setCorrected]=useState(false);
  const [message,setMessage]=useState('');
- const [autoRoman,setAutoRoman]=useState(true);
+ const [internalAutoRoman,setInternalAutoRoman]=useState(()=>getRomanizationMasterEnabled());
+ const [internalRomanLangs,setInternalRomanLangs]=useState<RomanizationLanguageCode[]>(()=>getEnabledRomanizationLanguages());
+ const [delayDraft,setDelayDraft]=useState(()=>String(delay));
  const fileRef=useRef<HTMLInputElement>(null);
+
+ useEffect(()=>{
+  setDelayDraft(prev=>{
+   const normalized=prev.trim().replace(/−/g,'-');
+   if(normalized==='-'||normalized==='-.'||normalized==='-0.'||normalized==='')return prev;
+   const parsed=Number(normalized);
+   if(Number.isFinite(parsed)&&Math.abs(parsed-delay)<0.001)return prev;
+   return String(delay);
+  });
+ },[delay]);
+
+ const autoRoman=controlledRomanEnabled??internalAutoRoman;
+ const setAutoRoman=(next:boolean)=>{
+  setRomanizationMasterEnabled(next);
+  setInternalAutoRoman(next);
+  onRomanizationEnabledChange?.(next);
+ };
+
+ const enabledRomanLangs=controlledRomanLangs??internalRomanLangs;
+ const setEnabledRomanLangs=(next:RomanizationLanguageCode[])=>{
+  setEnabledRomanizationLanguages(next);
+  setInternalRomanLangs(next);
+  onEnabledRomanizationLanguagesChange?.(next);
+ };
+ const toggleRomanLang=(code:RomanizationLanguageCode)=>{
+  const exists=enabledRomanLangs.includes(code);
+  const next=exists?enabledRomanLangs.filter(c=>c!==code):[...enabledRomanLangs,code];
+  setEnabledRomanLangs(next);
+ };
 
  const mode=controlledDisplayMode??internalMode;
  const setMode=(next:'original'|'romanized'|'both')=>{
@@ -332,7 +384,9 @@ export default function ManualLyrics({
   if(!incoming)return;
   setRaw(incoming.original);
   setPlain(incoming.plain||'');
-  const nextRoman=incoming.romanized||(!incoming.romanized&&autoRoman?romanizeText(incoming.original).text:'');
+  const nextRoman=!autoRoman
+   ?''
+   :incoming.romanized||romanizeText(incoming.original).text;
   setRoman(nextRoman);
   setSource(incoming.source);
   setSourceUrl(incoming.sourceUrl||'');
@@ -341,20 +395,27 @@ export default function ManualLyrics({
  },[incoming?.token]);
 
  // Upgrade non-Latin lyrics with haroldalan/spotify-karaoke Google phonetic romanization (dt=rm)
+ // Only romanizes when Romanization is turned ON and the detected language is enabled.
  useEffect(()=>{
-  if(!raw||!autoRoman||corrected)return;
+  if(!raw||corrected)return;
+  if(!autoRoman){
+   setRoman('');
+   return;
+  }
+  const syncRes=romanizeText(raw);
+  setRoman(syncRes.changed?syncRes.text:'');
   const plainBody=raw.replace(/\[[^\]]*\]/g,'').replace(/<[^>]*>/g,'').trim();
   if(!plainBody||isLatinScript(plainBody))return;
   const controller=new AbortController();
   void romanizeLrcTextAsync(raw,controller.signal)
    .then(upgraded=>{
     if(!controller.signal.aborted&&upgraded&&upgraded.trim()){
-     setRoman(upgraded);
+     setRoman(upgraded!==raw?upgraded:'');
     }
    })
    .catch(()=>{});
   return()=>controller.abort();
- },[raw,autoRoman,corrected]);
+ },[raw,autoRoman,enabledRomanLangs.join(','),corrected]);
 
  useEffect(()=>{if(!trackLoaded)setOffset(0)},[trackLoaded]);
 
@@ -844,8 +905,152 @@ export default function ManualLyrics({
     />
    </label>
    <label>Visual genre preset<select value={genre} onChange={e=>setGenre(e.target.value)}><option value="">Auto / unknown</option>{['Ambient','Cinematic','Pop','EDM','Rock','Hip-hop','Ballad','Classical'].map(g=><option key={g}>{g}</option>)}</select></label>
-   <label>Song delay (sec)<input aria-label="Lyrics delay seconds" type="number" step=".05" min="-30" max="30" value={delay} onChange={e=>onDelayChange(clampLyricDelay(Number(e.target.value)))}/></label>
+   <label>Song delay (sec)
+    <div style={{display:'flex',alignItems:'center',gap:4}}>
+     <button
+      type="button"
+      className="upload-button"
+      aria-label="Decrease lyric delay 0.25s"
+      style={{padding:'6px 8px',minHeight:34}}
+      onClick={()=>{
+       const next=clampLyricDelay(delay-0.25);
+       setDelayDraft(String(next));
+       onDelayChange(next);
+      }}
+     >
+      −0.25
+     </button>
+     <button
+      type="button"
+      className="upload-button"
+      aria-label="Flip lyric delay sign"
+      title="Toggle negative / positive (− / +)"
+      style={{padding:'6px 8px',minHeight:34}}
+      onClick={()=>{
+       if(delay===0){
+        setDelayDraft('-');
+       }else{
+        const flipped=clampLyricDelay(-delay);
+        setDelayDraft(String(flipped));
+        onDelayChange(flipped);
+       }
+      }}
+     >
+      ±
+     </button>
+     <input
+      aria-label="Lyrics delay seconds"
+      type="text"
+      inputMode="decimal"
+      placeholder="-1.50"
+      value={delayDraft}
+      onChange={e=>{
+       const val=e.target.value.replace(/−/g,'-');
+       if(!/^-?\d*\.?\d*$/.test(val))return;
+       setDelayDraft(val);
+       if(val!==''&&val!=='-'&&val!=='-.'&&val!=='.'){
+        const num=Number(val);
+        if(Number.isFinite(num))onDelayChange(clampLyricDelay(num));
+       }
+      }}
+      onBlur={()=>{
+       const normalized=delayDraft.trim().replace(/−/g,'-');
+       const num=Number(normalized);
+       if(!normalized||normalized==='-'||!Number.isFinite(num)){
+        setDelayDraft(String(delay));
+       }else{
+        const clamped=clampLyricDelay(num);
+        setDelayDraft(String(clamped));
+        onDelayChange(clamped);
+       }
+      }}
+      style={{width:76,textAlign:'center'}}
+     />
+     <button
+      type="button"
+      className="upload-button"
+      aria-label="Increase lyric delay 0.25s"
+      style={{padding:'6px 8px',minHeight:34}}
+      onClick={()=>{
+       const next=clampLyricDelay(delay+0.25);
+       setDelayDraft(String(next));
+       onDelayChange(next);
+      }}
+     >
+      +0.25
+     </button>
+    </div>
+   </label>
    <span>{lines.length} timed lines · {lyricProviderInfo.providerName} · {hasWordTags&&lines.length>0?'Word-synced':lines.length>0?'Line-synced':plain.trim()?'Plain text (no timestamps)':'No timestamps'} · {language} · Font {minFontSize}–{maxFontSize}px · Delay {formatLyricDelay(delay)}</span>
+  </div>
+
+  <div
+   className="romanization-languages-box"
+   aria-label="Romanization and supported languages"
+   style={{
+    marginTop:12,
+    padding:'12px 14px',
+    borderRadius:10,
+    background:'rgba(255,255,255,0.03)',
+    border:'1px solid rgba(255,255,255,0.08)'
+   }}
+  >
+   <div style={{display:'flex',flexWrap:'wrap',alignItems:'center',justifyContent:'space-between',gap:10,marginBottom:8}}>
+    <label style={{display:'inline-flex',alignItems:'center',gap:8,fontSize:13,fontWeight:700,cursor:'pointer'}}>
+     <input
+      type="checkbox"
+      aria-label="Enable phonetic romanization"
+      checked={autoRoman}
+      onChange={e=>setAutoRoman(e.target.checked)}
+     />
+     <span>
+      ROMANIZATION ({autoRoman?`ON · ${enabledRomanLangs.length}/${SUPPORTED_ROMANIZATION_LANGUAGES.length} LANGUAGES ENABLED`:'OFF'})
+     </span>
+    </label>
+    <div style={{display:'flex',gap:8}}>
+     <button
+      type="button"
+      className="upload-button"
+      onClick={()=>{
+       setAutoRoman(true);
+       setEnabledRomanLangs([...ALL_ROMANIZATION_LANGUAGE_CODES]);
+      }}
+     >
+      Enable All {SUPPORTED_ROMANIZATION_LANGUAGES.length} Languages
+     </button>
+    </div>
+   </div>
+   <small style={{display:'block',fontSize:11,color:'#94a3b8',marginBottom:8}}>
+    Only languages enabled below are romanized when Romanization is turned on (Spotify-Karaoke phonetic engine).
+   </small>
+   <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+    {SUPPORTED_ROMANIZATION_LANGUAGES.map(lang=>{
+     const isLangOn=autoRoman&&enabledRomanLangs.includes(lang.code);
+     return (
+      <button
+       key={lang.code}
+       type="button"
+       role="switch"
+       aria-checked={isLangOn}
+       aria-label={`Romanize ${lang.name}`}
+       onClick={()=>toggleRomanLang(lang.code)}
+       style={{
+        padding:'4px 10px',
+        borderRadius:6,
+        fontSize:11,
+        fontWeight:600,
+        cursor:'pointer',
+        border:isLangOn?'1px solid #38bdf8':'1px solid rgba(255,255,255,0.14)',
+        background:isLangOn?'rgba(56,189,248,0.16)':'rgba(255,255,255,0.03)',
+        color:isLangOn?'#e0f2fe':'#94a3b8',
+        opacity:autoRoman?1:0.5
+       }}
+      >
+       {lang.name} · {enabledRomanLangs.includes(lang.code)?'ON':'OFF'}
+      </button>
+     );
+    })}
+   </div>
   </div>
 
   {plain&&!lines.length&&<div className="plain-lyrics-fallback">
@@ -874,16 +1079,6 @@ export default function ManualLyrics({
    </label>
   </div>}
 
-  {storyboard.length>0&&<div className="storyboard">
-   <div className="storyboard-title"><strong>AUTO-DIRECTED SCENE STORYBOARD</strong><span>{storyboard.length} planned scene(s) from your enabled themes</span></div>
-   <div className="storyboard-track">{storyboard.map((item,i)=><div className="storyboard-item" key={item.start+'-'+i} style={{borderTopColor:byId[item.id].accent}}>
-     <span className="storyboard-time">{Math.floor(item.start/60)}:{String(Math.floor(item.start%60)).padStart(2,'0')} – {Math.floor(item.end/60)}:{String(Math.floor(item.end%60)).padStart(2,'0')}</span>
-     <strong>{byId[item.id].label}</strong>
-     <span>{byId[item.id].family} · {item.font}</span>
-     <small>{item.layout} · {item.transition} · {item.reason}</small>
-    </div>)}</div>
-   <p className="player-footnote">Storyboard scenes are chosen deterministically from your enabled themes and stay locked when seeking.</p>
-  </div>}
   {message&&<p className="player-footnote" role="status">{message}</p>}
  </section>;
 }

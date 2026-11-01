@@ -170,7 +170,12 @@ export async function extractAlbumArtPalette(
  if (cached) return cached;
 
  const fallback = getDeterministicSongPalette(songSeed);
- if (!artworkUrl || typeof document === 'undefined' || typeof Image === 'undefined') {
+ if (
+  !artworkUrl ||
+  typeof document === 'undefined' ||
+  typeof Image === 'undefined' ||
+  (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent || ''))
+ ) {
   albumPaletteCache.set(cacheKey, fallback);
   return fallback;
  }
