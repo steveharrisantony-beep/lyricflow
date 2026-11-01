@@ -18,5 +18,6 @@ jobs:
       - run: npm run build
       - name: Verify the current packaged web application
         run: |
+          node scripts/interface-smoke.mjs
           node scripts/android-web-smoke.mjs
           node scripts/song-mapping-smoke.mjs

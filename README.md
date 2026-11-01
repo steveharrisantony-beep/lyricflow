@@ -1,14 +1,33 @@
 # LyricFlow Android
 
+## Interface
+
+The responsive glass workspace has a visualizer and one shared music player. Select
+or change the source, search, manage the queue and enter fullscreen from the player.
+Desktop settings sit beside the visualizer; mobile settings open as a scrollable
+sheet. Fullscreen reuses the same player and settings.
+
+- **Song Mapping:** lyrics/video timing, source reselection, custom lyrics, per-song
+  saving and optional submission for developer approval.
+- **Background:** theme/video mode, video preference, opacity and fit, enabled
+  themes, palettes, randomization and duration.
+- **Lyrics:** placement, fonts, size, colour, animation and romanization.
+- **Render Engine:** quality, camera shake, sensitivity, intensity, blur and speed.
+- **Others:** system/light/dark appearance, account connections, FPS and updates.
+
+All tabs remain mounted so changing settings never restarts playback or lyric
+matching. Numeric delays support positive, negative and zero values; automatic
+video timing remains separate from a manual delay.
+
 **Account sync and guest-readable approved corrections:** see [Firebase setup](FIREBASE_SETUP.md). The dashboard is deferred; publication remains manual.
 
-Capacitor Android packaging of [LyricFlow](https://github.com/steveharrisantony-beep/lyricflow).
+Shared React web application and Capacitor Android app. Develop both versions from this repository.
 
 **[Download/build an APK on your tablet: Android setup guide](ANDROID.md)**
 
 [![Build Android APK](https://github.com/steveharrisantony-beep/lyricsflow-android/actions/workflows/android-apk.yml/badge.svg)](https://github.com/steveharrisantony-beep/lyricsflow-android/actions/workflows/android-apk.yml)
 
-The application and its existing Express backend run inside the APK. No external backend hosting or manual server setup is required. Online music/lyrics and optional Firebase sync still require internet services. Notification-listener integration is not included in this milestone.
+The application and its existing Express backend run inside the APK. No external backend hosting or manual server setup is required. Online music/lyrics and optional Firebase sync still require internet services. The Android app includes notification access for external music players.
 
 ---
 

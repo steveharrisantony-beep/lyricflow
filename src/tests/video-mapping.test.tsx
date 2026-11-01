@@ -118,7 +118,7 @@ it('renders video thumbnails in YouTubeBackgroundPicker custom video finding',as
       onChoose={vi.fn()}
     />
   ));
-  const findBtn=Array.from(host.querySelectorAll('button')).find(b=>b.textContent?.includes('Find YouTube video background'))!;
+  const findBtn=Array.from(host.querySelectorAll('button')).find(b=>b.textContent?.includes('Find video'))!;
   await act(async()=>findBtn.click());
   const thumb=host.querySelector<HTMLImageElement>('img.candidate-thumb');
   expect(thumb).not.toBeNull();
@@ -149,7 +149,7 @@ it('detects Spotify advertisements and pauses lyrics lookup during ads',async()=
   expect(onStatusChange).toHaveBeenCalledWith(expect.stringContaining('Advertisement playing'));
 });
 
-it('shows External Player as Not available in web on browsers and enables Notification + Mic/Internal Audio on Android app',async()=>{
+it('shows External player as Not available in web on browsers and enables Notification + Mic/Internal Audio on Android app',async()=>{
   const {default:AudioSourceHub}=await import('../audio/AudioSourceHub');
   const {setAndroidAppOverrideForTest}=await import('../audio/externalPlayer');
   setAndroidAppOverrideForTest(false);
@@ -166,14 +166,14 @@ it('shows External Player as Not available in web on browsers and enables Notifi
   );
   await act(async()=>root.render(renderHub(null)));
   expect(host.textContent).toContain('Not available in web');
-  const extCard=Array.from(host.querySelectorAll<HTMLButtonElement>('.source-option-card')).find(b=>b.textContent?.includes('External Player'))!;
+  const extCard=Array.from(host.querySelectorAll<HTMLButtonElement>('.source-option-card')).find(b=>b.textContent?.includes('External player'))!;
   await act(async()=>extCard.click());
   expect(selectedMode).toBeNull();
-  expect(host.textContent).toContain('External Player · Not available in web');
+  expect(host.textContent).toContain('External player · Not available in web');
 
   setAndroidAppOverrideForTest(true);
   await act(async()=>root.render(renderHub(null)));
-  const androidExtCard=Array.from(host.querySelectorAll<HTMLButtonElement>('.source-option-card')).find(b=>b.textContent?.includes('External Player'))!;
+  const androidExtCard=Array.from(host.querySelectorAll<HTMLButtonElement>('.source-option-card')).find(b=>b.textContent?.includes('External player'))!;
   await act(async()=>androidExtCard.click());
   expect(selectedMode).toBe('external');
   expect(host.textContent).toContain('Android Notification Listening');
@@ -282,7 +282,7 @@ it('shows previously loaded video candidates immediately and only searches again
  const {default:Picker}=await import('../music/YouTubeBackgroundPicker');
  const videos=Array.from({length:15},(_,i)=>({id:'yt_'+String(i).padStart(11,'0'),title:'Song Official Music Video',artist:'Artist',album:'',duration:200,provider:'resolver' as const,youtubeVideoId:String(i).padStart(11,'0'),sourceUrl:'https://www.youtube.com/watch?v='+String(i).padStart(11,'0')}));
  await act(async()=>root.render(<Picker track={{title:'Song',artist:'Artist',album:'',duration:200,source:'provider',confidence:1}} activeVideoId="abcdefghijk" preference="music" onPreferenceChange={()=>{}} onChoose={()=>{}} cachedCandidates={videos} cachedCandidateCount={35}/>));
- await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='Change YouTube background')!.click());
+ await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='Change video')!.click());
  expect(host.querySelectorAll('.video-candidate')).toHaveLength(15);
  expect(search).not.toHaveBeenCalled();
  const input=host.querySelector<HTMLInputElement>('input[aria-label="Custom YouTube video search"]')!;

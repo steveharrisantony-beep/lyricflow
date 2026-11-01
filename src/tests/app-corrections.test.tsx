@@ -3,12 +3,11 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 vi.mock('../visualization/cinematic/CinematicStage', () => ({ default: () => null, CAMERA_VIEWS: ['Front'] }));
-vi.mock('../audio/LocalPlayer', () => ({ default: (props: { onTrackChange: (track: unknown) => void; onFileChange: (loaded: boolean) => void; lyricDelay: number; onLyricDelayChange: (delay: number) => void }) => <div>
+vi.mock('../audio/LocalPlayer', () => ({ default: (props: { onTrackChange: (track: unknown) => void; onFileChange: (loaded: boolean) => void; onOpenSourceSelector: () => void }) => <div>
   <button onClick={() => { props.onTrackChange({ title: 'Original test song', artist: 'Test artist', album: 'Studio', duration: 200, provider: 'local', source: 'manual', confidence: 1 }); props.onFileChange(true); }}>Load fixture audio</button>
   <button onClick={() => { props.onTrackChange({ title: 'Original test song', artist: 'Test artist', album: 'Studio', duration: 200, provider: 'jiosaavn', sourceTrackId: 'saavn_123', source: 'provider', audioSource: 'JioSaavn', confidence: 1 }); props.onFileChange(true); }}>Load JioSaavn fixture</button>
   <button onClick={() => { props.onTrackChange({ title: 'Next test song', artist: 'Test artist', album: 'Studio', duration: 200, provider: 'jiosaavn', sourceTrackId: 'saavn_next', source: 'provider', confidence: 1 }); props.onFileChange(true); }}>Load next JioSaavn fixture</button>
-  <output data-testid="delay">{props.lyricDelay}</output>
-  <button onClick={() => props.onLyricDelayChange(.5)}>Adjust fixture timing</button>
+  <button onClick={props.onOpenSourceSelector}>Select source</button>
 </div> }));
 vi.mock('../music/providers', async importOriginal => ({
   ...await importOriginal<typeof import('../music/providers')>(),
@@ -49,8 +48,9 @@ it('stores manual-lyrics delay on device and restores it after remount', async (
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(area, '[00:01]Original test words\n[00:03]Another original phrase');
     area!.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  await act(async () => click('Adjust fixture timing'));
-  expect(host.querySelector('[data-testid="delay"]')?.textContent).toBe('0.5');
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Increase lyric delay 0.25s"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Increase lyric delay 0.25s"]')!.click());
+  expect(host.querySelector<HTMLInputElement>('[aria-label="Lyrics delay seconds"]')?.value).toBe('0.5');
   expect(host.textContent).toContain('Lyrics timing: personal');
   expect(localStorage.getItem('lyricflow.v3.guest.corrections')).toContain('"delaySeconds":0.5');
   await act(async () => root.unmount());
@@ -58,18 +58,18 @@ it('stores manual-lyrics delay on device and restores it after remount', async (
   await act(async () => root.render(<App />));
   await act(async () => click('Load fixture audio'));
   // The same lyrics revision finds the same correction; a new revision must not.
-  await act(async () => click('Custom Edit (If Lyrics Mismatch)'));
+  await act(async () => click('Edit or import lyrics'));
   const area2 = host.querySelector<HTMLTextAreaElement>('textarea')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(area2, '[00:01]Original test words\n[00:03]Another original phrase');
     area2.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  expect(host.querySelector('[data-testid="delay"]')?.textContent).toBe('0.5');
+  expect(host.querySelector<HTMLInputElement>('[aria-label="Lyrics delay seconds"]')?.value).toBe('0.5');
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(area2, '[00:02]A different lyrics revision');
     area2.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  expect(host.querySelector('[data-testid="delay"]')?.textContent).toBe('0');
+  expect(host.querySelector<HTMLInputElement>('[aria-label="Lyrics delay seconds"]')?.value).toBe('0');
 });
 
 it('stages an account edit before the first cloud snapshot or debounce, without touching guest settings', async () => {
@@ -90,21 +90,22 @@ it('stages an account edit before the first cloud snapshot or debounce, without 
 
 it('finds a music or lyrical YouTube background for JioSaavn and saves both source mappings without changing audio', async () => {
   await act(async () => click('Load JioSaavn fixture'));
-  await act(async () => click('Find YouTube video background'));
+  await act(async () => click('Find video'));
   expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Test artist music video', 'resolver', '', expect.any(AbortSignal));
   const select = host.querySelector<HTMLSelectElement>('select[aria-label="Preferred YouTube background"]')!;
   await act(async () => { select.value = 'lyrics'; select.dispatchEvent(new Event('change',{bubbles:true})); });
-  await act(async () => click('Find YouTube video background'));
+  await act(async () => click('Find video'));
   expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Test artist lyrics video', 'resolver', '', expect.any(AbortSignal));
-  await act(async () => click('Use muted background'));
-  expect(host.textContent).toContain('Source: JioSaavn');
-  await act(async () => click('Custom Edit (If Lyrics Mismatch)'));
+  await act(async () => click('Use video'));
+  expect(localStorage.getItem('lyricflow.lastSourceMode')).toBe('online');
+  await act(async () => click('Edit or import lyrics'));
   const area = host.querySelector<HTMLTextAreaElement>('textarea')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(area,'[00:01]Original test words');
     area.dispatchEvent(new Event('input',{bubbles:true}));
   });
-  await act(async () => click('Adjust fixture timing'));
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Increase lyric delay 0.25s"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Increase lyric delay 0.25s"]')!.click());
   const maps = Object.values(JSON.parse(localStorage.getItem('lyricflow.v3.guest.songMappings') || '{}')) as {identity:{title:string;artist:string;duration:number};lyrics:{sourceFile:{revision:string};delaySeconds:number};video:{youtubeVideoId:string;delaySeconds:number}}[];
   expect(maps).toHaveLength(1);
   expect(maps[0]).toMatchObject({identity:{title:'original test song',artist:'test artist',duration:200},lyrics:{delaySeconds:.5},video:{youtubeVideoId:'abcdefghijk',delaySeconds:null}});
@@ -124,8 +125,8 @@ it('switches external advertisements to themes, aborts video search and unmounts
   const draw=vi.spyOn(stage,'default').mockImplementation(props=><span data-testid="stage-ad" data-ad={String(props.advertisementPlaying)} data-external={String(props.externalPlayer)} data-video={props.youtubeVideoId||''} data-mode={props.youtubeBackgroundMode}/>);
   external.setAndroidAppOverrideForTest(true);
   try{
-    await act(async()=>host.querySelector<HTMLButtonElement>('.stage-source-button')!.click());
-    await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('.source-option-card')].find(b=>b.textContent?.includes('External Player'))!.click());
+    await act(async()=>click('Select source'));
+    await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('.source-option-card')].find(b=>b.textContent?.includes('External player'))!.click());
     const media={title:'Original fixture song',artist:'Fixture Artist',album:'',duration:200,position:1,playing:true,packageName:'fixture.player',appName:'Fixture Player',updatedAt:Date.now()};
     await act(async()=>deliver!(media,true));
     expect(host.querySelector('[data-testid="lyrics-lookup"]')).not.toBeNull();

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState } from "react";
 import {
   CheckCircle2,
   KeyRound,
@@ -9,8 +9,8 @@ import {
   Shield,
   ShieldCheck,
   Video,
-} from 'lucide-react';
-import { isFirebaseConfigured, isNativeApp } from '../firebase/firebaseClient';
+} from "lucide-react";
+import { isFirebaseConfigured, isNativeApp } from "../firebase/firebaseClient";
 import {
   getYouTubeAccessToken,
   getYouTubeCookieHeader,
@@ -21,12 +21,12 @@ import {
   signOutYouTubeAccount,
   triggerYouTubePlayerReload,
   useYouTubeAuth,
-} from '../music/youtubeAuth';
+} from "../music/youtubeAuth";
 import {
   syncBlockyListsFromBackend,
   updateYouTubeAdBlockerConfig,
   useYouTubeAdBlocker,
-} from '../music/youtubeAdBlocker';
+} from "../music/youtubeAdBlocker";
 
 export default function YouTubeAccountControl({
   compact = false,
@@ -40,29 +40,37 @@ export default function YouTubeAccountControl({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [syncingLists, setSyncingLists] = useState(false);
-  const [statusMsg, setStatusMsg] = useState('');
+  const [statusMsg, setStatusMsg] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [tokenInput, setTokenInput] = useState(() => getYouTubeAccessToken());
-  const [cookieInput, setCookieInput] = useState(() => getYouTubeCookieHeader());
+  const [cookieInput, setCookieInput] = useState(() =>
+    getYouTubeCookieHeader(),
+  );
 
-  const handlePrimarySignIn = async (mode: 'auto' | 'browser-popup' | 'google-oauth' = 'auto') => {
+  const handlePrimarySignIn = async (
+    mode: "auto" | "browser-popup" | "google-oauth" = "auto",
+  ) => {
     setBusy(true);
-    setStatusMsg('');
+    setStatusMsg("");
     try {
       const next = await signInToYouTubeAccount(mode);
       if (next.connected) {
         setStatusMsg(
           isNativeApp()
-            ? 'Signed in to YouTube! Embedded videos and searches now use your YouTube account.'
-            : 'YouTube account connected! Videos now play from your signed-in YouTube session.'
+            ? "Signed in to YouTube! Embedded videos and searches now use your YouTube account."
+            : "YouTube account connected! Videos now play from your signed-in YouTube session.",
         );
         onSignedIn?.();
       } else {
-        setStatusMsg('YouTube sign-in window closed. Click Reload Video if you signed in.');
+        setStatusMsg(
+          "YouTube sign-in window closed. Click Reload Video if you signed in.",
+        );
       }
     } catch (err) {
       setStatusMsg(
-        err instanceof Error ? err.message : 'Unable to complete YouTube sign-in.'
+        err instanceof Error
+          ? err.message
+          : "Unable to complete YouTube sign-in.",
       );
     } finally {
       setBusy(false);
@@ -77,10 +85,14 @@ export default function YouTubeAccountControl({
         accessToken: tokenInput,
         cookieHeader: cookieInput,
       });
-      setStatusMsg('Saved YouTube session credentials and synced with search resolver.');
+      setStatusMsg(
+        "Saved YouTube session credentials and synced with search resolver.",
+      );
       onSignedIn?.();
     } catch (err) {
-      setStatusMsg(err instanceof Error ? err.message : 'Failed to save credentials.');
+      setStatusMsg(
+        err instanceof Error ? err.message : "Failed to save credentials.",
+      );
     } finally {
       setBusy(false);
     }
@@ -91,65 +103,50 @@ export default function YouTubeAccountControl({
     try {
       const result = await syncBlockyListsFromBackend();
       setStatusMsg(
-        `Blocky denylists synced (${result.rulesCount} active rules from ${result.syncedSources.join(', ')}).`
+        `Blocky denylists synced (${result.rulesCount} active rules from ${result.syncedSources.join(", ")}).`,
       );
     } catch {
-      setStatusMsg('Using built-in Blocky + RemoveAdblockThing adblock rules.');
+      setStatusMsg("Using built-in Blocky + RemoveAdblockThing adblock rules.");
     } finally {
       setSyncingLists(false);
     }
   };
 
   return (
-    <div className="youtube-account-control" style={{ position: 'relative', display: 'inline-block' }}>
+    <div
+      className="youtube-account-control"
+      style={{ position: "relative", display: "inline-block" }}
+    >
       <button
         type="button"
         className="upload-button"
         aria-expanded={open}
-        onClick={() => setOpen(v => !v)}
+        onClick={() => setOpen((v) => !v)}
         style={{
-          display: 'inline-flex',
-          alignItems: 'center',
+          display: "inline-flex",
+          alignItems: "center",
           gap: 6,
-          padding: compact ? '5px 10px' : '7px 12px',
+          padding: compact ? "5px 10px" : "7px 12px",
           fontSize: compact ? 12 : 13,
-          borderColor: ytAuth.connected ? 'rgba(52, 211, 153, 0.55)' : 'rgba(248, 113, 113, 0.45)',
-          background: ytAuth.connected
-            ? 'rgba(6, 78, 59, 0.35)'
-            : 'rgba(127, 29, 29, 0.28)',
-          color: '#f8fafc',
+          borderColor: "var(--line)",
+          background: "var(--surface)",
+          color: "var(--ink)",
         }}
       >
         {ytAuth.connected ? (
           <>
-            <CheckCircle2 size={14} style={{ color: '#34d399' }} />
-            <span>{compact ? 'YT Signed In' : `YouTube: ${ytAuth.accountLabel || 'Connected'}`}</span>
+            <CheckCircle2 size={14} style={{ color: "#34d399" }} />
+            <span>
+              {compact
+                ? "Connected"
+                : `YouTube: ${ytAuth.accountLabel || "Connected"}`}
+            </span>
           </>
         ) : (
           <>
-            <Video size={14} style={{ color: '#f87171' }} />
-            <span>{compact ? 'YouTube Sign-In' : 'Sign in to YouTube'}</span>
+            <Video size={14} style={{ color: "#f87171" }} />
+            <span>{compact ? "Sign in" : "Sign in to YouTube"}</span>
           </>
-        )}
-        {adBlocker.enabled && (
-          <span
-            title="Blocky + RemoveAdblockThing YouTube AdBlocker Active"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 3,
-              padding: '1px 6px',
-              borderRadius: 6,
-              fontSize: 10.5,
-              fontWeight: 600,
-              background: 'rgba(16, 185, 129, 0.22)',
-              border: '1px solid rgba(52, 211, 153, 0.45)',
-              color: '#6ee7b7',
-            }}
-          >
-            <Shield size={10} />
-            AdBlock
-          </span>
         )}
       </button>
 
@@ -158,66 +155,90 @@ export default function YouTubeAccountControl({
           className="account-panel youtube-auth-panel"
           aria-label="YouTube account sign-in and AdBlocker"
           style={{
-            position: 'absolute',
+            position: "absolute",
             right: 0,
-            top: 'calc(100% + 8px)',
+            top: "calc(100% + 8px)",
             zIndex: 1200,
-            width: 'min(410px, 94vw)',
+            width: "min(410px, 94vw)",
             padding: 14,
             borderRadius: 14,
-            background: 'rgba(10, 15, 29, 0.97)',
-            border: '1px solid rgba(148, 163, 184, 0.26)',
-            boxShadow: '0 18px 42px rgba(0, 0, 0, 0.65)',
-            display: 'flex',
-            flexDirection: 'column',
+            background: "var(--surface)",
+            border: "1px solid rgba(148, 163, 184, 0.26)",
+            boxShadow: "0 18px 42px rgba(0, 0, 0, 0.65)",
+            display: "flex",
+            flexDirection: "column",
             gap: 10,
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-            <strong style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
-              <ShieldCheck size={16} style={{ color: ytAuth.connected ? '#34d399' : '#60a5fa' }} />
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <strong
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 14,
+              }}
+            >
+              <ShieldCheck
+                size={16}
+                style={{ color: ytAuth.connected ? "#34d399" : "#60a5fa" }}
+              />
               {ytAuth.connected
-                ? `Connected: ${ytAuth.accountLabel || 'YouTube Account'}`
-                : 'Sign in to YouTube (Bypass Bot Block)'}
+                ? `Connected: ${ytAuth.accountLabel || "YouTube Account"}`
+                : "YouTube sign-in"}
             </strong>
             <button
               type="button"
               className="upload-button"
-              style={{ padding: '2px 8px', fontSize: 11 }}
+              style={{ padding: "2px 8px", fontSize: 11 }}
               onClick={() => setOpen(false)}
             >
               Close
             </button>
           </div>
 
-          <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: 'rgba(226, 232, 240, 0.85)' }}>
-            Signing in plays embedded YouTube videos directly from your personal YouTube account and prevents YouTube from blocking video playback or searches after multiple songs.
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              lineHeight: 1.45,
+              color: "var(--muted)",
+            }}
+          >
+            Connect your YouTube account for supported playback and searches.
           </p>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             <button
               type="button"
               className="source-primary"
               disabled={busy}
-              onClick={() => void handlePrimarySignIn('auto')}
+              onClick={() => void handlePrimarySignIn("auto")}
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
+                display: "inline-flex",
+                alignItems: "center",
                 gap: 6,
-                padding: '8px 12px',
+                padding: "8px 12px",
                 fontSize: 12.5,
-                flex: '1 1 auto',
-                justifyContent: 'center',
+                flex: "1 1 auto",
+                justifyContent: "center",
               }}
             >
               <LogIn size={14} />
               {busy
-                ? 'Opening YouTube Sign-In…'
+                ? "Opening YouTube Sign-In…"
                 : isNativeApp()
-                  ? 'Sign in to YouTube (In-App)'
+                  ? "Sign in to YouTube (In-App)"
                   : ytAuth.connected
-                    ? 'Switch / Re-authenticate YouTube Account'
-                    : 'Sign in with YouTube Account'}
+                    ? "Switch account"
+                    : "Continue to YouTube"}
             </button>
 
             {!isNativeApp() && isFirebaseConfigured && (
@@ -225,8 +246,8 @@ export default function YouTubeAccountControl({
                 type="button"
                 className="upload-button"
                 disabled={busy}
-                onClick={() => void handlePrimarySignIn('browser-popup')}
-                style={{ fontSize: 12, padding: '7px 10px' }}
+                onClick={() => void handlePrimarySignIn("browser-popup")}
+                style={{ fontSize: 12, padding: "7px 10px" }}
               >
                 Sign in on YouTube.com Popup
               </button>
@@ -237,9 +258,17 @@ export default function YouTubeAccountControl({
               className="upload-button"
               onClick={() => {
                 triggerYouTubePlayerReload();
-                setStatusMsg('Reloaded YouTube video player with current account session.');
+                setStatusMsg(
+                  "Reloaded YouTube video player with current account session.",
+                );
               }}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, padding: '7px 10px' }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: 12,
+                padding: "7px 10px",
+              }}
               title="Reload the YouTube video player iframe"
             >
               <RefreshCw size={13} />
@@ -247,219 +276,293 @@ export default function YouTubeAccountControl({
             </button>
           </div>
 
-          {/* YouTube AdBlocker Section (0xERR0R/blocky + TheRealJoelmatic/RemoveAdblockThing) */}
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 7,
-              padding: '9px 11px',
-              borderRadius: 10,
-              background: 'rgba(6, 78, 59, 0.24)',
-              border: '1px solid rgba(52, 211, 153, 0.28)',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-              <strong style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#6ee7b7' }}>
-                <Shield size={14} />
-                YouTube AdBlocker (Blocky + RemoveAdblockThing)
-              </strong>
-              <input
-                type="checkbox"
-                aria-label="Enable YouTube AdBlocker"
-                checked={adBlocker.enabled}
-                onChange={e => updateYouTubeAdBlockerConfig({ enabled: e.target.checked })}
-              />
-            </div>
-
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 11, color: 'rgba(209, 250, 229, 0.85)' }}>
-              <span>Rules: {adBlocker.blockyRulesCount}</span>
-              <span>·</span>
-              <span>Blocked Requests: {adBlocker.blockedRequestsCount}</span>
-              <span>·</span>
-              <span>Skipped Ads/Popups: {adBlocker.skippedAdsCount + adBlocker.removedPopupsCount}</span>
-            </div>
-
-            {adBlocker.enabled && (
-              <>
-                <label
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 8,
-                    fontSize: 11.5,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <span>0xERR0R/blocky DNS & Ad-Domain Sinkhole</span>
-                  <input
-                    type="checkbox"
-                    checked={adBlocker.blockyEnabled}
-                    onChange={e => updateYouTubeAdBlockerConfig({ blockyEnabled: e.target.checked })}
-                  />
-                </label>
-
-                <label
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 8,
-                    fontSize: 11.5,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <span>RemoveAdblockThing (Skip Ads & Remove Warning Popups)</span>
-                  <input
-                    type="checkbox"
-                    checked={adBlocker.removeAdblockThingEnabled}
-                    onChange={e =>
-                      updateYouTubeAdBlockerConfig({ removeAdblockThingEnabled: e.target.checked })
-                    }
-                  />
-                </label>
-
-                <label
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 8,
-                    fontSize: 11.5,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <span>Fast-forward embedded commercial clips (16x Auto-Skip)</span>
-                  <input
-                    type="checkbox"
-                    checked={adBlocker.skipEmbeddedAdsEnabled}
-                    onChange={e =>
-                      updateYouTubeAdBlockerConfig({ skipEmbeddedAdsEnabled: e.target.checked })
-                    }
-                  />
-                </label>
-
-                <button
-                  type="button"
-                  className="upload-button"
-                  disabled={syncingLists}
-                  onClick={() => void handleSyncBlockyLists()}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 5,
-                    fontSize: 11.5,
-                    padding: '4px 8px',
-                    marginTop: 2,
-                  }}
-                >
-                  <RefreshCw size={12} />
-                  {syncingLists ? 'Syncing Blocky Denylists…' : 'Sync Blocky Ad Lists'}
-                </button>
-              </>
-            )}
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 6,
-              padding: '8px 10px',
-              borderRadius: 10,
-              background: 'rgba(30, 41, 59, 0.55)',
-              border: '1px solid rgba(148, 163, 184, 0.16)',
-            }}
-          >
-            <label
+          <details className="disclosure">
+            <summary>Playback options</summary>
+            {/* YouTube AdBlocker Section (0xERR0R/blocky + TheRealJoelmatic/RemoveAdblockThing) */}
+            <div
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 8,
-                fontSize: 12,
-                cursor: 'pointer',
+                display: "flex",
+                flexDirection: "column",
+                gap: 7,
+                padding: "9px 11px",
+                borderRadius: 10,
+                background: "var(--surface)",
+                border: "1px solid rgba(52, 211, 153, 0.28)",
               }}
             >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <MousePointerClick size={13} />
-                Allow clicking inside YouTube video (dismiss prompts)
-              </span>
-              <input
-                type="checkbox"
-                checked={ytAuth.interactivePlayer}
-                onChange={e => setYouTubeInteractivePlayer(e.target.checked)}
-              />
-            </label>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <strong
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 12.5,
+                    color: "var(--accent)",
+                  }}
+                >
+                  <Shield size={14} />
+                  Ad blocking
+                </strong>
+                <input
+                  type="checkbox"
+                  aria-label="Enable YouTube AdBlocker"
+                  checked={adBlocker.enabled}
+                  onChange={(e) =>
+                    updateYouTubeAdBlockerConfig({ enabled: e.target.checked })
+                  }
+                />
+              </div>
 
-            <label
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 6,
+                  fontSize: 11,
+                  color: "var(--muted)",
+                }}
+              >
+                <span>Rules: {adBlocker.blockyRulesCount}</span>
+                <span>·</span>
+                <span>Blocked Requests: {adBlocker.blockedRequestsCount}</span>
+                <span>·</span>
+                <span>
+                  Skipped Ads/Popups:{" "}
+                  {adBlocker.skippedAdsCount + adBlocker.removedPopupsCount}
+                </span>
+              </div>
+
+              {adBlocker.enabled && (
+                <>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      fontSize: 11.5,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span>Block ad domains</span>
+                    <input
+                      type="checkbox"
+                      checked={adBlocker.blockyEnabled}
+                      onChange={(e) =>
+                        updateYouTubeAdBlockerConfig({
+                          blockyEnabled: e.target.checked,
+                        })
+                      }
+                    />
+                  </label>
+
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      fontSize: 11.5,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span>Skip ads & warning popups</span>
+                    <input
+                      type="checkbox"
+                      checked={adBlocker.removeAdblockThingEnabled}
+                      onChange={(e) =>
+                        updateYouTubeAdBlockerConfig({
+                          removeAdblockThingEnabled: e.target.checked,
+                        })
+                      }
+                    />
+                  </label>
+
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      fontSize: 11.5,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span>Fast-forward embedded ads</span>
+                    <input
+                      type="checkbox"
+                      checked={adBlocker.skipEmbeddedAdsEnabled}
+                      onChange={(e) =>
+                        updateYouTubeAdBlockerConfig({
+                          skipEmbeddedAdsEnabled: e.target.checked,
+                        })
+                      }
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    className="upload-button"
+                    disabled={syncingLists}
+                    onClick={() => void handleSyncBlockyLists()}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 5,
+                      fontSize: 11.5,
+                      padding: "4px 8px",
+                      marginTop: 2,
+                    }}
+                  >
+                    <RefreshCw size={12} />
+                    {syncingLists
+                      ? "Syncing Blocky Denylists…"
+                      : "Sync Blocky Ad Lists"}
+                  </button>
+                </>
+              )}
+            </div>
+
+            <div
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 8,
-                fontSize: 12,
-                cursor: 'pointer',
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+                padding: "8px 10px",
+                borderRadius: 10,
+                background: "var(--surface)",
+                border: "1px solid rgba(148, 163, 184, 0.16)",
               }}
             >
-              <span>Use YouTube account cookies in embed (youtube.com)</span>
-              <input
-                type="checkbox"
-                checked={!ytAuth.useNoCookieDomain}
-                onChange={e => setYouTubeNoCookieDomain(!e.target.checked)}
-              />
-            </label>
-          </div>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <MousePointerClick size={13} />
+                  Allow clicking inside YouTube video (dismiss prompts)
+                </span>
+                <input
+                  type="checkbox"
+                  checked={ytAuth.interactivePlayer}
+                  onChange={(e) =>
+                    setYouTubeInteractivePlayer(e.target.checked)
+                  }
+                />
+              </label>
+
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                <span>Use YouTube account cookies in embed (youtube.com)</span>
+                <input
+                  type="checkbox"
+                  checked={!ytAuth.useNoCookieDomain}
+                  onChange={(e) => setYouTubeNoCookieDomain(!e.target.checked)}
+                />
+              </label>
+            </div>
+          </details>
 
           <div>
             <button
               type="button"
               className="upload-button"
-              onClick={() => setShowAdvanced(v => !v)}
+              onClick={() => setShowAdvanced((v) => !v)}
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
+                display: "inline-flex",
+                alignItems: "center",
                 gap: 6,
                 fontSize: 11.5,
-                padding: '4px 9px',
-                width: '100%',
-                justifyContent: 'center',
+                padding: "4px 9px",
+                width: "100%",
+                justifyContent: "center",
               }}
             >
               <KeyRound size={12} />
               {showAdvanced
-                ? 'Hide Advanced YouTube Cookie / Token Settings'
-                : 'Advanced: Paste YouTube OAuth Token or Cookie'}
+                ? "Close advanced connection"
+                : "Advanced connection"}
             </button>
 
             {showAdvanced && (
               <form
                 onSubmit={handleSaveAdvanced}
-                style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  marginTop: 8,
+                }}
               >
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11.5 }}>
+                <label
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                    fontSize: 11.5,
+                  }}
+                >
                   YouTube OAuth Access Token (optional)
                   <input
                     type="password"
                     value={tokenInput}
-                    onChange={e => setTokenInput(e.target.value)}
+                    onChange={(e) => setTokenInput(e.target.value)}
                     placeholder="ya29.a0..."
-                    onKeyDown={e => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
                   />
                 </label>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11.5 }}>
-                  YouTube Session Cookie (optional — e.g. SAPISID=...; __Secure-3PAPISID=...)
+                <label
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                    fontSize: 11.5,
+                  }}
+                >
+                  YouTube Session Cookie (optional — e.g. SAPISID=...;
+                  __Secure-3PAPISID=...)
                   <input
                     type="text"
                     value={cookieInput}
-                    onChange={e => setCookieInput(e.target.value)}
+                    onChange={(e) => setCookieInput(e.target.value)}
                     placeholder="SAPISID=...; __Secure-3PAPISID=...; LOGIN_INFO=..."
-                    onKeyDown={e => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
                   />
                 </label>
-                <button type="submit" className="upload-button" disabled={busy} style={{ fontSize: 12 }}>
+                <button
+                  type="submit"
+                  className="upload-button"
+                  disabled={busy}
+                  style={{ fontSize: 12 }}
+                >
                   Save Session Credentials
                 </button>
               </form>
@@ -473,18 +576,18 @@ export default function YouTubeAccountControl({
               disabled={busy}
               onClick={() =>
                 void signOutYouTubeAccount().then(() => {
-                  setTokenInput('');
-                  setCookieInput('');
-                  setStatusMsg('Signed out of YouTube account.');
+                  setTokenInput("");
+                  setCookieInput("");
+                  setStatusMsg("Signed out of YouTube account.");
                 })
               }
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
                 gap: 6,
                 fontSize: 12,
-                color: '#fca5a5',
+                color: "#fca5a5",
               }}
             >
               <LogOut size={13} />
@@ -493,7 +596,10 @@ export default function YouTubeAccountControl({
           )}
 
           {statusMsg && (
-            <p role="status" style={{ margin: 0, fontSize: 11.5, color: '#93c5fd' }}>
+            <p
+              role="status"
+              style={{ margin: 0, fontSize: 11.5, color: "#93c5fd" }}
+            >
               {statusMsg}
             </p>
           )}

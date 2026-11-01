@@ -11,7 +11,7 @@ export const LYRIC_ENGINE_OPTIONS: readonly {
 }[] = [
   {
     id: 'lyricflow',
-    label: '1. LyricFlow Engine (YouTube Subtitles + Apple Word-Sync)',
+    label: 'Automatic (LyricFlow)',
     shortLabel: 'LyricFlow Engine',
     badge: 'Hybrid Word-Sync',
     description:
@@ -19,21 +19,21 @@ export const LYRIC_ENGINE_OPTIONS: readonly {
   },
   {
     id: 'apple',
-    label: '2. Apple Library (Word-by-Word TTML)',
+    label: 'Apple Library',
     shortLabel: 'Apple Library',
     badge: 'Word-by-Word TTML',
     description: 'Direct Apple Music word-by-word & syllable-synced lyrics',
   },
   {
     id: 'lrclib',
-    label: '3. LRC Library (LRCLIB Timed LRC)',
+    label: 'LRCLIB',
     shortLabel: 'LRC Library',
     badge: 'Timed LRC',
     description: 'Community-timed LRC recordings matched by song title and duration',
   },
   {
     id: 'youtube',
-    label: '4. YouTube Subtitles (Video Captions)',
+    label: 'YouTube subtitles',
     shortLabel: 'YouTube Subtitles',
     badge: 'Video Captions',
     description: 'Direct line-by-line closed captions extracted from the YouTube video',

@@ -1,31 +1,55 @@
-import type Hls from 'hls.js';
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Upload, Play, Pause, Volume2, X, Disc3, RefreshCw, Edit3, CheckCircle2, Clock, ListMusic, ArrowUp, ArrowDown, SkipBack, SkipForward, ShieldCheck, Trash2, ChevronDown, ChevronUp, Shuffle, Repeat } from 'lucide-react';
-import { connectLocalAudio, setLocalAudioPlaying, setLocalMediaElement, setVirtualMediaTime } from './audioSignal';
-import { extractYouTubeVideoId, type TrackInfo } from '../metadata/trackInfo';
-import { MUSIC_SOURCES, type PlayableSong } from '../music/providers';
-import { resolveTrackFilename } from '../metadata/metadataStore';
-import { clampLyricDelay, formatLyricDelay } from '../lyrics/lyricTiming';
-import { describeAudioSource, describeLyricProvider } from '../lyrics/ManualLyrics';
-import type { AudioSourceMode } from './AudioSourceHub';
-import SongSearch from '../music/SongSearch';
+import type Hls from "hls.js";
 import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  ChevronUp,
+  Search,
+  Expand,
+  ListMusic,
+  Music2,
+  Pause,
+  Play,
+  RefreshCw,
+  Repeat,
+  Shuffle,
+  SkipBack,
+  SkipForward,
+  Trash2,
+  Volume2,
+  X,
+} from "lucide-react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
+import { describeAudioSource } from "../lyrics/ManualLyrics";
+import { resolveTrackFilename } from "../metadata/metadataStore";
+import { extractYouTubeVideoId, type TrackInfo } from "../metadata/trackInfo";
+import { MUSIC_SOURCES, type PlayableSong } from "../music/providers";
+import SongSearch from "../music/SongSearch";
+import {
+  computeLeadingNonMusicOffset,
   fetchSponsorBlockSegments,
   findActiveSkipSegment,
-  computeLeadingNonMusicOffset,
   formatSegmentCategory,
   type SponsorBlockSegment,
-} from '../music/sponsorBlock';
+} from "../music/sponsorBlock";
 import {
-  LYRIC_ENGINE_OPTIONS,
-  type LyricEngineOption,
-  type YouTubeSubtitleTrackItem,
-} from '../lyrics/lyricFlowEngine';
+  connectLocalAudio,
+  setLocalAudioPlaying,
+  setLocalMediaElement,
+  setVirtualMediaTime,
+} from "./audioSignal";
+import type { AudioSourceMode } from "./AudioSourceHub";
 
 const format = (seconds: number) =>
   Number.isFinite(seconds) && seconds >= 0
-    ? `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`
-    : '0:00';
+    ? `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`
+    : "0:00";
 
 export interface QueuedSongItem {
   queueId: string;
@@ -34,6 +58,7 @@ export interface QueuedSongItem {
 
 export interface LocalPlayerHandle {
   chooseFile: () => void;
+  openSearch: () => void;
   pause: () => void;
   stop: () => void;
   play: () => Promise<void>;
@@ -55,22 +80,13 @@ type Props = {
   preferredVolume?: number;
   sourceMode: AudioSourceMode | null;
   onOpenSourceSelector: () => void;
-  lyricSourceLabel: string;
-  lyricStatusMessage: string;
-  hasWordSync: boolean;
-  customEditOpen: boolean;
-  onToggleCustomEdit: () => void;
-  lyricDelay: number;
-  onLyricDelayChange: (delay: number) => void;
-  delaySavedStatus: string;
-  lyricEngineOption?: LyricEngineOption;
-  onLyricEngineOptionChange?: (option: LyricEngineOption) => void;
-  availableLyricEngines?: LyricEngineOption[];
-  youtubeSubtitleTracks?: YouTubeSubtitleTrackItem[];
-  selectedSubtitleTrackId?: string;
-  onSelectSubtitleTrackId?: (id: string) => void;
+  onFullscreen?: () => void;
+  fullscreen?: boolean;
+  onOverlayChange?: (open: boolean) => void;
+  externalTrack?: TrackInfo | null;
+  externalTime?: number;
+  externalPlaying?: boolean;
   sponsorBlockEnabled?: boolean;
-  onSponsorBlockEnabledChange?: (enabled: boolean) => void;
   onSponsorBlockOffsetChange?: (leadingOffsetSec: number) => void;
 };
 
@@ -86,25 +102,16 @@ function LocalPlayer(
     preferredVolume,
     sourceMode,
     onOpenSourceSelector,
-    lyricSourceLabel,
-    lyricStatusMessage,
-    hasWordSync,
-    customEditOpen,
-    onToggleCustomEdit,
-    lyricDelay,
-    onLyricDelayChange,
-    delaySavedStatus,
-    lyricEngineOption = 'lyricflow',
-    onLyricEngineOptionChange,
-    availableLyricEngines = [],
-    youtubeSubtitleTracks = [],
-    selectedSubtitleTrackId,
-    onSelectSubtitleTrackId,
+    onFullscreen,
+    fullscreen = false,
+    onOverlayChange,
+    externalTrack,
+    externalTime = 0,
+    externalPlaying = false,
     sponsorBlockEnabled = true,
-    onSponsorBlockEnabledChange,
     onSponsorBlockOffsetChange,
   }: Props,
-  ref: React.Ref<LocalPlayerHandle>
+  ref: React.Ref<LocalPlayerHandle>,
 ) {
   const hlsRef = useRef<Hls | null>(null);
   const loadEpoch = useRef(0);
@@ -112,7 +119,8 @@ function LocalPlayer(
   const urlRef = useRef<string | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [name, setName] = useState('');
+  const searchPanelRef = useRef<HTMLDivElement>(null);
+  const [name, setName] = useState("");
   const [currentTrack, setCurrentTrack] = useState<TrackInfo | null>(null);
   const [artwork, setArtwork] = useState<string | undefined>(undefined);
   const [active, setActive] = useState(false);
@@ -124,17 +132,28 @@ function LocalPlayer(
     setVolume(preferredVolume);
     if (audioRef.current) audioRef.current.volume = preferredVolume / 100;
   }, [preferredVolume]);
-  const [error, setError] = useState('');
-  const [remote, setRemote] = useState(false);
+  const [error, setError] = useState("");
+  const [, setRemote] = useState(false);
   const [inlineOnlineOpen, setInlineOnlineOpen] = useState(false);
+  useEffect(() => {
+    if (!inlineOnlineOpen) return;
+    searchPanelRef.current?.scrollIntoView?.({
+      block: "nearest",
+      behavior: "instant",
+    });
+    searchPanelRef.current
+      ?.querySelector<HTMLInputElement>('input[aria-label="Search songs"]')
+      ?.focus({ preventScroll: true });
+  }, [inlineOnlineOpen]);
   const [youtubeOnlyClock, setYoutubeOnlyClock] = useState(false);
-  const youtubeOnlyClockRef=useRef(false);
-  const setYouTubeClockMode=(enabled:boolean)=>{
-    youtubeOnlyClockRef.current=enabled;
+  const youtubeOnlyClockRef = useRef(false);
+  const setYouTubeClockMode = (enabled: boolean) => {
+    youtubeOnlyClockRef.current = enabled;
     setYoutubeOnlyClock(enabled);
   };
   // Events queued by the previous audio element must not pause a new iframe/external source.
-  const ignoreAudioElementEvent=()=>youtubeOnlyClockRef.current||sourceMode==='external';
+  const ignoreAudioElementEvent = () =>
+    youtubeOnlyClockRef.current || sourceMode === "external";
   const ytClockRef = useRef(0);
   const ytLastClockSyncRef = useRef(0);
   const lastUiTimeUpdateRef = useRef(0);
@@ -147,34 +166,23 @@ function LocalPlayer(
   const lastRemoteSongRef = useRef<PlayableSong | null>(null);
   const [dragQueueIndex, setDragQueueIndex] = useState<number | null>(null);
   const [queueOpen, setQueueOpen] = useState(false);
-  const [lyricsToolsOpen, setLyricsToolsOpen] = useState(false);
+  useEffect(() => {
+    onOverlayChange?.(queueOpen || inlineOnlineOpen);
+  }, [queueOpen, inlineOnlineOpen, onOverlayChange]);
   const [shuffleEnabled, setShuffleEnabled] = useState(false);
   const [repeatEnabled, setRepeatEnabled] = useState(false);
   const repeatEnabledRef = useRef(false);
   repeatEnabledRef.current = repeatEnabled;
   const shuffleEnabledRef = useRef(false);
   shuffleEnabledRef.current = shuffleEnabled;
-  const [delayDraft, setDelayDraft] = useState(() => String(lyricDelay));
-  useEffect(() => {
-    setDelayDraft(prev => {
-      const normalized = prev.trim().replace(/−/g, '-');
-      if (normalized === '-' || normalized === '-.' || normalized === '-0.' || normalized === '') {
-        return prev;
-      }
-      const parsed = Number(normalized);
-      if (Number.isFinite(parsed) && Math.abs(parsed - lyricDelay) < 0.001) {
-        return prev;
-      }
-      return String(lyricDelay);
-    });
-  }, [lyricDelay]);
-
   // SponsorBlock state
-  const [sponsorSegments, setSponsorSegments] = useState<SponsorBlockSegment[]>([]);
+  const [sponsorSegments, setSponsorSegments] = useState<SponsorBlockSegment[]>(
+    [],
+  );
   const sponsorSegmentsRef = useRef<SponsorBlockSegment[]>([]);
   sponsorSegmentsRef.current = sponsorSegments;
-  const [sponsorNotice, setSponsorNotice] = useState('');
-  const lastSkippedUuidRef = useRef<string>('');
+  const [sponsorNotice, setSponsorNotice] = useState("");
+  const lastSkippedUuidRef = useRef<string>("");
   const sponsorEnabledRef = useRef(sponsorBlockEnabled);
   sponsorEnabledRef.current = sponsorBlockEnabled;
 
@@ -183,15 +191,21 @@ function LocalPlayer(
       queueId: `${song.provider}-${song.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       song,
     };
-    setQueue(prev => [...prev, item]);
+    setQueue((prev) => [...prev, item]);
     if (!currentTrack && !name) {
       void loadRemote(song);
     }
   };
 
   const moveQueueItem = (fromIndex: number, toIndex: number) => {
-    setQueue(prev => {
-      if (fromIndex < 0 || fromIndex >= prev.length || toIndex < 0 || toIndex >= prev.length || fromIndex === toIndex) {
+    setQueue((prev) => {
+      if (
+        fromIndex < 0 ||
+        fromIndex >= prev.length ||
+        toIndex < 0 ||
+        toIndex >= prev.length ||
+        fromIndex === toIndex
+      ) {
         return prev;
       }
       const next = [...prev];
@@ -202,13 +216,13 @@ function LocalPlayer(
   };
 
   const removeQueueItem = (queueId: string) => {
-    setQueue(prev => prev.filter(item => item.queueId !== queueId));
+    setQueue((prev) => prev.filter((item) => item.queueId !== queueId));
   };
 
   const playQueueItemNow = (index: number) => {
     const target = queueRef.current[index];
     if (!target) return;
-    setQueue(prev => prev.filter((_, idx) => idx !== index));
+    setQueue((prev) => prev.filter((_, idx) => idx !== index));
     void loadRemote(target.song);
   };
 
@@ -249,36 +263,45 @@ function LocalPlayer(
   useEffect(() => {
     const ytId = currentTrack?.youtubeVideoId || currentTrack?.videoId;
     setSponsorSegments([]);
-    setSponsorNotice('');
-    lastSkippedUuidRef.current = '';
+    setSponsorNotice("");
+    lastSkippedUuidRef.current = "";
     if (!ytId) {
       onSponsorBlockOffsetChange?.(0);
       return;
     }
     const controller = new AbortController();
-    void fetchSponsorBlockSegments(ytId, controller.signal).then(segments => {
+    void fetchSponsorBlockSegments(ytId, controller.signal).then((segments) => {
       if (controller.signal.aborted) return;
       setSponsorSegments(segments);
       const leadingOffset = computeLeadingNonMusicOffset(segments);
       onSponsorBlockOffsetChange?.(leadingOffset);
       if (segments.length > 0) {
-        const categories = Array.from(new Set(segments.map(s => formatSegmentCategory(s.category)))).join(', ');
-        setSponsorNotice(`SponsorBlock ready: ${segments.length} segment(s) (${categories})`);
+        const categories = Array.from(
+          new Set(segments.map((s) => formatSegmentCategory(s.category))),
+        ).join(", ");
+        setSponsorNotice(
+          `SponsorBlock ready: ${segments.length} segment(s) (${categories})`,
+        );
       }
     });
     return () => controller.abort();
   }, [currentTrack?.youtubeVideoId, currentTrack?.videoId]);
 
   const checkAndApplySponsorBlockSkip = (currentSec: number): number | null => {
-    if (!sponsorEnabledRef.current || sponsorSegmentsRef.current.length === 0) return null;
-    const activeSeg = findActiveSkipSegment(sponsorSegmentsRef.current, currentSec);
-    if (!activeSeg || lastSkippedUuidRef.current === activeSeg.uuid) return null;
+    if (!sponsorEnabledRef.current || sponsorSegmentsRef.current.length === 0)
+      return null;
+    const activeSeg = findActiveSkipSegment(
+      sponsorSegmentsRef.current,
+      currentSec,
+    );
+    if (!activeSeg || lastSkippedUuidRef.current === activeSeg.uuid)
+      return null;
     lastSkippedUuidRef.current = activeSeg.uuid;
     const segStart = activeSeg.start ?? activeSeg.segment[0];
     const segEnd = activeSeg.end ?? activeSeg.segment[1];
     const targetSec = Math.max(currentSec + 0.2, segEnd);
     setSponsorNotice(
-      `Skipped ${formatSegmentCategory(activeSeg.category)} (${format(segStart)} → ${format(segEnd)})`
+      `Skipped ${formatSegmentCategory(activeSeg.category)} (${format(segStart)} → ${format(segEnd)})`,
     );
     return targetSec;
   };
@@ -292,7 +315,11 @@ function LocalPlayer(
       const dt = Math.max(0, (now - lastTick) / 1000);
       lastTick = now;
       // Never invent progress before YouTube starts, or while its clock stalls.
-      if (!ytLastClockSyncRef.current || now - ytLastClockSyncRef.current > 2500) return;
+      if (
+        !ytLastClockSyncRef.current ||
+        now - ytLastClockSyncRef.current > 2500
+      )
+        return;
       const maxDur = duration > 0 ? duration : 600;
       let next = Math.min(maxDur, ytClockRef.current + dt);
 
@@ -308,7 +335,10 @@ function LocalPlayer(
 
       ytClockRef.current = next;
       setVirtualMediaTime(next);
-      if (now - lastUiTimeUpdateRef.current >= 220 || (duration > 0 && next >= duration)) {
+      if (
+        now - lastUiTimeUpdateRef.current >= 220 ||
+        (duration > 0 && next >= duration)
+      ) {
         lastUiTimeUpdateRef.current = now;
         setTime(next);
         onTimeChange(next);
@@ -325,9 +355,12 @@ function LocalPlayer(
 
   const loadRemote = async (song: PlayableSong) => {
     const player = audioRef.current;
-    if (!player) throw Error('Player unavailable');
+    if (!player) throw Error("Player unavailable");
     if (lastRemoteSongRef.current && lastRemoteSongRef.current.id !== song.id) {
-      historyRef.current = [...historyRef.current.slice(-19), lastRemoteSongRef.current];
+      historyRef.current = [
+        ...historyRef.current.slice(-19),
+        lastRemoteSongRef.current,
+      ];
     }
     lastRemoteSongRef.current = song;
     const epoch = ++loadEpoch.current;
@@ -343,20 +376,22 @@ function LocalPlayer(
       URL.revokeObjectURL(urlRef.current);
       urlRef.current = null;
     }
-    player.crossOrigin = 'anonymous';
-    player.removeAttribute('src');
+    player.crossOrigin = "anonymous";
+    player.removeAttribute("src");
     player.load();
     setRemote(true);
-    setName(song.title + (song.artist ? ' — ' + song.artist : ''));
+    setName(song.title + (song.artist ? " — " + song.artist : ""));
     setArtwork(song.artwork);
     setTime(0);
     setDuration(song.duration);
-    setError('');
-    const ytId = song.youtubeVideoId || extractYouTubeVideoId(song) || undefined;
-    const audioSourceLabel = song.audioSource || MUSIC_SOURCES[song.provider] || 'Online Stream';
+    setError("");
+    const ytId =
+      song.youtubeVideoId || extractYouTubeVideoId(song) || undefined;
+    const audioSourceLabel =
+      song.audioSource || MUSIC_SOURCES[song.provider] || "Online Stream";
     const nextTrack: TrackInfo = {
       ...song,
-      source: 'provider',
+      source: "provider",
       provider: song.provider,
       sourceTrackId: song.id,
       audioSource: audioSourceLabel,
@@ -372,7 +407,7 @@ function LocalPlayer(
     onTimeChange(0);
     setInlineOnlineOpen(false);
 
-    if (song.format === 'youtube') {
+    if (song.format === "youtube") {
       setYouTubeClockMode(true);
       onAudioStreamModeChange?.(false);
       setVirtualMediaTime(0);
@@ -384,15 +419,24 @@ function LocalPlayer(
     try {
       await initialize();
       if (epoch !== loadEpoch.current) return;
-      if (song.format === 'hls' && !player.canPlayType('application/vnd.apple.mpegurl')) {
-        const { default: HlsPlayer } = await import('hls.js');
+      if (
+        song.format === "hls" &&
+        !player.canPlayType("application/vnd.apple.mpegurl")
+      ) {
+        const { default: HlsPlayer } = await import("hls.js");
         if (epoch !== loadEpoch.current) return;
-        if (!HlsPlayer.isSupported()) throw Error('HLS is not supported by this browser');
-        const hls = new HlsPlayer({ maxBufferLength: 30, maxMaxBufferLength: 60 });
+        if (!HlsPlayer.isSupported())
+          throw Error("HLS is not supported by this browser");
+        const hls = new HlsPlayer({
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60,
+        });
         hlsRef.current = hls;
         hls.on(HlsPlayer.Events.ERROR, (_event, data) => {
           if (data.fatal) {
-            setError('The stream was interrupted. Choose the song again or try another source.');
+            setError(
+              "The stream was interrupted. Choose the song again or try another source.",
+            );
             player.pause();
             hls.destroy();
             if (hlsRef.current === hls) hlsRef.current = null;
@@ -401,7 +445,7 @@ function LocalPlayer(
         await new Promise<void>((resolve, reject) => {
           const timer = setTimeout(() => {
             hls.destroy();
-            reject(Error('Stream timed out'));
+            reject(Error("Stream timed out"));
           }, 20000);
           hls.once(HlsPlayer.Events.MANIFEST_PARSED, () => {
             clearTimeout(timer);
@@ -409,7 +453,7 @@ function LocalPlayer(
           });
           hls.once(HlsPlayer.Events.DESTROYING, () => {
             clearTimeout(timer);
-            reject(Error('Stream closed'));
+            reject(Error("Stream closed"));
           });
           hls.loadSource(song.streamUrl);
           hls.attachMedia(player);
@@ -424,14 +468,18 @@ function LocalPlayer(
       await player.play();
     } catch {
       if (epoch !== loadEpoch.current) return;
-      setError('This source could not play in your browser. Try another result or a local file.');
-      throw Error('Playback failed. The source may be unavailable or block browser audio access.');
+      setError(
+        "This source could not play in your browser. Try another result or a local file.",
+      );
+      throw Error(
+        "Playback failed. The source may be unavailable or block browser audio access.",
+      );
     }
   };
 
   const initialize = async () => {
     const element = audioRef.current;
-    if (!element) throw new Error('Audio player is unavailable');
+    if (!element) throw new Error("Audio player is unavailable");
     if (!ctxRef.current) {
       const context = new AudioContext();
       const source = context.createMediaElementSource(element);
@@ -450,7 +498,7 @@ function LocalPlayer(
 
   const play = async () => {
     if (youtubeOnlyClock) {
-      setError('');
+      setError("");
       setActive(true);
       onActiveChange(true);
       return;
@@ -458,11 +506,15 @@ function LocalPlayer(
     const element = audioRef.current;
     if (!element || !element.src) return;
     try {
-      setError('');
+      setError("");
       await initialize();
       await element.play();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Audio playback was blocked. Tap Play again.');
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Audio playback was blocked. Tap Play again.",
+      );
     }
   };
 
@@ -478,7 +530,10 @@ function LocalPlayer(
   };
 
   const seekPlayback = (nextTime: number) => {
-    const clamped = Math.max(0, duration > 0 ? Math.min(duration, nextTime) : nextTime);
+    const clamped = Math.max(
+      0,
+      duration > 0 ? Math.min(duration, nextTime) : nextTime,
+    );
     if (youtubeOnlyClock) {
       ytClockRef.current = clamped;
       setTime(clamped);
@@ -496,8 +551,13 @@ function LocalPlayer(
 
   const load = (file: File | undefined) => {
     if (!file) return;
-    if (!(file.type.startsWith('audio/') || /\.(mp3|m4a|wav|ogg|flac|aac)$/i.test(file.name))) {
-      setError('Please choose a supported audio file.');
+    if (
+      !(
+        file.type.startsWith("audio/") ||
+        /\.(mp3|m4a|wav|ogg|flac|aac)$/i.test(file.name)
+      )
+    ) {
+      setError("Please choose a supported audio file.");
       return;
     }
     const player = audioRef.current;
@@ -514,12 +574,12 @@ function LocalPlayer(
     setActive(false);
     if (urlRef.current) URL.revokeObjectURL(urlRef.current);
     urlRef.current = URL.createObjectURL(file);
-    player.removeAttribute('crossorigin');
+    player.removeAttribute("crossorigin");
     player.src = urlRef.current;
     player.load();
     setRemote(false);
     setArtwork(undefined);
-    const cleanName = file.name.replace(/\.[^.]+$/, '');
+    const cleanName = file.name.replace(/\.[^.]+$/, "");
     setName(cleanName);
     const resolved = resolveTrackFilename(file.name);
     setCurrentTrack(resolved);
@@ -528,7 +588,7 @@ function LocalPlayer(
     onTimeChange(0);
     setTime(0);
     setDuration(0);
-    setError('');
+    setError("");
   };
 
   const stop = () => {
@@ -538,7 +598,7 @@ function LocalPlayer(
     const player = audioRef.current;
     player?.pause();
     if (player) {
-      player.removeAttribute('src');
+      player.removeAttribute("src");
       player.load();
     }
     if (urlRef.current) {
@@ -554,19 +614,26 @@ function LocalPlayer(
     onTrackChange(null);
     onFileChange(false);
     onTimeChange(0);
-    setName('');
+    setName("");
     setTime(0);
     setDuration(0);
     setActive(false);
     onActiveChange(false);
-    setError('');
+    setError("");
   };
 
   const syncExternalClock = (currentTime: number, totalDuration?: number) => {
     if (!youtubeOnlyClock) return;
-    if (typeof totalDuration === 'number' && Number.isFinite(totalDuration) && totalDuration > 0 && Math.abs(totalDuration - duration) > 1) {
+    if (
+      typeof totalDuration === "number" &&
+      Number.isFinite(totalDuration) &&
+      totalDuration > 0 &&
+      Math.abs(totalDuration - duration) > 1
+    ) {
       setDuration(totalDuration);
-      setCurrentTrack(prev => (prev ? { ...prev, duration: totalDuration } : prev));
+      setCurrentTrack((prev) =>
+        prev ? { ...prev, duration: totalDuration } : prev,
+      );
       onDurationChange(totalDuration);
     }
     if (Number.isFinite(currentTime) && currentTime >= 0) {
@@ -582,6 +649,7 @@ function LocalPlayer(
     ref,
     () => ({
       chooseFile: () => fileRef.current?.click(),
+      openSearch: () => setInlineOnlineOpen(true),
       pause: pausePlayback,
       stop,
       play,
@@ -591,7 +659,13 @@ function LocalPlayer(
       seek: seekPlayback,
       syncExternalClock,
     }),
-    [youtubeOnlyClock, duration, onActiveChange, onTimeChange, onDurationChange]
+    [
+      youtubeOnlyClock,
+      duration,
+      onActiveChange,
+      onTimeChange,
+      onDurationChange,
+    ],
   );
 
   useEffect(
@@ -606,11 +680,7 @@ function LocalPlayer(
       if (urlRef.current) URL.revokeObjectURL(urlRef.current);
       void ctxRef.current?.close();
     },
-    []
-  );
-
-  const isYouTubeTrack = Boolean(
-    currentTrack?.youtubeVideoId || currentTrack?.videoId || currentTrack?.provider === 'resolver'
+    [],
   );
 
   return (
@@ -618,39 +688,43 @@ function LocalPlayer(
       <audio
         ref={audioRef}
         preload="metadata"
-        onTimeUpdate={e => {
-          if(ignoreAudioElementEvent())return;
+        onTimeUpdate={(e) => {
+          if (ignoreAudioElementEvent()) return;
           const ct = e.currentTarget.currentTime;
           const now = performance.now();
-          if (now - lastUiTimeUpdateRef.current >= 120 || ct === 0 || (duration > 0 && ct >= duration - 0.15)) {
+          if (
+            now - lastUiTimeUpdateRef.current >= 120 ||
+            ct === 0 ||
+            (duration > 0 && ct >= duration - 0.15)
+          ) {
             lastUiTimeUpdateRef.current = now;
             setTime(ct);
             onTimeChange(ct);
           }
         }}
-        onLoadedMetadata={e => {
-          if(ignoreAudioElementEvent())return;
+        onLoadedMetadata={(e) => {
+          if (ignoreAudioElementEvent()) return;
           const d = e.currentTarget.duration;
           setDuration(d);
           if (Number.isFinite(d)) {
-            setCurrentTrack(prev => (prev ? { ...prev, duration: d } : prev));
+            setCurrentTrack((prev) => (prev ? { ...prev, duration: d } : prev));
             onDurationChange(d);
           }
         }}
         onPlay={() => {
-          if(ignoreAudioElementEvent())return;
+          if (ignoreAudioElementEvent()) return;
           setLocalAudioPlaying(true);
           setActive(true);
           onActiveChange(true);
         }}
         onPause={() => {
-          if(ignoreAudioElementEvent())return;
+          if (ignoreAudioElementEvent()) return;
           setLocalAudioPlaying(false);
           setActive(false);
           onActiveChange(false);
         }}
         onEnded={() => {
-          if(ignoreAudioElementEvent())return;
+          if (ignoreAudioElementEvent()) return;
           if (!playNextFromQueue()) {
             setLocalAudioPlaying(false);
             setActive(false);
@@ -659,7 +733,7 @@ function LocalPlayer(
         }}
         onError={() => {
           if (!ignoreAudioElementEvent()) {
-            setError('This audio format could not be decoded by the browser.');
+            setError("This audio format could not be decoded by the browser.");
           }
         }}
       />
@@ -668,33 +742,45 @@ function LocalPlayer(
         ref={fileRef}
         type="file"
         accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac,.aac"
-        onChange={e => {
+        onChange={(e) => {
           load(e.target.files?.[0]);
-          e.target.value = '';
+          e.target.value = "";
         }}
         aria-label="Select local audio file"
       />
 
       {/* UNIFIED MUSIC DETAILS & SPOTIFY-STYLE MOBILE PLAYER SECTION (Directly Below Visualizer) */}
-      <section className="local-player yt-music-details-card spotify-player-card" aria-label="Music details and player controls">
+      <section
+        className="local-player yt-music-details-card spotify-player-card glass"
+        aria-label="Music details and player controls"
+      >
         {/* 1. Top Row: Bold Title + Artist Subtitle on Left */}
         <div className="spotify-header-row">
-          {artwork && (
+          {artwork && !externalTrack ? (
             <div className="song-cover-box spotify-mini-art">
               <img src={artwork} alt="" referrerPolicy="no-referrer" />
+            </div>
+          ) : (
+            <div className="player-art-placeholder">
+              <Music2 size={26} />
             </div>
           )}
 
           <div className="spotify-title-stack">
             <strong className="spotify-track-title">
-              {currentTrack?.title || name || 'No track loaded yet'}
+              {externalTrack?.title ||
+                currentTrack?.title ||
+                name ||
+                "No song selected"}
             </strong>
             <span className="spotify-track-artist">
-              {currentTrack?.artist
-                ? currentTrack.artist
-                : name
-                  ? describeAudioSource(currentTrack, Boolean(name)).providerName
-                  : 'Select a song from JioSaavn, YouTube, or Local Audio'}
+              {externalTrack?.artist ||
+                (currentTrack?.artist
+                  ? currentTrack.artist
+                  : name
+                    ? describeAudioSource(currentTrack, Boolean(name))
+                        .providerName
+                    : "Choose a source or search for a song")}
             </span>
           </div>
 
@@ -720,15 +806,29 @@ function LocalPlayer(
             aria-label="Song position"
             type="range"
             min="0"
-            max={Number.isFinite(duration) && duration > 0 ? duration : 100}
+            max={
+              externalTrack?.duration ||
+              (Number.isFinite(duration) && duration > 0 ? duration : 100)
+            }
             step=".1"
             disabled={!name}
-            value={Math.min(time, Number.isFinite(duration) && duration > 0 ? duration : 0)}
-            onChange={e => seekPlayback(Number(e.target.value))}
+            value={
+              externalTrack
+                ? Math.min(externalTime, externalTrack.duration || 0)
+                : Math.min(
+                    time,
+                    Number.isFinite(duration) && duration > 0 ? duration : 0,
+                  )
+            }
+            onChange={(e) => seekPlayback(Number(e.target.value))}
           />
           <div className="spotify-time-labels">
-            <span className="timebar-clock">{format(time)}</span>
-            <span className="timebar-clock">{format(duration)}</span>
+            <span className="timebar-clock">
+              {format(externalTrack ? externalTime : time)}
+            </span>
+            <span className="timebar-clock">
+              {format(externalTrack?.duration || duration)}
+            </span>
           </div>
         </div>
 
@@ -736,15 +836,15 @@ function LocalPlayer(
         <div className="spotify-transport-row">
           <button
             type="button"
-            className={'spotify-aux-btn ' + (shuffleEnabled ? 'is-active' : '')}
+            className={"spotify-aux-btn " + (shuffleEnabled ? "is-active" : "")}
             aria-label="Shuffle queue"
             aria-pressed={shuffleEnabled}
             title="Shuffle queue"
             onClick={() => {
-              setShuffleEnabled(v => {
+              setShuffleEnabled((v) => {
                 const next = !v;
                 if (next && queue.length > 1) {
-                  setQueue(prev => [...prev].sort(() => Math.random() - 0.5));
+                  setQueue((prev) => [...prev].sort(() => Math.random() - 0.5));
                 }
                 return next;
               });
@@ -768,10 +868,18 @@ function LocalPlayer(
             type="button"
             className="player-round spotify-play-circle"
             disabled={!name}
-            aria-label={active ? 'Pause track' : 'Play track'}
+            aria-label={
+              (externalTrack ? externalPlaying : active)
+                ? "Pause track"
+                : "Play track"
+            }
             onClick={() => (active ? pausePlayback() : void play())}
           >
-            {active ? <Pause size={26} fill="currentColor" /> : <Play size={26} fill="currentColor" />}
+            {(externalTrack ? externalPlaying : active) ? (
+              <Pause size={26} fill="currentColor" />
+            ) : (
+              <Play size={26} fill="currentColor" />
+            )}
           </button>
 
           <button
@@ -779,7 +887,11 @@ function LocalPlayer(
             className="spotify-skip-btn"
             disabled={queue.length === 0 && !name}
             aria-label="Next track"
-            title={queue.length > 0 ? 'Play next song in Queue' : 'Open search to add next song'}
+            title={
+              queue.length > 0
+                ? "Play next song in Queue"
+                : "Open search to add next song"
+            }
             onClick={() => {
               if (!playNextFromQueue()) {
                 setInlineOnlineOpen(true);
@@ -791,12 +903,12 @@ function LocalPlayer(
 
           <button
             type="button"
-            className={'spotify-aux-btn ' + (repeatEnabled ? 'is-active' : '')}
+            className={"spotify-aux-btn " + (repeatEnabled ? "is-active" : "")}
             aria-label="Repeat track"
             aria-pressed={repeatEnabled}
             title="Repeat track"
             onClick={() => {
-              setRepeatEnabled(v => {
+              setRepeatEnabled((v) => {
                 const next = !v;
                 if (audioRef.current) audioRef.current.loop = next;
                 return next;
@@ -811,55 +923,45 @@ function LocalPlayer(
         <div className="yt-player-actions-bar">
           <button
             type="button"
-            className={'upload-button ' + (inlineOnlineOpen ? 'active-pill' : '')}
-            onClick={() => setInlineOnlineOpen(v => !v)}
+            className={
+              "upload-button " + (inlineOnlineOpen ? "active-pill" : "")
+            }
+            onClick={() => setInlineOnlineOpen((v) => !v)}
           >
-            <Disc3 size={14} />
-            <span>{inlineOnlineOpen ? 'Hide Search' : 'Search Songs'}</span>
-          </button>
-
-          <button type="button" className="upload-button" onClick={() => fileRef.current?.click()}>
-            <Upload size={14} />
-            <span>{name && !remote ? 'Change File' : 'Local File'}</span>
-          </button>
-
-          <button type="button" className="upload-button" onClick={onOpenSourceSelector}>
-            <RefreshCw size={14} />
-            <span>Switch Source</span>
+            <Search size={14} />
+            <span>{inlineOnlineOpen ? "Close search" : "Search"}</span>
           </button>
 
           <button
             type="button"
-            className={'upload-button ' + (queueOpen ? 'active-pill' : '')}
+            className="upload-button"
+            onClick={onOpenSourceSelector}
+          >
+            <RefreshCw size={14} />
+            <span>{sourceMode ? "Change source" : "Select source"}</span>
+          </button>
+
+          <button
+            type="button"
+            className={"upload-button " + (queueOpen ? "active-pill" : "")}
             aria-expanded={queueOpen}
-            onClick={() => setQueueOpen(v => !v)}
+            onClick={() => setQueueOpen((v) => !v)}
           >
             <ListMusic size={14} />
-            <span>Queue ({queue.length})</span>
+            <span>Queue{queue.length > 0 ? ` (${queue.length})` : ""}</span>
             {queueOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </button>
 
           <button
             type="button"
-            className={'upload-button ' + (lyricsToolsOpen ? 'active-pill' : '')}
-            aria-expanded={lyricsToolsOpen}
-            onClick={() => setLyricsToolsOpen(v => !v)}
+            className="upload-button player-fullscreen"
+            onClick={onFullscreen}
+            aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+            title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
           >
-            <Clock size={14} />
-            <span>Sync ({formatLyricDelay(lyricDelay)})</span>
-            {lyricsToolsOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            <Expand size={17} />
+            <span>Fullscreen</span>
           </button>
-
-          <button
-            type="button"
-            className={'upload-button ' + (customEditOpen ? 'active-pill' : '')}
-            onClick={onToggleCustomEdit}
-            aria-expanded={customEditOpen}
-          >
-            <Edit3 size={14} />
-            <span>{customEditOpen ? 'Hide Lyrics Editor' : 'Custom Edit / Change Lyrics'}</span>
-          </button>
-
           <label className="volume-label spotify-volume-row">
             <Volume2 size={15} />
             <input
@@ -868,7 +970,7 @@ function LocalPlayer(
               min="0"
               max="100"
               value={volume}
-              onChange={e => {
+              onChange={(e) => {
                 const n = Number(e.target.value);
                 setVolume(n);
                 onVolumeChange?.(n);
@@ -879,6 +981,17 @@ function LocalPlayer(
           </label>
         </div>
 
+        {externalTrack && (
+          <p className="quiet-status">
+            Playback is controlled in{" "}
+            {externalTrack.audioSource || "your music app"}.
+          </p>
+        )}
+        {sponsorNotice && (
+          <p className="quiet-status" role="status">
+            {sponsorNotice}
+          </p>
+        )}
         {error && (
           <p className="player-error" role="alert">
             {error}
@@ -887,26 +1000,38 @@ function LocalPlayer(
 
         {/* Collapsible Online Search Drawer (Opens Only When Clicked) */}
         {inlineOnlineOpen && (
-          <div className="inline-stash-drawer">
+          <div className="inline-stash-drawer" ref={searchPanelRef}>
             <SongSearch onPlay={loadRemote} onAddToQueue={addSongToQueue} />
           </div>
         )}
 
         {/* Collapsible Queue (Q) Drawer (Opens Only When Clicked) */}
-        <div className={'settings-accordion-body ' + (queueOpen ? 'is-open' : 'is-collapsed')} aria-label="Song queue">
+        <div
+          className={
+            "settings-accordion-body " +
+            (queueOpen ? "is-open" : "is-collapsed")
+          }
+          aria-label="Song queue"
+        >
           <div className="yt-drawer-subpanel">
             <div className="player-heading" style={{ marginBottom: 8 }}>
               <div className="heading-left">
                 <div>
-                  <b>QUEUE (Q) · {queue.length} {queue.length === 1 ? 'SONG' : 'SONGS'} UP NEXT</b>
-                  <small>Arrange song order with Up / Down arrows or drag-and-drop; auto-plays when the current song ends</small>
+                  <b>Up next · {queue.length}</b>
                 </div>
               </div>
-              <div className="player-heading-actions" style={{ display: 'flex', gap: 6 }}>
+              <div
+                className="player-heading-actions"
+                style={{ display: "flex", gap: 6 }}
+              >
                 {queue.length > 0 && (
                   <>
-                    <button type="button" className="upload-button" onClick={() => playNextFromQueue()}>
-                      <SkipForward size={14} /> Play Next Now
+                    <button
+                      type="button"
+                      className="upload-button"
+                      onClick={() => playNextFromQueue()}
+                    >
+                      <SkipForward size={14} /> Play next
                     </button>
                     <button
                       type="button"
@@ -923,23 +1048,31 @@ function LocalPlayer(
                   className="upload-button"
                   onClick={() => setInlineOnlineOpen(true)}
                 >
-                  + Add Songs to Q
+                  Add songs
                 </button>
               </div>
             </div>
 
             {queue.length === 0 ? (
-              <p className="player-footnote" style={{ margin: '4px 0 2px' }}>
-                Queue (Q) is empty. Search for songs in JioSaavn or YouTube and click <b>+ Queue</b> to line up multiple songs.
+              <p className="player-footnote" style={{ margin: "4px 0 2px" }}>
+                Your queue is empty. Search for a song and choose <b>+ Queue</b>
+                .
               </p>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                  marginTop: 8,
+                }}
+              >
                 {queue.map((item, idx) => (
                   <div
                     key={item.queueId}
                     draggable
                     onDragStart={() => setDragQueueIndex(idx)}
-                    onDragOver={e => e.preventDefault()}
+                    onDragOver={(e) => e.preventDefault()}
                     onDrop={() => {
                       if (dragQueueIndex !== null && dragQueueIndex !== idx) {
                         moveQueueItem(dragQueueIndex, idx);
@@ -954,7 +1087,13 @@ function LocalPlayer(
                       <img
                         src={item.song.artwork}
                         alt=""
-                        style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }}
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 6,
+                          objectFit: "cover",
+                          flexShrink: 0,
+                        }}
                         referrerPolicy="no-referrer"
                       />
                     ) : (
@@ -963,10 +1102,19 @@ function LocalPlayer(
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="yt-queue-title">{item.song.title}</div>
                       <div className="yt-queue-sub">
-                        {item.song.artist || 'Unknown artist'} · {format(item.song.duration)} · {MUSIC_SOURCES[item.song.provider]}
+                        {item.song.artist || "Unknown artist"} ·{" "}
+                        {format(item.song.duration)} ·{" "}
+                        {MUSIC_SOURCES[item.song.provider]}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        flexShrink: 0,
+                      }}
+                    >
                       <button
                         type="button"
                         className="upload-button"
@@ -974,7 +1122,7 @@ function LocalPlayer(
                         onClick={() => moveQueueItem(idx, idx - 1)}
                         aria-label={`Move ${item.song.title} up in queue`}
                         title="Move Up"
-                        style={{ padding: '4px 7px' }}
+                        style={{ padding: "4px 7px" }}
                       >
                         <ArrowUp size={13} />
                       </button>
@@ -985,7 +1133,7 @@ function LocalPlayer(
                         onClick={() => moveQueueItem(idx, idx + 1)}
                         aria-label={`Move ${item.song.title} down in queue`}
                         title="Move Down"
-                        style={{ padding: '4px 7px' }}
+                        style={{ padding: "4px 7px" }}
                       >
                         <ArrowDown size={13} />
                       </button>
@@ -994,7 +1142,7 @@ function LocalPlayer(
                         className="source-primary"
                         onClick={() => playQueueItemNow(idx)}
                         aria-label={`Play ${item.song.title} now`}
-                        style={{ padding: '4px 9px', fontSize: 11 }}
+                        style={{ padding: "4px 9px", fontSize: 11 }}
                       >
                         <Play size={12} /> Play
                       </button>
@@ -1010,193 +1158,6 @@ function LocalPlayer(
                     </div>
                   </div>
                 ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Collapsible Lyrics Sync, Engine & SponsorBlock Drawer (Opens Only When Clicked) */}
-        <div className={'settings-accordion-body ' + (lyricsToolsOpen ? 'is-open' : 'is-collapsed')}>
-          <div className="yt-drawer-subpanel">
-            <div className="song-lyric-sync-line">
-              <CheckCircle2 size={14} />
-              <b>
-                Lyrics Provider:{' '}
-                {
-                  describeLyricProvider(
-                    lyricSourceLabel,
-                    hasWordSync,
-                    Boolean(currentTrack),
-                    false
-                  ).providerName
-                }
-              </b>
-              <span>({lyricSourceLabel})</span>
-              {hasWordSync && <span className="word-sync-indicator">· Word-by-Word Sync Active</span>}
-              {lyricStatusMessage && <small> — {lyricStatusMessage}</small>}
-              {currentTrack?.sourceUrl && (
-                <a
-                  href={currentTrack.sourceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="lyric-source-link"
-                >
-                  Open Source ↗
-                </a>
-              )}
-            </div>
-
-            <div className="timebar-delay-bar" style={{ marginTop: 10 }}>
-              <div className="timebar-delay-info">
-                <Clock size={15} />
-                <strong>PER-SONG LYRICS DELAY: {formatLyricDelay(lyricDelay)}</strong>
-                <span>{delaySavedStatus}</span>
-              </div>
-              <div className="timebar-delay-controls">
-                <button
-                  type="button"
-                  aria-label="Advance lyrics 0.25 seconds"
-                  onClick={() => onLyricDelayChange(clampLyricDelay(lyricDelay - 0.25))}
-                >
-                  −0.25s
-                </button>
-                <button
-                  type="button"
-                  aria-label="Toggle negative or positive lyric delay"
-                  title="Flip sign (− / +)"
-                  onClick={() => {
-                    if (lyricDelay === 0) {
-                      setDelayDraft('-');
-                    } else {
-                      const flipped = clampLyricDelay(-lyricDelay);
-                      setDelayDraft(String(flipped));
-                      onLyricDelayChange(flipped);
-                    }
-                  }}
-                >
-                  ±
-                </button>
-                <input
-                  aria-label="Player lyrics delay seconds"
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="-1.50"
-                  value={delayDraft}
-                  onChange={e => {
-                    const val = e.target.value.replace(/−/g, '-');
-                    if (!/^-?\d*\.?\d*$/.test(val)) return;
-                    setDelayDraft(val);
-                    if (val !== '' && val !== '-' && val !== '-.' && val !== '.') {
-                      const num = Number(val);
-                      if (Number.isFinite(num)) {
-                        onLyricDelayChange(clampLyricDelay(num));
-                      }
-                    }
-                  }}
-                  onBlur={() => {
-                    const normalized = delayDraft.trim().replace(/−/g, '-');
-                    const num = Number(normalized);
-                    if (!normalized || normalized === '-' || !Number.isFinite(num)) {
-                      setDelayDraft(String(lyricDelay));
-                    } else {
-                      const clamped = clampLyricDelay(num);
-                      setDelayDraft(String(clamped));
-                      onLyricDelayChange(clamped);
-                    }
-                  }}
-                  style={{ width: 68, textAlign: 'center', padding: '5px 6px', borderRadius: 7, border: '1px solid #385364', background: '#0e1720', color: '#dceef3', fontSize: 12 }}
-                />
-                <button
-                  type="button"
-                  aria-label="Reset lyric delay"
-                  onClick={() => {
-                    setDelayDraft('0');
-                    onLyricDelayChange(0);
-                  }}
-                >
-                  Reset (0.00s)
-                </button>
-                <button
-                  type="button"
-                  aria-label="Delay lyrics 0.25 seconds"
-                  onClick={() => onLyricDelayChange(clampLyricDelay(lyricDelay + 0.25))}
-                >
-                  +0.25s
-                </button>
-              </div>
-            </div>
-
-            {onLyricEngineOptionChange && availableLyricEngines.length > 0 && (
-              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-subtle, rgba(255,255,255,0.08))' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', opacity: 0.75, marginBottom: 6 }}>
-                  AVAILABLE LYRICS SOURCES ({availableLyricEngines.length}):
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {LYRIC_ENGINE_OPTIONS.filter(opt => availableLyricEngines.includes(opt.id)).map(opt => {
-                    const selected = lyricEngineOption === opt.id;
-                    return (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => onLyricEngineOptionChange(opt.id)}
-                        title={opt.description}
-                        className={'upload-button ' + (selected ? 'active-pill' : '')}
-                        style={{ padding: '5px 10px', minHeight: 32, fontSize: 11.5 }}
-                      >
-                        {opt.label} <span style={{ fontSize: 10, opacity: 0.75 }}>({opt.badge})</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                {youtubeSubtitleTracks.length > 1 && onSelectSubtitleTrackId && (
-                  <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.75 }}>
-                      Subtitle Track ({youtubeSubtitleTracks.length}):
-                    </span>
-                    {youtubeSubtitleTracks.map(st => {
-                      const activeSt = (selectedSubtitleTrackId || youtubeSubtitleTracks[0]?.id) === st.id;
-                      return (
-                        <button
-                          key={st.id}
-                          type="button"
-                          onClick={() => onSelectSubtitleTrackId(st.id)}
-                          className={'upload-button ' + (activeSt ? 'active-pill' : '')}
-                          style={{ padding: '3px 8px', minHeight: 28, fontSize: 11 }}
-                        >
-                          {st.label} ({st.lineCount} lines)
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {isYouTubeTrack && onLyricEngineOptionChange && (
-              <div style={{ marginTop: 8 }}>
-                <button type="button" className="upload-button" onClick={() => onLyricEngineOptionChange('youtube')}>
-                  Try video subtitles
-                </button>
-              </div>
-            )}
-
-            {isYouTubeTrack && (
-              <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, fontSize: 12 }}>
-                <button
-                  type="button"
-                  onClick={() => onSponsorBlockEnabledChange?.(!sponsorBlockEnabled)}
-                  className={'upload-button ' + (sponsorBlockEnabled ? 'active-pill' : '')}
-                  style={{ padding: '4px 10px', minHeight: 30, fontSize: 11 }}
-                >
-                  <ShieldCheck size={13} />
-                  SponsorBlock Auto-Skip: {sponsorBlockEnabled ? 'ON' : 'OFF'}
-                </button>
-                <span style={{ opacity: 0.75, fontSize: 11 }}>
-                  {sponsorNotice ||
-                    (sponsorSegments.length > 0
-                      ? `${sponsorSegments.length} non-music/sponsor segment(s) detected`
-                      : 'No non-music/sponsor segments reported for this video')}
-                </span>
               </div>
             )}
           </div>
