@@ -51,4 +51,45 @@ it('prefers the explicit Official Music Video over Topic or bare-titled tracks f
  const ranked=rankYouTubeBackgroundCandidates(candidates,saavnTrack,'music');
  expect(ranked.map(s=>s.id)).toEqual(['yt_00000000012']);
 });
+it('ranks official artist video (Maroon 5 - Maps) #1 and official lyric video #2 ahead of low-view third-party reuploads',()=>{
+ const mapsTrack={title:'Maps',artist:'Maroon 5',duration:190};
+ const candidates:SongResult[]=[
+  video(20,'Maroon 5 - Maps [Official Video HD]',{artist:'Odin Production',duration:196,videoType:'UGC',viewCount:22_500}),
+  video(21,'Maroon 5 - Maps Music Video',{artist:'Mary York',duration:191,videoType:'UGC',viewCount:4_400}),
+  video(22,'Maroon 5 - Maps (Official Video)',{artist:'Music Love',duration:200,videoType:'UGC',viewCount:2_000}),
+  video(23,'Maroon 5 - Maps (Lyric Video)',{artist:'Maroon 5',duration:189,videoType:'UGC',viewCount:515_200_000}),
+  video(24,'Maroon 5 - Maps (Audio)',{artist:'Maroon 5',duration:190,videoType:'ATV',viewCount:140_000_000}),
+  video(25,'Maroon 5 - Maps',{artist:'Maroon 5',duration:209,videoType:'UGC',viewCount:540_000_000}),
+ ];
+ const ranked=rankYouTubeBackgroundCandidates(candidates,mapsTrack,'music');
+ expect(ranked[0].id).toBe('yt_00000000025');
+ expect(ranked[1].id).toBe('yt_00000000023');
+ expect(ranked.some(s=>s.id==='yt_00000000024')).toBe(false);
+});
+it('ranks official movie song uploads (MC Music 12M & Muzik247 3M) #1 and #2 for Thumbi Penne while excluding dance choreography, spaced slowed+reverb, live futsal events, and unrelated songs',()=>{
+ const thumbiTrack={title:'Thumbi Penne',artist:'Siddharth Menon',album:'Bangalore Days',duration:299};
+ const candidates:SongResult[]=[
+  video(30,'Siddharth Menon Sings Thumbi Penne, Bangalore Days | Futsal 2016 | Manorama Online Events',{artist:'Manorama Online Events',duration:193,videoType:'UGC',viewCount:56_600}),
+  video(31,'Siddharth Menon | Thumbi Penne (Lyrics) | Bangalore Days',{artist:'KoffeeBee',duration:293,videoType:'UGC',viewCount:28_700}),
+  video(32,'THUMBI PENNE | DSOULS DANCE COMPANY | DEEN JOHNS DANCE CHOREOGRAPHY',{artist:'DSOULS DANCE COMPANY',duration:81,videoType:'UGC',viewCount:923_600}),
+  video(33,'thumbi penne ( s l o w e d + r e v e r b ) | lilvibe',{artist:'lilvibe -',duration:352,videoType:'UGC',viewCount:322_900}),
+  video(34,'Thumbippenne Vava Lyrical Video Song | Dhruvam | Mammootty | Gouthami | Jayaram | Yesudas',{artist:'Movie World Cinema Pattukal',duration:304,videoType:'UGC',viewCount:239_100}),
+  video(35,'Thumbi Penne | Bangalore Days Songs | NivinPauly | DulquarSalman | Nazriya | Isha Talwar',{artist:'MC Music',duration:170,videoType:'UGC',viewCount:12_000_000}),
+  video(36,'Thumbi Penne- Bangalore Days | Dulquer Salman| Nivin Pauly| Nazriya Nazim | Full song',{artist:'Muzik247',duration:299,videoType:'UGC',viewCount:3_000_000}),
+ ];
+ const ranked=rankYouTubeBackgroundCandidates(candidates,thumbiTrack,'music');
+ expect(ranked.map(s=>s.id)).toEqual(['yt_00000000035','yt_00000000036','yt_00000000031']);
+});
+it('ranks Think Music India 109.1M views official music video #1 for Radhimaa over 379.7K Echo Haven reupload despite @SaiAbhyankkar camelCase handle and longer video duration',()=>{
+ const radhimaaTrack={title:'Radhimaa',artist:'Sai Abhyankkar',album:'Radhimaa',duration:272};
+ const candidates:SongResult[]=[
+  video(40,'Radhimaa (Music Video) | Sai Abhyankkar | Bhagyashri Borse | Vivek | Thejo Bharathwaj',{artist:'Echo Haven',duration:272,videoType:'UGC',viewCount:379_700}),
+  video(41,'@SaiAbhyankkar - Radhimaa (Music Video) | Bhagyashri Borse | Vivek | Thejo Bharathwaj | Think Indie',{artist:'Think Music India',duration:348,videoType:'UGC',viewCount:109_100_000}),
+  video(42,'@SaiAbhyankkar Radhimaa Music Video Bhagyashri Borse Vivek Thejo Bharathwaj The G',{artist:'gamer kaka',duration:348,videoType:'UGC',viewCount:296_500}),
+  video(43,'Radhimaa official (Music video) | Sai abhyankkar | Bhagyashri borse | Thejo bharathwaj | Think music',{artist:'CAC MELODY',duration:348,videoType:'UGC',viewCount:209}),
+ ];
+ const ranked=rankYouTubeBackgroundCandidates(candidates,radhimaaTrack,'music');
+ expect(ranked[0].id).toBe('yt_00000000041');
+});
+
 

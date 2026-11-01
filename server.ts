@@ -126,6 +126,13 @@ function parseViewCountFromRenderer(vr: Record<string, unknown>): number | undef
   const raw = extractText(vr.viewCountText) || extractText(vr.shortViewCountText);
   if (!raw) return undefined;
   const cleaned = raw.replace(/,/g, '').trim();
+  const indianMatch = cleaned.match(/(\d+(?:\.\d+)?)\s*(crores?|cr|lakhs?|lacs?|l)\b/i);
+  if (indianMatch) {
+    const base = Number(indianMatch[1]);
+    const unit = indianMatch[2].toLowerCase();
+    const mult = unit.startsWith('c') ? 10_000_000 : 100_000;
+    return Number.isFinite(base) ? Math.round(base * mult) : undefined;
+  }
   const suffixMatch = cleaned.match(/(\d+(?:\.\d+)?)\s*([KMBkmb])\b/);
   if (suffixMatch) {
     const base = Number(suffixMatch[1]);
@@ -891,18 +898,27 @@ function parseYouTubeSearchTree(root: unknown, limit: number): TrackMetadata[] {
               rawTitle
             );
           const hasExplicitVideoTitle =
-            /\b(?:official\s*(?:music\s*)?video|music\s*video|video\s*song|full\s*video|official\s*mv|\bmv\b)\b/i.test(
+            /\b(?:official\s*(?:music\s*)?video|music\s*video|video\s*song|full\s*video|full\s*song|official\s*mv|\bmv\b|\bsongs\b)\b/i.test(
               rawTitle
+            );
+          const isMusicLabelChannel =
+            /\b(?:vevo|mc\s*music|muzik\s*247|music\s*247|sony\s*music|t[\s-]*series|saregama|think\s*music|zee\s*music|aditya\s*music|lahari|manorama\s*music|millennium\s*audios?|satyam\s*audios?|speed\s*audio|eros\s*now|yrf|tips\s*official|junglee\s*music|times\s*music|rajshri|venus|shemaroo)\b/i.test(
+              channelName
             );
           const isVerifiedChannel =
             rendererStr.includes('BADGE_STYLE_TYPE_VERIFIED_ARTIST') ||
             rendererStr.includes('OWNER_BADGE_TYPE_VERIFIED') ||
-            /\bvevo\b/i.test(channelName);
+            isMusicLabelChannel;
+          const channelMatchesTitle = hasArtistOverlap(channelName, rawTitle);
           const isOfficialVideo =
             !isStaticAudio &&
             (rendererStr.includes('MUSIC_VIDEO_TYPE_OMV') ||
-              hasExplicitVideoTitle ||
-              (isVerifiedChannel && /\b(?:video|mv|clip)\b/i.test(rawTitle)));
+              (isVerifiedChannel &&
+                (hasExplicitVideoTitle ||
+                  channelMatchesTitle ||
+                  /\b(?:video|mv|clip)\b/i.test(rawTitle))) ||
+              (hasExplicitVideoTitle &&
+                (channelMatchesTitle || isMusicLabelChannel || (viewCount ?? 0) >= 1_000_000)));
           const meta: TrackMetadata = {
             id: trackId,
             rawId: videoId,
@@ -985,6 +1001,15 @@ async function fetchPipedOrInvidiousVideos(query: string, limit = 16): Promise<T
         const duration = Number(item.duration ?? item.lengthSeconds ?? 0);
         if (duration > 0 && duration < 45) continue;
         const views = Number(item.views ?? item.viewCount ?? 0);
+        const isVerifiedUploader =
+          item.uploaderVerified === true ||
+          item.authorVerified === true ||
+          /\bvevo\b/i.test(artist);
+        const channelMatchesTitle = hasArtistOverlap(artist, title);
+        const isOfficialVideo =
+          !isTopic &&
+          ((isVerifiedUploader && (hasExplicitVideoTitle || channelMatchesTitle)) ||
+            (hasExplicitVideoTitle && (channelMatchesTitle || views >= 1_000_000)));
         seen.add(videoId);
         const trackId = `yt_${videoId}`;
         const meta: TrackMetadata = {
@@ -996,7 +1021,7 @@ async function fetchPipedOrInvidiousVideos(query: string, limit = 16): Promise<T
           album: isTopic ? 'Audio Track' : '',
           duration: Number.isFinite(duration) && duration > 0 ? duration : 0,
           viewCount: Number.isFinite(views) && views > 0 ? views : undefined,
-          videoType: isTopic ? 'ATV' : hasExplicitVideoTitle ? 'OMV' : 'UGC',
+          videoType: isTopic ? 'ATV' : isOfficialVideo ? 'OMV' : 'UGC',
           sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
           artwork: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
         };
@@ -1012,22 +1037,11 @@ async function fetchPipedOrInvidiousVideos(query: string, limit = 16): Promise<T
   return [];
 }
 
-async function fetchYouTubeWebVideos(
-  query: string,
+async function runSingleYouTubeWebSearch(
+  upstreamQuery: string,
   limit = 20,
   ytAuth?: YouTubeAuthContext
 ): Promise<TrackMetadata[]> {
-  const directVideoId = extractDirectVideoIdFromQuery(query);
-  if (directVideoId) {
-    const directMeta = await resolveDirectYouTubeVideoQuery(directVideoId);
-    if (directMeta) return [directMeta];
-  }
-
-  const upstreamQuery = query
-    .trim()
-    .replace(/\bmusic\s+video$/i, 'Official Video')
-    .replace(/\blyrics\s+video$/i, 'Official Lyric Video');
-
   // 1. If user signed in with YouTube OAuth token, query official YouTube Data API v3 first
   if (ytAuth?.accessToken) {
     const apiTracks = await fetchYouTubeDataApiVideos(upstreamQuery, ytAuth.accessToken, limit);
@@ -1093,6 +1107,45 @@ async function fetchYouTubeWebVideos(
 
   // 3. Fallback to Piped / Invidious public video search mirrors if YouTube Innertube is rate-limited
   return fetchPipedOrInvidiousVideos(upstreamQuery, Math.max(limit, 20));
+}
+
+async function fetchYouTubeWebVideos(
+  query: string,
+  limit = 20,
+  ytAuth?: YouTubeAuthContext
+): Promise<TrackMetadata[]> {
+  const directVideoId = extractDirectVideoIdFromQuery(query);
+  if (directVideoId) {
+    const directMeta = await resolveDirectYouTubeVideoQuery(directVideoId);
+    if (directMeta) return [directMeta];
+  }
+
+  const trimmed = query.trim();
+  const baseQuery = trimmed
+    .replace(/\s+\b(?:official\s+(?:music\s+)?video|music\s+video)$/i, '')
+    .trim();
+  const upstreamQuery = trimmed
+    .replace(/\bmusic\s+video$/i, 'Official Video')
+    .replace(/\blyrics\s+video$/i, 'Official Lyric Video');
+
+  if (baseQuery && baseQuery.toLowerCase() !== trimmed.toLowerCase()) {
+    const [baseTracks, explicitTracks] = await Promise.all([
+      runSingleYouTubeWebSearch(baseQuery, limit, ytAuth).catch(() => []),
+      runSingleYouTubeWebSearch(upstreamQuery, limit, ytAuth).catch(() => []),
+    ]);
+    const merged: TrackMetadata[] = [];
+    const seen = new Set<string>();
+    for (const track of [...baseTracks, ...explicitTracks]) {
+      if (!seen.has(track.rawId)) {
+        seen.add(track.rawId);
+        merged.push(track);
+      }
+      if (merged.length >= Math.max(limit, 28)) break;
+    }
+    if (merged.length > 0) return merged;
+  }
+
+  return runSingleYouTubeWebSearch(upstreamQuery, limit, ytAuth);
 }
 
 async function searchYouTubeMusic(
@@ -2854,7 +2907,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       } else if (provider === 'soundcloud') {
         results = await searchSoundCloud(q, 12);
       } else if (provider === 'ytmusic' || provider === 'youtube') {
-        results = await searchYouTubeMusic(q, provider, 20, ytAuth);
+        results = await searchYouTubeMusic(q, provider, provider === 'youtube' ? 28 : 20, ytAuth);
       } else if (provider === 'audius') {
         results = await searchAudius(q, 12);
       }

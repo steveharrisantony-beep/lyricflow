@@ -679,7 +679,7 @@ export function buildCinematicSchedule(
   const linesPerScene=Math.max(1,Math.min(32,Math.round(themeDurationLines)));
   let idx=0;
   let part=0;
-  let currentStart=Math.min(source[0].start,cues[0].time);
+  let currentStart=Math.min(0,source[0].start,cues[0].time);
   while(idx<cues.length){
    let nextIdx=Math.min(cues.length,idx+linesPerScene);
    // Never split a simultaneous duet pair across a theme boundary

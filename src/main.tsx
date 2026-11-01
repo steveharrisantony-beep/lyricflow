@@ -20,14 +20,19 @@ import { createRoot } from 'react-dom/client';
 import AccountRoot from './auth/AccountRoot';
 import './styles.css';
 import {initializeEmbeddedBackend} from './network/embeddedBackend';
+import {preloadLyricFonts} from './visualization/cinematic/fonts';
 
 const startup = document.createElement('p');
 startup.className = 'device-service-status';
 startup.setAttribute('role', 'status');
 startup.textContent = 'Starting LyricFlow…';
 document.body.prepend(startup);
-void initializeEmbeddedBackend().then(() => startup.remove()).catch(error => {
-  startup.textContent = (error instanceof Error ? error.message : 'On-device music service unavailable.') + ' Local audio and manual lyrics remain available.';
-}).finally(() => {
+const fontsReadyPromise = preloadLyricFonts();
+void Promise.all([
+  initializeEmbeddedBackend().then(() => startup.remove()).catch(error => {
+    startup.textContent = (error instanceof Error ? error.message : 'On-device music service unavailable.') + ' Local audio and manual lyrics remain available.';
+  }),
+  fontsReadyPromise,
+]).finally(() => {
   createRoot(document.getElementById('root')!).render(<React.StrictMode><AccountRoot /></React.StrictMode>);
 });

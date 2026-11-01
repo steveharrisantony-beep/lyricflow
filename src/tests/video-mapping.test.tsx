@@ -315,3 +315,26 @@ it('rejects Topic channel videos at runtime before revealing them as a separate-
  expect(send.mock.calls.map(args=>JSON.parse(String(args[0]))).some(c=>c.func==='pauseVideo')).toBe(true);
 });
 
+it('switches to built-in themes when a YouTube background video starts late or ends early while audio continues',async()=>{
+ await act(async()=>root.render(<CinematicStage {...base} playbackTime={10} videoDelaySeconds={0}/>));
+ const frame=host.querySelector('iframe')!;
+ await act(async()=>window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,data:JSON.stringify({event:'onStateChange',info:1})})));
+ expect(host.querySelector('.cinematic-stack')?.getAttribute('data-background-state')).toBe('video');
+
+ // Video starts late (audio at 2s, video delay +6s): must switch back to built-in themes until playbackTime >= 6s
+ await act(async()=>root.render(<CinematicStage {...base} playbackTime={2} videoDelaySeconds={6}/>));
+ expect(host.querySelector('.cinematic-stack')?.getAttribute('data-background-state')).toBe('themes');
+
+ // Audio reaches 7s (>= 6s delay): switches back to YouTube video
+ await act(async()=>root.render(<CinematicStage {...base} playbackTime={7} videoDelaySeconds={6}/>));
+ expect(host.querySelector('.cinematic-stack')?.getAttribute('data-background-state')).toBe('video');
+
+ // Video ends early (e.g. 2:50 video clip on a 4:59 song): switches to built-in themes while audio keeps playing
+ await act(async()=>window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,data:JSON.stringify({event:'infoDelivery',info:{currentTime:169.8,duration:170,playerState:0}})})));
+ expect(host.querySelector('.cinematic-stack')?.getAttribute('data-background-state')).toBe('themes');
+
+ // Seeking backward in the song before the video's end restores the video background
+ await act(async()=>root.render(<CinematicStage {...base} playbackTime={60} videoDelaySeconds={0}/>));
+ expect(host.querySelector('.cinematic-stack')?.getAttribute('data-background-state')).toBe('video');
+});
+

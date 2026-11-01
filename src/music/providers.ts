@@ -23,39 +23,83 @@ export interface PlayableSong extends SongResult {streamUrl:string;format?:'hls'
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object';
 const string=(v:unknown)=>typeof v==='string'?v:'';
 
-/** Backgrounds require a video label or known music-video metadata; static audio is never a fallback. */
+/** Backgrounds require a video label, known music-video metadata, or an artist-prefixed video title on the artist's own channel; static audio is never a fallback. */
 export const isLyricalVideo=(song:SongResult)=>/\b(?:lyric(?:s|al)?|liric(?:s)?)\b/i.test(song.title);
+const videoWords=(value:string)=>value.normalize('NFKC').replace(/([\p{Ll}])([\p{Lu}])/gu,'$1 $2').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim().split(/\s+/).filter(Boolean);
+const artistStopWords=new Set(['unknown','various','artist','artists','official','music','records','vevo','youtube','topic','channel']);
+const significantArtistWords=(value:string)=>videoWords(value.replace(/vevo$/i,' vevo ')).filter(w=>w.length>1&&!artistStopWords.has(w));
+const collapseSpacedLetters=(value:string)=>value.normalize('NFKC').toLowerCase().replace(/\b([a-z])(?:[\s._+-]+([a-z])){2,}\b/g,m=>m.replace(/[\s._+-]+/g,''));
+const UNWANTED_VIDEO_VARIANT_PATTERN=/\b(?:cover|live|sings|singing|remix|mashup|karaoke|instrumental|sped\s*up|slowed(?:reverb)?|reverb|lofi|lo\s*fi|nightcore|reaction|review|parody|tutorial|lesson|8d|bass\s*boosted|dance|choreography|choreo|dancers|flash\s*mob|zumba|futsal|stage\s*show|stage\s*performance|concert|events?|award|unplugged|making|behind\s*the\s*scenes|teaser|trailer|promo|shorts|status|whatsapp|ringtone|tribute)\b/i;
+const MUSIC_LABEL_CHANNEL_PATTERN=/\b(?:vevo|mc\s*music|muzik\s*247|music\s*247|sony\s*music|t[\s-]*series|saregama|think\s*music|think\s*indie|zee\s*music|aditya\s*music|lahari|manorama\s*music|millennium\s*audios?|satyam\s*audios?|speed\s*audio|eros\s*now|yrf|tips\s*official|junglee\s*music|times\s*music|rajshri|venus|shemaroo|universal\s*music|warner\s*music|atlantic\s*records|interscope|republic\s*records|columbia\s*records|rca\s*records|def\s*jam|spinnin|monstercat|armada|ultra\s*music|1thek|hybe|smtown|jyp|yg)\b/i;
+
+export function isUnwantedVideoVariant(songTitle:string,trackTitle='',songArtist=''):boolean{
+ const normalizedSong=collapseSpacedLetters(`${songTitle} ${songArtist}`);
+ const normalizedTrack=collapseSpacedLetters(trackTitle);
+ const matches=normalizedSong.match(new RegExp(UNWANTED_VIDEO_VARIANT_PATTERN.source,'gi'));
+ if(!matches)return false;
+ return matches.some(keyword=>!normalizedTrack.includes(keyword.toLowerCase()));
+}
+
 export function isYouTubeBackgroundVideo(song:SongResult){
  const label=`${song.title} ${song.videoTitle||''}`;
  if(!extractYouTubeVideoId(song)||song.videoType==='ATV'||/(?:^|[\s\-–—])Topic\b/i.test(song.artist)||/^Audio Track$/i.test(song.album))return false;
  if(/\b(?:audio|jukebox|album\s*(?:art|image)|cover\s*art|static|visuali[sz]er|auto.generated|provided\s+to\s+youtube|podcast|reaction)\b/i.test(label))return false;
- return isLyricalVideo(song)||song.videoType==='OMV'||/\b(?:(?:official|music|full)\s*video|video\s*song|mv)\b/i.test(label);
+ if(isLyricalVideo(song)||song.videoType==='OMV'||/\b(?:(?:official|music|full|hd|4k|movie|film|hit)\s*(?:video|song|songs|mv)|video\s*song|full\s*song|\bsongs\b|\bmv\b)\b/i.test(label))return true;
+ if(MUSIC_LABEL_CHANNEL_PATTERN.test(song.artist)&&/[-–—:|]/.test(song.title))return true;
+ const channelWords=significantArtistWords(song.artist);
+ const titleWordList=videoWords(song.title);
+ const titleWords=new Set(titleWordList);
+ if(channelWords.length>0&&/\s[-–—:|]\s/.test(song.title)&&channelWords.every(w=>titleWords.has(w))&&titleWordList.length>channelWords.length)return true;
+ return /\s\|\s/.test(song.title)&&titleWordList.length>=4;
 }
-const videoWords=(value:string)=>value.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim().split(/\s+/).filter(Boolean);
-export function rankYouTubeBackgroundCandidates(songs:SongResult[],track:{title:string;artist:string;duration:number},preference:'music'|'lyrics'='music'):SongResult[]{
- const titleWords=videoWords(track.title.replace(/\([^)]*\)|\[[^\]]*\]/g,' '));
- const artistWords=videoWords(track.artist).filter(w=>w.length>1&&!['unknown','various','artist','artists','official','music','records','vevo'].includes(w));
+
+export function rankYouTubeBackgroundCandidates(songs:SongResult[],track:{title:string;artist:string;album?:string;duration:number},preference:'music'|'lyrics'='music'):SongResult[]{
+ const cleanTrackTitle=track.title.replace(/\([^)]*\)|\[[^\]]*\]/g,' ');
+ const titleWords=videoWords(cleanTrackTitle);
+ const artistWords=significantArtistWords(track.artist);
+ const rawAlbum=(track.album||'').replace(/\([^)]*\)|\[[^\]]*\]/g,' ').trim();
+ const albumWords=rawAlbum&&rawAlbum.toLowerCase()!==cleanTrackTitle.trim().toLowerCase()&&!/^(?:audio\s*track|single|unknown|various)$/i.test(rawAlbum)
+  ?significantArtistWords(rawAlbum)
+  :[];
  const scored=songs.filter(isYouTubeBackgroundVideo).flatMap(song=>{
   const lyric=isLyricalVideo(song);
   if(preference==='lyrics'&&!lyric)return [];
+  if(isUnwantedVideoVariant(song.title,track.title,song.artist))return [];
   const words=new Set(videoWords(song.title));
   const titleMatch=titleWords.filter(w=>words.has(w)).length/Math.max(1,titleWords.length);
   if(titleMatch<.75)return [];
-  const context=new Set(videoWords(song.title+' '+song.artist));
-  const artistMatch=artistWords.filter(w=>context.has(w)).length/Math.max(1,artistWords.length);
-  if(artistWords.length&&artistMatch===0)return [];
-  const version=/\b(cover|live|remix|karaoke|instrumental|sped\s*up|slowed|nightcore)\b/i;
-  if(version.test(song.title)&&!version.test(track.title))return [];
+  const contextList=videoWords(song.title+' '+song.artist+' '+(song.album||''));
+  const context=new Set(contextList);
+  const compactContext=contextList.join('');
+  const artistMatch=artistWords.length?artistWords.filter(w=>context.has(w)||(w.length>=4&&compactContext.includes(w))).length/artistWords.length:0;
+  const albumMatch=albumWords.length?albumWords.filter(w=>context.has(w)||(w.length>=4&&compactContext.includes(w))).length/albumWords.length:0;
+  const isLabelOrMovieVideo=MUSIC_LABEL_CHANNEL_PATTERN.test(song.artist)||/\b(?:full\s*song|video\s*song)\b/i.test(song.title)||(/\|/.test(song.title)&&/\bsongs?\b/i.test(song.title));
+  if(artistWords.length&&artistMatch===0&&albumMatch===0&&!isLabelOrMovieVideo)return [];
+  const channelWords=new Set(significantArtistWords(song.artist));
+  const channelMatch=artistWords.length?artistWords.filter(w=>channelWords.has(w)).length/artistWords.length:0;
   const difference=track.duration>0&&song.duration>0?Math.abs(song.duration-track.duration):null;
-  if(difference!==null&&(song.duration<track.duration*.6||difference>Math.max(100,track.duration*.5)))return [];
-  const timing=difference===null?0:25*Math.max(0,1-difference/Math.max(30,track.duration*.3));
-  const explicitVideo=/\b(?:(?:official|music|full)\s*video|video\s*song|mv)\b/i.test(song.title);
-  const score=titleMatch*100+artistMatch*45+timing+(/\bofficial\b/i.test(song.title)?5:0)+(preference==='music'&&explicitVideo?18:0);
-  return [{song,lyric,score}];
+  const minAllowedDuration=isLabelOrMovieVideo||albumMatch>0?Math.min(140,track.duration*.55):track.duration*.6;
+  if(difference!==null&&(song.duration<minAllowedDuration||difference>Math.max(100,track.duration*.5)))return [];
+  const views=song.viewCount||0;
+  const rawTiming=difference===null?0:25*Math.max(0,1-difference/Math.max(30,track.duration*.3));
+  const timing=isLabelOrMovieVideo&&song.duration>=140&&views>=1_000_000?Math.max(rawTiming,22):rawTiming;
+  const explicitVideo=/\b(?:(?:official|music|full)\s*video|video\s*song|full\s*song|\bsongs\b|\bmv\b)\b/i.test(song.title);
+  const popularity=views>0?Math.min(22,Math.max(0,Math.log10(views)-3)*3.5):0;
+  const effectiveChannelMatch=Math.max(channelMatch,isLabelOrMovieVideo&&(artistMatch>0||albumMatch>0||views>=500_000)?0.85:0);
+  const trustedOfficial=effectiveChannelMatch>0||albumMatch>0||isLabelOrMovieVideo||song.videoType==='OMV'||views>=1_000_000||views===0;
+  const officialBonus=(/\bofficial\b/i.test(song.title)?(trustedOfficial?5:1):0)+(preference==='music'&&explicitVideo?(trustedOfficial?18:4):0)+(preference==='music'&&(song.videoType==='OMV'||isLabelOrMovieVideo)&&(effectiveChannelMatch>0||albumMatch>0||views>=500_000)?12:0);
+  const metadataMatch=Math.max(artistMatch*30+effectiveChannelMatch*45,albumMatch*35+(isLabelOrMovieVideo?25:0));
+  const score=titleMatch*100+metadataMatch+timing+officialBonus+popularity;
+  return [{song,lyric,channelMatch:effectiveChannelMatch,score}];
  });
  return scored.sort((a,b)=>{
-  // A suitable music video wins; use a lyrical video when no music video passes the checks.
-  if(preference==='music'&&a.lyric!==b.lyric)return Number(a.lyric)-Number(b.lyric);
+  // A suitable music video wins; however, an official artist lyric video with millions of views beats low-view third-party reuploads.
+  if(preference==='music'&&a.lyric!==b.lyric){
+   const musicItem=a.lyric?b:a;
+   const lyricItem=a.lyric?a:b;
+   const musicIsWeakThirdParty=musicItem.channelMatch===0&&(musicItem.song.viewCount||0)<500_000&&lyricItem.channelMatch>0&&(lyricItem.song.viewCount||0)>=1_000_000;
+   if(!musicIsWeakThirdParty)return Number(a.lyric)-Number(b.lyric);
+  }
   if(Math.abs(a.score-b.score)>3)return b.score-a.score;
   return (b.song.viewCount||0)-(a.song.viewCount||0)||b.score-a.score;
  }).map(item=>item.song);
@@ -78,7 +122,7 @@ export function resolverBase(value:string){
 }
 export function parseSongs(value:unknown,provider:SongResult['provider']):SongResult[]{
  if(!record(value)||!Array.isArray(value.data))throw Error('The music provider returned an unexpected response.');
- return value.data.slice(0,20).flatMap(item=>{
+ return value.data.slice(0,30).flatMap(item=>{
   if(!record(item)||!string(item.id)||!string(item.title))return [];
   if(provider==='audius'&&(item.is_streamable===false||item.is_stream_gated===true))return [];
   const user=record(item.user)?item.user:{};

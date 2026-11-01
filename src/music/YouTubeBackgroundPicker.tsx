@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   formatViewCount,
+  isUnwantedVideoVariant,
   isYouTubeBackgroundVideo,
   isLyricalVideo,
+  rankYouTubeBackgroundCandidates,
   searchStashCatalog,
   type SongResult,
 } from './providers';
@@ -71,18 +73,39 @@ export default function YouTubeBackgroundPicker({
         : defaultQuery;
       const custom=Boolean(overrideQuery&&overrideQuery.trim().length>=2);
       const search=custom?null:await findYouTubeBackgrounds(track,preference,base,controller.signal);
-      const ranked=search?.videos||((await searchStashCatalog(effectiveQuery,'resolver',base,controller.signal))
-        .filter(song=>isYouTubeBackgroundVideo(song)&&(preference!=='lyrics'||isLyricalVideo(song)))
-        .sort((a,b)=>{
-          if(preference==='music'&&isLyricalVideo(a)!==isLyricalVideo(b)){
-            return Number(isLyricalVideo(a))-Number(isLyricalVideo(b));
-          }
-          const aOff=a.videoType==='OMV'||/\bofficial\b/i.test(a.title)?1:0;
-          const bOff=b.videoType==='OMV'||/\bofficial\b/i.test(b.title)?1:0;
-          if(aOff!==bOff)return bOff-aOff;
-          return (b.viewCount||0)-(a.viewCount||0);
-        })
-        .slice(0,15));
+      let ranked=search?.videos;
+      if(!ranked){
+        const rawResults=await searchStashCatalog(effectiveQuery,'resolver',base,controller.signal);
+        const directId=extractYouTubeVideoId({id:effectiveQuery,provider:'resolver',sourceUrl:effectiveQuery});
+        if(directId&&rawResults.length===1){
+          ranked=rawResults;
+        }else{
+          const strictRanked=rankYouTubeBackgroundCandidates(rawResults,track,preference);
+          const strictIds=new Set(strictRanked.map(s=>extractYouTubeVideoId(s)).filter(Boolean));
+          const customRanked=rankYouTubeBackgroundCandidates(
+            rawResults.filter(s=>{const id=extractYouTubeVideoId(s);return Boolean(id&&!strictIds.has(id));}),
+            {title:effectiveQuery,artist:'',album:track.album,duration:0},
+            preference
+          );
+          const customIds=new Set(customRanked.map(s=>extractYouTubeVideoId(s)).filter(Boolean));
+          const queryWords=effectiveQuery.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim().split(/\s+/).filter(w=>w.length>1);
+          const extra=rawResults
+            .filter(song=>{
+              const id=extractYouTubeVideoId(song);
+              if(!id||strictIds.has(id)||customIds.has(id))return false;
+              if(!isYouTubeBackgroundVideo(song)||(preference==='lyrics'&&!isLyricalVideo(song)))return false;
+              if(isUnwantedVideoVariant(song.title,effectiveQuery,song.artist))return false;
+              if(queryWords.length>0){
+                const songWords=new Set(song.title.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim().split(/\s+/).filter(Boolean));
+                const matchRatio=queryWords.filter(w=>songWords.has(w)).length/queryWords.length;
+                if(matchRatio<0.75)return false;
+              }
+              return true;
+            })
+            .sort((a,b)=>(b.viewCount||0)-(a.viewCount||0));
+          ranked=[...strictRanked,...customRanked,...extra].slice(0,15);
+        }
+      }
       if (controller.signal.aborted) return;
       setResults(ranked);
       setMessage(

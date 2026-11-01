@@ -257,8 +257,10 @@ export default function ManualLyrics({
  onDisplayModeChange,
  minFontSize=26,
  maxFontSize=88,
+ fontScale=1,
  onMinFontSizeChange,
  onMaxFontSizeChange,
+ onFontScaleChange,
  bpm=0,
  romanizationEnabled:controlledRomanEnabled,
  onRomanizationEnabledChange,
@@ -289,8 +291,10 @@ export default function ManualLyrics({
  onDisplayModeChange?:(mode:'original'|'romanized'|'both')=>void;
  minFontSize?:number;
  maxFontSize?:number;
+ fontScale?:number;
  onMinFontSizeChange?:(size:number)=>void;
  onMaxFontSizeChange?:(size:number)=>void;
+ onFontScaleChange?:(scale:number)=>void;
  bpm?:number;
  romanizationEnabled?:boolean;
  onRomanizationEnabledChange?:(enabled:boolean)=>void;
@@ -639,10 +643,17 @@ export default function ManualLyrics({
   [secondaryLineText]
  );
 
- // Dynamic stage font size bounded by user's minFontSize and maxFontSize levels
- const panelMinPx=Math.max(14,Math.round(minFontSize*0.62));
- const panelMaxPx=Math.max(panelMinPx+4,Math.round(maxFontSize*0.52));
- const stageFontSizeCss=`clamp(${panelMinPx}px, 2.8vw, ${panelMaxPx}px)`;
+ // Proportional lyric font scale (50% to 180%, default 100%)
+ const effectiveScale=Math.max(0.5,Math.min(1.8,Number.isFinite(fontScale)?fontScale:((minFontSize/26)+(maxFontSize/88))*0.5));
+ const fontScalePct=Math.round(effectiveScale*100);
+ const stageFontSizeCss=`calc(${effectiveScale.toFixed(2)} * clamp(15px, 2.6vw, 28px))`;
+ const handleScalePctChange=(pct:number)=>{
+  const clampedPct=Math.max(50,Math.min(180,Math.round(pct)));
+  const nextScale=clampedPct/100;
+  onFontScaleChange?.(nextScale);
+  onMinFontSizeChange?.(Math.max(16,Math.min(72,Math.round(26*nextScale))));
+  onMaxFontSizeChange?.(Math.max(32,Math.min(130,Math.round(88*nextScale))));
+ };
 
  // Instrumental interlude indicator when between vocal lines
  const interludeProgress=useMemo(()=>{
@@ -882,26 +893,15 @@ export default function ManualLyrics({
      <option value="word">Fast Mode (Word by Word)</option>
     </select>
    </label>
-   <label>Min font size ({minFontSize}px)
+   <label>Lyrics font size ({fontScalePct}%)
     <input
-     aria-label="Lyrics minimum font size"
+     aria-label="Lyrics font size scale"
      type="range"
-     min="16"
-     max="72"
-     step="2"
-     value={minFontSize}
-     onChange={e=>onMinFontSizeChange?.(Number(e.target.value))}
-    />
-   </label>
-   <label>Max font size ({maxFontSize}px)
-    <input
-     aria-label="Lyrics maximum font size"
-     type="range"
-     min="32"
-     max="130"
-     step="2"
-     value={maxFontSize}
-     onChange={e=>onMaxFontSizeChange?.(Number(e.target.value))}
+     min="50"
+     max="180"
+     step="5"
+     value={fontScalePct}
+     onChange={e=>handleScalePctChange(Number(e.target.value))}
     />
    </label>
    <label>Visual genre preset<select value={genre} onChange={e=>setGenre(e.target.value)}><option value="">Auto / unknown</option>{['Ambient','Cinematic','Pop','EDM','Rock','Hip-hop','Ballad','Classical'].map(g=><option key={g}>{g}</option>)}</select></label>
@@ -981,7 +981,7 @@ export default function ManualLyrics({
      </button>
     </div>
    </label>
-   <span>{lines.length} timed lines · {lyricProviderInfo.providerName} · {hasWordTags&&lines.length>0?'Word-synced':lines.length>0?'Line-synced':plain.trim()?'Plain text (no timestamps)':'No timestamps'} · {language} · Font {minFontSize}–{maxFontSize}px · Delay {formatLyricDelay(delay)}</span>
+   <span>{lines.length} timed lines · {lyricProviderInfo.providerName} · {hasWordTags&&lines.length>0?'Word-synced':lines.length>0?'Line-synced':plain.trim()?'Plain text (no timestamps)':'No timestamps'} · {language} · Font size {fontScalePct}% · Delay {formatLyricDelay(delay)}</span>
   </div>
 
   <div

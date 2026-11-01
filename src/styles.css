@@ -717,6 +717,13 @@ body {
   padding: 18px 0 28px;
 }
 
+@media (min-width: 768px) and (max-width: 1099px) {
+  .yt-workspace-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 42%);
+    gap: 16px;
+  }
+}
+
 @media (min-width: 1400px) {
   .yt-workspace-grid {
     grid-template-columns: minmax(0, 1fr) 480px;
@@ -728,6 +735,67 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.yt-primary-column > *,
+.yt-settings-sidebar > * {
+  flex-shrink: 0;
+}
+
+/* Tablet & PC Split-Scroll Layout: Left and Right columns scroll independently */
+@media (min-width: 768px) {
+  .shell {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 0 24px;
+  }
+
+  .yt-workspace-grid {
+    flex: 1 1 0%;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+    align-items: stretch;
+    padding: 14px 0 0;
+  }
+
+  .yt-primary-column,
+  .yt-settings-sidebar {
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    padding-right: 6px;
+    padding-bottom: 24px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
+  .yt-primary-column::-webkit-scrollbar,
+  .yt-settings-sidebar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .yt-primary-column::-webkit-scrollbar-track,
+  .yt-settings-sidebar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .yt-primary-column::-webkit-scrollbar-thumb,
+  .yt-settings-sidebar::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 999px;
+  }
+
+  .shell > footer {
+    flex-shrink: 0;
+    padding: 8px 0 10px;
+  }
 }
 
 .yt-sticky-stage-wrap {
@@ -742,13 +810,13 @@ body {
 .yt-sticky-stage-wrap .stage {
   height: auto;
   aspect-ratio: 16 / 9;
-  max-height: 70dvh;
+  max-height: 62dvh;
   border-bottom: 0;
   background: #05070c;
 }
 
-/* On Mobile & Compact Screens: Natural Scroll (Do NOT Pin Visualizer) & Full Screen Width Centered Visualizer */
-@media (max-width: 959px) {
+/* On Mobile Screens (< 768px): Natural Scroll (Do NOT Pin Visualizer) & Full Screen Width Centered Visualizer */
+@media (max-width: 767px) {
   .shell {
     padding: 0 12px;
     overflow-x: hidden;

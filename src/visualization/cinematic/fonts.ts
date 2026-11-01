@@ -33,3 +33,115 @@ export const FONT_SHOWCASE:readonly FontPack[]=[
  'monument','noir','glass','collage','pixel','handwritten','retro','cyber','industrial','ultra',
  'couture','vogue','engraved','techno','manuscript','typewriter','retrograde'
 ] as const;
+
+const loadedFontPacks=new Set<FontPack>();
+const pendingFontLoads=new Map<FontPack,Promise<void>>();
+let fontLoadRevision=0;
+let fontListenerAttached=false;
+let warmCanvasCtx:CanvasRenderingContext2D|null=null;
+
+function getWarmCanvasContext():CanvasRenderingContext2D|null{
+ if(warmCanvasCtx)return warmCanvasCtx;
+ if(typeof document==='undefined')return null;
+ try{
+  const canvas=document.createElement('canvas');
+  canvas.width=32;
+  canvas.height=32;
+  warmCanvasCtx=canvas.getContext('2d');
+ }catch{
+  warmCanvasCtx=null;
+ }
+ return warmCanvasCtx;
+}
+
+function warmFontOnCanvas(pack:FontPack){
+ const ctx=getWarmCanvasContext();
+ if(!ctx)return;
+ try{
+  applySceneFont(ctx,pack,48,'LyricFlow');
+  ctx.measureText('LyricFlow 0123456789');
+  ctx.fillText('LyricFlow',0,24);
+ }catch{
+  // Ignore in headless/non-canvas test environments
+ }
+}
+
+export function getFontLoadRevision():number{
+ return fontLoadRevision;
+}
+
+export function isFontPackLoaded(pack:FontPack):boolean{
+ if(loadedFontPacks.has(pack))return true;
+ if(typeof document==='undefined'||!('fonts' in document)||!document.fonts){
+  loadedFontPacks.add(pack);
+  return true;
+ }
+ try{
+  const spec=`${fontWeights[pack]} 48px ${fontFamilies[pack]}`;
+  if(typeof document.fonts.check==='function'&&document.fonts.check(spec,'LyricFlow')){
+   loadedFontPacks.add(pack);
+   return true;
+  }
+ }catch{
+  // Ignore check errors
+ }
+ return false;
+}
+
+/**
+ * Preload and rasterize enabled lyric fonts (plus Indic fallback scripts) before display
+ * so lyrics never render in a fallback/default font first and then swap a second later.
+ */
+export async function preloadLyricFonts(packs:readonly FontPack[]=FONT_SHOWCASE):Promise<void>{
+ const targetPacks=packs.length>0?packs:FONT_SHOWCASE;
+ if(typeof document==='undefined'||!('fonts' in document)||!document.fonts||typeof document.fonts.load!=='function'){
+  for(const pack of targetPacks)loadedFontPacks.add(pack);
+  return;
+ }
+ if(!fontListenerAttached&&typeof document.fonts.addEventListener==='function'){
+  fontListenerAttached=true;
+  document.fonts.addEventListener('loadingdone',()=>{
+   fontLoadRevision++;
+  });
+ }
+
+ const tasks:Promise<void>[]=[];
+ for(const pack of targetPacks){
+  if(loadedFontPacks.has(pack))continue;
+  let existing=pendingFontLoads.get(pack);
+  if(!existing){
+   const spec=`${fontWeights[pack]} 48px ${fontFamilies[pack]}`;
+   existing=document.fonts
+    .load(spec,'LyricFlow 0123456789')
+    .then(()=>{
+     loadedFontPacks.add(pack);
+     warmFontOnCanvas(pack);
+     fontLoadRevision++;
+    })
+    .catch(()=>{
+     loadedFontPacks.add(pack);
+     fontLoadRevision++;
+    })
+    .finally(()=>{
+     pendingFontLoads.delete(pack);
+    });
+   pendingFontLoads.set(pack,existing);
+  }
+  tasks.push(existing);
+ }
+
+ // Also preload Indic fallback fonts in parallel
+ for(const fallbackFamily of ['"Noto Sans Malayalam"','"Noto Sans Tamil"','"Noto Sans Devanagari"']){
+  tasks.push(
+   document.fonts.load(`800 36px ${fallbackFamily}`,'LyricFlow').then(()=>{}).catch(()=>{})
+  );
+ }
+
+ if(tasks.length>0){
+  await Promise.race([
+   Promise.allSettled(tasks),
+   new Promise<void>(resolve=>setTimeout(resolve,1200))
+  ]);
+ }
+}
+

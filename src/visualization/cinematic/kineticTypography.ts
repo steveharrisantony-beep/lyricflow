@@ -2,7 +2,7 @@ import type {LyricCue} from '../../lyrics/lyricTimeline';
 import {wordEmphasis,type WordEmphasis} from '../../lyrics/wordEmphasis';
 import {hasDistinctRomanized} from '../../romanization/romanize';
 import {byId,resolveThemePalette,TEMPLATES,type DirectedScene,type FontPack} from './catalog';
-import {applySceneFont} from './fonts';
+import {applySceneFont,getFontLoadRevision,isFontPackLoaded,preloadLyricFonts} from './fonts';
 import {paintLyric,readableChromaticInk,readableInk} from './contrast';
 import {makeLyricProjection,STILL_CAMERA,type ProjectPoint} from './cameraRig';
 
@@ -132,7 +132,12 @@ export function lyricMotionFor(scene:DirectedScene,text:string,enabledMotions?:r
 const packs:readonly FontPack[]=['impact','rounded','ultra','glass','industrial','tech','noir','cyber'];
 export function lyricFontFor(scene:DirectedScene,text:string,enabledFonts?:readonly FontPack[]):FontPack{
  const pool=enabledFonts&&enabledFonts.length>0?enabledFonts:packs;
- return pool[hash(scene.id+'|'+text)%pool.length];
+ const loadedPool=pool.filter(pack=>isFontPackLoaded(pack));
+ if(loadedPool.length<pool.length){
+  void preloadLyricFonts(pool);
+ }
+ const activePool=loadedPool.length>0?loadedPool:pool;
+ return activePool[hash(scene.id+'|'+text)%activePool.length];
 }
 
 export interface LyricRun {
@@ -280,6 +285,7 @@ export interface KineticArgs {
  fillPaceMode?:LyricFillPaceMode;
  minFontSize?:number;
  maxFontSize?:number;
+ fontScale?:number;
  forceLightText?:boolean;
  placementMode?:LyricPlacementMode;
  duetSide?:'left'|'right';
@@ -704,6 +710,7 @@ export function drawKineticLyrics({
  fillPaceMode='auto',
  minFontSize=26,
  maxFontSize=88,
+ fontScale,
  forceLightText=false,
  placementMode='auto',
  duetSide
@@ -721,9 +728,17 @@ export function drawKineticLyrics({
   :resolveCuePlacement(cue,scene,placementMode,enabledPlacements);
  const cueParity=hash(cue.text+'|'+Math.round(cue.time*5))%2;
 
- const safeMinFont=clamp(Math.min(minFontSize,maxFontSize),16,120);
- const safeMaxFont=clamp(Math.max(minFontSize,maxFontSize),safeMinFont,140);
- const layoutKey=`${cue.time}|${cue.end}|${cue.text}|${cue.romanized}|${cue.words.length}|${mode}|${font}|${w}|${h}|${safeMinFont}|${safeMaxFont}|${motion}|${activePlacement}|${duetSide||''}`;
+ // Proportional font scale factor: ensures lyrics maintain the exact same proportion
+ // relative to the stage in both normal view and full screen view.
+ const derivedScale=
+  typeof fontScale==='number'&&Number.isFinite(fontScale)
+   ?fontScale
+   :((minFontSize/26)+(maxFontSize/88))*0.5;
+ const scaleFactor=clamp(derivedScale,0.45,2.0);
+ const proportionalMinFont=Math.max(10,unit*0.052*scaleFactor);
+ const proportionalMaxFont=Math.max(proportionalMinFont,unit*0.21*scaleFactor);
+ const fontRev=getFontLoadRevision();
+ const layoutKey=`${cue.time}|${cue.end}|${cue.text}|${cue.romanized}|${cue.words.length}|${mode}|${font}|${fontRev}|${w}|${h}|${scaleFactor.toFixed(3)}|${motion}|${activePlacement}|${duetSide||''}`;
 
  let runs:LyricRun[];
  let placements:WordPlacement[];
@@ -738,8 +753,8 @@ export function drawKineticLyrics({
  }else{
   runs=lyricRuns(cue,mode,emphasis);
   const duetScale=duetSide?0.78:1;
-  const rawBaseline=unit*(runs.length<=3?0.165:runs.length<=6?0.136:runs.length<=10?0.114:0.098)*duetScale;
-  const baseline=clamp(rawBaseline,safeMinFont,safeMaxFont);
+  const rawBaseline=unit*(runs.length<=3?0.155:runs.length<=6?0.128:runs.length<=10?0.108:0.092)*duetScale*scaleFactor;
+  const baseline=clamp(rawBaseline,proportionalMinFont,proportionalMaxFont);
   const space=baseline*0.30;
   const widths=runs.map(word=>{
    applySceneFont(c,font,baseline,word.text);
@@ -759,9 +774,9 @@ export function drawKineticLyrics({
   const widthFit=availWidth/Math.max(1,widestRow);
   const heightFit=availHeight/Math.max(1,totalRowsCount*baseline*1.38);
   const maxAllowedFit=Math.min(1.15,widthFit,heightFit);
-  const maxSafeFont=Math.max(12,baseline*maxAllowedFit);
-  const effectiveMinFont=Math.min(safeMinFont,maxSafeFont);
-  size=clamp(baseline*maxAllowedFit,effectiveMinFont,Math.min(safeMaxFont,maxSafeFont));
+  const maxSafeFont=Math.max(9,baseline*maxAllowedFit);
+  const effectiveMinFont=Math.min(proportionalMinFont,maxSafeFont);
+  size=clamp(baseline*maxAllowedFit,effectiveMinFont,Math.min(proportionalMaxFont,maxSafeFont));
   fit=size/Math.max(1,baseline);
   joinedText=runs.map(word=>word.text).join(' ');
   cachedLayout={key:layoutKey,runs,placements,totalRowsCount,widestRow,fit,size,joinedText};

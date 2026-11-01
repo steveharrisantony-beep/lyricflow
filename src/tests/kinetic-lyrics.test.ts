@@ -71,6 +71,28 @@ describe('single-phrase typography & sequential lyric colour engine',()=>{
   expect(getLyricState(12).cue).toBeNull();
   setLyricTimeline([]);
  });
+ it('scales lyrics proportionally across normal view and full screen view based on fontScale',()=>{
+  const normalFonts:string[]=[];
+  const fullFonts:string[]=[];
+  const makeTrackedCtx=(w:number,h:number,sink:string[])=>{
+   const base=context();
+   let currentFont='800 50px sans-serif';
+   return Object.defineProperty({...base,canvas:{width:w,height:h}},'font',{
+    get:()=>currentFont,
+    set:(v:string)=>{currentFont=v;sink.push(v);}
+   }) as unknown as CanvasRenderingContext2D;
+  };
+  const normalCtx=makeTrackedCtx(360,202.5,normalFonts);
+  const fullCtx=makeTrackedCtx(1920,1080,fullFonts);
+  drawKineticLyrics({c:normalCtx,scene,cue:cues[0],time:1,mode:'original',w:360,h:202.5,intensity:0,reduced:true,emphasis,fontScale:1.25});
+  drawKineticLyrics({c:fullCtx,scene,cue:cues[0],time:1,mode:'original',w:1920,h:1080,intensity:0,reduced:true,emphasis,fontScale:1.25});
+  const normalPx=parseFloat(normalFonts[normalFonts.length-1]?.match(/([\d.]+)px/)?.[1]||'0');
+  const fullPx=parseFloat(fullFonts[fullFonts.length-1]?.match(/([\d.]+)px/)?.[1]||'0');
+  expect(normalPx).toBeGreaterThan(0);
+  expect(fullPx).toBeGreaterThan(normalPx);
+  // Ratio of font size to stage height should match closely between normal view and full screen view
+  expect(Math.abs((normalPx/202.5)-(fullPx/1080))).toBeLessThan(0.015);
+ });
 });
 describe('music camera and continuity',()=>{
  it('triggers smooth shake strictly when bass exceeds the sensitivity-controlled threshold and respects shake toggle',()=>{

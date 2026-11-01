@@ -35,7 +35,7 @@ import {
   type AlbumArtLyricPalette,
 } from './visualization/cinematic/contrast';
 import { computeBassThreshold } from './visualization/cinematic/cameraRig';
-import { FONT_SHOWCASE, fontLabel } from './visualization/cinematic/fonts';
+import { FONT_SHOWCASE, fontLabel, preloadLyricFonts } from './visualization/cinematic/fonts';
 import {
   setAudioSensitivity,
   getAudioFrequencyBands,
@@ -316,6 +316,12 @@ export default function App({ user = null }: { user?: User | null }) {
   const [cameraShakeSensitivity, setCameraShakeSensitivity] = useState<number>(initialPrefs.cameraShakeSensitivity);
   const [lyricMinFontSize, setLyricMinFontSize] = useState<number>(initialPrefs.lyricMinFontSize);
   const [lyricMaxFontSize, setLyricMaxFontSize] = useState<number>(initialPrefs.lyricMaxFontSize);
+  const [lyricFontScale, setLyricFontScale] = useState<number>(() => {
+    const saved = Number(initialExtended.lyricFontScale);
+    if (Number.isFinite(saved) && saved >= 0.5 && saved <= 1.8) return saved;
+    const derived = ((initialPrefs.lyricMinFontSize / 26) + (initialPrefs.lyricMaxFontSize / 88)) * 0.5;
+    return Math.max(0.5, Math.min(1.8, Math.round(derived * 20) / 20 || 1));
+  });
   const [themePalettes, setThemePalettes] = useState<Record<string, string>>(initialPrefs.themePalettes);
 
   // YouTube video background, fit mode, black overlay opacity, SponsorBlock & embedded lyric auto-hide state
@@ -476,6 +482,8 @@ export default function App({ user = null }: { user?: User | null }) {
     setEnabledFonts(prefs.enabledFonts || [...ALL_FONT_PACKS]);
     setCameraShakeEnabled(prefs.cameraShakeEnabled); setCameraShakeSensitivity(prefs.cameraShakeSensitivity);
     setLyricMinFontSize(prefs.lyricMinFontSize); setLyricMaxFontSize(prefs.lyricMaxFontSize);
+    const syncedScale = Math.max(0.5, Math.min(1.8, Math.round((((prefs.lyricMinFontSize / 26) + (prefs.lyricMaxFontSize / 88)) * 0.5) * 20) / 20));
+    setLyricFontScale(syncedScale);
     setThemePalettes(prefs.themePalettes);
     const d = prefs.display;
     setPreferredVideoType(d.preferredVideoType);
@@ -502,6 +510,7 @@ export default function App({ user = null }: { user?: User | null }) {
         JSON.stringify({
           themeMode,
           videoFitMode,
+          lyricFontScale,
           videoPlacementMode,
           enabledVideoPlacements,
           themePlacementMode,
@@ -515,6 +524,7 @@ export default function App({ user = null }: { user?: User | null }) {
   }, [
     themeMode,
     videoFitMode,
+    lyricFontScale,
     videoPlacementMode,
     enabledVideoPlacements,
     themePlacementMode,
@@ -561,12 +571,20 @@ export default function App({ user = null }: { user?: User | null }) {
   const selectSubtitle = (id: string) => selectLyrics({ engine: 'youtube', lrclibId: null, subtitleTrackId: id });
   const updateLyricDelay = (value: number) => { delayFix.save({ delaySeconds: clampLyricDelay(value) }); };
 
+  const handleLyricFontScaleChange = (scale: number) => {
+    const clampedScale = Math.max(0.5, Math.min(1.8, Math.round(scale * 20) / 20));
+    setLyricFontScale(clampedScale);
+    setLyricMinFontSize(Math.max(16, Math.min(72, Math.round(26 * clampedScale))));
+    setLyricMaxFontSize(Math.max(32, Math.min(130, Math.round(88 * clampedScale))));
+  };
+
   const handleMinFontSizeChange = (val: number) => {
     const clamped = Math.max(16, Math.min(72, val));
     setLyricMinFontSize(clamped);
     if (clamped > lyricMaxFontSize) {
       setLyricMaxFontSize(clamped);
     }
+    setLyricFontScale(Math.max(0.5, Math.min(1.8, Math.round((clamped / 26) * 20) / 20)));
   };
 
   const handleMaxFontSizeChange = (val: number) => {
@@ -575,6 +593,7 @@ export default function App({ user = null }: { user?: User | null }) {
     if (clamped < lyricMinFontSize) {
       setLyricMinFontSize(Math.max(16, clamped));
     }
+    setLyricFontScale(Math.max(0.5, Math.min(1.8, Math.round((clamped / 88) * 20) / 20)));
   };
 
   const handleSaveCustomOverride = (lrc: string) => { privateLyrics.save(lrc); };
@@ -786,6 +805,10 @@ export default function App({ user = null }: { user?: User | null }) {
     ? enabledFonts
     : [manualFont];
 
+  useEffect(() => {
+    void preloadLyricFonts(effectiveFonts);
+  }, [effectiveFonts]);
+
   const enabledChoices = choices.filter(c => enabledScenes.includes(c.id));
   const stepperPool = enabledChoices.length > 0 ? enabledChoices : choices;
   const activeTemplate = byId[scene] || choices[0];
@@ -815,7 +838,7 @@ export default function App({ user = null }: { user?: User | null }) {
         : null
       : extractYouTubeVideoId(localTrack);
 
-  const videoSearchKey=localTrack?[localTrack.title,localTrack.artist,Math.round(localTrack.duration),localTrack.provider,preferredVideoType].join('|'):'';
+  const videoSearchKey=localTrack?[localTrack.title,localTrack.artist,localTrack.album||'',Math.round(localTrack.duration),localTrack.provider,preferredVideoType].join('|'):'';
   const filteredAutoVideos=autoVideoMatch.key===videoSearchKey?autoVideoMatch.videos.filter(v=>{const id=extractYouTubeVideoId(v);return Boolean(id&&!rejectedBgVideoIds.includes(id));}):[];
   const autoYoutubeVideoId=autoVideoMatch.key===videoSearchKey?(filteredAutoVideos.length>0?extractYouTubeVideoId(filteredAutoVideos[0]):(autoVideoMatch.id&&!rejectedBgVideoIds.includes(autoVideoMatch.id)?autoVideoMatch.id:null)):null;
   const videoSearchPending=Boolean(manualVideoSearchKey===recordingKey&&manualVideoSearchKey)||Boolean(hasSeparateAudioStream&&localTrack&&!isAdPlaying&&!activeYoutubeVideoId&&(autoVideoMatch.key!==videoSearchKey||autoVideoMatch.pending));
@@ -846,6 +869,7 @@ export default function App({ user = null }: { user?: User | null }) {
   }, [
     localTrack?.title,
     localTrack?.artist,
+    localTrack?.album,
     localTrack?.duration,
     localTrack?.provider,
     localTrack?.isAd,
@@ -1133,6 +1157,7 @@ export default function App({ user = null }: { user?: User | null }) {
                 lyricFillPaceMode={lyricFillPaceMode}
                 lyricMinFontSize={lyricMinFontSize}
                 lyricMaxFontSize={lyricMaxFontSize}
+                lyricFontScale={lyricFontScale}
                 lyricPlacementMode={lyricPlacementMode}
                 videoOverlayOpacity={videoOverlayOpacity}
                 videoFitMode={videoFitMode}
@@ -1193,6 +1218,24 @@ export default function App({ user = null }: { user?: User | null }) {
                   }}
                 >
                   <div className="cinema-quick-actions">
+                    {stageYoutubeVideoId && youtubeBackgroundMode === 'video' && (
+                      <button
+                        type="button"
+                        className="cinema-hub-trigger"
+                        aria-label={
+                          videoFitMode === 'stretch'
+                            ? 'Switch video to default ratio'
+                            : 'Zoom video to fill screen'
+                        }
+                        onClick={() => {
+                          setVideoFitMode(v => (v === 'stretch' ? 'default' : 'stretch'));
+                          revealCinemaHud();
+                        }}
+                      >
+                        <Expand size={16} />{' '}
+                        <span>{videoFitMode === 'stretch' ? 'Zoomed to Fill' : 'Zoom to Fill'}</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="cinema-hub-trigger"
@@ -1380,7 +1423,7 @@ export default function App({ user = null }: { user?: User | null }) {
                               <div className="cinema-field">
                                 <span>
                                   Background Video Display:{' '}
-                                  <b>{videoFitMode === 'stretch' ? 'Stretch to Screen' : 'Default Ratio'}</b>
+                                  <b>{videoFitMode === 'stretch' ? 'Zoom to Fill (Keep Ratio)' : 'Default Ratio'}</b>
                                 </span>
                                 <div className="cinema-inline-actions">
                                   <button
@@ -1395,7 +1438,7 @@ export default function App({ user = null }: { user?: User | null }) {
                                     className={videoFitMode === 'stretch' ? 'active' : ''}
                                     onClick={() => setVideoFitMode('stretch')}
                                   >
-                                    Stretch to Screen
+                                    Zoom to Fill
                                   </button>
                                 </div>
                               </div>
@@ -1795,31 +1838,19 @@ export default function App({ user = null }: { user?: User | null }) {
 
                           <label className="cinema-range">
                             <span>
-                              Lyric Min Font Size <b>{lyricMinFontSize}px</b>
+                              Lyrics Font Size (Proportional){' '}
+                              <b>{Math.round(lyricFontScale * 100)}%</b>
                             </span>
                             <input
-                              aria-label="Cinema lyric minimum font size"
+                              aria-label="Cinema lyric font size scale"
                               type="range"
-                              min="16"
-                              max="72"
-                              step="2"
-                              value={lyricMinFontSize}
-                              onChange={e => handleMinFontSizeChange(Number(e.target.value))}
-                            />
-                          </label>
-
-                          <label className="cinema-range">
-                            <span>
-                              Lyric Max Font Size <b>{lyricMaxFontSize}px</b>
-                            </span>
-                            <input
-                              aria-label="Cinema lyric maximum font size"
-                              type="range"
-                              min="32"
-                              max="130"
-                              step="2"
-                              value={lyricMaxFontSize}
-                              onChange={e => handleMaxFontSizeChange(Number(e.target.value))}
+                              min="50"
+                              max="180"
+                              step="5"
+                              value={Math.round(lyricFontScale * 100)}
+                              onChange={e =>
+                                handleLyricFontScaleChange(Number(e.target.value) / 100)
+                              }
                             />
                           </label>
 
@@ -2400,8 +2431,8 @@ export default function App({ user = null }: { user?: User | null }) {
                     <>
                       <div className="settings-inline-row" role="group" aria-label="Background video aspect ratio">
                         <span>
-                          Video Aspect Ratio:{' '}
-                          <b>{videoFitMode === 'stretch' ? 'Stretch to Screen' : 'Default Ratio'}</b>
+                          Video Display Mode:{' '}
+                          <b>{videoFitMode === 'stretch' ? 'Zoom to Fill (Keep Ratio)' : 'Default Ratio'}</b>
                         </span>
                         <div className="quality-options" style={{ flex: '0 0 auto' }}>
                           <button
@@ -2418,7 +2449,7 @@ export default function App({ user = null }: { user?: User | null }) {
                             aria-pressed={videoFitMode === 'stretch'}
                             onClick={() => setVideoFitMode('stretch')}
                           >
-                            Stretch to Screen
+                            Zoom to Fill
                           </button>
                         </div>
                       </div>
@@ -2562,7 +2593,7 @@ export default function App({ user = null }: { user?: User | null }) {
                 <span>
                   <b>Lyrics Display, Colour &amp; Romanization</b>
                   <small>
-                    Font {lyricMinFontSize}–{lyricMaxFontSize}px · Romanization{' '}
+                    Font Size {Math.round(lyricFontScale * 100)}% · Romanization{' '}
                     {romanizationEnabled ? `ON (${enabledRomanizationLanguages.length} langs)` : 'OFF'}
                   </small>
                 </span>
@@ -2604,8 +2635,10 @@ export default function App({ user = null }: { user?: User | null }) {
                 onDisplayModeChange={setLyricDisplayMode}
                 minFontSize={lyricMinFontSize}
                 maxFontSize={lyricMaxFontSize}
+                fontScale={lyricFontScale}
                 onMinFontSizeChange={handleMinFontSizeChange}
                 onMaxFontSizeChange={handleMaxFontSizeChange}
+                onFontScaleChange={handleLyricFontScaleChange}
                 bpm={audioReadout.bpm}
                 romanizationEnabled={romanizationEnabled}
                 onRomanizationEnabledChange={setRomanizationEnabled}

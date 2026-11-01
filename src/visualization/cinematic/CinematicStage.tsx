@@ -8,6 +8,7 @@ import {getSpectrumSensitivity,getInputSource,getLocalMediaTime,readLocalAudio,s
 import {useEffect,useRef,useState} from 'react';
 import {getLyricState,getLyricTimelineSnapshot} from '../../lyrics/lyricTimeline';
 import {AUDIO_ONLY_SCENES,buildCinematicSchedule,byId,resolveThemePalette,sceneAt,type DirectedScene,type FontPack,type SceneId} from './catalog';
+import {preloadLyricFonts} from './fonts';
 import {NO_AUDIO,type Pulse} from './paint';
 import {drawInstrumentalMark} from './typography';
 import {GraphicCompositions,type GraphicSystem} from './procedural/GraphicCompositions';
@@ -43,6 +44,7 @@ export interface CinematicProps{
  lyricFillPaceMode?:LyricFillPaceMode;
  lyricMinFontSize?:number;
  lyricMaxFontSize?:number;
+ lyricFontScale?:number;
  lyricPlacementMode?:LyricPlacementMode;
  videoPlacementMode?:LyricPlacementMode;
  themePlacementMode?:LyricPlacementMode;
@@ -160,6 +162,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
   const outgoingCtx=outgoing.getContext('2d');
   let needsFrame=true;
   let previousId:SceneId|null=null,outgoingId:SceneId|null=null,transitionStarted=-100;
+  let previousPaletteId:string|undefined=undefined,outgoingPaletteId:string|undefined=undefined;
   const demoBands=new Float32Array(64);
   const resize=()=>{
    needsFrame=true;
@@ -351,8 +354,16 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
    const paintCtx=!useYtVideoBg&&fx?fx.getContext('2d',{alpha:false}):null;
    if(!useYtVideoBg&&fx&&paintCtx){
     if(scene.id!==previousId){
-     outgoingId=previousId;previousId=scene.id;transitionStarted=now/1000;
+     outgoingId=previousId;
+     outgoingPaletteId=previousPaletteId;
+     previousId=scene.id;
+     previousPaletteId=resolveScenePaletteId(scene.id,scene.paletteId);
+     transitionStarted=now/1000;
      if(outgoingId){outgoing.width=fx.width;outgoing.height=fx.height;getOutgoingArt().reset()}
+    }else if(!config.autoRandomizeThemePalettes){
+     previousPaletteId=config.themePalettes?.[scene.id];
+    }else if(previousPaletteId===undefined){
+     previousPaletteId=resolveScenePaletteId(scene.id,scene.paletteId);
     }
     const transition=outgoingId&&!config.reducedMotion?transitionProgress(now/1000,transitionStarted):1;
     visualMode=visualSystemFor(scene.id);
@@ -364,7 +375,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
     }
     const background=(id:SceneId,target:CanvasRenderingContext2D,art:GraphicCompositions,old=false)=>{
      const mode=visualSystemFor(id);
-     const paletteId=resolveScenePaletteId(id,id===scene.id?scene.paletteId:undefined);
+     const paletteId=old?outgoingPaletteId:previousPaletteId;
      const resolvedPal=resolveThemePalette(id,paletteId);
      target.setTransform(outgoing.width/w,0,0,outgoing.height/h,0,0);
      if(!old)target.setTransform(fx.width/w,0,0,fx.height/h,0,0);
@@ -397,7 +408,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
    const secondaryCue=(config.audioPaused||config.hideStageLyrics)?null:lyric.secondaryCue;
    if(activeCue){
     const project=makeLyricProjection(w,h,cameraFrame);
-    const activePaletteId=resolveScenePaletteId(scene.id,scene.paletteId);
+    const activePaletteId=previousPaletteId??resolveScenePaletteId(scene.id,scene.paletteId);
     const isDuet=Boolean(secondaryCue||activeCue.duetSide);
     const primaryDuetSide=activeCue.duetSide??(secondaryCue?'left':undefined);
     const activePlacementMode=useYtVideoBg
@@ -429,6 +440,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      fillPaceMode:config.lyricFillPaceMode,
      minFontSize:config.lyricMinFontSize,
      maxFontSize:config.lyricMaxFontSize,
+     fontScale:config.lyricFontScale,
      forceLightText:useYtVideoBg,
      placementMode:activePlacementMode,
      duetSide:primaryDuetSide
@@ -458,6 +470,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
       fillPaceMode:config.lyricFillPaceMode,
       minFontSize:config.lyricMinFontSize,
       maxFontSize:config.lyricMaxFontSize,
+      fontScale:config.lyricFontScale,
       forceLightText:useYtVideoBg,
       placementMode:activePlacementMode,
       duetSide:secondaryDuetSide
@@ -529,19 +542,32 @@ export default function CinematicStage(props:CinematicProps){
  const videoWaitingRef=useRef(false);
  const ytReadyRef=useRef<boolean>(false);
  const ytEndedFiredRef=useRef<boolean>(false);
+ const ytDurationRef=useRef<number>(0);
+ const ytEndedEarlyRef=useRef<boolean>(false);
  const latestPropsRef=useRef(props);
  latestPropsRef.current=props;
  const ytAuth=useYouTubeAuth();
  const [playbackError,setPlaybackError]=useState('');
  const [errorRetryNonce,setErrorRetryNonce]=useState(0);
+ const [ytVideoDuration,setYtVideoDuration]=useState<number>(0);
+ const [ytVideoEnded,setYtVideoEnded]=useState<boolean>(false);
  const nativePolicy=useNativePlaybackPolicy(Boolean(props.externalPlayer));
 
  const ytId=props.youtubeVideoId||null;
  const mountedVideoId=ytId;
  const playbackKey=[props.recordingKey,ytId,Boolean(props.hasSeparateAudioStream),ytAuth.useNoCookieDomain,ytAuth.reloadNonce,errorRetryNonce].join('|');
  const [playingVideoKey,setPlayingVideoKey]=useState('');
- useEffect(()=>setPlaybackError(''),[playbackKey]);
- const showThemes=!ytId||props.youtubeBackgroundMode==='theme'||Boolean(props.videoSearchPending)||Boolean(props.advertisementPlaying)||!nativePolicy.allowed||Boolean(playbackError)||playingVideoKey!==playbackKey;
+ useEffect(()=>{
+  setPlaybackError('');
+  ytDurationRef.current=0;
+  ytEndedEarlyRef.current=false;
+  setYtVideoDuration(0);
+  setYtVideoEnded(false);
+ },[playbackKey]);
+ const syncTarget=videoSyncTarget(props.playbackTime??0,props.videoDelaySeconds,Boolean(props.hasSeparateAudioStream));
+ const pastVideoDuration=Boolean(props.hasSeparateAudioStream&&ytVideoDuration>15&&syncTarget.time>=ytVideoDuration-0.35);
+ const videoEndedEarly=Boolean(props.hasSeparateAudioStream&&(ytVideoEnded||pastVideoDuration));
+ const showThemes=!ytId||props.youtubeBackgroundMode==='theme'||Boolean(props.videoSearchPending)||Boolean(props.advertisementPlaying)||!nativePolicy.allowed||Boolean(playbackError)||playingVideoKey!==playbackKey||syncTarget.waiting||videoEndedEarly;
  const [themeExitPending,setThemeExitPending]=useState(true);
  useEffect(()=>{
   if(showThemes){setThemeExitPending(true);return;}
@@ -552,7 +578,7 @@ export default function CinematicStage(props:CinematicProps){
  const {host,canvas,effects}=useCinematicRenderer({...props,renderThemes},ytWrapRef);
  const backgroundPose=sceneEntryPose(showThemes?1:0,byId[props.manualScene].transition);
  const transitionMs=props.reducedMotion?0:TRANSITION_SECONDS*1000;
- const mustPauseVideo=(config:CinematicProps,waiting:boolean)=>Boolean(config.audioPaused||waiting||(config.hasSeparateAudioStream&&(config.youtubeBackgroundMode==='theme'||config.videoSearchPending||config.advertisementPlaying)));
+ const mustPauseVideo=(config:CinematicProps,waiting:boolean,endedEarly=false)=>Boolean(config.audioPaused||waiting||endedEarly||(config.hasSeparateAudioStream&&(config.youtubeBackgroundMode==='theme'||config.videoSearchPending||config.advertisementPlaying)));
 
  const blackOverlayOpacity=Math.max(0,Math.min(0.92,props.videoOverlayOpacity??0.45));
 
@@ -570,8 +596,10 @@ export default function CinematicStage(props:CinematicProps){
    sendYouTubeCommand(iframe,'setVolume',[cur.playerVolume??85]);
   }
   const target=videoSyncTarget(cur.playbackTime??0,cur.videoDelaySeconds,Boolean(cur.hasSeparateAudioStream));
-  if(cur.hasSeparateAudioStream)sendYouTubeCommand(iframe,'seekTo',[target.time,true]);
-  if(mustPauseVideo(cur,target.waiting)){
+  const dur=ytDurationRef.current;
+  const endedEarly=Boolean(cur.hasSeparateAudioStream&&(ytEndedEarlyRef.current||(dur>15&&target.time>=dur-0.35)));
+  if(cur.hasSeparateAudioStream&&!endedEarly)sendYouTubeCommand(iframe,'seekTo',[target.time,true]);
+  if(mustPauseVideo(cur,target.waiting,endedEarly)){
    sendYouTubeCommand(iframe,'pauseVideo');
   }else{
    sendYouTubeCommand(iframe,'playVideo');
@@ -623,23 +651,36 @@ export default function CinematicStage(props:CinematicProps){
    }else if(evt==='onAutoplayBlocked'){
      setPlaybackError('Tap Play video to start YouTube audio.');
     }else if(evt==='onStateChange'&&typeof data.info==='number'){
-     if(data.info===1){setPlaybackError('');setPlayingVideoKey(playbackKey);}
-    if(data.info===0&&!ytEndedFiredRef.current){
-     ytEndedFiredRef.current=true;
-     if(!latestPropsRef.current.hasSeparateAudioStream)latestPropsRef.current.onYoutubeEnded?.();
-    }else if(data.info===1){
-     ytEndedFiredRef.current=false;
-    }
-   }else if(evt==='infoDelivery'&&data.info&&typeof data.info==='object'){
-    const info=data.info as Record<string,unknown>;
-    if(!ytReadyRef.current){
-     ytReadyRef.current=true;
-     if(pollId)window.clearInterval(pollId);
-     syncYtPlayerState();
-    }
-    const ct=typeof info.currentTime==='number'&&Number.isFinite(info.currentTime)?info.currentTime:undefined;
-    const dur=typeof info.duration==='number'&&Number.isFinite(info.duration)&&info.duration>0?info.duration:undefined;
-    const videoData=info.videoData&&typeof info.videoData==='object'?(info.videoData as Record<string,unknown>):undefined;
+     if(data.info===1){
+      setPlaybackError('');
+      setPlayingVideoKey(playbackKey);
+      ytEndedEarlyRef.current=false;
+      setYtVideoEnded(false);
+     }
+     if(data.info===0){
+      ytEndedEarlyRef.current=true;
+      setYtVideoEnded(true);
+      if(!ytEndedFiredRef.current){
+       ytEndedFiredRef.current=true;
+       if(!latestPropsRef.current.hasSeparateAudioStream)latestPropsRef.current.onYoutubeEnded?.();
+      }
+     }else if(data.info===1){
+      ytEndedFiredRef.current=false;
+     }
+    }else if(evt==='infoDelivery'&&data.info&&typeof data.info==='object'){
+     const info=data.info as Record<string,unknown>;
+     if(!ytReadyRef.current){
+      ytReadyRef.current=true;
+      if(pollId)window.clearInterval(pollId);
+      syncYtPlayerState();
+     }
+     const ct=typeof info.currentTime==='number'&&Number.isFinite(info.currentTime)?info.currentTime:undefined;
+     const dur=typeof info.duration==='number'&&Number.isFinite(info.duration)&&info.duration>0?info.duration:undefined;
+     if(dur&&dur>1){
+      ytDurationRef.current=dur;
+      setYtVideoDuration(prev=>prev&&Math.abs(prev-dur)<0.25?prev:dur);
+     }
+     const videoData=info.videoData&&typeof info.videoData==='object'?(info.videoData as Record<string,unknown>):undefined;
      const playingVidId=typeof videoData?.video_id==='string'?videoData.video_id:'';
      // A reused iframe can report the previous video while loadVideoById is pending.
      // Ignore that clock; it is not evidence of an advertisement.
@@ -659,95 +700,153 @@ export default function CinematicStage(props:CinematicProps){
      }
      if(info.adState===1||info.isAdPlaying===true)return;
      if(ct!==undefined){
-     lastSyncTimeRef.current=ct;
-     if(!latestPropsRef.current.hasSeparateAudioStream){
-      setVirtualMediaTime(ct);
-      latestPropsRef.current.onYoutubeTimeUpdate?.(ct,dur);
+      lastSyncTimeRef.current=ct;
+      if(!latestPropsRef.current.hasSeparateAudioStream){
+       setVirtualMediaTime(ct);
+       latestPropsRef.current.onYoutubeTimeUpdate?.(ct,dur);
+      }
+      if(ct>0.02&&!latestPropsRef.current.audioPaused&&(!dur||ct<dur-0.45)){
+       setPlaybackError('');
+       setPlayingVideoKey(playbackKey);
+       if(dur&&ct<dur-1.5&&ytEndedEarlyRef.current){
+        ytEndedEarlyRef.current=false;
+        setYtVideoEnded(false);
+       }
+      }
+      if(dur&&dur>5&&ct>=dur-0.45){
+       ytEndedEarlyRef.current=true;
+       setYtVideoEnded(true);
+       if(!ytEndedFiredRef.current){
+        ytEndedFiredRef.current=true;
+        if(!latestPropsRef.current.hasSeparateAudioStream)latestPropsRef.current.onYoutubeEnded?.();
+       }
+      }else if(ct<3){
+       ytEndedFiredRef.current=false;
+      }
      }
-     if(ct>0.02&&!latestPropsRef.current.audioPaused){
+     const pState=typeof info.playerState==='number'?info.playerState:undefined;
+     if(pState===1){
       setPlaybackError('');
       setPlayingVideoKey(playbackKey);
+      ytEndedEarlyRef.current=false;
+      setYtVideoEnded(false);
      }
-     if(dur&&dur>15&&ct>=dur-0.45&&!ytEndedFiredRef.current){
-      ytEndedFiredRef.current=true;
-      if(!latestPropsRef.current.hasSeparateAudioStream)latestPropsRef.current.onYoutubeEnded?.();
-     }else if(ct<3){
-      ytEndedFiredRef.current=false;
+     if(pState===0){
+      ytEndedEarlyRef.current=true;
+      setYtVideoEnded(true);
+      if(!ytEndedFiredRef.current){
+       ytEndedFiredRef.current=true;
+       if(!latestPropsRef.current.hasSeparateAudioStream)latestPropsRef.current.onYoutubeEnded?.();
+      }
+     }else if((pState===-1||pState===5)&&!latestPropsRef.current.audioPaused&&!ytEndedEarlyRef.current){
+      syncYtPlayerState();
      }
     }
-    const pState=typeof info.playerState==='number'?info.playerState:undefined;
-    if(pState===1){setPlaybackError('');setPlayingVideoKey(playbackKey);}
-    if(pState===0&&!ytEndedFiredRef.current){
-     ytEndedFiredRef.current=true;
-     if(!latestPropsRef.current.hasSeparateAudioStream)latestPropsRef.current.onYoutubeEnded?.();
-    }else if((pState===-1||pState===5)&&!latestPropsRef.current.audioPaused){
-     syncYtPlayerState();
+   };
+
+   window.addEventListener('message',onMessage);
+   pollId=window.setInterval(()=>{
+    if(ytReadyRef.current){
+     window.clearInterval(pollId);
+     return;
+    }
+    sendListening();
+    syncYtPlayerState();
+   },450);
+
+   return()=>{
+    window.removeEventListener('message',onMessage);
+    if(pollId)window.clearInterval(pollId);
+   };
+  },[mountedVideoId,playbackKey,nativePolicy.allowed]);
+
+  // Video timing is independent of the audio clock and lyric timing.
+  useEffect(()=>{
+   if(!ytId||!ytIframeRef.current||typeof props.playbackTime!=='number')return;
+   const target=videoSyncTarget(props.playbackTime,props.videoDelaySeconds,Boolean(props.hasSeparateAudioStream));
+   const dur=ytDurationRef.current;
+   const reachedEnd=Boolean(props.hasSeparateAudioStream)&&(ytEndedEarlyRef.current||Boolean(dur&&dur>1&&target.time>=dur-0.35));
+   if(Boolean(props.hasSeparateAudioStream)&&dur&&dur>1&&target.time<dur-1.5&&ytEndedEarlyRef.current){
+    ytEndedEarlyRef.current=false;
+    setYtVideoEnded(false);
+   }
+   const mapping=ytId+'|'+(props.hasSeparateAudioStream?props.videoDelaySeconds??0:0)+'|'+Boolean(props.hasSeparateAudioStream);
+   const changed=mapping!==lastVideoMappingRef.current;
+   const resumed=videoWaitingRef.current&&!target.waiting;
+   lastVideoMappingRef.current=mapping;
+   videoWaitingRef.current=target.waiting;
+   if(props.hasSeparateAudioStream){
+    sendYouTubeCommand(ytIframeRef.current,'mute');
+    if(!reachedEnd&&(changed||resumed||Math.abs(target.time-lastSyncTimeRef.current)>.75)){
+     sendYouTubeCommand(ytIframeRef.current,'seekTo',[target.time,true]);
+     lastSyncTimeRef.current=target.time;
+    }
+   }else{
+    sendYouTubeCommand(ytIframeRef.current,'unMute');
+    sendYouTubeCommand(ytIframeRef.current,'setVolume',[props.playerVolume??85]);
+    if(Math.abs(target.time-lastSyncTimeRef.current)>1.5){
+     sendYouTubeCommand(ytIframeRef.current,'seekTo',[target.time,true]);
+     lastSyncTimeRef.current=target.time;
     }
    }
-  };
+   sendYouTubeCommand(ytIframeRef.current,mustPauseVideo(props,target.waiting||reachedEnd)?'pauseVideo':'playVideo');
+  },[ytId,props.playbackTime,props.videoDelaySeconds,props.hasSeparateAudioStream,props.audioPaused,props.playerVolume,props.youtubeBackgroundMode,props.videoSearchPending,props.advertisementPlaying,nativePolicy.allowed]);
 
-  window.addEventListener('message',onMessage);
-  pollId=window.setInterval(()=>{
-   if(ytReadyRef.current){
-    window.clearInterval(pollId);
-    return;
-   }
-   sendListening();
-   syncYtPlayerState();
-  },450);
+ const [stageSize,setStageSize]=useState<{w:number;h:number}>({w:1280,h:720});
+ const [videoAspect,setVideoAspect]=useState<number>(16/9);
 
-  return()=>{
-   window.removeEventListener('message',onMessage);
-   if(pollId)window.clearInterval(pollId);
-  };
- },[mountedVideoId,playbackKey,nativePolicy.allowed]);
-
- // Video timing is independent of the audio clock and lyric timing.
+ // Preload enabled lyric fonts before display so lyrics never flash in default font first
  useEffect(()=>{
-  if(!ytId||!ytIframeRef.current||typeof props.playbackTime!=='number')return;
-  const target=videoSyncTarget(props.playbackTime,props.videoDelaySeconds,Boolean(props.hasSeparateAudioStream));
-  const mapping=ytId+'|'+(props.hasSeparateAudioStream?props.videoDelaySeconds??0:0)+'|'+Boolean(props.hasSeparateAudioStream);
-  const changed=mapping!==lastVideoMappingRef.current;
-  const resumed=videoWaitingRef.current&&!target.waiting;
-  lastVideoMappingRef.current=mapping;
-  videoWaitingRef.current=target.waiting;
-  if(props.hasSeparateAudioStream){
-   sendYouTubeCommand(ytIframeRef.current,'mute');
-   if(changed||resumed||Math.abs(target.time-lastSyncTimeRef.current)>.75){
-    sendYouTubeCommand(ytIframeRef.current,'seekTo',[target.time,true]);
-    lastSyncTimeRef.current=target.time;
-   }
-  }else{
-   sendYouTubeCommand(ytIframeRef.current,'unMute');
-   sendYouTubeCommand(ytIframeRef.current,'setVolume',[props.playerVolume??85]);
-   if(Math.abs(target.time-lastSyncTimeRef.current)>1.5){
-    sendYouTubeCommand(ytIframeRef.current,'seekTo',[target.time,true]);
-    lastSyncTimeRef.current=target.time;
-   }
-  }
-  sendYouTubeCommand(ytIframeRef.current,mustPauseVideo(props,target.waiting)?'pauseVideo':'playVideo');
- },[ytId,props.playbackTime,props.videoDelaySeconds,props.hasSeparateAudioStream,props.audioPaused,props.playerVolume,props.youtubeBackgroundMode,props.videoSearchPending,props.advertisementPlaying,nativePolicy.allowed]);
+  void preloadLyricFonts(props.enabledFonts);
+ },[props.enabledFonts]);
 
- const [stageAspect,setStageAspect]=useState<number>(16/9);
+ // Resolve the video's native aspect ratio (16:9, IMAX 1.90:1 / 1.43:1, 4:3, or 21:9) from YouTube oEmbed
+ useEffect(()=>{
+  const vid=mountedVideoId||ytId;
+  setVideoAspect(16/9);
+  if(!vid||typeof fetch!=='function')return;
+  if(typeof navigator!=='undefined'&&/jsdom/i.test(navigator.userAgent||''))return;
+  const controller=new AbortController();
+  void fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${vid}`)}&format=json`,{
+   signal:controller.signal
+  })
+   .then(res=>(res.ok?res.json():null))
+   .then((meta:Record<string,unknown>|null)=>{
+    if(controller.signal.aborted||!meta)return;
+    const ow=Number(meta.width);
+    const oh=Number(meta.height);
+    if(Number.isFinite(ow)&&Number.isFinite(oh)&&ow>0&&oh>0){
+     const ratio=ow/oh;
+     if(ratio>=0.5&&ratio<=3.2){
+      setVideoAspect(ratio);
+     }
+    }
+   })
+   .catch(()=>{});
+  return()=>controller.abort();
+ },[mountedVideoId,ytId]);
+
  useEffect(()=>{
   const el=host.current;
   if(!el)return;
-  const updateAspect=()=>{
+  const updateStageSize=()=>{
    const w=el.clientWidth;
    const h=el.clientHeight;
-   if(w>0&&h>0)setStageAspect(w/h);
+   if(w>0&&h>0){
+    setStageSize(prev=>(prev.w===w&&prev.h===h?prev:{w,h}));
+   }
   };
-  updateAspect();
-  window.addEventListener('resize',updateAspect);
+  updateStageSize();
+  window.addEventListener('resize',updateStageSize);
   if(typeof ResizeObserver!=='undefined'){
-   const ro=new ResizeObserver(updateAspect);
+   const ro=new ResizeObserver(updateStageSize);
    ro.observe(el);
    return()=>{
-    window.removeEventListener('resize',updateAspect);
+    window.removeEventListener('resize',updateStageSize);
     ro.disconnect();
    };
   }
-  return()=>window.removeEventListener('resize',updateAspect);
+  return()=>window.removeEventListener('resize',updateStageSize);
  },[]);
 
  const originParam=typeof window!=='undefined'&&window.location?.origin
@@ -761,16 +860,45 @@ export default function CinematicStage(props:CinematicProps){
   :'';
 
  const fitMode:VideoFitMode=props.videoFitMode||'default';
- const standardAspect=16/9;
- const stretchScaleX=fitMode==='stretch'
-  ?Math.max(1.36,stageAspect>standardAspect?stageAspect/standardAspect:1.36)
-  :1;
- const stretchScaleY=fitMode==='stretch'
-  ?Math.max(1.06,stageAspect<standardAspect?standardAspect/Math.max(0.25,stageAspect):1.06)
-  :1;
- const iframeTransform=fitMode==='stretch'
-  ?`translate(-50%, -50%) scale(${stretchScaleX.toFixed(3)}, ${stretchScaleY.toFixed(3)})`
-  :'translate(-50%, -50%) scale(1, 1)';
+ const safeStageW=Math.max(1,stageSize.w);
+ const safeStageH=Math.max(1,stageSize.h);
+ const stageAspect=safeStageW/safeStageH;
+ const safeVideoAspect=Math.max(0.5,Math.min(3.2,videoAspect||16/9));
+
+ // Native YouTube Zoom-to-Fill sizing:
+ // Never apply CSS scale() to the <iframe> embed (which distorts/crops IMAX videos and UI).
+ // Instead, compute the exact aspect-ratio-preserving cover viewport (coverW x coverH) where
+ // coverW / coverH === safeVideoAspect and tell YouTube's player via setSize(coverW, coverH).
+ let playerWidthStyle='100%';
+ let playerHeightStyle='100%';
+ let targetPlayerW=safeStageW;
+ let targetPlayerH=safeStageH;
+
+ if(fitMode==='stretch'){
+  if(stageAspect>=safeVideoAspect){
+   targetPlayerW=safeStageW;
+   targetPlayerH=Math.ceil(safeStageW/safeVideoAspect);
+  }else{
+   targetPlayerH=safeStageH;
+   targetPlayerW=Math.ceil(safeStageH*safeVideoAspect);
+  }
+  // When an IMAX or ultrawide video is encoded inside a 16:9 stream on a ~16:9 stage,
+  // expand both axes identically by the exact same factor so coverW / coverH stays 100% locked to safeVideoAspect
+  if(Math.abs(stageAspect-safeVideoAspect)<0.03){
+   const imaxFillFactor=1.18;
+   targetPlayerW=Math.ceil(targetPlayerW*imaxFillFactor);
+   targetPlayerH=Math.ceil(targetPlayerH*imaxFillFactor);
+  }
+  playerWidthStyle=`${targetPlayerW}px`;
+  playerHeightStyle=`${targetPlayerH}px`;
+ }
+
+ useEffect(()=>{
+  const iframe=ytIframeRef.current;
+  if(!iframe||!activeEmbedVid||!nativePolicy.allowed)return;
+  sendYouTubeCommand(iframe,'setSize',[targetPlayerW,targetPlayerH]);
+ },[activeEmbedVid,fitMode,targetPlayerW,targetPlayerH,nativePolicy.allowed]);
+
  const allowIframePointer=!showThemes&&ytAuth.interactivePlayer&&(!props.hasSeparateAudioStream||Boolean(playbackError));
 
  return <div className="cinematic-stack" ref={host} data-background-state={showThemes?'themes':'video'} data-video-ready={playingVideoKey===playbackKey?'yes':'no'} data-video-fit={fitMode}>
@@ -781,11 +909,12 @@ export default function CinematicStage(props:CinematicProps){
      key={`yt-${props.recordingKey||''}-${mountedVideoId||ytId}-${ytAuth.reloadNonce}-${ytAuth.useNoCookieDomain?'nc':'std'}-${errorRetryNonce}-${props.hasSeparateAudioStream?'muted':'audio'}`}
      src={embedSrc} title="YouTube video background" referrerPolicy="strict-origin-when-cross-origin"
      allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-     style={{position:'absolute',top:'50%',left:'50%',width:'100%',height:'100%',transform:iframeTransform,transformOrigin:'center center',border:0,pointerEvents:allowIframePointer?'auto':'none'}}
+     style={{position:'absolute',top:'50%',left:'50%',width:playerWidthStyle,height:playerHeightStyle,transform:'translate(-50%, -50%)',border:0,pointerEvents:allowIframePointer?'auto':'none'}}
      onLoad={()=>{
       try{
        ytIframeRef.current?.contentWindow?.postMessage(JSON.stringify({event:'listening',id:'lyricflow-yt',channel:'widget'}),'*');
        for(const event of ['onReady','onStateChange','onError','onAutoplayBlocked'])sendYouTubeCommand(ytIframeRef.current,'addEventListener',[event]);
+       sendYouTubeCommand(ytIframeRef.current,'setSize',[targetPlayerW,targetPlayerH]);
       }catch{}
       syncYtPlayerState();
      }}/>
