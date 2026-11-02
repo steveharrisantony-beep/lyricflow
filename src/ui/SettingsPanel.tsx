@@ -133,7 +133,7 @@ export default function SettingsPanel({
     panel.current?.querySelector<HTMLButtonElement>(".settings-close")?.focus();
     const handleKey = (e: KeyboardEvent) => {
       // A source dialog may be above this sheet. Let its own focus handling win.
-      if (document.querySelector(".source-modal")) return;
+      if (document.querySelector(".source-modal, .option-preview-dialog")) return;
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();

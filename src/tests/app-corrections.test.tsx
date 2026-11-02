@@ -192,20 +192,46 @@ it('lets a personal automatic video-sync choice override a published fixed delay
  }finally{draw.mockRestore();}
 });
 
-it('keeps animation and current-word style switches independent and restores both after remount',async()=>{
+it('uses independent selection windows, removes the old dropdowns, and restores disabled options',async()=>{
   const switchFor=(text:string)=>[...host.querySelectorAll<HTMLLabelElement>('label')].find(label=>label.textContent===text)?.querySelector<HTMLInputElement>('input')!;
   const animation=switchFor('Lyric animations'),styles=switchFor('Current word styles');
   expect(animation.checked).toBe(true);expect(styles.checked).toBe(true);
-  const motionSelect=host.querySelector<HTMLSelectElement>('[aria-label="Lyric animation"]')!;
-  const styleSelect=host.querySelector<HTMLSelectElement>('[aria-label="Current word style"]')!;
-  expect(motionSelect.options.length).toBe(21);expect(styleSelect.options.length).toBe(10);
-  await act(async()=>{styleSelect.value='ripple';styleSelect.dispatchEvent(new Event('change',{bubbles:true}));});
-  await act(async()=>animation.click());
-  expect(motionSelect.disabled).toBe(true);expect(styles.checked).toBe(true);expect(styleSelect.disabled).toBe(false);
+  for(const name of ['Theme selection','Theme colour palette','Video lyric placement','Theme lyric placement','Lyric font','Lyric animation','Current word style']){
+    expect(host.querySelector(`select[aria-label="${name}"]`)).toBeNull();
+  }
+  const option=(label:string)=>host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  expect(option('Ship').checked).toBe(true);expect(option('Classic Focus').checked).toBe(true);
+  await act(async()=>option('Ship').click());await act(async()=>option('Classic Focus').click());
+  expect(option('Ship').checked).toBe(false);expect(option('Classic Focus').checked).toBe(false);
+  await act(async()=>animation.click());expect(styles.checked).toBe(true);
   await act(async()=>styles.click());
-  expect(styleSelect.disabled).toBe(true);expect(animation.checked).toBe(false);
   await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App/>));
-  expect(switchFor('Lyric animations').checked).toBe(false);
-  expect(switchFor('Current word styles').checked).toBe(false);
-  expect(host.querySelector<HTMLSelectElement>('[aria-label="Current word style"]')!.value).toBe('ripple');
+  expect(switchFor('Lyric animations').checked).toBe(false);expect(switchFor('Current word styles').checked).toBe(false);
+  expect(option('Ship').checked).toBe(false);expect(option('Classic Focus').checked).toBe(false);
+});
+
+it('allows every animation and word style to be disabled and persists empty selection windows',async()=>{
+  for(const summary of ['Animations','Current word styles']){
+    const details=[...host.querySelectorAll('details')].find(el=>el.querySelector('summary')?.textContent?.startsWith(summary))!;
+    const inputs=[...details.querySelectorAll<HTMLInputElement>('input[role="switch"]')];
+    expect(inputs).toHaveLength(summary==='Animations'?20:18);
+    await act(async()=>{for(const input of inputs)input.click();});
+    expect(inputs.every(input=>!input.checked)).toBe(true);
+  }
+  await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App/>));
+  const saved=JSON.parse(localStorage.getItem('lyricflow.extendedSettings.v1')!);
+  expect(saved.enabledKineticMotions).toEqual([]);expect(saved.enabledWordStyles).toEqual([]);
+});
+
+it('previews a disabled option without changing its toggle or saved preferences',async()=>{
+  const input=host.querySelector<HTMLInputElement>('input[aria-label="Ship"]')!;
+  await act(async()=>input.click());const saved=localStorage.getItem('lyricflow.extendedSettings.v1');
+  const context=vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockReturnValue(null);
+  try{
+    await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Preview Ship"]')!.click());
+    expect(document.querySelector('[role="dialog"][aria-modal="true"]')).not.toBeNull();
+    expect(input.checked).toBe(false);expect(localStorage.getItem('lyricflow.extendedSettings.v1')).toBe(saved);
+    await act(async()=>document.querySelector<HTMLButtonElement>('button[aria-label="Close preview"]')!.click());
+    expect(document.querySelector('.option-preview-dialog')).toBeNull();
+  }finally{context.mockRestore();}
 });

@@ -10,13 +10,14 @@ const port=server.httpServer.address().port;
 const browser=await chromium.launch({...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{channel:'chrome'}),headless:true,
  args:['--no-sandbox','--disable-dev-shm-usage','--no-zygote','--single-process','--use-angle=swiftshader']});
 const page=await browser.newPage({viewport:{width:1280,height:800}});
-page.setDefaultTimeout(10000);
+page.setDefaultTimeout(20000);
 const errors=[];
 page.on('pageerror',error=>errors.push(error.message));
 page.on('console',msg=>{if(msg.type()==='error')console.log('browser console:',msg.text());});
 page.on('requestfailed',req=>console.log('request failed:',req.url(),req.failure()?.errorText));
 await page.addInitScript(()=>{
  localStorage.setItem('lyricflow.lastSourceMode','local');
+ if(!localStorage.getItem('lyricflow.v3.guest.preferences'))localStorage.setItem('lyricflow.v3.guest.preferences',JSON.stringify({quality:'Performance',autoScenes:false,enabledScenes:['holographic-tide'],intensity:20}));
  if(!localStorage.getItem('lyricflow.extendedSettings.v1'))localStorage.setItem('lyricflow.extendedSettings.v1',JSON.stringify({themeMode:'dark'}));
 });
 const shots=process.env.LYRIC_QA_DIR||'/tmp/lyricflow-presentation';
@@ -25,34 +26,78 @@ try{
  await page.goto(`http://127.0.0.1:${port}`,{waitUntil:'networkidle'});
  if(!await page.getByRole('tab',{name:'Lyrics',exact:true}).isVisible())await page.getByRole('button',{name:'Settings',exact:true}).click();
  await page.getByRole('tab',{name:'Lyrics',exact:true}).click();
+ const openWindow=async name=>{
+  const summary=page.locator('summary').filter({hasText:new RegExp('^'+name+'(?:\\s|$)')}).first();
+  if(!await summary.evaluate(node=>node.parentElement.open))await summary.click();
+ };
  const animations=page.getByRole('switch',{name:'Lyric animations',exact:true});
  const styles=page.getByRole('switch',{name:'Current word styles',exact:true});
- assert.equal(await page.getByLabel('Lyric animation',{exact:true}).locator('option').count(),21);
- assert.equal(await page.getByLabel('Current word style',{exact:true}).locator('option').count(),10);
- await page.getByLabel('Current word style',{exact:true}).selectOption('ripple');
- await animations.uncheck();assert.equal(await styles.isChecked(),true);
- assert.equal(await page.getByLabel('Lyric animation',{exact:true}).isDisabled(),true);
- await styles.uncheck();
+ for(const name of ['Theme selection','Theme colour palette','Video lyric placement','Theme lyric placement','Lyric font','Lyric animation','Current word style']){
+  assert.equal(await page.locator(`select[aria-label="${name}"]`).count(),0);
+ }
+ await openWindow('Animations');
+ await page.getByRole('switch',{name:'Ship',exact:true}).uncheck();
+ const saved=await page.evaluate(()=>localStorage.getItem('lyricflow.extendedSettings.v1'));
+ await page.getByRole('button',{name:'Preview Ship',exact:true}).click();
+ await page.getByRole('dialog').waitFor();
+ await page.waitForFunction(()=>{const c=document.querySelector('.option-preview-canvas');return c?.width>0;});
+ assert.equal(await page.evaluate(()=>localStorage.getItem('lyricflow.extendedSettings.v1')),saved);
+ await page.keyboard.press('Escape');
+ assert.equal(await page.locator('.option-preview-dialog').count(),0);
+ assert.equal(await page.getByRole('switch',{name:'Ship',exact:true}).isChecked(),false);
+ await openWindow('Current word styles');
+ assert.equal(await page.locator('input.option-toggle[role="switch"]').count()>38,true);
+ await page.getByRole('switch',{name:'Classic Focus',exact:true}).uncheck();
+ await animations.uncheck();assert.equal(await styles.isChecked(),true);await styles.uncheck();
  await page.reload({waitUntil:'networkidle'});
  if(!await page.getByRole('tab',{name:'Lyrics',exact:true}).isVisible())await page.getByRole('button',{name:'Settings',exact:true}).click();
  await page.getByRole('tab',{name:'Lyrics',exact:true}).click();
  assert.equal(await animations.isChecked(),false);assert.equal(await styles.isChecked(),false);
+ await openWindow('Animations');await openWindow('Current word styles');
+ assert.equal(await page.getByRole('switch',{name:'Ship',exact:true}).isChecked(),false);
+ assert.equal(await page.getByRole('switch',{name:'Classic Focus',exact:true}).isChecked(),false);
  await animations.check();await styles.check();
- await page.getByLabel('Lyric animation',{exact:true}).selectOption('ribbon');
- await page.getByLabel('Current word style',{exact:true}).selectOption('halo');
  await mkdir(shots,{recursive:true});
- for(const [width,height] of [[390,844],[800,1280],[1280,800]]){
-  await page.setViewportSize({width,height});
-  // Switching to the compact settings sheet is responsive to viewport changes.
-  if(!await page.getByLabel('Current word style',{exact:true}).isVisible()){
-   await page.getByRole('button',{name:'Settings',exact:true}).click();
+ await openWindow('Fonts');
+ const fontWindow=page.locator('details').filter({has:page.locator('summary', {hasText:/^Fonts$/})}).first();
+ await fontWindow.locator('button.option-preview-button').first().click();
+ await page.waitForFunction(()=>document.querySelector('.option-preview-canvas')?.width>0);
+ await page.getByRole('button',{name:'Close preview',exact:true}).dispatchEvent('click');
+ await openWindow('On video');
+ await page.getByRole('button',{name:'Preview Video · Bottom-Right Cinema',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('.option-preview-canvas')?.width>0);
+ await page.getByRole('button',{name:'Close preview',exact:true}).dispatchEvent('click');
+ for(const theme of ['Dark','Light']){
+  await page.getByRole('tab',{name:'Others',exact:true}).click();await page.getByRole('button',{name:theme,exact:true}).click();
+  await page.getByRole('tab',{name:'Lyrics',exact:true}).click();
+  for(const [width,height] of [[390,844],[800,1280],[1280,800]]){
+   await page.setViewportSize({width,height});
+   if(!await page.getByRole('tab',{name:'Lyrics',exact:true}).isVisible())await page.getByRole('button',{name:'Settings',exact:true}).click();
+   await page.getByRole('switch',{name:'Classic Focus',exact:true}).scrollIntoViewIfNeeded();
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+   const fields=await page.locator('#settings-page-lyrics .preview-setting').evaluateAll(nodes=>nodes.filter(n=>n.getClientRects().length).map(node=>({left:node.getBoundingClientRect().left,right:node.getBoundingClientRect().right,width:innerWidth})));
+   assert.ok(fields.every(field=>field.left>=0&&field.right<=field.width));
+   assert.equal(await page.locator('#settings-page-lyrics input.option-toggle').evaluateAll(nodes=>nodes.filter(n=>n.getClientRects().length).every(n=>n.getBoundingClientRect().width>=32)),true);
+   await page.screenshot({path:`${shots}/selections-${theme.toLowerCase()}-${width}.png`});
+   await page.getByRole('button',{name:'Preview Classic Focus',exact:true}).click();
+   await page.waitForFunction(()=>document.querySelector('.option-preview-canvas')?.width>0);
+   assert.equal(await page.evaluate(()=>document.querySelector('.option-preview-dialog').getBoundingClientRect().right<=innerWidth),true);
+   await page.waitForTimeout(250);
+   await page.screenshot({path:`${shots}/preview-${theme.toLowerCase()}-${width}.png`});
+   await page.getByRole('button',{name:'Close preview',exact:true}).dispatchEvent('click');
   }
-  await page.getByLabel('Current word style',{exact:true}).scrollIntoViewIfNeeded();
-  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
-  const fields=await page.locator('select[aria-label="Current word style"],select[aria-label="Lyric animation"]').evaluateAll(nodes=>nodes.map(node=>({left:node.getBoundingClientRect().left,right:node.getBoundingClientRect().right,width:innerWidth})));
-  assert.ok(fields.every(field=>field.left>=0&&field.right<=field.width));
-  await page.screenshot({path:`${shots}/settings-${width}.png`});
  }
+ await page.getByRole('tab',{name:'Background',exact:true}).click();
+ await openWindow('Enabled themes');
+ const themeRow=page.locator('.theme-selection').first();
+ await themeRow.locator('summary').click();
+ assert.ok(await themeRow.getByRole('radio').count()>=4);
+ await themeRow.getByRole('radio').nth(1).check();
+ assert.equal(await page.getByRole('switch',{name:'Auto-randomize colour palette',exact:true}).isChecked(),false);
+ await themeRow.getByRole('button',{name:/Preview .*Liquid Filigree/}).click();
+ await page.waitForFunction(()=>document.querySelector('.option-preview-canvas')?.width>0);
+ await page.screenshot({path:`${shots}/theme-palette-preview.png`});
+ await page.getByRole('button',{name:'Close preview',exact:true}).dispatchEvent('click');
  // Exercise the real canvas renderer with every effect on browser Canvas 2D.
  const qa=await page.evaluate(async()=>{
   const [{drawKineticLyrics,LYRIC_MOTIONS},{CURRENT_WORD_STYLES},{buildCues},{analyzeLyricWords},{TEMPLATES},{preloadLyricFonts}]=await Promise.all([
@@ -80,13 +125,13 @@ try{
   }};
   return count;
  });
- assert.equal(qa,200);
+ assert.equal(qa,360);
  for(const [motion,style] of [['ribbon','halo'],['hinge','brackets'],['cascade','ribbon'],['orbit','sparkle']]){
   await page.evaluate(([motion,style])=>window.lyricQA.draw(motion,style,.45),[motion,style]);
   await page.locator('canvas').screenshot({path:`${shots}/${motion}-${style}.png`});
  }
  assert.deepEqual(errors,[]);
- console.log('PASS browser: 20 animations × 10 styles, independent controls, stored toggles, and 390/800/1280px layouts.');
+ console.log('PASS browser: 20 animations × 18 styles, isolated previews, saved selection windows, nested palettes, and light/dark layouts at 390/800/1280px.');
 }catch(error){
  console.log({errors,body:(await page.locator('body').innerText()).slice(0,1600)});
  throw error;

@@ -3,6 +3,7 @@ import {drawKineticLyrics,LYRIC_MOTIONS,type KineticArgs} from '../visualization
 import {CURRENT_WORD_STYLES} from '../visualization/cinematic/currentWordStyles';
 import {albumColorsForLine,contrastRatio,getDeterministicSongPalette,luminance,paletteFromArtworkPixels} from '../visualization/cinematic/contrast';
 import {TEMPLATES,type DirectedScene} from '../visualization/cinematic/catalog';
+import {cloudPreferencesPayload,DEFAULT_USER_PREFERENCES} from '../firebase/firebaseClient';
 import {buildCues} from '../lyrics/lyricTimeline';
 import {analyzeLyricWords} from '../lyrics/wordEmphasis';
 
@@ -16,7 +17,7 @@ function context(){
  const c={font:'800 50px sans-serif',fillStyle:'',canvas:{width:1000,height:600},save:vi.fn(),restore:vi.fn(),transform:vi.fn(),
   fillText(text:string){paints.push({text,color:this.fillStyle});},
   beginPath:vi.fn(),moveTo:vi.fn(),lineTo:vi.fn(),bezierCurveTo:vi.fn(),closePath:vi.fn(),
-  arc:vi.fn(),ellipse:vi.fn(),roundRect:vi.fn(),stroke:vi.fn(),fill:vi.fn(),
+  rect:vi.fn(),fillRect:vi.fn(),strokeRect:vi.fn(),arc:vi.fn(),ellipse:vi.fn(),roundRect:vi.fn(),stroke:vi.fn(),fill:vi.fn(),
   getTransform:()=>({a:1,b:0,c:0,d:1,e:0,f:0}),
   measureText(text:string){return {width:text.length*parseFloat(this.font.match(/([\d.]+)px/)?.[1]||'50')*.56};}
  };
@@ -62,6 +63,12 @@ describe('independent phrase animation and word styles',()=>{
   const mismatched=render({cue:{...cue,romanized:'One extra romanized token here'},mode:'romanized',wordStylesEnabled:true});
   expect(mismatched.result.wordStyle).toBe('off');expect(mismatched.result.fillPace).toBe('line');
  });
+ it('chooses only enabled word styles and treats an empty pool as off',()=>{
+  for(let time=0;time<10;time++){
+   expect(render({cue:{...cue,time},wordStylesEnabled:true,enabledWordStyles:['classic-focus']}).result.wordStyle).toBe('classic-focus');
+  }
+  expect(render({wordStylesEnabled:true,enabledWordStyles:[]}).result.wordStyle).toBe('off');
+ });
  it('paints a shaped Indic word once while its colour sweeps across the glyphs',()=>{
   const {c,paints}=context();
   c.createLinearGradient=vi.fn(()=>({addColorStop:vi.fn()}) as unknown as CanvasGradient);
@@ -70,8 +77,8 @@ describe('independent phrase animation and word styles',()=>{
   expect(paints.map(p=>p.text)).toEqual(['മഴക്കാലം']);
   expect(c.createLinearGradient).toHaveBeenCalledOnce();
  });
- it('renders all 200 animation/style combinations without duplicating the lyric phrase',()=>{
-  expect(LYRIC_MOTIONS).toHaveLength(20);expect(CURRENT_WORD_STYLES).toHaveLength(10);
+ it('renders all 360 animation/style combinations without duplicating the lyric phrase',()=>{
+  expect(LYRIC_MOTIONS).toHaveLength(20);expect(CURRENT_WORD_STYLES).toHaveLength(18);
   for(const motion of LYRIC_MOTIONS)for(const style of CURRENT_WORD_STYLES){
    for(const [w,h] of [[360,203],[800,1280],[1920,1080]]){
     const output=render({w,h,enabledMotions:[motion],currentWordStyle:style.id,wordStylesEnabled:true});
@@ -121,4 +128,11 @@ describe('artwork and theme lyric colours',()=>{
   }
   expect(render({paletteId:'silk-waves'}).result.activeColor).not.toBe(render({paletteId:'cyan-tide'}).result.activeColor);
  });
+});
+
+
+it('compares only cloud-supported fields so device-only font pools cannot trigger sync loops',()=>{
+ const base=cloudPreferencesPayload(DEFAULT_USER_PREFERENCES);
+ expect(cloudPreferencesPayload({...DEFAULT_USER_PREFERENCES,enabledFonts:['impact'],autoFonts:false,manualFont:'impact'})).toEqual(base);
+ expect(cloudPreferencesPayload({...DEFAULT_USER_PREFERENCES,intensity:22})).not.toEqual(base);
 });

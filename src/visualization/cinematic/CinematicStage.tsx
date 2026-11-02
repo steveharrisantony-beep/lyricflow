@@ -30,6 +30,7 @@ export interface CinematicProps{
  spatialTypography:boolean;
  wordStylesEnabled?:boolean;
  currentWordStyle?:CurrentWordStyle;
+ enabledWordStyles?:readonly CurrentWordStyle[];
  albumLyricPalette?:AlbumArtLyricPalette;
  narrativeObjects?:boolean;motionBlur:number;
  enabledScenes?:readonly SceneId[];
@@ -438,6 +439,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      animated:config.spatialTypography,
      wordStylesEnabled:config.wordStylesEnabled,
      currentWordStyle:config.currentWordStyle,
+     enabledWordStyles:config.enabledWordStyles,
      albumPalette:config.albumLyricPalette,
      enabledMotions:config.enabledKineticMotions,
      enabledPlacements:activeEnabledPlacements,
@@ -471,6 +473,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
       animated:config.spatialTypography,
      wordStylesEnabled:config.wordStylesEnabled,
      currentWordStyle:config.currentWordStyle,
+     enabledWordStyles:config.enabledWordStyles,
      albumPalette:config.albumLyricPalette,
       enabledMotions:config.enabledKineticMotions,
       enabledPlacements:activeEnabledPlacements,

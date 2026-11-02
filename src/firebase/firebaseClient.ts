@@ -248,11 +248,10 @@ export function loadLocalPreferences(uid: string | null = null): UserPreferences
 export function saveLocalPreferences(prefs: UserPreferencesData, uid: string | null = null): void {
   writeDevice(scopedKey('preferences', uid), sanitizePreferences(prefs));
 }
-export async function saveCloudPreferences(user: User, prefs: UserPreferencesData): Promise<void> {
-  saveLocalPreferences(prefs, user.uid);
-  if (!db) return;
+/** Compare and write the same deployed schema; local selection pools must not cause sync loops. */
+export function cloudPreferencesPayload(prefs:UserPreferencesData){
   const clean = sanitizePreferences(prefs);
-  const cloudPayload = {
+  return {
     display: {
       ...clean.display,
       lyricColorMode: clean.display.lyricColorMode === 'album' ? 'auto' : clean.display.lyricColorMode,
@@ -276,6 +275,12 @@ export async function saveCloudPreferences(user: User, prefs: UserPreferencesDat
     lyricMaxFontSize: clean.lyricMaxFontSize,
     themePalettes: clean.themePalettes,
   };
+}
+export async function saveCloudPreferences(user: User, prefs: UserPreferencesData): Promise<void> {
+  saveLocalPreferences(prefs, user.uid);
+  if (!db) return;
+  const clean=sanitizePreferences(prefs);
+  const cloudPayload=cloudPreferencesPayload(clean);
   const pendingKey = scopedKey('preferencesPending', user.uid);
   writeDevice(pendingKey, clean);
   await setDoc(doc(db, 'profiles', user.uid), { preferences: cloudPayload, updatedAt: serverTimestamp() });

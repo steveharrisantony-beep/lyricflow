@@ -32,6 +32,7 @@ import {
   ALL_FONT_PACKS,
   ALL_KINETIC_MOTIONS,
   ALL_SCENE_IDS,
+  cloudPreferencesPayload,
   loadLocalPreferences,
   saveCloudPreferences,
   saveLocalPreferences,
@@ -91,7 +92,7 @@ import {
   fontLabel,
   preloadLyricFonts,
 } from "./visualization/cinematic/fonts";
-import {CURRENT_WORD_STYLES,type CurrentWordStyle} from "./visualization/cinematic/currentWordStyles";
+import {ALL_CURRENT_WORD_STYLE_IDS,CURRENT_WORD_STYLES,type CurrentWordStyle} from "./visualization/cinematic/currentWordStyles";
 import {
   ALL_PLACEMENT_MODES,
   LYRIC_PLACEMENT_MODES,
@@ -122,6 +123,7 @@ import {
   usePrivateLyrics,
 } from "./firebase/usePrivateLyrics";
 import YouTubeBackgroundPicker from "./music/YouTubeBackgroundPicker";
+import OptionPreview,{PreviewSetting,type OptionPreviewSpec} from "./ui/OptionPreview";
 import SettingsPanel, {
   RangeSetting,
   SettingGroup,
@@ -273,16 +275,25 @@ export default function App({ user = null }: { user?: User | null }) {
   );
   const [enabledKineticMotions, setEnabledKineticMotions] = useState<
     LyricMotion[]
-  >(initialPrefs.enabledKineticMotions);
+  >(() => {
+    const saved=initialExtended.enabledKineticMotions;
+    return Array.isArray(saved)?saved.filter((id):id is LyricMotion=>ALL_KINETIC_MOTIONS.includes(id as LyricMotion)):initialPrefs.enabledKineticMotions;
+  });
   const [enabledPlacements, setEnabledPlacements] = useState<
     Exclude<LyricPlacementMode, "auto">[]
   >(initialPrefs.enabledPlacements || [...ALL_PLACEMENT_MODES]);
   const [wordStylesEnabled, setWordStylesEnabled] = useState(initialExtended.wordStylesEnabled !== false);
-  const [currentWordStyle, setCurrentWordStyle] = useState<CurrentWordStyle>(() =>
+  const [currentWordStyle] = useState<CurrentWordStyle>(() =>
     CURRENT_WORD_STYLES.find(style => style.id === initialExtended.currentWordStyle)?.id || "lift",
   );
+  const [enabledWordStyles,setEnabledWordStyles]=useState<CurrentWordStyle[]>(()=>{
+    const saved=initialExtended.enabledWordStyles;
+    return Array.isArray(saved)?saved.filter((id):id is CurrentWordStyle=>ALL_CURRENT_WORD_STYLE_IDS.includes(id as CurrentWordStyle)):[...ALL_CURRENT_WORD_STYLE_IDS];
+  });
+  const [optionPreview,setOptionPreview]=useState<OptionPreviewSpec|null>(null);
+  const closeOptionPreview=useCallback(()=>setOptionPreview(null),[]);
   // Two separate placement sets: Video Background (default 'bottom-right' / Right Bottom) vs Built-in Themes (default 'center' / Centre Stage)
-  const [videoPlacementMode, setVideoPlacementMode] =
+  const [videoPlacementMode] =
     useState<LyricPlacementMode>(() => {
       const v = initialExtended.videoPlacementMode;
       return typeof v === "string" &&
@@ -302,7 +313,7 @@ export default function App({ user = null }: { user?: User | null }) {
     }
     return [...ALL_PLACEMENT_MODES];
   });
-  const [themePlacementMode, setThemePlacementMode] =
+  const [themePlacementMode] =
     useState<LyricPlacementMode>(() => {
       const v = initialExtended.themePlacementMode;
       return typeof v === "string" &&
@@ -365,9 +376,11 @@ export default function App({ user = null }: { user?: User | null }) {
   const [manualFont, setManualFont] = useState<FontPack>(
     initialPrefs.manualFont || "impact",
   );
-  const [enabledFonts, setEnabledFonts] = useState<FontPack[]>(
-    initialPrefs.enabledFonts || [...ALL_FONT_PACKS],
-  );
+  const [enabledFonts, setEnabledFonts] = useState<FontPack[]>(()=>{
+    const saved=initialExtended.enabledFonts;
+    const valid=Array.isArray(saved)?saved.filter((id):id is FontPack=>ALL_FONT_PACKS.includes(id as FontPack)):[];
+    return valid.length?valid:initialPrefs.enabledFonts||[...ALL_FONT_PACKS];
+  });
   const [cameraShakeEnabled, setCameraShakeEnabled] = useState<boolean>(
     initialPrefs.cameraShakeEnabled,
   );
@@ -645,11 +658,16 @@ export default function App({ user = null }: { user?: User | null }) {
     setEnabledScenes(prefs.enabledScenes);
     setAutoKineticMotion(prefs.autoKineticMotion ?? true);
     setManualKineticMotion(prefs.manualKineticMotion || "ship");
-    setEnabledKineticMotions(prefs.enabledKineticMotions);
+    // Selection windows are stored on this device, including an intentionally empty pool.
+    try{
+      const saved=JSON.parse(localStorage.getItem("lyricflow.extendedSettings.v1")||"{}");
+      setEnabledKineticMotions(Array.isArray(saved.enabledKineticMotions)?saved.enabledKineticMotions.filter((id:unknown):id is LyricMotion=>ALL_KINETIC_MOTIONS.includes(id as LyricMotion)):prefs.enabledKineticMotions);
+      const fonts=Array.isArray(saved.enabledFonts)?saved.enabledFonts.filter((id:unknown):id is FontPack=>ALL_FONT_PACKS.includes(id as FontPack)):[];
+      setEnabledFonts(fonts.length?fonts:prefs.enabledFonts||[...ALL_FONT_PACKS]);
+    }catch{setEnabledKineticMotions(prefs.enabledKineticMotions);setEnabledFonts(prefs.enabledFonts||[...ALL_FONT_PACKS]);}
     setEnabledPlacements(prefs.enabledPlacements || [...ALL_PLACEMENT_MODES]);
     setAutoFonts(prefs.autoFonts ?? true);
     setManualFont(prefs.manualFont || "impact");
-    setEnabledFonts(prefs.enabledFonts || [...ALL_FONT_PACKS]);
     setCameraShakeEnabled(prefs.cameraShakeEnabled);
     setCameraShakeSensitivity(prefs.cameraShakeSensitivity);
     setLyricMinFontSize(prefs.lyricMinFontSize);
@@ -686,7 +704,7 @@ export default function App({ user = null }: { user?: User | null }) {
     return watchCloudPreferences(
       user,
       (prefs) => {
-        remotePreferences.current = JSON.stringify(prefs);
+        remotePreferences.current = JSON.stringify(cloudPreferencesPayload(prefs));
         applyPreferences(prefs);
         setCloudReady(true);
       },
@@ -703,6 +721,9 @@ export default function App({ user = null }: { user?: User | null }) {
           themeMode,
           wordStylesEnabled,
           currentWordStyle,
+          enabledWordStyles,
+          enabledKineticMotions,
+          enabledFonts,
           showFps,
           videoFitMode,
           lyricFontScale,
@@ -720,6 +741,9 @@ export default function App({ user = null }: { user?: User | null }) {
     themeMode,
     wordStylesEnabled,
     currentWordStyle,
+    enabledWordStyles,
+    enabledKineticMotions,
+    enabledFonts,
     showFps,
     videoFitMode,
     lyricFontScale,
@@ -756,13 +780,13 @@ export default function App({ user = null }: { user?: User | null }) {
       motionBlur,
       quality,
       autoScenes,
-      spatialTypography,
+      spatialTypography:spatialTypography && enabledKineticMotions.length>0,
       narrativeObjects: false,
       cameraMode: "Front",
       enabledScenes,
       autoKineticMotion,
       manualKineticMotion,
-      enabledKineticMotions,
+      enabledKineticMotions:enabledKineticMotions.length?enabledKineticMotions:["ship"],
       enabledPlacements,
       autoFonts,
       manualFont,
@@ -781,7 +805,7 @@ export default function App({ user = null }: { user?: User | null }) {
         "Device storage is full or blocked · settings may not survive restart",
       );
     }
-    if (!user || JSON.stringify(prefs) === remotePreferences.current) return;
+    if (!user || JSON.stringify(cloudPreferencesPayload(prefs)) === remotePreferences.current) return;
     // Protect a real edit made before the first cloud snapshot without uploading untouched defaults.
     if (!cloudReady && JSON.stringify(prefs) === JSON.stringify(initialPrefs))
       return;
@@ -1028,13 +1052,10 @@ export default function App({ user = null }: { user?: User | null }) {
   };
 
   const toggleKineticMotionEnabled = (motion: LyricMotion) => {
-    setEnabledKineticMotions((prev) => {
-      if (prev.includes(motion)) {
-        if (prev.length <= 1) return prev;
-        return prev.filter((item) => item !== motion);
-      }
-      return [...prev, motion];
-    });
+    setEnabledKineticMotions(prev=>prev.includes(motion)?prev.filter(item=>item!==motion):[...prev,motion]);
+  };
+  const toggleWordStyleEnabled = (style:CurrentWordStyle) => {
+    setEnabledWordStyles(prev=>prev.includes(style)?prev.filter(item=>item!==style):[...prev,style]);
   };
 
   const toggleVideoPlacementEnabled = (
@@ -1071,12 +1092,8 @@ export default function App({ user = null }: { user?: User | null }) {
     });
   };
 
-  const effectiveKineticMotions: readonly LyricMotion[] = autoKineticMotion
-    ? enabledKineticMotions
-    : [manualKineticMotion];
-  const effectiveFonts: readonly FontPack[] = autoFonts
-    ? enabledFonts
-    : [manualFont];
+  const effectiveKineticMotions: readonly LyricMotion[] = enabledKineticMotions;
+  const effectiveFonts: readonly FontPack[] = enabledFonts;
 
   useEffect(() => {
     void preloadLyricFonts(effectiveFonts);
@@ -1544,26 +1561,27 @@ export default function App({ user = null }: { user?: User | null }) {
               aria-label="Music visualizer"
             >
               <CinematicStage
-                manualScene={scene}
+                manualScene={enabledScenes.includes(scene)?scene:enabledScenes[0]||scene}
                 intensity={intensity / 100}
                 speed={speed / 50}
                 quality={quality}
                 demo={demo}
-                paused={paused}
+                paused={paused || Boolean(optionPreview)}
                 reducedMotion={reducedMotion}
                 autoScenes={autoScenes}
                 cameraMode="Front"
-                spatialTypography={spatialTypography}
+                spatialTypography={spatialTypography && enabledKineticMotions.length>0}
                 wordStylesEnabled={wordStylesEnabled}
                 currentWordStyle={currentWordStyle}
+                enabledWordStyles={enabledWordStyles}
                 albumLyricPalette={useAlbumArtColors ? effectiveAlbumArtPalette : undefined}
                 motionBlur={motionBlur}
                 enabledScenes={enabledScenes}
                 enabledKineticMotions={effectiveKineticMotions}
                 enabledPlacements={enabledPlacements}
-                videoPlacementMode={videoPlacementMode}
+                videoPlacementMode="auto"
                 enabledVideoPlacements={enabledVideoPlacements}
-                themePlacementMode={themePlacementMode}
+                themePlacementMode="auto"
                 enabledThemePlacements={enabledThemePlacements}
                 themeDurationLines={themeDurationLines}
                 themeDurationSeconds={themeDurationSeconds}
@@ -2015,23 +2033,6 @@ export default function App({ user = null }: { user?: User | null }) {
                   />
                 </SettingGroup>
                 <SettingGroup title="Themes">
-                  <label className="field-row">
-                    Theme
-                    <select
-                      aria-label="Theme selection"
-                      value={scene}
-                      onChange={(e) => {
-                        setScene(e.target.value as SceneId);
-                        setAutoScenes(false);
-                      }}
-                    >
-                      {choices.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
                   <SwitchSetting
                     label="Randomize enabled themes"
                     checked={autoScenes}
@@ -2042,27 +2043,6 @@ export default function App({ user = null }: { user?: User | null }) {
                     checked={autoRandomizeThemePalettes}
                     onChange={setAutoRandomizeThemePalettes}
                   />
-                  <label className="field-row">
-                    Colour palette
-                    <select
-                      aria-label="Theme colour palette"
-                      value={
-                        resolveThemePalette(scene, themePalettes[scene]).id
-                      }
-                      onChange={(e) =>
-                        setThemePalettes((prev) => ({
-                          ...prev,
-                          [scene]: e.target.value,
-                        }))
-                      }
-                    >
-                      {byId[scene].palettes.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
                   <RangeSetting
                     label="Theme duration with lyrics"
                     value={themeDurationLines}
@@ -2096,12 +2076,21 @@ export default function App({ user = null }: { user?: User | null }) {
                         Enable all
                       </button>
                       {choices.map((item) => (
-                        <SwitchSetting
-                          key={item.id}
-                          label={item.label}
-                          checked={enabledScenes.includes(item.id)}
-                          onChange={() => toggleSceneEnabled(item.id)}
-                        />
+                        <div className="theme-selection" key={item.id}>
+                          <PreviewSetting label={item.label} checked={enabledScenes.includes(item.id)} onChange={()=>toggleSceneEnabled(item.id)}
+                            onPreview={()=>setOptionPreview({label:item.label,scene:item.id,paletteId:themePalettes[item.id]})}/>
+                          <details className="palette-options">
+                            <summary>Colour palettes</summary>
+                            {byId[item.id].palettes.map(palette=>(
+                              <PreviewSetting key={palette.id} label={palette.name} accessibleLabel={`${item.label} · ${palette.name}`} radioGroup={`palette-${item.id}`}
+                                checked={!autoRandomizeThemePalettes && resolveThemePalette(item.id,themePalettes[item.id]).id===palette.id}
+                                onChange={()=>{setThemePalettes(prev=>({...prev,[item.id]:palette.id}));setAutoRandomizeThemePalettes(false);}}
+                                onPreview={()=>setOptionPreview({label:`${item.label} · ${palette.name}`,scene:item.id,paletteId:palette.id})}>
+                                <span className="palette-swatches" aria-hidden="true">{[palette.background,palette.foreground,palette.accent].map((color,i)=><i key={i} style={{background:color}}/>)}</span>
+                              </PreviewSetting>
+                            ))}
+                          </details>
+                        </div>
                       ))}
                     </div>
                   </details>
@@ -2111,175 +2100,46 @@ export default function App({ user = null }: { user?: User | null }) {
             lyrics: (
               <>
                 <SettingGroup title="Placement">
-                  <label className="field-row">
-                    On video
-                    <select
-                      aria-label="Video lyric placement"
-                      value={videoPlacementMode}
-                      onChange={(e) =>
-                        setVideoPlacementMode(
-                          e.target.value as LyricPlacementMode,
-                        )
-                      }
-                    >
-                      {LYRIC_PLACEMENT_MODES.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field-row">
-                    On themes
-                    <select
-                      aria-label="Theme lyric placement"
-                      value={themePlacementMode}
-                      onChange={(e) =>
-                        setThemePlacementMode(
-                          e.target.value as LyricPlacementMode,
-                        )
-                      }
-                    >
-                      {LYRIC_PLACEMENT_MODES.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <details className="disclosure">
-                    <summary>Automatic placements</summary>
-                    {(["video", "theme"] as const).map((kind) => (
-                      <div className="selection-list" key={kind}>
-                        <h4>{kind === "video" ? "On video" : "On themes"}</h4>
-                        {LYRIC_PLACEMENT_MODES.filter(
-                          (p) => p.id !== "auto",
-                        ).map((p) => (
-                          <SwitchSetting
-                            key={p.id}
-                            label={p.label}
-                            checked={(kind === "video"
-                              ? enabledVideoPlacements
-                              : enabledThemePlacements
-                            ).includes(
-                              p.id as Exclude<LyricPlacementMode, "auto">,
-                            )}
-                            onChange={() =>
-                              kind === "video"
-                                ? toggleVideoPlacementEnabled(
-                                    p.id as Exclude<LyricPlacementMode, "auto">,
-                                  )
-                                : toggleThemePlacementEnabled(
-                                    p.id as Exclude<LyricPlacementMode, "auto">,
-                                  )
-                            }
-                          />
+                  {(["video", "theme"] as const).map(kind=>(
+                    <details className="disclosure" key={kind}>
+                      <summary>{kind==="video"?"On video":"On themes"}</summary>
+                      <div className="selection-list">
+                        {LYRIC_PLACEMENT_MODES.filter(p=>p.id!=="auto").map(p=>(
+                          <PreviewSetting key={p.id} label={p.label} accessibleLabel={`${kind==="video"?"Video":"Theme"} · ${p.label}`}
+                            checked={(kind==="video"?enabledVideoPlacements:enabledThemePlacements).includes(p.id as Exclude<LyricPlacementMode,"auto">)}
+                            onChange={()=>kind==="video"?toggleVideoPlacementEnabled(p.id as Exclude<LyricPlacementMode,"auto">):toggleThemePlacementEnabled(p.id as Exclude<LyricPlacementMode,"auto">)}
+                            onPreview={()=>setOptionPreview({label:p.label,placement:p.id,video:kind==="video"})}/>
                         ))}
                       </div>
-                    ))}
-                  </details>
+                    </details>
+                  ))}
                 </SettingGroup>
-                <SettingGroup title="Font & animation">
-                  <label className="field-row">
-                    Font
-                    <select
-                      aria-label="Lyric font"
-                      value={autoFonts ? "auto" : manualFont}
-                      onChange={(e) => {
-                        setAutoFonts(e.target.value === "auto");
-                        if (e.target.value !== "auto")
-                          setManualFont(e.target.value as FontPack);
-                      }}
-                    >
-                      <option value="auto">Rotate enabled fonts</option>
-                      {FONT_SHOWCASE.map((f) => (
-                        <option key={f} value={f}>
-                          {fontLabel(f)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field-row">
-                    Animation
-                    <select
-                      aria-label="Lyric animation"
-                      disabled={!spatialTypography}
-                      value={autoKineticMotion ? "auto" : manualKineticMotion}
-                      onChange={(e) => {
-                        setAutoKineticMotion(e.target.value === "auto");
-                        if (e.target.value !== "auto")
-                          setManualKineticMotion(e.target.value as LyricMotion);
-                      }}
-                    >
-                      <option value="auto">Rotate enabled animations</option>
-                      {VOXELVERSE_STYLES.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <SwitchSetting
-                    label="Lyric animations"
-                    checked={spatialTypography}
-                    onChange={setSpatialTypography}
-                  />
-                  <SwitchSetting
-                    label="Current word styles"
-                    checked={wordStylesEnabled}
-                    onChange={setWordStylesEnabled}
-                  />
-                  <label className="field-row">
-                    Current word style
-                    <select
-                      aria-label="Current word style"
-                      disabled={!wordStylesEnabled}
-                      value={currentWordStyle}
-                      onChange={(e) => setCurrentWordStyle(e.target.value as CurrentWordStyle)}
-                    >
-                      {CURRENT_WORD_STYLES.map((style) => (
-                        <option key={style.id} value={style.id}>{style.name}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <p className="muted">Current word styles apply only to word-synced lyrics.</p>
+                <SettingGroup title="Fonts & motion">
+                  <SwitchSetting label="Lyric animations" checked={spatialTypography} onChange={setSpatialTypography}/>
+                  <SwitchSetting label="Current word styles" checked={wordStylesEnabled} onChange={setWordStylesEnabled}/>
+                  <p className="muted">Enabled choices rotate. Word styles require word-synced lyrics.</p>
                   <details className="disclosure">
-                    <summary>Enabled fonts & animations</summary>
+                    <summary>Fonts</summary>
                     <div className="selection-list">
-                      <h4>Fonts</h4>
-                      <button
-                        className="text-button"
-                        type="button"
-                        onClick={() => setEnabledFonts([...ALL_FONT_PACKS])}
-                      >
-                        Enable all fonts
-                      </button>
-                      {FONT_SHOWCASE.map((f) => (
-                        <SwitchSetting
-                          key={f}
-                          label={fontLabel(f)}
-                          checked={enabledFonts.includes(f)}
-                          onChange={() => toggleFontEnabled(f)}
-                        />
-                      ))}
-                      <h4>Animations</h4>
-                      <button
-                        className="text-button"
-                        type="button"
-                        onClick={() =>
-                          setEnabledKineticMotions([...ALL_KINETIC_MOTIONS])
-                        }
-                      >
-                        Enable all animations
-                      </button>
-                      {VOXELVERSE_STYLES.map((s) => (
-                        <SwitchSetting
-                          key={s.id}
-                          label={s.name}
-                          checked={enabledKineticMotions.includes(s.id)}
-                          onChange={() => toggleKineticMotionEnabled(s.id)}
-                        />
-                      ))}
+                      <button className="text-button" type="button" onClick={()=>setEnabledFonts([...ALL_FONT_PACKS])}>Enable all fonts</button>
+                      {FONT_SHOWCASE.map(font=><PreviewSetting key={font} label={fontLabel(font)} checked={enabledFonts.includes(font)} onChange={()=>toggleFontEnabled(font)}
+                        onPreview={()=>setOptionPreview({label:fontLabel(font),font})}/>)}
+                    </div>
+                  </details>
+                  <details className="disclosure">
+                    <summary>Animations <span>{enabledKineticMotions.length} / {VOXELVERSE_STYLES.length}</span></summary>
+                    <div className="selection-list">
+                      <button className="text-button" type="button" onClick={()=>setEnabledKineticMotions([...ALL_KINETIC_MOTIONS])}>Enable all animations</button>
+                      {VOXELVERSE_STYLES.map(motion=><PreviewSetting key={motion.id} label={motion.name} checked={enabledKineticMotions.includes(motion.id)} onChange={()=>toggleKineticMotionEnabled(motion.id)}
+                        onPreview={()=>setOptionPreview({label:motion.name,motion:motion.id})}/>)}
+                    </div>
+                  </details>
+                  <details className="disclosure">
+                    <summary>Current word styles <span>{enabledWordStyles.length} / {CURRENT_WORD_STYLES.length}</span></summary>
+                    <div className="selection-list">
+                      <button className="text-button" type="button" onClick={()=>setEnabledWordStyles([...ALL_CURRENT_WORD_STYLE_IDS])}>Enable all word styles</button>
+                      {CURRENT_WORD_STYLES.map(style=><PreviewSetting key={style.id} label={style.name} checked={enabledWordStyles.includes(style.id)} onChange={()=>toggleWordStyleEnabled(style.id)}
+                        onPreview={()=>setOptionPreview({label:style.name,wordStyle:style.id})}/>)}
                     </div>
                   </details>
                 </SettingGroup>
@@ -2497,6 +2357,7 @@ export default function App({ user = null }: { user?: User | null }) {
             ),
           }}
         </SettingsPanel>
+        {optionPreview && <OptionPreview spec={optionPreview} onClose={closeOptionPreview} reducedMotion={reducedMotion}/>}
       </main>
       <AudioSourceHub
         ref={audioHubRef}

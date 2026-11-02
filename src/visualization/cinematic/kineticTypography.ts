@@ -281,6 +281,7 @@ export interface KineticArgs {
  animated?:boolean;
  wordStylesEnabled?:boolean;
  currentWordStyle?:CurrentWordStyle;
+ enabledWordStyles?:readonly CurrentWordStyle[];
  albumPalette?:AlbumArtLyricPalette;
  enabledMotions?:readonly LyricMotion[];
  enabledPlacements?:readonly Exclude<LyricPlacementMode,'auto'>[];
@@ -515,6 +516,7 @@ export function drawKineticLyrics({
  animated=true,
  wordStylesEnabled=false,
  currentWordStyle='lift',
+ enabledWordStyles,
  albumPalette,
  enabledMotions,
  enabledPlacements,
@@ -605,7 +607,8 @@ export function drawKineticLyrics({
  hasWordSync=cue.timing==='sourced'&&cue.words.length>0&&
   cue.words.every(word=>word.timing!=='estimated'&&Number.isFinite(word.start)&&Number.isFinite(word.end)&&word.end>word.start)&&
   cue.words.reduce((count,word)=>count+word.text.trim().split(/\s+/).filter(Boolean).length,0)===runs.length;
- const activeWordStyle=wordStylesEnabled&&hasWordSync?currentWordStyle:'off';
+ const selectedWordStyle=enabledWordStyles ? enabledWordStyles[hash(`${cue.time}|${cue.text}`)%Math.max(1,enabledWordStyles.length)] : currentWordStyle;
+ const activeWordStyle=wordStylesEnabled&&hasWordSync&&selectedWordStyle?selectedWordStyle:'off';
  const lineColors=albumPalette?albumColorsForLine(albumPalette,`${cue.time}|${cue.text}`):undefined;
 
  const vocalEnd=duetSide
@@ -1011,7 +1014,7 @@ export function drawKineticLyrics({
    applySceneFont(c,font,size,word.text);
 
    if(activeWordStyle!=='off'&&isActive){
-    drawCurrentWordAccent(c,activeWordStyle,measuredW,size,wordProgress,sungColor,styleEnergy);
+    drawCurrentWordAccent(c,activeWordStyle,measuredW,size,wordProgress,sungColor,styleEnergy,word.text);
    }
 
    paintWordWithSequentialColor(
