@@ -1,6 +1,7 @@
 import {normalizeLyricLayout,type LyricLayoutSettings} from './lyrics/lyricLayout';
 import {
   AudioLines,
+  Instagram,
   LogOut,
   Monitor,
   Moon,
@@ -2524,6 +2525,19 @@ export default function App({ user = null }: { user?: User | null }) {
                 <SettingGroup title="App">
                   <AppUpdateControl />
                 </SettingGroup>
+                <footer className="developer-credit">
+                  <span>Developed by <strong>Steve Harris</strong></span>
+                  <a
+                    className="developer-instagram"
+                    href="https://www.instagram.com/ig.steve_edits"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Steve Harris on Instagram (opens in a new tab)"
+                    title="@ig.steve_edits"
+                  >
+                    <Instagram size={20} aria-hidden="true" />
+                  </a>
+                </footer>
               </>
             ),
           }}

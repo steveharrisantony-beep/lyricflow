@@ -1950,3 +1950,8 @@ summary > span {
 .external-setup-actions{display:flex;flex-wrap:wrap;gap:8px}
 .external-setup button{max-width:100%;white-space:normal;overflow-wrap:anywhere;min-height:44px}
 .external-setup-step>.source-primary,.external-setup-step>.text-button{justify-self:start}
+
+.developer-credit{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:12px;padding:16px 0 4px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1.5;text-align:center}
+.developer-credit strong{color:var(--ink);font-weight:600}
+.developer-instagram{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;flex:0 0 44px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--accent);text-decoration:none}
+.developer-instagram:hover{background:var(--surface-hover);border-color:var(--faint)}
