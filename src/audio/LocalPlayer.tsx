@@ -88,6 +88,8 @@ type Props = {
   externalPlaying?: boolean;
   sponsorBlockEnabled?: boolean;
   onSponsorBlockOffsetChange?: (leadingOffsetSec: number) => void;
+  youtubeBackgroundMode?: "theme" | "video";
+  onYoutubeBackgroundModeChange?: (mode: "theme" | "video") => void;
 };
 
 function LocalPlayer(
@@ -110,6 +112,8 @@ function LocalPlayer(
     externalPlaying = false,
     sponsorBlockEnabled = true,
     onSponsorBlockOffsetChange,
+    youtubeBackgroundMode = "video",
+    onYoutubeBackgroundModeChange,
   }: Props,
   ref: React.Ref<LocalPlayerHandle>,
 ) {
@@ -980,6 +984,28 @@ function LocalPlayer(
             <span>{volume}%</span>
           </label>
         </div>
+
+        {onYoutubeBackgroundModeChange && (
+          <div className="player-background-row">
+            <span className="player-background-label">Background</span>
+            <div
+              className="segmented"
+              role="group"
+              aria-label="Background mode"
+            >
+              {(["theme", "video"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={youtubeBackgroundMode === mode}
+                  onClick={() => onYoutubeBackgroundModeChange(mode)}
+                >
+                  {mode === "theme" ? "Theme" : "Video"}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {externalTrack && (
           <p className="quiet-status">

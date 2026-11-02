@@ -446,7 +446,6 @@ export default function App({ user = null }: { user?: User | null }) {
     "original" | "romanized" | "both"
   >(initialPrefs.display.lyricDisplayMode);
 
-  const [liveScene, setLiveScene] = useState("Holographic Tide");
   const [renderStatus, setRenderStatus] = useState("VOXELWALL 2D ENGINE");
   const spectrumCanvas = useRef<HTMLCanvasElement>(null);
   const playerRef = useRef<LocalPlayerHandle>(null);
@@ -940,12 +939,6 @@ export default function App({ user = null }: { user?: User | null }) {
       );
       if (!canvas) return;
       const numeric = (key: string) => Number(canvas.dataset[key] || 0);
-      if (canvas.dataset.sceneLabel)
-        setLiveScene((previous) =>
-          previous === canvas.dataset.sceneLabel
-            ? previous
-            : canvas.dataset.sceneLabel || previous,
-        );
       if (canvas.dataset.renderer)
         setRenderStatus((previous) =>
           previous === canvas.dataset.renderer
@@ -1544,14 +1537,6 @@ export default function App({ user = null }: { user?: User | null }) {
       <main className="workspace">
         <div className="listening-column">
           <section className="visualizer-section" aria-label="Visualizer">
-            <div className="section-caption">
-              <span>Visualizer</span>
-              <span className="live-theme">
-                {youtubeBackgroundMode === "video" && stageYoutubeVideoId
-                  ? "Video"
-                  : liveScene}
-              </span>
-            </div>
             <div
               className="stage"
               onClick={performance ? revealCinemaHud : undefined}
@@ -1683,6 +1668,8 @@ export default function App({ user = null }: { user?: User | null }) {
             <LocalPlayer
               ref={playerRef}
               sourceMode={sourceMode}
+              youtubeBackgroundMode={youtubeBackgroundMode}
+              onYoutubeBackgroundModeChange={setYoutubeBackgroundMode}
               externalTrack={sourceMode === "external" ? localTrack : null}
               externalTime={localTime}
               externalPlaying={localPlaying}
@@ -1971,22 +1958,6 @@ export default function App({ user = null }: { user?: User | null }) {
             background: (
               <>
                 <SettingGroup title="Background">
-                  <div
-                    className="segmented"
-                    role="group"
-                    aria-label="Background mode"
-                  >
-                    {(["theme", "video"] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        aria-pressed={youtubeBackgroundMode === mode}
-                        onClick={() => setYoutubeBackgroundMode(mode)}
-                      >
-                        {mode === "theme" ? "Theme" : "Video"}
-                      </button>
-                    ))}
-                  </div>
                   <label className="field-row">
                     Video preference
                     <select

@@ -519,6 +519,24 @@ select:disabled {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+.player-background-row {
+  grid-column: 1/-1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+.player-background-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+}
+.player-background-row > .segmented {
+  flex: 0 1 200px;
+}
 .inline-stash-drawer,
 .yt-drawer-subpanel {
   min-width: 0;
@@ -1624,7 +1642,7 @@ summary > span {
     font-size: 11px;
   }
   .stage {
-    aspect-ratio: 4/5;
+    aspect-ratio: 16/9;
     border-radius: 20px;
     max-height: 62dvh;
   }
@@ -1690,6 +1708,15 @@ summary > span {
   .volume-label input {
     flex: 1;
     width: 100%;
+  }
+  .player-background-row {
+    padding-top: 10px;
+  }
+  .player-background-label {
+    font-size: 11px;
+  }
+  .player-background-row > .segmented {
+    flex: 0 1 170px;
   }
   .settings-panel.settings-open,
   .performance-mode .settings-panel.settings-open {
@@ -1818,6 +1845,7 @@ summary > span {
     grid-row: 2;
   }
   .performance-mode .yt-player-actions-bar,
+  .performance-mode .player-background-row,
   .performance-mode .volume-label {
     display: none;
   }
