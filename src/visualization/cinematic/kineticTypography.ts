@@ -10,8 +10,12 @@ import {currentWordAnimationPose,type CurrentWordAnimation} from './currentWordA
 import {buildLetterUnits,choreographyPhase,letterMotionPose,lineMotionPose,type LetterUnit} from './letterMotion';
 import {makeLyricProjection,STILL_CAMERA,type ProjectPoint} from './cameraRig';
 
-/** A smaller set of distinct, persistent letter choreographies. */
-export const LYRIC_MOTIONS=['ship','fisheye','orbit','cascade','scatter','elastic','hinge','carnival','portal','broadside','alternating','wave'] as const;
+/** Keep the original twelve in their original order; new designs append to this catalog. */
+export const ORIGINAL_LYRIC_MOTIONS=['ship','fisheye','orbit','cascade','scatter','elastic','hinge','carnival','portal','broadside','alternating','wave'] as const;
+export const LYRIC_MOTIONS=[...ORIGINAL_LYRIC_MOTIONS,
+ 'venetian','fan','curtain-sweep','letter-rain','concertina','silk-stretch','domino',
+ 'pendulum','helix','zipper','iris','rosette','switchback'
+] as const;
 
 export type LyricMotion=typeof LYRIC_MOTIONS[number];
 export type VoxelVerseFamily='signature'|'spatial'|'kinetic'|'editorial';
@@ -59,10 +63,6 @@ export interface VoxelVerseStyleMeta {
  featured?:boolean;
 }
 
-export const VOXELVERSE_FAMILIES:readonly {id:VoxelVerseFamily;name:string;count:number}[]=[
- {id:'signature',name:'Signature',count:2},{id:'spatial',name:'Spatial',count:3},
- {id:'kinetic',name:'Kinetic',count:3},{id:'editorial',name:'Editorial',count:4}
-];
 export const VOXELVERSE_STYLES:readonly VoxelVerseStyleMeta[]=[
  {id:'ship',name:'Ship',family:'signature',detail:'Letters glide from depth, drift gently, then travel onward'},
  {id:'fisheye',name:'Fisheye',family:'signature',detail:'A centre-out lens reveal, travelling focus and closing contraction'},
@@ -75,15 +75,33 @@ export const VOXELVERSE_STYLES:readonly VoxelVerseStyleMeta[]=[
  {id:'hinge',name:'Hinge',family:'editorial',detail:'Letters unfold, hold a subtle fold and close again'},
  {id:'carnival',name:'Carnival',family:'editorial',detail:'Alternating letter steps settle into a gentle rhythmic hold'},
  {id:'broadside',name:'Broadside',family:'editorial',detail:'An angled sweep, breathing tracking and onward exit'},
- {id:'portal',name:'Portal',family:'editorial',detail:'Letters open from the centre and expand away at the end'}
+ {id:'portal',name:'Portal',family:'editorial',detail:'Letters open from the centre and expand away at the end'},
+ {id:'venetian',name:'Venetian',family:'editorial',detail:'Vertical shutters unfold, breathe and fold closed'},
+ {id:'fan',name:'Fan',family:'spatial',detail:'A fan of tilted letters opens into an arched, breathing phrase'},
+ {id:'curtain-sweep',name:'Curtain Sweep',family:'editorial',detail:'A sloping curtain rises letter by letter and lifts away in reverse'},
+ {id:'letter-rain',name:'Letter Rain',family:'spatial',detail:'Wind-tossed letters arrive in a varied order and fall away'},
+ {id:'concertina',name:'Concertina',family:'editorial',detail:'Stacked letters open into measured tracking and gather again'},
+ {id:'silk-stretch',name:'Silk Stretch',family:'editorial',detail:'Tall silk-like letters relax into shape, then stretch downward'},
+ {id:'domino',name:'Domino',family:'kinetic',detail:'Letters tip upright from their baseline and topple onward'},
+ {id:'pendulum',name:'Pendulum',family:'kinetic',detail:'Suspended letters swing from a shared upper pivot'},
+ {id:'helix',name:'Helix',family:'signature',detail:'A travelling spiral combines height, depth and gentle rotation'},
+ {id:'zipper',name:'Zipper',family:'editorial',detail:'Opposing horizontal masks interlock and unzip at the end'},
+ {id:'iris',name:'Iris',family:'signature',detail:'Centre-out oval apertures open around each letter and close again'},
+ {id:'rosette',name:'Rosette',family:'spatial',detail:'A radial flower of letters gathers into the line and blooms outward'},
+ {id:'switchback',name:'Switchback',family:'kinetic',detail:'Small letter groups weave through opposite horizontal lanes'}
 ];
+export const VOXELVERSE_FAMILIES:readonly {id:VoxelVerseFamily;name:string;count:number}[]=(
+ [{id:'signature',name:'Signature'},{id:'spatial',name:'Spatial'},
+  {id:'kinetic',name:'Kinetic'},{id:'editorial',name:'Editorial'}] as const
+).map(family=>({...family,count:VOXELVERSE_STYLES.filter(style=>style.family===family.id).length}));
 const LEGACY_MOTIONS:Record<string,LyricMotion>={visual:'orbit','fisheye-visual':'fisheye',prism:'hinge',surge:'wave',echo:'portal',halo:'orbit',ribbon:'wave',reel:'cascade',fable:'scatter',mosaic:'carnival'};
 export function normalizeLyricMotion(value:unknown):LyricMotion|null{
  if(typeof value!=='string')return null;
  return LYRIC_MOTIONS.includes(value as LyricMotion)?value as LyricMotion:LEGACY_MOTIONS[value]||null;
 }
-export function normalizeMotionPool(value:unknown):LyricMotion[]|null{
- const oldFullPool=[...LYRIC_MOTIONS.filter(id=>id!=='wave'&&id!=='alternating'),...Object.keys(LEGACY_MOTIONS)];
+export function normalizeMotionPool(value:unknown,expandOriginal=false):LyricMotion[]|null{
+ if(expandOriginal&&Array.isArray(value)&&value.length===ORIGINAL_LYRIC_MOTIONS.length&&ORIGINAL_LYRIC_MOTIONS.every(id=>value.includes(id)))return [...LYRIC_MOTIONS];
+ const oldFullPool=[...ORIGINAL_LYRIC_MOTIONS.filter(id=>id!=='wave'&&id!=='alternating'),...Object.keys(LEGACY_MOTIONS)];
  if(Array.isArray(value)&&oldFullPool.every(id=>value.includes(id)))return [...LYRIC_MOTIONS];
  return Array.isArray(value)?[...new Set(value.map(normalizeLyricMotion).filter((id):id is LyricMotion=>id!==null))]:null;
 }
@@ -920,8 +938,13 @@ export function drawKineticLyrics({
     const pose=letterMotionPose(motion,age,unitOffsets[word.index]+part.index,unitCount,energy,part.connected,duration,cueIndex);
     c.save();
     c.globalAlpha*=pose.alpha;
-    c.transform(pose.scaleX*Math.cos(pose.rotation),pose.scaleX*Math.sin(pose.rotation),pose.shear-Math.sin(pose.rotation),pose.scaleY*Math.cos(pose.rotation),part.center+pose.x*size,pose.y*size);
+    c.transform(pose.scaleX*Math.cos(pose.rotation),pose.scaleX*Math.sin(pose.rotation),pose.shear-Math.sin(pose.rotation),pose.scaleY*Math.cos(pose.rotation),part.center*(1+pose.tracking)+pose.x*size,pose.y*size);
     if(pose.reveal<1){c.beginPath();c.rect(-part.width*.65,-size*.68,Math.max(1,part.width*1.3),size*1.4*pose.reveal);c.clip();}
+    if(pose.revealX<1){
+     const left=-part.width*.65,width=Math.max(1,part.width*1.3),shown=width*pose.revealX;
+     c.beginPath();c.rect(pose.clipSide>0?left:left+width-shown,-size*.68,shown,size*1.4);c.clip();
+    }
+    if(pose.iris<1){c.beginPath();c.ellipse(0,0,Math.max(.01,part.width*.7*pose.iris),Math.max(.01,size*.75*pose.iris),0,0,Math.PI*2);c.clip();}
     const letterProgress=part.connected?wordProgress:clamp(wordProgress*part.count-part.index);
     paintWordWithSequentialColor(c,part.text,Math.max(1,part.width*1.12),hasWordSync&&(lineAnimationsActive||activeWordStyle!=='off'||activeWordAnimation!=='off'),fillPace,letterProgress,isSpokenStart,isSpokenEnd,baseColor,sungColor,effectiveBgHex,glyphGlow);
     c.restore();

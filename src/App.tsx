@@ -281,7 +281,7 @@ export default function App({ user = null }: { user?: User | null }) {
     LyricMotion[]
   >(() => {
     const saved=initialExtended.enabledKineticMotions;
-    return normalizeMotionPool(saved)??initialPrefs.enabledKineticMotions;
+    return normalizeMotionPool(saved,initialExtended.motionCatalogVersion!==2)??normalizeMotionPool(initialPrefs.enabledKineticMotions,initialExtended.motionCatalogVersion!==2)??[...ALL_KINETIC_MOTIONS];
   });
   const [enabledPlacements, setEnabledPlacements] = useState<
     Exclude<LyricPlacementMode, "auto">[]
@@ -674,7 +674,7 @@ export default function App({ user = null }: { user?: User | null }) {
     // Selection windows are stored on this device, including an intentionally empty pool.
     try{
       const saved=JSON.parse(localStorage.getItem("lyricflow.extendedSettings.v1")||"{}");
-      setEnabledKineticMotions(normalizeMotionPool(saved.enabledKineticMotions)??prefs.enabledKineticMotions);
+      setEnabledKineticMotions(normalizeMotionPool(saved.enabledKineticMotions,saved.motionCatalogVersion!==2)??normalizeMotionPool(prefs.enabledKineticMotions,saved.motionCatalogVersion!==2)??[...ALL_KINETIC_MOTIONS]);
       const fonts=Array.isArray(saved.enabledFonts)?saved.enabledFonts.filter((id:unknown):id is FontPack=>ALL_FONT_PACKS.includes(id as FontPack)):[];
       setEnabledFonts(fonts.length?fonts:prefs.enabledFonts||[...ALL_FONT_PACKS]);
     }catch{setEnabledKineticMotions(prefs.enabledKineticMotions);setEnabledFonts(prefs.enabledFonts||[...ALL_FONT_PACKS]);}
@@ -739,6 +739,7 @@ export default function App({ user = null }: { user?: User | null }) {
           wordAnimationsEnabled,
           enabledWordAnimations,
           enabledKineticMotions,
+          motionCatalogVersion:2,
           enabledFonts,
           showFps,
           videoFitMode,

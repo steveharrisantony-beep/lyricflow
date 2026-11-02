@@ -27,7 +27,7 @@ export function choreographyPhase(age:number,duration:number,animated=true):'int
  return age<timing.intro?'intro':age>duration-timing.outro?'outro':'hold';
 }
 const clamp=(value:number)=>Math.max(0,Math.min(1,value));
-const stillPose={x:0,y:0,rotation:0,scaleX:1,scaleY:1,shear:0,alpha:1,reveal:1};
+const stillPose={x:0,y:0,rotation:0,scaleX:1,scaleY:1,shear:0,alpha:1,reveal:1,tracking:0,revealX:1,clipSide:1,iris:1};
 
 /** Media-clock choreography: deterministic stagger, continuous hold and a paired exit.
  * Inspired by the approaches documented in docs/lyric-animation-references.md.
@@ -37,12 +37,15 @@ export function letterMotionPose(motion:LyricMotion,age:number,index:number,coun
  if(energy<=.001)return stillPose;
  const gain=Math.min(1.25,energy)*(connected?.55:1),{intro,outro}=choreographyTiming(duration);
  const n=(index-(count-1)/2)/Math.max(1,(count-1)/2),forward=index/Math.max(1,count-1),direction=lineIndex%2===0?-1:1;
- const rank=motion==='fisheye'||motion==='portal'||motion==='scatter'?Math.abs(n):motion==='alternating'&&direction>0?1-forward:forward;
+ let rank=motion==='fisheye'||motion==='portal'||motion==='scatter'?Math.abs(n):motion==='alternating'&&direction>0?1-forward:forward;
+ if(motion==='fan'||motion==='iris'||motion==='rosette')rank=Math.abs(n);
+ if(motion==='curtain-sweep'||motion==='concertina')rank=1-forward;
+ if(motion==='letter-rain')rank=((Math.imul(index+1,2654435761)^Math.imul(count,2246822519))>>>0)/4294967295;
  const enter=clamp((age-intro*.32*rank)/(intro*.68));
  const leave=clamp((age-(duration-outro)-outro*.24*(1-rank))/(outro*.76));
  const incoming=(1-enter)**4,outgoing=leave**3;
  const phase=age*1.9-index*.36,sign=index%2?1:-1;
- let x=0,y=0,rotation=0,scaleX=1,scaleY=1,shear=0,reveal=1;
+ let x=0,y=0,rotation=0,scaleX=1,scaleY=1,shear=0,reveal=1,tracking=0,revealX=1,clipSide=1,iris=1;
  switch(motion){
   case 'ship':
    x=-.65*incoming+.5*outgoing;y=.32*incoming-.18*outgoing+.024*Math.sin(phase*.65);
@@ -86,9 +89,75 @@ export function letterMotionPose(motion:LyricMotion,age:number,index:number,coun
   case 'wave':
    y=.14*Math.sin(phase*1.2)+.65*incoming+.6*outgoing;
    rotation=.035*Math.cos(phase*1.2);reveal=clamp(enter*1.8)*(1-outgoing);break;
+  case 'venetian':{
+   // Rotate about the horizontal shutter edge with bounded projected height.
+   const fold=incoming+outgoing;
+   scaleY=Math.max(.08,Math.cos(fold*Math.PI*.48))+.035*Math.sin(phase*.8)*(1-fold);
+   y=.46*(1-scaleY)*sign;shear=.08*sign*(incoming-outgoing);break;
+  }
+  case 'fan':{
+   const arch=(1-n*n)*(.045+.025*Math.sin(age*1.2));
+   rotation=n*(.65*incoming-.40*outgoing)-n*.025*Math.sin(age*.85);
+   y=(.35+.55*Math.abs(n))*incoming-.70*outgoing-arch;
+   x=n*.22*(incoming+outgoing);break;
+  }
+  case 'curtain-sweep':
+   y=(.32+.50*forward)*incoming-(.32+.50*(1-forward))*outgoing+.025*Math.sin(phase*.7);
+   rotation=.18*(incoming+outgoing);shear=-.12*incoming+.12*outgoing;
+   reveal=clamp(enter*1.6)*(1-outgoing);break;
+  case 'letter-rain':{
+   const gust=Math.sin(index*12.9898+count*.31),sway=Math.cos(index*7.37);
+   x=gust*(.22*incoming+.18*outgoing)+.035*Math.sin(age*.85+index*.73);
+   y=-.95*incoming+.90*outgoing+.035*Math.sin(age*1.05+index*.83);
+   rotation=gust*(.32*incoming-.25*outgoing)+sway*.022*Math.sin(age*.9);break;
+  }
+  case 'concertina':
+   tracking=-.92*incoming-.85*outgoing+.022*Math.sin(age*1.1);
+   scaleX=1-.18*incoming-.35*outgoing;shear=.13*sign*(incoming-outgoing);
+   y=.022*Math.sin(phase*.6);break;
+  case 'silk-stretch':{
+   const silk=.045*Math.sin(phase*.9);
+   scaleX=1-.42*incoming-.40*outgoing-silk*.4;scaleY=1+.85*incoming+.90*outgoing+silk;
+   y=-.65*incoming+.65*outgoing;rotation=.012*Math.sin(phase*.6);break;
+  }
+  case 'domino':{
+   rotation=-1.12*incoming+.90*outgoing+.025*Math.sin(phase*.8);
+   // Keep the lower edge as a pivot instead of spinning around each glyph centre.
+   x=.46*Math.sin(rotation);y=.46*(1-Math.cos(rotation));break;
+  }
+  case 'pendulum':{
+   const swing=.07*Math.sin(age*1.7-index*.14);
+   rotation=sign*.42*incoming-sign*.32*outgoing+swing;
+   x=-.50*Math.sin(rotation);y=.50*(Math.cos(rotation)-1);break;
+  }
+  case 'helix':{
+   const spiral=age*2.1-index*.62,depth=Math.cos(spiral);
+   y=.12*Math.sin(spiral)+.35*sign*(incoming-outgoing);
+   x=.035*depth+n*.24*(incoming+outgoing);scaleX=scaleY=1+.045*depth-.2*incoming-.18*outgoing;
+   rotation=.035*Math.cos(spiral);break;
+  }
+  case 'zipper':
+   clipSide=sign;revealX=clamp(enter*1.5)*(1-outgoing);
+   x=sign*(.36*incoming-.36*outgoing)+sign*.025*Math.sin(age*1.1);
+   y=sign*.08*(incoming+outgoing);shear=sign*.10*(incoming-outgoing);break;
+  case 'iris':
+   iris=clamp(enter*1.55)*(1-outgoing);
+   scaleX=scaleY=1+.022*Math.sin(age*1.1+index*.1);
+   y=.018*Math.sin(phase*.6);break;
+  case 'rosette':{
+   const angle=forward*Math.PI*2,petal=incoming*.72+outgoing*.78;
+   x=Math.cos(angle)*petal+.018*Math.cos(age+angle);
+   y=Math.sin(angle)*petal+.025*Math.sin(age+angle);
+   rotation=Math.sin(angle)*(.48*incoming-.40*outgoing);scaleX=scaleY=1-.22*incoming-.2*outgoing;break;
+  }
+  case 'switchback':{
+   const lane=Math.floor(index/3)%2?1:-1;
+   x=lane*(.75*incoming-.65*outgoing)+lane*.035*Math.sin(age*1.15);
+   y=lane*.10*(incoming+outgoing);shear=lane*(.14*incoming+.10*outgoing)+lane*.018*Math.sin(age*.9);break;
+  }
  }
  return {x:x*gain,y:y*gain,rotation:rotation*gain,scaleX:1+(scaleX-1)*Math.min(1,gain),scaleY:1+(scaleY-1)*Math.min(1,gain),shear:shear*gain,
-  alpha:clamp(enter*2.5)*(1-outgoing),reveal};
+  alpha:clamp(enter*2.5)*(1-outgoing),reveal,tracking:tracking*Math.min(1,gain),revealX,clipSide,iris};
 }
 
 /** Alternating lines enter opposite stage sides and leave in their direction of travel. */

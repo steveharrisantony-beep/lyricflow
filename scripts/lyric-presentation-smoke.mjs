@@ -156,7 +156,7 @@ try{
   }};
   return count;
  });
- assert.equal(qa,60);
+ assert.equal(qa,125);
  await page.evaluate(()=>window.lyricQA.draw('wave','underline',.9));
  await page.locator('canvas').screenshot({path:`${shots}/wave-early.png`});
  await page.evaluate(()=>window.lyricQA.draw('wave','underline',3.4));
@@ -166,7 +166,7 @@ try{
   await page.locator('canvas').screenshot({path:`${shots}/${motion}-${style}.png`});
  }
  assert.deepEqual(errors,[]);
- console.log('PASS browser: 12 letter choreographies × 5 static styles, isolated previews, Lift/Glow/Zoom previews and switches, saved selection windows, nested palettes, and light/dark layouts at 390/800/1280px.');
+ console.log('PASS browser: 25 letter choreographies × 5 static styles, isolated previews, Lift/Glow/Zoom previews and switches, saved selection windows, nested palettes, and light/dark layouts at 390/800/1280px.');
 }catch(error){
  console.log({errors,body:(await page.locator('body').innerText()).slice(0,1600)});
  throw error;

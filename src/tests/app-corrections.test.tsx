@@ -15,6 +15,7 @@ vi.mock('../music/providers', async importOriginal => ({
 }));
 vi.mock('../metadata/TrackFinder', () => ({ default: () => null }));
 import App from '../App';
+import {LYRIC_MOTIONS,ORIGINAL_LYRIC_MOTIONS,VOXELVERSE_STYLES} from '../visualization/cinematic/kineticTypography';
 import { searchStashCatalog } from '../music/providers';
 let root: Root, host: HTMLDivElement;
 function click(text: string) {
@@ -247,7 +248,7 @@ it('allows every animation and word style to be disabled and persists empty sele
   for(const summary of ['Animations','Current word styles']){
     const details=[...host.querySelectorAll('details')].find(el=>el.querySelector('summary')?.textContent?.startsWith(summary))!;
     const inputs=[...details.querySelectorAll<HTMLInputElement>('input[role="switch"]')];
-    expect(inputs).toHaveLength(summary==='Animations'?12:5);
+    expect(inputs).toHaveLength(summary==='Animations'?25:5);
     await act(async()=>{for(const input of inputs)input.click();});
     expect(inputs.every(input=>!input.checked)).toBe(true);
   }
@@ -344,3 +345,19 @@ it('positions Save for current song above Lyrics mapping, shows exact fetched ly
   }
 });
 
+
+it('enables the expanded catalog for an old all-enabled install, then preserves a chosen original-only pool',async()=>{
+ await act(async()=>root.unmount());
+ localStorage.setItem('lyricflow.extendedSettings.v1',JSON.stringify({enabledKineticMotions:[...ORIGINAL_LYRIC_MOTIONS]}));
+ root=createRoot(host);await act(async()=>root.render(<App/>));
+ let saved=JSON.parse(localStorage.getItem('lyricflow.extendedSettings.v1')!);
+ expect(saved.enabledKineticMotions).toEqual([...LYRIC_MOTIONS]);expect(saved.motionCatalogVersion).toBe(2);
+ for(const motion of VOXELVERSE_STYLES.filter(style=>!ORIGINAL_LYRIC_MOTIONS.includes(style.id as typeof ORIGINAL_LYRIC_MOTIONS[number]))){
+  const option=host.querySelector<HTMLInputElement>(`input[aria-label="${motion.name}"]`)!;
+  expect(option.checked,motion.name).toBe(true);await act(async()=>option.click());
+ }
+ await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App/>));
+ saved=JSON.parse(localStorage.getItem('lyricflow.extendedSettings.v1')!);
+ expect(saved.enabledKineticMotions).toEqual([...ORIGINAL_LYRIC_MOTIONS]);
+ expect(saved.motionCatalogVersion).toBe(2);
+});

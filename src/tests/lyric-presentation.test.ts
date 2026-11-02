@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
-import {drawKineticLyrics,LYRIC_MOTIONS,normalizeMotionPool,type KineticArgs} from '../visualization/cinematic/kineticTypography';
+import {drawKineticLyrics,LYRIC_MOTIONS,ORIGINAL_LYRIC_MOTIONS,VOXELVERSE_STYLES,VOXELVERSE_FAMILIES,normalizeMotionPool,type KineticArgs} from '../visualization/cinematic/kineticTypography';
 import {CURRENT_WORD_STYLES,drawCurrentWordAccent,normalizeWordStylePool} from '../visualization/cinematic/currentWordStyles';
 import {albumColorsForLine,contrastRatio,getDeterministicSongPalette,luminance,paletteFromArtworkPixels} from '../visualization/cinematic/contrast';
 import {TEMPLATES,type DirectedScene} from '../visualization/cinematic/catalog';
@@ -83,8 +83,8 @@ describe('independent phrase animation and word styles',()=>{
   expect(paints.map(p=>p.text)).toEqual(['മഴക്കാലം']);
   expect(c.createLinearGradient).toHaveBeenCalledOnce();
  });
- it('renders all 60 animation/style combinations without duplicating the lyric phrase',()=>{
-  expect(LYRIC_MOTIONS).toHaveLength(12);expect(CURRENT_WORD_STYLES).toHaveLength(5);
+ it('renders all 125 animation/style combinations without duplicating the lyric phrase',()=>{
+  expect(LYRIC_MOTIONS).toHaveLength(25);expect(CURRENT_WORD_STYLES).toHaveLength(5);
   for(const motion of LYRIC_MOTIONS)for(const style of CURRENT_WORD_STYLES){
    for(const [w,h] of [[360,203],[800,1280],[1920,1080]]){
     const output=render({w,h,enabledMotions:[motion],currentWordStyle:style.id,wordStylesEnabled:true});
@@ -101,7 +101,7 @@ describe('independent phrase animation and word styles',()=>{
    poses.add(JSON.stringify(render({enabledMotions:[motion],time:.4}).transforms));
    for(const time of [0,.05,.4,1,3.4])expect(render({enabledMotions:[motion],time}).result.drawn).toBe(4);
   }
-  expect(poses.size).toBe(12);
+  expect(poses.size).toBe(25);
  });
 });
 
@@ -260,4 +260,31 @@ it('keeps all-empty effect pools plain even when the master switches are on',()=
  const a=render({...options,time:.2}),b=render({...options,time:2.8});
  expect(a.transforms).toEqual(b.transforms);expect(a.paints).toEqual(b.paints);
  expect(a.result.motionPhase).toBe('still');expect(a.result.wordStyle).toBe('off');expect(a.result.wordAnimation).toBe('off');
+});
+
+it('registers 25 complete designs and preserves the original twelve in order',()=>{
+ expect(LYRIC_MOTIONS).toHaveLength(25);
+ expect(LYRIC_MOTIONS.slice(0,12)).toEqual(ORIGINAL_LYRIC_MOTIONS);
+ expect(new Set(LYRIC_MOTIONS).size).toBe(25);
+ expect(new Set(VOXELVERSE_STYLES.map(style=>style.id))).toEqual(new Set(LYRIC_MOTIONS));
+ expect(VOXELVERSE_FAMILIES.reduce((sum,family)=>sum+family.count,0)).toBe(25);
+});
+it('upgrades the former full catalog once, while preserving deliberate subsets and all-off settings',()=>{
+ expect(normalizeMotionPool([...ORIGINAL_LYRIC_MOTIONS],true)).toEqual([...LYRIC_MOTIONS]);
+ expect(normalizeMotionPool([...ORIGINAL_LYRIC_MOTIONS],false)).toEqual([...ORIGINAL_LYRIC_MOTIONS]);
+ expect(normalizeMotionPool(['ship','wave'],true)).toEqual(['ship','wave']);
+ expect(normalizeMotionPool([],true)).toEqual([]);
+});
+it('keeps each of the new letter poses finite, bounded and deterministic during long and short cues',()=>{
+ for(const motion of LYRIC_MOTIONS.slice(12))for(const duration of [.18,6,30])for(const connected of [false,true])for(const intensity of [1,1.25]){
+  for(const time of [0,duration*.1,duration*.5,duration*.99,duration])for(const index of [0,8,159]){
+   const pose=letterMotionPose(motion,time,index,160,intensity,connected,duration,1);
+   expect(Object.values(pose).every(Number.isFinite),motion).toBe(true);
+   expect(Math.abs(pose.x)).toBeLessThan(1.5);expect(Math.abs(pose.y)).toBeLessThan(1.5);
+   expect(pose.scaleX).toBeGreaterThan(0);expect(pose.scaleY).toBeGreaterThan(0);expect(pose.tracking).toBeGreaterThan(-1);
+   expect(pose.scaleX).toBeLessThan(2.1);expect(pose.scaleY).toBeLessThan(2.1);
+   expect(pose.alpha).toBeGreaterThanOrEqual(0);expect(pose.alpha).toBeLessThanOrEqual(1);
+   expect(pose).toEqual(letterMotionPose(motion,time,index,160,intensity,connected,duration,1));
+  }
+ }
 });
