@@ -131,3 +131,13 @@ it('automatically discovers the artist upload through a shorter title search and
  expect(result.videos[0]).toMatchObject({id:'yt_00000000057',artist:'KRSNA',duration:219,viewCount:151_700_000});
  expect(result.usedLyricalFallback).toBe(false);
 });
+it('ranks Guppy Cinemas and Reetha Records 5.6M official release #1 for Kunjikkavil Meghame ahead of 11K 2:45 Gowtham_2010 clip',()=>{
+ const kunjiTrack={title:'Kunjikkavil Meghame',artist:'Johnpaul George, Sooraj Santhosh',album:'Aashaan',duration:292};
+ const candidates:SongResult[]=[
+  video(60,'Kunjikkavil Meghame song | Aashaan |Johnpaul George | Vinayak Sasikumar | Sooraj Santhosh',{artist:'Gowtham_2010',duration:165,videoType:'UGC',viewCount:11_000}),
+  video(61,'Kunjikkavil Meghame Lyrical | Aashaan | Johnpaul George | Vinayak Sasikumar | Sooraj Santhosh',{artist:'Guppy Cinemas and Reetha Records',duration:292,videoType:'UGC',viewCount:5_600_000}),
+  video(62,'Johnpaul George, Sooraj Santhosh - Kunjikkavil Meghame (Lyrics)',{artist:'Vibe Bird Prime',duration:285,videoType:'UGC',viewCount:351_600}),
+ ];
+ const ranked=rankYouTubeBackgroundCandidates(candidates,kunjiTrack,'music');
+ expect(ranked[0].id).toBe('yt_00000000061');
+});

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Search } from "lucide-react";
 import {
   formatViewCount,
   isUnwantedVideoVariant,
@@ -14,7 +15,6 @@ import { findYouTubeBackgrounds } from "./backgroundVideos";
 
 export default function YouTubeBackgroundPicker({
   track,
-  activeVideoId,
   preference,
   onChoose,
   onSearchingChange,
@@ -42,6 +42,7 @@ export default function YouTubeBackgroundPicker({
     [customQuery, setCustomQuery] = useState("");
   const pending = useRef<AbortController | null>(null);
   const [showCached, setShowCached] = useState(false);
+  const [searchOnlineOpen, setSearchOnlineOpen] = useState(false);
   useEffect(() => {
     if (!showCached || !cachedCandidates) return;
     setResults(cachedCandidates.slice(0, 15));
@@ -203,6 +204,7 @@ export default function YouTubeBackgroundPicker({
       className="local-player youtube-background-picker"
       aria-label="Muted YouTube background"
     >
+      <h3>Change video</h3>
       <div
         style={{
           display: "flex",
@@ -221,32 +223,51 @@ export default function YouTubeBackgroundPicker({
             else void runSearch();
           }}
         >
-          {busy
-            ? "Finding videos…"
-            : activeVideoId
-              ? "Change video"
-              : "Find video"}
+          {busy ? "Finding videos…" : "Show preloaded videos"}
+        </button>
+        <button
+          type="button"
+          className="upload-button"
+          aria-expanded={searchOnlineOpen}
+          onClick={() => setSearchOnlineOpen((v) => !v)}
+        >
+          <Search size={14} aria-hidden="true" />
+          Search online
         </button>
       </div>
-      <form
-        className="yt-custom-search-row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void runSearch(customQuery || undefined);
-        }}
-      >
-        <input
-          type="search"
-          aria-label="Custom YouTube video search"
-          value={customQuery}
-          placeholder="Search videos or paste a YouTube URL"
-          onKeyDown={(e) => e.stopPropagation()}
-          onChange={(e) => setCustomQuery(e.target.value)}
-        />
-        <button type="submit" className="upload-button" disabled={busy}>
-          {results.length || showCached ? "Search again" : "Search YouTube"}
-        </button>
-      </form>
+      {searchOnlineOpen && (
+        <form
+          className="yt-custom-search-row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void runSearch(customQuery || undefined);
+          }}
+        >
+          <div
+            className="search-input-with-icon"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              flex: 1,
+            }}
+          >
+            <Search size={15} aria-hidden="true" />
+            <input
+              type="search"
+              aria-label="Custom YouTube video search"
+              value={customQuery}
+              placeholder="Search YouTube videos…"
+              onKeyDown={(e) => e.stopPropagation()}
+              onChange={(e) => setCustomQuery(e.target.value)}
+            />
+          </div>
+          <button type="submit" className="upload-button" disabled={busy}>
+            <Search size={14} aria-hidden="true" />
+            {results.length || showCached ? "Search again" : "Search YouTube"}
+          </button>
+        </form>
+      )}
       {message && <p role="status">{message}</p>}
       {captionStatus && <p role="status">{captionStatus}</p>}
       <div className="track-candidates">

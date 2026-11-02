@@ -37,6 +37,10 @@ it('keeps guest mode available without Firebase configuration', async () => {
 });
 it('stores manual-lyrics delay on device and restores it after remount', async () => {
   await act(async () => click('Load fixture audio'));
+  // Lyrics mapping disclosure is collapsed by default and opens when clicked.
+  const lyricsMappingDetails = host.querySelector<HTMLDetailsElement>('details.lyrics-mapping-section')!;
+  expect(lyricsMappingDetails).not.toBeNull();
+  expect(lyricsMappingDetails.open).toBe(false);
   // Exercise the actual manual editor and its lyrics-revision callback.
   await act(async () => {
     const toggle = [...host.querySelectorAll('button')].find(b => /Custom Edit|Edit.*lyrics|Change Lyrics/i.test(b.textContent || ''));
@@ -48,8 +52,7 @@ it('stores manual-lyrics delay on device and restores it after remount', async (
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(area, '[00:01]Original test words\n[00:03]Another original phrase');
     area!.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Increase lyric delay 0.25s"]')!.click());
-  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Increase lyric delay 0.25s"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Increase lyric delay 0.5s"]')!.click());
   expect(host.querySelector<HTMLInputElement>('[aria-label="Lyrics delay seconds"]')?.value).toBe('0.5');
   expect(host.textContent).toContain('Lyrics timing: personal');
   expect(localStorage.getItem('lyricflow.v3.guest.corrections')).toContain('"delaySeconds":0.5');
@@ -72,6 +75,37 @@ it('stores manual-lyrics delay on device and restores it after remount', async (
   expect(host.querySelector<HTMLInputElement>('[aria-label="Lyrics delay seconds"]')?.value).toBe('0');
 });
 
+it('calibrates lyric delay via Text seen and Voice heard buttons in either order and treats empty delay input as 0', async () => {
+  await act(async () => click('Load fixture audio'));
+  await act(async () => click('Edit or import lyrics'));
+  const area = host.querySelector<HTMLTextAreaElement>('textarea')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(area, '[00:01]Original test words');
+    area.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  let nowMs = 1000;
+  vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
+  await act(async () => click('Text seen'));
+  nowMs = 2250;
+  await act(async () => click('Voice heard'));
+  const delayInput = host.querySelector<HTMLInputElement>('[aria-label="Lyrics delay seconds"]')!;
+  expect(delayInput.value).toBe('1.25');
+
+  // Reverse order: Voice heard first, then Text seen 0.75s later -> 1.25 - 0.75 = 0.5
+  nowMs = 4000;
+  await act(async () => click('Voice heard'));
+  nowMs = 4750;
+  await act(async () => click('Text seen'));
+  expect(delayInput.value).toBe('0.5');
+
+  // Clearing input box means 0
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(delayInput, '');
+    delayInput.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  expect(localStorage.getItem('lyricflow.v3.guest.corrections')).toContain('"delaySeconds":0');
+});
+
 it('stages an account edit before the first cloud snapshot or debounce, without touching guest settings', async () => {
   await act(async () => root.unmount());
   root = createRoot(host);
@@ -90,11 +124,11 @@ it('stages an account edit before the first cloud snapshot or debounce, without 
 
 it('finds a music or lyrical YouTube background for JioSaavn and saves both source mappings without changing audio', async () => {
   await act(async () => click('Load JioSaavn fixture'));
-  await act(async () => click('Find video'));
+  await act(async () => click('Show preloaded videos'));
   expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Test artist music video', 'resolver', '', expect.any(AbortSignal));
   const select = host.querySelector<HTMLSelectElement>('select[aria-label="Preferred YouTube background"]')!;
   await act(async () => { select.value = 'lyrics'; select.dispatchEvent(new Event('change',{bubbles:true})); });
-  await act(async () => click('Find video'));
+  await act(async () => click('Show preloaded videos'));
   expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Test artist lyrics video', 'resolver', '', expect.any(AbortSignal));
   await act(async () => click('Use video'));
   expect(localStorage.getItem('lyricflow.lastSourceMode')).toBe('online');
@@ -104,8 +138,7 @@ it('finds a music or lyrical YouTube background for JioSaavn and saves both sour
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(area,'[00:01]Original test words');
     area.dispatchEvent(new Event('input',{bubbles:true}));
   });
-  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Increase lyric delay 0.25s"]')!.click());
-  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Increase lyric delay 0.25s"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Increase lyric delay 0.5s"]')!.click());
   const maps = Object.values(JSON.parse(localStorage.getItem('lyricflow.v3.guest.songMappings') || '{}')) as {identity:{title:string;artist:string;duration:number};lyrics:{sourceFile:{revision:string};delaySeconds:number};video:{youtubeVideoId:string;delaySeconds:number}}[];
   expect(maps).toHaveLength(1);
   expect(maps[0]).toMatchObject({identity:{title:'original test song',artist:'test artist',duration:200},lyrics:{delaySeconds:.5},video:{youtubeVideoId:'abcdefghijk',delaySeconds:null}});
@@ -248,3 +281,64 @@ it('stores independently disabled theme and lyric transitions, including an empt
  const saved=JSON.parse(localStorage.getItem('lyricflow.extendedSettings.v1')!);
  expect(saved.enabledThemeTransitions).toEqual([]);expect(saved.enabledLyricTransitions).toEqual([]);
 });
+
+it('positions Save for current song above Lyrics mapping, shows exact fetched lyrics title, and does not restart song on manual search',async()=>{
+  const finder=await import('../metadata/TrackFinder');
+  const stage=await import('../visualization/cinematic/CinematicStage');
+  let capturedFinderProps:Parameters<typeof finder.default>[0]|null=null;
+  const renderFinder=vi.spyOn(finder,'default').mockImplementation(props=>{
+    capturedFinderProps=props;
+    return <span data-testid="finder-probe"/>;
+  });
+  const renderStage=vi.spyOn(stage,'default').mockImplementation(props=>{
+    return <span data-testid="stage-probe" data-recording-key={props.recordingKey||''}/>;
+  });
+  try{
+    await act(async()=>click('Load JioSaavn fixture'));
+    const saveBtn=host.querySelector<HTMLButtonElement>('button.save-song-button')!;
+    const lyricsDetails=host.querySelector<HTMLDetailsElement>('details.lyrics-mapping-section')!;
+    expect(saveBtn).not.toBeNull();
+    expect(lyricsDetails).not.toBeNull();
+    expect(Boolean(saveBtn.compareDocumentPosition(lyricsDetails)&Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+
+    // Emit fetched lyrics with an exact record title different from the raw track title
+    await act(async()=>{
+      capturedFinderProps?.onLyricsFound({
+        original:'[00:05.00]Exact fetched line',
+        romanized:'[00:05.00]Exact fetched line',
+        source:'LRC Library (LRCLIB)',
+        sourceUrl:'https://lrclib.net/api/get/999',
+        title:'21 (Fetched Record Title)',
+        artist:'Gracie Abrams',
+      });
+    });
+    const currentSongCards=[...host.querySelectorAll('.current-song')];
+    expect(currentSongCards[0]?.textContent).toContain('21 (Fetched Record Title)');
+
+    // Triggering onMetadataChange from manual search must not mutate localTrack or recordingKey
+    const initialRecordingKey=host.querySelector('[data-testid="stage-probe"]')?.getAttribute('data-recording-key');
+    await act(async()=>{
+      capturedFinderProps?.onMetadataChange({
+        title:'Manual Search Query Title',
+        artist:'Manual Artist',
+        album:'',
+        duration:200,
+        source:'manual',
+        confidence:1,
+      });
+    });
+    const afterSearchRecordingKey=host.querySelector('[data-testid="stage-probe"]')?.getAttribute('data-recording-key');
+    expect(afterSearchRecordingKey).toBe(initialRecordingKey);
+
+    // Clicking Save for current song saves both lyrics and video preferences
+    await act(async()=>saveBtn.click());
+    const maps=Object.values(JSON.parse(localStorage.getItem('lyricflow.v3.guest.songMappings')||'{}')) as {lyrics?:unknown;video?:{youtubeVideoId:string}}[];
+    expect(maps).toHaveLength(1);
+    expect(maps[0].lyrics).toBeTruthy();
+    expect(maps[0].video?.youtubeVideoId).toBe('abcdefghijk');
+  }finally{
+    renderFinder.mockRestore();
+    renderStage.mockRestore();
+  }
+});
+

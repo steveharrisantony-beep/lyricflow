@@ -15,6 +15,8 @@ export interface AppleLyricResult {
   hasWordSync: boolean;
   source: string;
   sourceUrl?: string;
+  title?: string;
+  artist?: string;
   subtitleTracks?: YouTubeSubtitleTrackItem[];
 }
 
@@ -364,6 +366,7 @@ export async function fetchAppleMusicWordSyncedLyrics(
   rawOverride = false
 ): Promise<AppleLyricResult | null> {
   const isYt = !rawOverride && (isYouTubeAudioTrack(track));
+  const artistHint = (track.channelHint || track.artist || '').trim();
   const title = rawOverride ? track.title.trim() : cleanLyricMetadata(track.title.trim());
   // Album names are never search terms. YouTube channel names are also skipped unless manually overridden.
   const artist = rawOverride ? track.artist.trim() : isYt ? '' : cleanLyricMetadata(track.artist.trim());
@@ -379,7 +382,7 @@ export async function fetchAppleMusicWordSyncedLyrics(
       signal?.throwIfAborted();
       const params = new URLSearchParams({
         title: isYt ? rawOriginalTitle : title,
-        artist: isYt ? track.artist.trim() : artist,
+        artist: isYt ? artistHint : artist,
         duration: String(Math.round(track.duration || 0)),
         source: requestedSource,
       });
@@ -398,6 +401,8 @@ export async function fetchAppleMusicWordSyncedLyrics(
           plain?: string;
           source?: string;
           sourceUrl?: string;
+          title?: string;
+          artist?: string;
           hasWordSync?: boolean;
           subtitleTracks?: YouTubeSubtitleTrackItem[];
         };
@@ -410,6 +415,8 @@ export async function fetchAppleMusicWordSyncedLyrics(
               hasWordSync: parsed.hasWordSync,
               source: data.source || 'Apple Music · Word-Synced TTML',
               sourceUrl: data.sourceUrl,
+              title: data.title,
+              artist: data.artist,
             };
           }
         }
@@ -419,6 +426,8 @@ export async function fetchAppleMusicWordSyncedLyrics(
             hasWordSync: Boolean(data.hasWordSync || data.lrc.includes('<')),
             source: data.source || 'Stash · Synced Lyrics',
             sourceUrl: data.sourceUrl,
+            title: data.title,
+            artist: data.artist,
             subtitleTracks: Array.isArray(data.subtitleTracks) ? data.subtitleTracks : undefined,
           };
         }
@@ -429,6 +438,8 @@ export async function fetchAppleMusicWordSyncedLyrics(
             hasWordSync: false,
             source: data.source || 'YouTube Music · InnerTube Lyrics',
             sourceUrl: data.sourceUrl,
+            title: data.title,
+            artist: data.artist,
           };
         }
       }
@@ -473,8 +484,8 @@ export async function fetchAppleMusicWordSyncedLyrics(
             {
               cleanTitle: title,
               rawTitle: rawOriginalTitle,
-              artistHint: track.artist,
-              albumHint: track.album,
+              artistHint,
+              albumHint: '',
               duration: track.duration,
               isYouTube: isYt,
             }
@@ -527,6 +538,8 @@ export async function fetchAppleMusicWordSyncedLyrics(
             hasWordSync: parsed.hasWordSync,
             source: parsed.hasWordSync ? 'Apple Music · Word-Synced TTML' : 'Apple Music · Timed Lyrics',
             sourceUrl: appleTrackViewUrl || undefined,
+            title: appleTrackName,
+            artist: appleArtistName || undefined,
           };
         }
       } else {
@@ -538,6 +551,8 @@ export async function fetchAppleMusicWordSyncedLyrics(
             hasWordSync: parsed.hasWordSync,
             source: parsed.hasWordSync ? 'Apple Music · Word-Synced' : 'Apple Music · Synced',
             sourceUrl: appleTrackViewUrl || undefined,
+            title: appleTrackName,
+            artist: appleArtistName || undefined,
           };
         }
       }
@@ -605,9 +620,10 @@ export async function fetchAppleMusicCandidates(
             hasWordSync = item.lrc.includes('<');
           }
           if (!syncedLyrics) continue;
+          const cleanItemTitle = (item.title || title).replace(/\s*\[Apple Library\]$/i, '').trim();
           out.push({
             id: Number.isSafeInteger(item.id) ? item.id : 900_000_000 + out.length + 1,
-            title: item.title || title,
+            title: cleanItemTitle || title,
             artist: item.artist || artist,
             album: item.album ? `${item.album} · Apple Library` : 'Apple Library',
             duration: Number(item.duration) || Math.round(track.duration || 0),

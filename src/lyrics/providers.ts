@@ -54,7 +54,8 @@ export const lrclibProvider:LyricProvider={
 export async function retrievePermittedLyrics(candidate:TrackCandidate, signal?:AbortSignal){
  if(!Number.isSafeInteger(candidate.id)||candidate.id<=0)throw new Error('Invalid lyrics ID');
  signal?.throwIfAborted();
- if(candidate.syncedLyrics&&hasValidLrcTimestamps(candidate.syncedLyrics))return {synced:candidate.syncedLyrics,plain:'',source:candidate.provider==='apple'?(candidate.hasWordSync?'Apple Library · Word-Synced':'Apple Library · Synced'):(candidate.hasWordSync?'LRCLIB · Word-Synced':'LRCLIB'),sourceUrl:candidate.url,license:'Rights supplied by user'};
+ const cleanCandTitle=candidate.title.replace(/\s*\[Apple Library\]$/i,'').trim()||candidate.title;
+ if(candidate.syncedLyrics&&hasValidLrcTimestamps(candidate.syncedLyrics))return {synced:candidate.syncedLyrics,plain:'',source:candidate.provider==='apple'?(candidate.hasWordSync?'Apple Library · Word-Synced':'Apple Library · Synced'):(candidate.hasWordSync?'LRCLIB · Word-Synced':'LRCLIB'),sourceUrl:candidate.url,title:cleanCandTitle,artist:candidate.artist,license:'Rights supplied by user'};
  const response=await providerRequest('https://lrclib.net/api/get/'+candidate.id,signal);
  if(!response.ok)throw new Error('Lyrics provider returned HTTP '+response.status);
  const data:unknown=await response.json();
@@ -66,7 +67,7 @@ export async function retrievePermittedLyrics(candidate:TrackCandidate, signal?:
  const plainFallback=typeof lyrics.plainLyrics==='string'?lyrics.plainLyrics:(!validSynced&&rawSynced?rawSynced:'');
  return {synced:validSynced,
    plain:plainFallback,
-   source:'LRCLIB',sourceUrl:candidate.url,license:'Rights supplied by user, not verified by LRCLIB'};
+   source:'LRCLIB',sourceUrl:candidate.url,title:valid.trackName||cleanCandTitle,artist:valid.artistName||candidate.artist,license:'Rights supplied by user, not verified by LRCLIB'};
 }
 
 /** Automatic mode accepts only the same title/artist and a close recording length. */
@@ -93,7 +94,7 @@ export async function resolveAutomaticLyrics(track:TrackInfo,signal?:AbortSignal
   if(res.ok){
    const raw:unknown=await res.json(),valid=record(raw);
    if(valid){const candidate=rankCandidate(track,valid);
-    if(isAutomaticLyricMatch(track,candidate))return {original:valid.syncedLyrics||'',romanized:'',source:'LRCLIB · matched recording',sourceUrl:candidate.url};
+    if(isAutomaticLyricMatch(track,candidate))return {original:valid.syncedLyrics||'',romanized:'',source:'LRCLIB · matched recording',sourceUrl:candidate.url,title:valid.trackName||candidate.title,artist:valid.artistName||candidate.artist};
    }
   }else if(res.status===429)throw Error('Automatic lyrics temporarily unavailable (HTTP '+res.status+'). Retry or import LRC.');
  }
@@ -101,7 +102,7 @@ export async function resolveAutomaticLyrics(track:TrackInfo,signal?:AbortSignal
  const matches=candidates.filter(c=>isAutomaticLyricMatch(track,c));
  if(matches.length!==1)return null;
  const lyric=await retrievePermittedLyrics(matches[0],signal);
- return lyric.synced?{original:lyric.synced,romanized:'',source:lyric.source,sourceUrl:lyric.sourceUrl}:null;
+ return lyric.synced?{original:lyric.synced,romanized:'',source:lyric.source,sourceUrl:lyric.sourceUrl,title:lyric.title||matches[0].title,artist:lyric.artist||matches[0].artist}:null;
 }
 
 export interface StashResolvedLyrics {
@@ -110,6 +111,8 @@ export interface StashResolvedLyrics {
  plain?:string;
  source:string;
  sourceUrl?:string;
+ title?:string;
+ artist?:string;
  hasWordSync:boolean;
  candidates:TrackCandidate[];
  availableEngines?:LyricEngineOption[];
@@ -130,6 +133,8 @@ async function resolveFromLrcLibrary(
      romanized:exact.romanized,
      source:exact.original.includes('<')?'LRC Library · Word-Synced':'LRC Library · Synced',
      sourceUrl:exact.sourceUrl,
+     title:exact.title,
+     artist:exact.artist,
      hasWordSync:exact.original.includes('<'),
      candidates:[]
     };
@@ -154,6 +159,8 @@ async function resolveFromLrcLibrary(
    ?(retrieved.synced.includes('<')?'LRC Library · Word-Synced':'LRC Library · Synced')
    :'LRC Library · Plain Text',
   sourceUrl:retrieved.sourceUrl,
+  title:retrieved.title||target.title,
+  artist:retrieved.artist||target.artist,
   hasWordSync:retrieved.synced.includes('<'),
   candidates
  };
@@ -194,7 +201,7 @@ export async function resolveStashLyricsChain(
   if(!result?.lrc)throw new Error('This video has no accessible subtitle text. Import subtitles or choose another lyrics engine.');
   const subtitleTracks=result.subtitleTracks||[];
   const chosen=(selectedSubtitleTrackId&&subtitleTracks.find(t=>t.id===selectedSubtitleTrackId))||subtitleTracks[0];
-  return {original:chosen?.lrc||result.lrc,romanized:'',source:chosen?`YouTube Subtitles (${chosen.label})`:result.source,sourceUrl:result.sourceUrl,hasWordSync:false,candidates:[],availableEngines:['lyricflow','youtube'],subtitleTracks,selectedSubtitleTrackId:chosen?.id};
+  return {original:chosen?.lrc||result.lrc,romanized:'',source:chosen?`YouTube Subtitles (${chosen.label})`:result.source,sourceUrl:result.sourceUrl,title:result.title||track.videoTitle||track.title,artist:result.artist||track.artist,hasWordSync:false,candidates:[],availableEngines:['lyricflow','youtube'],subtitleTracks,selectedSubtitleTrackId:chosen?.id};
  }
 
  // Start both libraries immediately. Captions enrich sync but never delay the first library result.
@@ -225,6 +232,8 @@ export async function resolveStashLyricsChain(
      plain:extra.plain,
      source:`LyricFlow Engine · ${extra.source}`,
      sourceUrl:extra.sourceUrl,
+     title:extra.title,
+     artist:extra.artist,
      hasWordSync:extra.hasWordSync,
      candidates,
      availableEngines:['lyricflow'],
@@ -288,6 +297,8 @@ function combineLibraryLyrics(appleRes:AppleLyricResult|null,lrcRes:StashResolve
    plain:appleRes.plain,
    source:appleRes.source||'Apple Library · Word-Synced',
    sourceUrl:appleRes.sourceUrl,
+   title:appleRes.title,
+   artist:appleRes.artist,
    hasWordSync:appleRes.hasWordSync,
    candidates,
    availableEngines,
@@ -337,6 +348,8 @@ function combineLibraryLyrics(appleRes:AppleLyricResult|null,lrcRes:StashResolve
    romanized:bestAligned.romanizedLrc,
    source:sourceLabel,
    sourceUrl:appleRes.sourceUrl||ytSubRes?.sourceUrl,
+   title:appleRes.title||lrcRes?.title,
+   artist:appleRes.artist||lrcRes?.artist,
    hasWordSync:bestAligned.hasWordSync,
    candidates,
    availableEngines,
@@ -365,6 +378,8 @@ function combineLibraryLyrics(appleRes:AppleLyricResult|null,lrcRes:StashResolve
      ?`LyricFlow Engine · LRC Library + YT Subtitles${offsetNote}`
      :`LyricFlow Engine · ${lrcRes.source}`,
    sourceUrl:lrcRes.sourceUrl||ytSubRes?.sourceUrl,
+   title:lrcRes.title,
+   artist:lrcRes.artist,
    hasWordSync:aligned.hasWordSync,
    candidates,
    availableEngines,

@@ -157,8 +157,17 @@ export function cleanYouTubeTitleForLyrics(rawTitle: string, channelHint = ''): 
       return candidateLeft;
     }
 
-    // Default: in "Song - Artist" titles (like "Punchiri - Eechuu"), left is the song name unless left is a generic prefix
-    if (/^(?:track\s*\d+|song|video|audio|ost|bgm|official)$/i.test(candidateLeft) && candidateRight.length >= 2) {
+    // Default: if the right segment is a version/edition/source tag (e.g. "Song - Acoustic", "Song - Single", "Song - From Movie"),
+    // then the left segment is the song title; otherwise in standard "Artist - Song" titles, the right segment is the song title.
+    if (
+      /^(?:from\b|live\b|acoustic\b|remaster(?:ed)?\b|remix\b|radio\s+edit\b|edit\b|version\b|mix\b|ost\b|soundtrack\b|instrumental\b|karaoke\b|demo\b|unplugged\b|single\b|deluxe\b|bonus\b|mono\b|stereo\b|part\s+\d|pt\.?\s*\d|vol\.?\s*\d|\d{4}\b)/i.test(
+        candidateRight
+      ) &&
+      candidateLeft.length >= 2
+    ) {
+      return candidateLeft;
+    }
+    if (candidateRight.length >= 2) {
       return candidateRight;
     }
     return candidateLeft;
@@ -234,7 +243,9 @@ export function scoreCandidateAgainstRawMetadata(
 ): number {
   const cleanTarget = normalizeComparisonText(context.cleanTitle);
   const cleanCandTitle = normalizeComparisonText(
-    cleanYouTubeTitleForLyrics(candidate.title || '') || candidate.title || ''
+    cleanYouTubeTitleForLyrics(candidate.title || '', candidate.artist || context.artistHint || '') ||
+      candidate.title ||
+      ''
   );
   const rawCandTitle = normalizeComparisonText(candidate.title || '');
   if (!cleanTarget || !cleanCandTitle) return -1;

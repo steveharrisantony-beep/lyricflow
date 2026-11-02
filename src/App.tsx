@@ -477,6 +477,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const [cinemaControlsOpen, setCinemaControlsOpen] = useState(false);
   const [cinemaHudVisible, setCinemaHudVisible] = useState(true);
   const cinemaHudTimerRef = useRef<number | null>(null);
+  const videoCorrectionSaveRef = useRef<(() => boolean) | null>(null);
 
   // Lyrics & per-song delay state
 
@@ -1468,18 +1469,41 @@ export default function App({ user = null }: { user?: User | null }) {
     autoVideoSyncStatus = autoVideoSync.status,
     bgCaptionStatus = autoVideoSync.captionStatus;
 
+  const effectiveSponsorBlockCutSec =
+    leadingNonMusicOffsetSec > 0
+      ? leadingNonMusicOffsetSec
+      : localTrack?.sponsorblockOffsetSec &&
+          localTrack.sponsorblockOffsetSec > 0
+        ? localTrack.sponsorblockOffsetSec
+        : 0;
+  const effectiveAutoVideoDelay =
+    autoVideoDelaySeconds !== 0
+      ? autoVideoDelaySeconds
+      : effectiveSponsorBlockCutSec > 0
+        ? -Math.round(effectiveSponsorBlockCutSec * 100) / 100
+        : 0;
+
   // A personal automatic-timing choice (null) also overrides a published fixed delay.
   const chosenVideoDelay = videoFix.correction
     ? videoFix.correction.videoDelaySeconds
     : songMapping.video?.delaySeconds;
   const hasManualVideoDelay = chosenVideoDelay != null;
   const videoDelaySeconds = hasSeparateAudioStream
-    ? (chosenVideoDelay ?? autoVideoDelaySeconds)
-    : 0;
+    ? (chosenVideoDelay ?? effectiveAutoVideoDelay)
+    : (chosenVideoDelay ?? 0);
 
   const videoTimingStatus = hasManualVideoDelay
     ? `Manual video delay: ${videoDelaySeconds > 0 ? "+" : ""}${videoDelaySeconds}s`
     : autoVideoSyncStatus;
+
+  const currentLyricsTitle =
+    incoming?.title || localTrack?.title || "No lyrics loaded";
+  const currentVideoTitle =
+    matchedVideoCandidate?.title ||
+    localTrack?.videoTitle ||
+    (stageYoutubeVideoId
+      ? localTrack?.title || stageYoutubeVideoId
+      : "No video selected");
 
   useEffect(() => {
     if (!localTrack || !lyricsKey) return;
@@ -1768,197 +1792,20 @@ export default function App({ user = null }: { user?: User | null }) {
             mapping: (
               <>
                 <div className="current-song">
-                  <span>Current song</span>
-                  <strong>{localTrack?.title || "No song selected"}</strong>
-                  {localTrack?.artist && <small>{localTrack.artist}</small>}
+                  <span>Current lyrics title</span>
+                  <strong>{currentLyricsTitle}</strong>
+                  {(incoming?.artist || localTrack?.artist) && (
+                    <small>{incoming?.artist || localTrack?.artist}</small>
+                  )}
+                </div>
+                <div className="current-song">
+                  <span>Current video title</span>
+                  <strong>{currentVideoTitle}</strong>
                 </div>
                 {!localTrack && (
                   <p className="empty-note">
                     Choose a song in the music player to adjust its mapping.
                   </p>
-                )}
-                <div
-                  ref={setMappingTarget}
-                  className="mapping-lyrics-controls"
-                />
-                <SettingGroup title="Lyrics source">
-                  <label className="field-row">
-                    Library
-                    <select
-                      aria-label="Lyrics engine"
-                      value={effectiveLyricsEngine}
-                      onChange={(e) =>
-                        selectEngine(e.target.value as LyricEngineOption)
-                      }
-                    >
-                      {LYRIC_ENGINE_OPTIONS.filter(
-                        (o) =>
-                          o.id === effectiveLyricsEngine ||
-                          o.id === "lyricflow" ||
-                          availableLyricEngines.includes(o.id),
-                      ).map((o) => (
-                        <option key={o.id} value={o.id}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {youtubeSubtitleTracks.length > 1 && (
-                    <label className="field-row">
-                      Subtitle track
-                      <select
-                        aria-label="Subtitle track"
-                        value={
-                          effectiveSubtitleTrackId ||
-                          youtubeSubtitleTracks[0]?.id ||
-                          ""
-                        }
-                        onChange={(e) => selectSubtitle(e.target.value)}
-                      >
-                        {youtubeSubtitleTracks.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-
-                  <div className="mapping-source">
-                    <span>{incoming?.source || "Automatic matching"}</span>
-                    <button
-                      type="button"
-                      className="text-button"
-                      aria-expanded={mappingSearchOpen}
-                      onClick={() => setMappingSearchOpen((v) => !v)}
-                      disabled={!localTrack || isAdPlaying}
-                    >
-                      <Search size={14} />
-                      {mappingSearchOpen ? "Close search" : "Change lyrics"}
-                    </button>
-                  </div>
-                  {!isAdPlaying && (
-                    <>
-                      <TrackFinder
-                        key={"finder-" + fileEpoch}
-                        track={localTrack}
-                        preferredSelection={
-                          lyricsFix.correction?.selection ||
-                          (legacyAutomaticLrc
-                            ? null
-                            : songMapping.lyrics?.selection) ||
-                          null
-                        }
-                        preferredSourceFile={
-                          lyricsFix.source === "personal"
-                            ? null
-                            : songMapping.approved?.lyrics?.sourceFile ||
-                              (effectiveLyricsEngine !== "lyricflow"
-                                ? songMapping.lyrics?.sourceFile
-                                : null) ||
-                              null
-                        }
-                        onSelectionChange={selectLyrics}
-                        savedCustomLrc={savedCustomLrc}
-                        customEditOpen={mappingSearchOpen}
-                        lyricEngineOption={effectiveLyricsEngine}
-                        onLyricEngineOptionChange={setLyricEngineOption}
-                        selectedSubtitleTrackId={effectiveSubtitleTrackId}
-                        onSelectSubtitleTrackId={selectSubtitle}
-                        onAvailableLyricEnginesChange={setAvailableLyricEngines}
-                        onSubtitleTracksChange={setYoutubeSubtitleTracks}
-                        leadingNonMusicOffsetSec={leadingNonMusicOffsetSec}
-                        onMetadataChange={(value) => {
-                          setLocalTrack(value);
-                          saveTrackCorrection(value);
-                        }}
-                        onLyricsFound={acceptLyrics}
-                        onStatusChange={setLyricStatusMessage}
-                      />
-                    </>
-                  )}
-                </SettingGroup>
-                <SettingGroup title="Background video">
-                  {localTrack && hasSeparateAudioStream && !isAdPlaying ? (
-                    <>
-                      <YouTubeBackgroundPicker
-                        key={"video-picker-" + recordingKey}
-                        track={localTrack}
-                        activeVideoId={activeYoutubeVideoId}
-                        preference={preferredVideoType}
-                        cachedCandidates={filteredAutoVideos}
-                        cachedCandidateCount={
-                          autoVideoMatch.key === videoSearchKey
-                            ? autoVideoMatch.candidateCount
-                            : 0
-                        }
-                        automaticSearchPending={
-                          autoVideoMatch.key !== videoSearchKey ||
-                          autoVideoMatch.pending
-                        }
-                        captionStatus={bgCaptionStatus}
-                        onSearchingChange={(searching) =>
-                          setManualVideoSearchKey(searching ? recordingKey : "")
-                        }
-                        onChoose={(id) => {
-                          saveVideoChoice(
-                            id,
-                            id === activeYoutubeVideoId && hasManualVideoDelay
-                              ? videoDelaySeconds
-                              : null,
-                          );
-                          setYoutubeBackgroundMode("video");
-                        }}
-                      />
-                    </>
-                  ) : (
-                    <p className="empty-note">
-                      {localTrack
-                        ? "YouTube is also your audio source. Choose a separate audio source to change only the background."
-                        : "Video matching becomes available when a song is playing."}
-                    </p>
-                  )}
-                  {hasSeparateAudioStream && videoTimingStatus && (
-                    <p className="quiet-status" role="status">
-                      {videoTimingStatus}
-                    </p>
-                  )}
-                </SettingGroup>
-                <CorrectionControls
-                  key={"corrections-" + recordingKey}
-                  user={user}
-                  track={localTrack}
-                  delay={{
-                    ...delayFix,
-                    reset: () => {
-                      songMapping.savePart("lyrics", null);
-                      delayFix.reset();
-                    },
-                  }}
-                  lyrics={{
-                    ...lyricsFix,
-                    reset: () => {
-                      songMapping.savePart("lyrics", null);
-                      lyricsFix.reset();
-                    },
-                  }}
-                  video={{
-                    ...videoFix,
-                    reset: () => {
-                      songMapping.savePart("video", null);
-                      videoFix.reset();
-                    },
-                  }}
-                  mappedLyrics={songMapping.lyrics}
-                  mappedVideo={songMapping.video}
-                  canChangeVideo={hasSeparateAudioStream}
-                  currentVideoDelay={videoDelaySeconds}
-                  currentVideoId={stageYoutubeVideoId}
-                  onVideoChange={saveVideoChoice}
-                />
-                {songMapping.error && <p role="status">{songMapping.error}</p>}
-                {privateLyrics.error && (
-                  <p role="status">{privateLyrics.error}</p>
                 )}
                 {localTrack && (
                   <button
@@ -1966,15 +1813,135 @@ export default function App({ user = null }: { user?: User | null }) {
                     className="source-primary save-song-button"
                     onClick={() => {
                       updateLyricDelay(lyricDelay);
-                      if (stageYoutubeVideoId && hasSeparateAudioStream)
+                      const candidateId = activeLyrics.url.match(
+                        /lrclib\.net\/api\/get\/(\d+)/,
+                      )?.[1];
+                      const selection = lyricsFix.correction?.selection || {
+                        engine: effectiveLyricsEngine,
+                        lrclibId:
+                          effectiveLyricsEngine === "lrclib" && candidateId
+                            ? Number(candidateId)
+                            : null,
+                        subtitleTrackId: effectiveSubtitleTrackId || null,
+                      };
+                      lyricsFix.save({ selection });
+                      if (lyricsKey) {
+                        songMapping.savePart("lyrics", {
+                          sourceFile: {
+                            name: activeLyrics.name,
+                            url: activeLyrics.url,
+                            revision: lyricsKey,
+                          },
+                          selection,
+                          delaySeconds: clampLyricDelay(lyricDelay),
+                        });
+                      }
+                      const flushedVideo =
+                        videoCorrectionSaveRef.current?.() ?? false;
+                      if (!flushedVideo && stageYoutubeVideoId) {
                         saveVideoChoice(
                           stageYoutubeVideoId,
                           hasManualVideoDelay ? videoDelaySeconds : null,
                         );
+                      }
                     }}
                   >
                     Save for current song
                   </button>
+                )}
+                <details className="disclosure lyrics-mapping-section">
+                  <summary>Lyrics mapping</summary>
+                  <div
+                    ref={setMappingTarget}
+                    className="mapping-lyrics-controls"
+                  />
+                </details>
+                <details className="disclosure video-mapping-section" open>
+                  <summary>Video mapping</summary>
+                  <CorrectionControls
+                    key={"corrections-" + recordingKey}
+                    saveRef={videoCorrectionSaveRef}
+                    user={user}
+                    track={localTrack}
+                    delay={{
+                      ...delayFix,
+                      reset: () => {
+                        songMapping.savePart("lyrics", null);
+                        delayFix.reset();
+                      },
+                    }}
+                    lyrics={{
+                      ...lyricsFix,
+                      reset: () => {
+                        songMapping.savePart("lyrics", null);
+                        lyricsFix.reset();
+                      },
+                    }}
+                    video={{
+                      ...videoFix,
+                      reset: () => {
+                        songMapping.savePart("video", null);
+                        videoFix.reset();
+                      },
+                    }}
+                    mappedLyrics={songMapping.lyrics}
+                    mappedVideo={songMapping.video}
+                    canChangeVideo={hasSeparateAudioStream}
+                    currentVideoDelay={videoDelaySeconds}
+                    currentVideoId={stageYoutubeVideoId}
+                    sponsorBlockCutSeconds={effectiveSponsorBlockCutSec}
+                    onVideoChange={saveVideoChoice}
+                    changeVideoSlot={
+                      localTrack && hasSeparateAudioStream && !isAdPlaying ? (
+                        <YouTubeBackgroundPicker
+                          key={"video-picker-" + recordingKey}
+                          track={localTrack}
+                          activeVideoId={activeYoutubeVideoId}
+                          preference={preferredVideoType}
+                          cachedCandidates={filteredAutoVideos}
+                          cachedCandidateCount={
+                            autoVideoMatch.key === videoSearchKey
+                              ? autoVideoMatch.candidateCount
+                              : 0
+                          }
+                          automaticSearchPending={
+                            autoVideoMatch.key !== videoSearchKey ||
+                            autoVideoMatch.pending
+                          }
+                          captionStatus={bgCaptionStatus}
+                          onSearchingChange={(searching) =>
+                            setManualVideoSearchKey(
+                              searching ? recordingKey : "",
+                            )
+                          }
+                          onChoose={(id) => {
+                            saveVideoChoice(
+                              id,
+                              id === activeYoutubeVideoId && hasManualVideoDelay
+                                ? videoDelaySeconds
+                                : null,
+                            );
+                            setYoutubeBackgroundMode("video");
+                          }}
+                        />
+                      ) : (
+                        <p className="empty-note">
+                          {localTrack
+                            ? "YouTube is also your audio source. Choose a separate audio source to change only the background."
+                            : "Video matching becomes available when a song is playing."}
+                        </p>
+                      )
+                    }
+                  />
+                  {hasSeparateAudioStream && videoTimingStatus && (
+                    <p className="quiet-status" role="status">
+                      {videoTimingStatus}
+                    </p>
+                  )}
+                </details>
+                {songMapping.error && <p role="status">{songMapping.error}</p>}
+                {privateLyrics.error && (
+                  <p role="status">{privateLyrics.error}</p>
                 )}
                 {lyricStatusMessage && (
                   <details className="disclosure">
@@ -2182,6 +2149,105 @@ export default function App({ user = null }: { user?: User | null }) {
                   key={"editor-" + (recordingKey || fileEpoch)}
                   onLyricContentChange={onLyricContentChange}
                   mappingTarget={mappingTarget}
+                  changeLyricsSlot={
+                    <SettingGroup title="Change lyrics">
+                      <label className="field-row">
+                        Library
+                        <select
+                          aria-label="Lyrics engine"
+                          value={effectiveLyricsEngine}
+                          onChange={(e) =>
+                            selectEngine(e.target.value as LyricEngineOption)
+                          }
+                        >
+                          {LYRIC_ENGINE_OPTIONS.filter(
+                            (o) =>
+                              o.id === effectiveLyricsEngine ||
+                              o.id === "lyricflow" ||
+                              availableLyricEngines.includes(o.id),
+                          ).map((o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {youtubeSubtitleTracks.length > 1 && (
+                        <label className="field-row">
+                          Subtitle track
+                          <select
+                            aria-label="Subtitle track"
+                            value={
+                              effectiveSubtitleTrackId ||
+                              youtubeSubtitleTracks[0]?.id ||
+                              ""
+                            }
+                            onChange={(e) => selectSubtitle(e.target.value)}
+                          >
+                            {youtubeSubtitleTracks.map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {t.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      <div className="mapping-source">
+                        <span>{incoming?.source || "Automatic matching"}</span>
+                        <button
+                          type="button"
+                          className="text-button"
+                          aria-expanded={mappingSearchOpen}
+                          onClick={() => setMappingSearchOpen((v) => !v)}
+                          disabled={!localTrack || isAdPlaying}
+                        >
+                          <Search size={14} />
+                          {mappingSearchOpen
+                            ? "Close search"
+                            : "Search lyrics online"}
+                        </button>
+                      </div>
+                      {!isAdPlaying && (
+                        <TrackFinder
+                          key={"finder-" + fileEpoch}
+                          track={localTrack}
+                          preferredSelection={
+                            lyricsFix.correction?.selection ||
+                            (legacyAutomaticLrc
+                              ? null
+                              : songMapping.lyrics?.selection) ||
+                            null
+                          }
+                          preferredSourceFile={
+                            lyricsFix.source === "personal"
+                              ? null
+                              : songMapping.approved?.lyrics?.sourceFile ||
+                                (effectiveLyricsEngine !== "lyricflow"
+                                  ? songMapping.lyrics?.sourceFile
+                                  : null) ||
+                                null
+                          }
+                          onSelectionChange={selectLyrics}
+                          savedCustomLrc={savedCustomLrc}
+                          customEditOpen={mappingSearchOpen}
+                          lyricEngineOption={effectiveLyricsEngine}
+                          onLyricEngineOptionChange={setLyricEngineOption}
+                          selectedSubtitleTrackId={effectiveSubtitleTrackId}
+                          onSelectSubtitleTrackId={selectSubtitle}
+                          onAvailableLyricEnginesChange={
+                            setAvailableLyricEngines
+                          }
+                          onSubtitleTracksChange={setYoutubeSubtitleTracks}
+                          leadingNonMusicOffsetSec={leadingNonMusicOffsetSec}
+                          onMetadataChange={(value) => {
+                            saveTrackCorrection(value);
+                          }}
+                          onLyricsFound={acceptLyrics}
+                          onStatusChange={setLyricStatusMessage}
+                        />
+                      )}
+                    </SettingGroup>
+                  }
                   time={localTime}
                   trackLoaded={localLoaded}
                   isPlaying={!localLoaded || localPlaying}

@@ -11,6 +11,7 @@ export interface TrackInfo {
   youtubeVideoId?:string;
   videoId?:string;
   videoTitle?:string;
+  channelHint?:string;
   sponsorblockOffsetSec?:number;
   isAd?:boolean;
 }
@@ -136,23 +137,26 @@ export function hasValidLrcTimestamps(text?: string | null): boolean {
  * - For JioSaavn / local tracks in automatic mode: cleans any `@handle` or bracket suffixes on the title while preserving artist/album.
  */
 export function normalizeTrackForLyricsLookup(track: TrackInfo, rawOverride = false): TrackInfo {
+  const channelHint = (track.channelHint ?? track.artist ?? '').trim();
   if (rawOverride) {
     return {
       ...track,
       title: track.title.trim(),
       videoTitle: track.title.trim(),
+      channelHint,
       artist: track.artist.trim(),
-      album: track.album.trim(),
+      album: '',
     };
   }
   const isYt = isYouTubeAudioTrack(track);
-  const rawOriginalTitle = isYt?(track.videoTitle || track.title):track.title;
-  const cleanedTitle = cleanYouTubeTitleForLyrics(rawOriginalTitle, isYt ? track.artist : '');
+  const rawOriginalTitle = isYt ? (track.videoTitle || track.title) : track.title;
+  const cleanedTitle = cleanYouTubeTitleForLyrics(rawOriginalTitle, isYt ? channelHint : '');
   if (isYt) {
     return {
       ...track,
       title: cleanedTitle || track.title.trim(),
       videoTitle: rawOriginalTitle,
+      channelHint,
       artist: '',
       album: '',
     };
@@ -161,8 +165,9 @@ export function normalizeTrackForLyricsLookup(track: TrackInfo, rawOverride = fa
     ...track,
     title: cleanedTitle || stripTags(track.title),
     videoTitle: rawOriginalTitle,
+    channelHint,
     artist: stripTags(track.artist),
-    album: stripTags(track.album),
+    album: '',
   };
 }
 
@@ -214,9 +219,12 @@ export interface SearchRecord {
 }
 export function rankCandidate(track: TrackInfo, candidate: SearchRecord, rawOverride = false): TrackCandidate {
   const isYt = !rawOverride && (isYouTubeAudioTrack(track));
-  const t = normalizeTrack(rawOverride ? track.title : cleanYouTubeTitleForLyrics(track.title));
+  const artistHint = (track.channelHint || track.artist || '').trim();
+  const t = normalizeTrack(rawOverride ? track.title : cleanYouTubeTitleForLyrics(track.title, artistHint));
   const c = normalizeTrack(
-    rawOverride ? candidate.trackName : cleanYouTubeTitleForLyrics(candidate.trackName) || candidate.trackName
+    rawOverride
+      ? candidate.trackName
+      : cleanYouTubeTitleForLyrics(candidate.trackName, candidate.artistName || artistHint) || candidate.trackName
   );
   const a = isYt ? '' : normalizeTrack(track.artist);
   const ca = normalizeTrack(candidate.artistName);
@@ -247,8 +255,8 @@ export function rankCandidate(track: TrackInfo, candidate: SearchRecord, rawOver
     if (a) {
       confidence += a === ca ? 0.16 : ca.includes(a) || a.includes(ca) ? 0.06 : 0;
     } else if (isYt) {
-      // Post-search candidate matching: match candidate artist & album names against the full raw video title
-      const rawContext = normalizeTrack(`${track.videoTitle || track.title}`);
+      // Post-search candidate matching: match candidate artist & album names against the full raw video title + channel
+      const rawContext = normalizeTrack(`${track.videoTitle || track.title} ${artistHint}`);
       const rawCompact = rawContext.replace(/\s+/g, '');
       const rawWords = words(rawContext);
       const artistTokens = [...words(ca)].filter(w => w.length >= 2 && !target.has(w));

@@ -92,7 +92,7 @@ it('ranks recording suitability before views, excludes static audio and requires
   expect(lyricRanked.every(s=>/\blyric(?:s|al)?\b/i.test(s.title))).toBe(true);
 });
 
-it('renders video thumbnails in YouTubeBackgroundPicker custom video finding',async()=>{
+it('renders video thumbnails in YouTubeBackgroundPicker custom video finding and supports Show preloaded videos & Search online',async()=>{
   const providers=await import('../music/providers');
   vi.spyOn(providers,'searchStashCatalog').mockResolvedValue([
     {
@@ -118,11 +118,64 @@ it('renders video thumbnails in YouTubeBackgroundPicker custom video finding',as
       onChoose={vi.fn()}
     />
   ));
-  const findBtn=Array.from(host.querySelectorAll('button')).find(b=>b.textContent?.includes('Find video'))!;
+  const findBtn=Array.from(host.querySelectorAll('button')).find(b=>b.textContent?.includes('Show preloaded videos'))!;
   await act(async()=>findBtn.click());
   const thumb=host.querySelector<HTMLImageElement>('img.candidate-thumb');
   expect(thumb).not.toBeNull();
   expect(thumb?.src).toContain('https://i.ytimg.com/vi/34Na4j8AVgA/hqdefault.jpg');
+
+  const searchOnlineBtn=Array.from(host.querySelectorAll('button')).find(b=>b.textContent?.includes('Search online'))!;
+  expect(host.querySelector('input[aria-label="Custom YouTube video search"]')).toBeNull();
+  await act(async()=>searchOnlineBtn.click());
+  expect(host.querySelector('input[aria-label="Custom YouTube video search"]')).not.toBeNull();
+});
+
+it('pre-fills negative SponsorBlock cut in Video timing box, treats empty input as 0, and calculates Video seen / Voice heard tap delay in both orders',async()=>{
+  const {default:CorrectionControls}=await import('../firebase/CorrectionControls');
+  const track={title:'Song',artist:'Author',album:'Studio',duration:200,source:'manual' as const,confidence:1,provider:'local' as const};
+  const empty={key:'',context:null,correction:null,source:'automatic' as const,save:vi.fn(),reset:vi.fn(),error:''};
+  const choose=vi.fn();
+  await act(async()=>root.render(
+    <CorrectionControls
+      user={null}
+      track={track}
+      delay={empty}
+      lyrics={empty}
+      video={empty}
+      canChangeVideo
+      currentVideoId="abcdefghijk"
+      sponsorBlockCutSeconds={10}
+      onVideoChange={choose}
+    />
+  ));
+  const input=host.querySelector<HTMLInputElement>('input[aria-label="Video delay seconds"]')!;
+  expect(input.value).toBe('-10');
+
+  // Empty value in the box means 0
+  await act(async()=>{
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'');
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+  });
+  expect(choose).toHaveBeenLastCalledWith('abcdefghijk',0);
+
+  // Tap Video seen first, then Voice heard 1.5s later -> +1.5s
+  let nowMs=1000;
+  vi.spyOn(performance,'now').mockImplementation(()=>nowMs);
+  const videoSeenBtn=Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Video seen')!;
+  const voiceHeardBtn=Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Voice heard')!;
+  await act(async()=>videoSeenBtn.click());
+  nowMs=2500;
+  await act(async()=>voiceHeardBtn.click());
+  expect(input.value).toBe('1.5');
+  expect(choose).toHaveBeenLastCalledWith('abcdefghijk',1.5);
+
+  // Tap Voice heard first, then Video seen 0.5s later -> 1.5 - 0.5 = 1
+  nowMs=5000;
+  await act(async()=>voiceHeardBtn.click());
+  nowMs=5500;
+  await act(async()=>videoSeenBtn.click());
+  expect(input.value).toBe('1');
+  expect(choose).toHaveBeenLastCalledWith('abcdefghijk',1);
 });
 
 it('detects Spotify advertisements and pauses lyrics lookup during ads',async()=>{
@@ -282,9 +335,10 @@ it('shows previously loaded video candidates immediately and only searches again
  const {default:Picker}=await import('../music/YouTubeBackgroundPicker');
  const videos=Array.from({length:15},(_,i)=>({id:'yt_'+String(i).padStart(11,'0'),title:'Song Official Music Video',artist:'Artist',album:'',duration:200,provider:'resolver' as const,youtubeVideoId:String(i).padStart(11,'0'),sourceUrl:'https://www.youtube.com/watch?v='+String(i).padStart(11,'0')}));
  await act(async()=>root.render(<Picker track={{title:'Song',artist:'Artist',album:'',duration:200,source:'provider',confidence:1}} activeVideoId="abcdefghijk" preference="music" onPreferenceChange={()=>{}} onChoose={()=>{}} cachedCandidates={videos} cachedCandidateCount={35}/>));
- await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='Change video')!.click());
+ await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent?.includes('Show preloaded videos'))!.click());
  expect(host.querySelectorAll('.video-candidate')).toHaveLength(15);
  expect(search).not.toHaveBeenCalled();
+ await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent?.includes('Search online'))!.click());
  const input=host.querySelector<HTMLInputElement>('input[aria-label="Custom YouTube video search"]')!;
  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'A different video query');input.dispatchEvent(new Event('input',{bubbles:true}));});
  await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));

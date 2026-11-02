@@ -47,6 +47,8 @@ export interface IncomingLyrics {
   source: string;
   sourceUrl?: string;
   hasWordSync?: boolean;
+  title?: string;
+  artist?: string;
   token: number;
 }
 
@@ -332,8 +334,10 @@ export default function ManualLyrics({
   enabledRomanizationLanguages: controlledRomanLangs,
   onEnabledRomanizationLanguagesChange,
   mappingTarget,
+  changeLyricsSlot,
 }: {
   mappingTarget?: HTMLElement | null;
+  changeLyricsSlot?: React.ReactNode;
   time: number;
   trackLoaded: boolean;
   isPlaying?: boolean;
@@ -398,6 +402,10 @@ export default function ManualLyrics({
     RomanizationLanguageCode[]
   >(() => getEnabledRomanizationLanguages());
   const [delayDraft, setDelayDraft] = useState(() => String(delay));
+  const [lyricTapAnchor, setLyricTapAnchor] = useState<{
+    kind: "text" | "voice";
+    timestampMs: number;
+  } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -405,11 +413,13 @@ export default function ManualLyrics({
       const normalized = prev.trim().replace(/−/g, "-");
       if (
         normalized === "-" ||
+        normalized === "+" ||
         normalized === "-." ||
-        normalized === "-0." ||
-        normalized === ""
+        normalized === "+." ||
+        normalized === "-0."
       )
         return prev;
+      if (normalized === "" && delay === 0) return prev;
       const parsed = Number(normalized);
       if (Number.isFinite(parsed) && Math.abs(parsed - delay) < 0.001)
         return prev;
@@ -897,89 +907,135 @@ export default function ManualLyrics({
     return null;
   }, [lines, idx, candidate, next, candidateEnd, lyricTime, isPausedSession]);
 
+  const handleLyricTap = (kind: "text" | "voice") => {
+    const now = performance.now();
+    if (lyricTapAnchor && lyricTapAnchor.kind !== kind) {
+      const delta =
+        Math.round(Math.max(0, (now - lyricTapAnchor.timestampMs) / 1000) * 100) /
+        100;
+      // Text seen first -> Voice heard second: lyrics appeared before voice, so add +delta delay.
+      // Voice heard first -> Text seen second: voice was heard before lyrics, so subtract delta delay.
+      const signedDelta = lyricTapAnchor.kind === "text" ? delta : -delta;
+      const next = clampLyricDelay(delay + signedDelta);
+      setDelayDraft(String(next));
+      onDelayChange(next);
+      setLyricTapAnchor(null);
+      setMessage(
+        `Applied ${signedDelta >= 0 ? "+" : ""}${signedDelta.toFixed(2)}s lyrics delay.`,
+      );
+      return;
+    }
+    setLyricTapAnchor({ kind, timestampMs: now });
+    setMessage(
+      kind === "text"
+        ? "Text seen recorded — tap Voice heard when the song is sung."
+        : "Voice heard recorded — tap Text seen when the lyrics appear.",
+    );
+  };
+
   const mappingControls = (
     <div className="song-lyrics-mapping">
-      <h3>Lyrics timing</h3>
-      <label>
-        Song delay (sec)
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <button
-            type="button"
-            className="upload-button"
-            aria-label="Decrease lyric delay 0.25s"
-            style={{ padding: "6px 8px", minHeight: 34 }}
-            onClick={() => {
-              const next = clampLyricDelay(delay - 0.25);
-              setDelayDraft(String(next));
-              onDelayChange(next);
-            }}
-          >
-            −0.25
-          </button>
-          <button
-            type="button"
-            className="upload-button"
-            aria-label="Flip lyric delay sign"
-            title="Toggle negative / positive (− / +)"
-            style={{ padding: "6px 8px", minHeight: 34 }}
-            onClick={() => {
-              if (delay === 0) {
-                setDelayDraft("-");
-              } else {
-                const flipped = clampLyricDelay(-delay);
-                setDelayDraft(String(flipped));
-                onDelayChange(flipped);
-              }
-            }}
-          >
-            ±
-          </button>
-          <input
-            aria-label="Lyrics delay seconds"
-            type="text"
-            inputMode="decimal"
-            placeholder="-1.50"
-            value={delayDraft}
-            onChange={(e) => {
-              const val = e.target.value.replace(/−/g, "-");
-              if (!/^-?\d*\.?\d*$/.test(val)) return;
-              setDelayDraft(val);
-              if (val !== "" && val !== "-" && val !== "-." && val !== ".") {
-                const num = Number(val);
-                if (Number.isFinite(num)) onDelayChange(clampLyricDelay(num));
-              }
-            }}
-            onBlur={() => {
-              const normalized = delayDraft.trim().replace(/−/g, "-");
-              const num = Number(normalized);
-              if (!normalized || normalized === "-" || !Number.isFinite(num)) {
-                setDelayDraft(String(delay));
-              } else {
-                const clamped = clampLyricDelay(num);
-                setDelayDraft(String(clamped));
-                onDelayChange(clamped);
-              }
-            }}
-            style={{ width: 76, textAlign: "center" }}
-          />
-          <button
-            type="button"
-            className="upload-button"
-            aria-label="Increase lyric delay 0.25s"
-            style={{ padding: "6px 8px", minHeight: 34 }}
-            onClick={() => {
-              const next = clampLyricDelay(delay + 0.25);
-              setDelayDraft(String(next));
-              onDelayChange(next);
-            }}
-          >
-            +0.25
-          </button>
-        </div>
-      </label>
-      <p className="quiet-status">
-        Positive delays lyrics; negative advances them.
-      </p>
+      <h3>Lyrics timing fix</h3>
+      <div
+        className="delay-controls-row"
+        style={{ display: "flex", alignItems: "center", gap: 6 }}
+      >
+        <button
+          type="button"
+          className="upload-button"
+          aria-label="Decrease lyric delay 0.5s"
+          style={{ padding: "6px 10px", minHeight: 34 }}
+          onClick={() => {
+            const next = clampLyricDelay(delay - 0.5);
+            setDelayDraft(String(next));
+            onDelayChange(next);
+          }}
+        >
+          -0.5s
+        </button>
+        <input
+          aria-label="Lyrics delay seconds"
+          type="text"
+          inputMode="text"
+          placeholder="0"
+          value={delayDraft}
+          onChange={(e) => {
+            const val = e.target.value.replace(/−/g, "-");
+            if (!/^[+-]?\d*\.?\d*$/.test(val)) return;
+            setDelayDraft(val);
+            if (val.trim() === "") {
+              onDelayChange(0);
+              return;
+            }
+            if (
+              val !== "-" &&
+              val !== "+" &&
+              val !== "-." &&
+              val !== "+." &&
+              val !== "."
+            ) {
+              const num = Number(val);
+              if (Number.isFinite(num)) onDelayChange(clampLyricDelay(num));
+            }
+          }}
+          onBlur={() => {
+            const normalized = delayDraft.trim().replace(/−/g, "-");
+            if (normalized === "") {
+              setDelayDraft("0");
+              onDelayChange(0);
+              return;
+            }
+            const num = Number(normalized);
+            if (
+              normalized === "-" ||
+              normalized === "+" ||
+              !Number.isFinite(num)
+            ) {
+              setDelayDraft(String(delay));
+            } else {
+              const clamped = clampLyricDelay(num);
+              setDelayDraft(String(clamped));
+              onDelayChange(clamped);
+            }
+          }}
+          style={{ width: 88, textAlign: "center" }}
+        />
+        <button
+          type="button"
+          className="upload-button"
+          aria-label="Increase lyric delay 0.5s"
+          style={{ padding: "6px 10px", minHeight: 34 }}
+          onClick={() => {
+            const next = clampLyricDelay(delay + 0.5);
+            setDelayDraft(String(next));
+            onDelayChange(next);
+          }}
+        >
+          +0.5s
+        </button>
+      </div>
+      <div
+        className="tap-sync-buttons"
+        style={{ display: "flex", gap: 8, marginTop: 8 }}
+      >
+        <button
+          type="button"
+          className="upload-button"
+          aria-pressed={lyricTapAnchor?.kind === "text"}
+          onClick={() => handleLyricTap("text")}
+        >
+          Text seen
+        </button>
+        <button
+          type="button"
+          className="upload-button"
+          aria-pressed={lyricTapAnchor?.kind === "voice"}
+          onClick={() => handleLyricTap("voice")}
+        >
+          Voice heard
+        </button>
+      </div>
+      {changeLyricsSlot}
       <button
         type="button"
         className="text-button"

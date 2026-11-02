@@ -68,26 +68,35 @@ export default function TrackFinder({
     sourceUrl?: string;
     plain?: string;
     hasWordSync?: boolean;
+    title?: string;
+    artist?: string;
   }) => void;
   onStatusChange?: (status: string) => void;
 }) {
+  const getAutoSearchedFields = (t: TrackInfo | null) => {
+    if (!t) return { title: "", artist: "", isYt: false };
+    const isYt = isYouTubeAudioTrack(t);
+    const autoNorm = normalizeTrackForLyricsLookup(t, false);
+    const searchedTitle = isYt
+      ? cleanYouTubeTitleForLyrics(t.videoTitle || t.title, t.artist) || t.title
+      : autoNorm.title || t.title;
+    const searchedArtist = autoNorm.artist || t.artist || "";
+    return { title: searchedTitle, artist: searchedArtist, isYt };
+  };
+  const initialAuto = getAutoSearchedFields(track);
   const [candidates, setCandidates] = useState<TrackCandidate[]>([]);
   const [, setAvailableEngines] = useState<LyricEngineOption[]>([]);
   const [, setSubtitleTracks] = useState<YouTubeSubtitleTrackItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [manualTitle, setManualTitle] = useState(() => track?.title || "");
-  const [manualArtist, setManualArtist] = useState(() => track?.artist || "");
+  const [manualTitle, setManualTitle] = useState(() => initialAuto.title);
+  const [manualArtist, setManualArtist] = useState(() => initialAuto.artist);
   const [overrideBracketFilter, setOverrideBracketFilter] = useState(true);
   const [autoSearchedSummary, setAutoSearchedSummary] = useState<{
     title: string;
     artist: string;
     isYt: boolean;
-  }>({
-    title: "",
-    artist: "",
-    isYt: false,
-  });
+  }>(initialAuto);
 
   const latestLyrics = useRef(onLyricsFound);
   latestLyrics.current = onLyricsFound;
@@ -133,23 +142,10 @@ export default function TrackFinder({
   // Pre-fill the manual search box with what was searched automatically before whenever a new automatic song loads
   useEffect(() => {
     if (!track || track.source === "manual") return;
-    const isYt = isYouTubeAudioTrack(track);
-    const autoNorm = normalizeTrackForLyricsLookup(track, false);
-    const searchedTitle = isYt
-      ? cleanYouTubeTitleForLyrics(
-          track.videoTitle || track.title,
-          track.artist,
-        )
-      : autoNorm.title || track.title;
-    const searchedArtist = isYt ? "" : autoNorm.artist || track.artist;
-
-    setAutoSearchedSummary({
-      title: searchedTitle,
-      artist: searchedArtist,
-      isYt,
-    });
-    setManualTitle(searchedTitle || track.title);
-    setManualArtist(track.artist || "");
+    const fields = getAutoSearchedFields(track);
+    setAutoSearchedSummary(fields);
+    setManualTitle(fields.title || track.title);
+    setManualArtist(fields.artist || track.artist || "");
   }, [autoTrackKey]);
 
   // Automatic lyrics lookup across the 4 selectable Lyrics Engine options
@@ -177,6 +173,8 @@ export default function TrackFinder({
         romanized: "",
         source: "Saved Custom Override",
         hasWordSync: hasTimed && savedCustomLrc.includes("<"),
+        title: track.title,
+        artist: track.artist,
       });
       updateStatus("Loaded your saved custom lyrics for this track.");
       return;
@@ -195,6 +193,8 @@ export default function TrackFinder({
         romanized: saved[0].romanized,
         source: "Saved Library",
         hasWordSync: hasTimed && saved[0].original.includes("<"),
+        title: saved[0].title || track.title,
+        artist: saved[0].artist || track.artist,
       });
       updateStatus("Synchronized from your saved lyrics library.");
       return;
@@ -207,10 +207,11 @@ export default function TrackFinder({
     const engineLabel =
       LYRIC_ENGINE_OPTIONS.find((o) => o.id === lyricEngineOption)?.label ||
       "LyricFlow Engine";
-    const cleanedYtTitle = track.videoId
+    const isYtTrack = isYouTubeAudioTrack(track);
+    const cleanedYtTitle = isYtTrack
       ? cleanYouTubeTitleForLyrics(
           track.videoTitle || track.title,
-          track.artist,
+          track.channelHint || track.artist,
         )
       : track.title;
 
@@ -254,6 +255,8 @@ export default function TrackFinder({
           source: resolved.source,
           sourceUrl: resolved.sourceUrl,
           hasWordSync: hasTimedLines && resolved.hasWordSync,
+          title: resolved.title || cleanedYtTitle || track.title,
+          artist: resolved.artist || track.artist,
         };
         const signature = JSON.stringify(payload);
         if (signature === appliedSignature || signature === pendingSignature)
@@ -285,14 +288,14 @@ export default function TrackFinder({
         latestAvailableEngines.current?.([]);
         latestSubtitleTracks.current?.([]);
         updateStatus(
-          `No automatic lyrics found via ${engineLabel}. Click "Custom Edit / Change Lyrics" to paste or choose lyrics.`,
+          `No automatic lyrics found via ${engineLabel}. Click "Search lyrics online" or "Edit or import lyrics" to choose lyrics.`,
         );
       }
     };
 
     const timer = setTimeout(() => {
       updateStatus(
-        track.videoId
+        isYtTrack
           ? `[${engineLabel}] Searching lyrics for "${cleanedYtTitle}" (artist/album skipped for YouTube)…`
           : `[${engineLabel}] Searching synced lyrics for "${track.title}"…`,
       );
@@ -304,7 +307,7 @@ export default function TrackFinder({
               id: selectedId,
               title: track.title,
               artist: track.artist,
-              album: track.album,
+              album: "",
               duration: track.duration,
               instrumental: false,
               hasSynced: true,
@@ -324,6 +327,8 @@ export default function TrackFinder({
             plain: lyric.plain,
             source: lyric.source,
             sourceUrl: lyric.sourceUrl,
+            title: lyric.title || cleanedYtTitle || track.title,
+            artist: lyric.artist || track.artist,
             hasWordSync: Boolean(lyric.synced && lyric.synced.includes("<")),
             candidates: [],
             availableEngines: ["lrclib" as LyricEngineOption],
@@ -383,6 +388,7 @@ export default function TrackFinder({
       title: manualTitle.trim(),
       videoTitle: manualTitle.trim(),
       artist: manualArtist.trim(),
+      album: "",
       source: "manual",
       confidence: 1,
     };
@@ -429,6 +435,8 @@ export default function TrackFinder({
           source: appleDirect.source,
           sourceUrl: appleDirect.sourceUrl,
           hasWordSync: hasTimed && appleDirect.hasWordSync,
+          title: appleDirect.title || appleCands[0]?.title || searchTrack.title,
+          artist: appleDirect.artist || appleCands[0]?.artist || searchTrack.artist,
         });
         updateStatus(
           `Loaded ${appleDirect.source} (${hasTimed ? (appleDirect.hasWordSync ? "Word timestamps" : "Line timestamps") : "Plain lyrics"}). ${combinedCandidates.length} Apple Library & LRCLIB candidate(s) listed below.`,
@@ -443,9 +451,29 @@ export default function TrackFinder({
             : "Apple Library · Synced",
           sourceUrl: topApple.url,
           hasWordSync: Boolean(topApple.hasWordSync),
+          title: topApple.title || searchTrack.title,
+          artist: topApple.artist || searchTrack.artist,
         });
         updateStatus(
           `Loaded Apple Library lyrics for "${topApple.title}". ${combinedCandidates.length} candidate(s) listed below.`,
+        );
+      } else if (lrcCands.length > 0 && (lrcCands[0].syncedLyrics || lrcCands[0].plainLyrics)) {
+        const topLrc = lrcCands[0];
+        const hasTimed = hasValidLrcTimestamps(topLrc.syncedLyrics);
+        onLyricsFound({
+          original: hasTimed && topLrc.syncedLyrics ? topLrc.syncedLyrics : "",
+          plain:
+            topLrc.plainLyrics ||
+            (!hasTimed && topLrc.syncedLyrics ? topLrc.syncedLyrics : undefined),
+          romanized: "",
+          source: topLrc.hasWordSync ? "LRCLIB · Word-Synced" : "LRCLIB · Synced",
+          sourceUrl: topLrc.url,
+          hasWordSync: Boolean(hasTimed && topLrc.hasWordSync),
+          title: topLrc.title || searchTrack.title,
+          artist: topLrc.artist || searchTrack.artist,
+        });
+        updateStatus(
+          `Loaded LRCLIB lyrics for "${topLrc.title}". ${combinedCandidates.length} candidate(s) listed below.`,
         );
       } else {
         updateStatus(
@@ -485,6 +513,8 @@ export default function TrackFinder({
         source: lyric.source,
         sourceUrl: lyric.sourceUrl,
         hasWordSync: hasTimed && lyric.synced.includes("<"),
+        title: lyric.title || c.title,
+        artist: lyric.artist || c.artist,
       });
       onSelectionChange?.({
         engine: c.provider === "apple" ? "apple" : "lrclib",
@@ -515,7 +545,7 @@ export default function TrackFinder({
         <div className="heading-left">
           <span className="heading-icon">⌕</span>
           <div>
-            <b>Search lyrics</b>
+            <b>Search lyrics online</b>
           </div>
         </div>
       </div>
@@ -528,12 +558,14 @@ export default function TrackFinder({
         <>
           <div className="track-form">
             <label>
-              Song title
+              Title
               <input
+                aria-label="Title"
                 type="text"
                 inputMode="text"
                 autoComplete="off"
                 value={manualTitle}
+                placeholder="Enter song title"
                 onKeyDown={(e) => {
                   e.stopPropagation();
                   if (e.key === "Enter") void search();
@@ -542,13 +574,14 @@ export default function TrackFinder({
               />
             </label>
             <label>
-              Artist
+              Artist name
               <input
+                aria-label="Artist name"
                 type="text"
                 inputMode="text"
                 autoComplete="off"
                 value={manualArtist}
-                placeholder="Enter artist"
+                placeholder="Enter artist name"
                 onKeyDown={(e) => {
                   e.stopPropagation();
                   if (e.key === "Enter") void search();
@@ -557,7 +590,9 @@ export default function TrackFinder({
               />
             </label>
           </div>
-          <p className="player-footnote">Searches use song title and artist.</p>
+          <p className="player-footnote">
+            Searches use song title and artist name (album names are excluded).
+          </p>
           <div
             style={{
               margin: "6px 0 10px",
@@ -594,11 +629,12 @@ export default function TrackFinder({
                 : ""}
             </span>
             <button
+              type="button"
               className="upload-button"
               disabled={busy || !canSearch}
               onClick={() => void search()}
             >
-              {busy ? "Searching…" : "Re-fetch Apple Music / LRCLIB Lyrics"}
+              {busy ? "Searching…" : "Search"}
             </button>
           </div>
           {matches.length > 0 && (

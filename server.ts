@@ -52,6 +52,8 @@ export interface ServerLyricsResponse {
   plain?: string;
   source: string;
   sourceUrl?: string;
+  title?: string;
+  artist?: string;
   hasWordSync: boolean;
   subtitleTracks?: Array<{
     id: string;
@@ -1469,7 +1471,15 @@ function cleanServerYouTubeTitle(rawTitle: string, channelHint = ''): string {
     ) {
       return candidateLeft;
     }
-    if (/^(?:track\s*\d+|song|video|audio|ost|bgm|official)$/i.test(candidateLeft) && candidateRight.length >= 2) {
+    if (
+      /^(?:from\b|live\b|acoustic\b|remaster(?:ed)?\b|remix\b|radio\s+edit\b|edit\b|version\b|mix\b|ost\b|soundtrack\b|instrumental\b|karaoke\b|demo\b|unplugged\b|single\b|deluxe\b|bonus\b|mono\b|stereo\b|part\s+\d|pt\.?\s*\d|vol\.?\s*\d|\d{4}\b)/i.test(
+        candidateRight
+      ) &&
+      candidateLeft.length >= 2
+    ) {
+      return candidateLeft;
+    }
+    if (candidateRight.length >= 2) {
       return candidateRight;
     }
     return candidateLeft;
@@ -1531,10 +1541,13 @@ function scoreServerCandidateAgainstContext(
   }
 ): number {
   const cleanTarget = normalizeServerText(ctx.cleanTitle);
+  const candArtistHint = cand.artist || ctx.rawArtist || '';
   const cleanCandTitle = normalizeServerText(
-    ctx.rawOverride ? cand.title : cleanServerYouTubeTitle(cand.title) || cand.title
+    ctx.rawOverride ? cand.title : cleanServerYouTubeTitle(cand.title, candArtistHint) || cand.title
   );
-  const strippedCandTitle = normalizeServerText(cleanServerYouTubeTitle(cand.title) || cand.title);
+  const strippedCandTitle = normalizeServerText(
+    cleanServerYouTubeTitle(cand.title, candArtistHint) || cand.title
+  );
   const rawCandTitle = normalizeServerText(cand.title);
   if (!cleanTarget || (!cleanCandTitle && !rawCandTitle)) return -1;
 
@@ -1666,7 +1679,7 @@ async function fetchIsrcWordSyncedTtml(
   rawArtist = '',
   rawOverride = false
 ): Promise<ServerLyricsResponse | null> {
-  const isrcCandidates: string[] = [];
+  const isrcCandidates: Array<{ isrc: string; title: string; artist: string }> = [];
   const effectiveArtist = isYouTube && !rawOverride ? '' : artist;
   const matchCtx = {
     cleanTitle: title,
@@ -1697,7 +1710,7 @@ async function fetchIsrcWordSyncedTtml(
       const scored = results
         .map(item => {
           const isrc = String(item.isrc || '').trim().toUpperCase();
-          if (isrc.length !== 12) return { isrc: '', score: -1 };
+          if (isrc.length !== 12) return { isrc: '', title: '', artist: '', score: -1 };
           const rawDur = Number(item.duration || 0);
           const itemDurSec = rawDur > 1500 ? rawDur / 1000 : rawDur;
           const itemTitle = String(item.title || item.name || item.track || title);
@@ -1714,14 +1727,14 @@ async function fetchIsrcWordSyncedTtml(
             },
             matchCtx
           );
-          return { isrc, score };
+          return { isrc, title: itemTitle, artist: itemArtist, score };
         })
         .filter(entry => entry.score >= 45 && entry.isrc.length === 12)
         .sort((a, b) => b.score - a.score);
 
       for (const entry of scored) {
-        if (!isrcCandidates.includes(entry.isrc)) {
-          isrcCandidates.push(entry.isrc);
+        if (!isrcCandidates.some(c => c.isrc === entry.isrc)) {
+          isrcCandidates.push({ isrc: entry.isrc, title: entry.title, artist: entry.artist });
         }
       }
     }
@@ -1772,16 +1785,16 @@ async function fetchIsrcWordSyncedTtml(
               { title: recTitle, artist: recArtist, album: recAlbum, duration: recDurSec },
               matchCtx
             );
-            return { rec, score };
+            return { rec, recTitle, recArtist, score };
           })
           .filter(x => x.score >= 45)
           .sort((a, b) => b.score - a.score);
 
-        for (const { rec } of scoredRecs) {
+        for (const { rec, recTitle, recArtist } of scoredRecs) {
           for (const rawIsrc of rec.isrcs || []) {
             const cleanIsrc = String(rawIsrc || '').trim().toUpperCase();
-            if (cleanIsrc.length === 12 && !isrcCandidates.includes(cleanIsrc)) {
-              isrcCandidates.push(cleanIsrc);
+            if (cleanIsrc.length === 12 && !isrcCandidates.some(c => c.isrc === cleanIsrc)) {
+              isrcCandidates.push({ isrc: cleanIsrc, title: recTitle || title, artist: recArtist || artist });
             }
           }
         }
@@ -1792,12 +1805,12 @@ async function fetchIsrcWordSyncedTtml(
   }
 
   // Step 3: Fetch TTML XML from lrc.red and Binimum (Stash IsrcTtmlLyricsSource.kt)
-  for (const isrc of isrcCandidates.slice(0, 4)) {
+  for (const cand of isrcCandidates.slice(0, 4)) {
     const ttmlProviders = [
-      { name: 'Apple Music · Word-Synced TTML (lrc.red)', url: `https://lrc.red/s/${isrc}.ttml` },
+      { name: 'Apple Music · Word-Synced TTML (lrc.red)', url: `https://lrc.red/s/${cand.isrc}.ttml` },
       {
         name: 'Apple Music · Word-Synced TTML (Binimum)',
-        url: `https://lyrics-storage.binimum.org/${isrc}.ttml`,
+        url: `https://lyrics-storage.binimum.org/${cand.isrc}.ttml`,
       },
     ];
     for (const provider of ttmlProviders) {
@@ -1813,6 +1826,8 @@ async function fetchIsrcWordSyncedTtml(
             ttml: xml,
             source: provider.name,
             sourceUrl: provider.url,
+            title: cand.title || title,
+            artist: cand.artist || undefined,
             hasWordSync: true,
           };
         }
@@ -1837,6 +1852,8 @@ async function fetchItunesPaxsenixLyrics(
 ): Promise<{ appleTrackViewUrl?: string; lyrics?: ServerLyricsResponse }> {
   let songId = '';
   let trackViewUrl = '';
+  let matchedTitle = title;
+  let matchedArtist = artist;
   const effectiveArtist = isYouTube && !rawOverride ? '' : artist;
   const matchCtx = {
     cleanTitle: title,
@@ -1882,6 +1899,8 @@ async function fetchItunesPaxsenixLyrics(
       if (best) {
         songId = String(best.trackId || '').trim();
         trackViewUrl = String(best.trackViewUrl || '').trim();
+        matchedTitle = String(best.trackName || title).trim();
+        matchedArtist = String(best.artistName || artist).trim();
       }
     }
   } catch {
@@ -1917,6 +1936,8 @@ async function fetchItunesPaxsenixLyrics(
             ttml: body,
             source: 'Apple Music · Word-Synced TTML (Paxsenix)',
             sourceUrl: trackViewUrl || undefined,
+            title: matchedTitle,
+            artist: matchedArtist || undefined,
             hasWordSync: body.includes('<span'),
           },
         };
@@ -1931,6 +1952,8 @@ async function fetchItunesPaxsenixLyrics(
               ttml: embeddedTtml,
               source: 'Apple Music · Word-Synced TTML (Paxsenix)',
               sourceUrl: trackViewUrl || undefined,
+              title: matchedTitle,
+              artist: matchedArtist || undefined,
               hasWordSync: embeddedTtml.includes('<span'),
             },
           };
@@ -1988,6 +2011,8 @@ async function fetchLrclibServerLyrics(
             lrc: synced,
             source: synced.includes('<') ? 'LRCLIB · Word-Synced' : 'LRCLIB · Synced Recording',
             sourceUrl: item.id ? `https://lrclib.net/api/get/${String(item.id)}` : undefined,
+            title: String(item.trackName || title).trim(),
+            artist: String(item.artistName || effectiveArtist).trim() || undefined,
             hasWordSync: synced.includes('<'),
           };
         }
@@ -2034,6 +2059,8 @@ async function fetchLrclibServerLyrics(
             lrc: synced,
             source: synced.includes('<') ? 'LRCLIB · Word-Synced' : 'LRCLIB · Synced',
             sourceUrl: best.id ? `https://lrclib.net/api/get/${String(best.id)}` : undefined,
+            title: String(best.trackName || title).trim(),
+            artist: String(best.artistName || effectiveArtist).trim() || undefined,
             hasWordSync: synced.includes('<'),
           };
         }

@@ -130,6 +130,55 @@ describe('YouTube metadata cleaning & 4-Engine LyricFlow Engine', () => {
     expect(nonMatchingTitle.confidence).toBe(0);
   });
 
+  it('extracts That’s So True across repeated normalizeTrackForLyricsLookup calls and rejects Gracie Abrams - 21', () => {
+    const rawTrack = {
+      title: 'Gracie Abrams - That’s So True (Apple Music Live 2025)',
+      artist: 'Gracie Abrams',
+      album: 'The Secret of Us',
+      duration: 166,
+      source: 'provider' as const,
+      confidence: 1,
+      youtubeVideoId: 'gracie12345',
+    };
+    const once = normalizeTrackForLyricsLookup(rawTrack);
+    const twice = normalizeTrackForLyricsLookup(once);
+    expect(once.title).toBe('That’s So True');
+    expect(twice.title).toBe('That’s So True');
+    expect(twice.channelHint).toBe('Gracie Abrams');
+
+    const wrongSong21 = rankCandidate(twice, {
+      id: 201,
+      trackName: 'Gracie Abrams - 21',
+      artistName: 'Gracie Abrams',
+      albumName: 'minor',
+      duration: 165,
+      instrumental: false,
+      syncedLyrics: '[00:10.00]I missed your twenty-first birthday',
+    });
+    const wrongSong21Acoustic = rankCandidate(twice, {
+      id: 202,
+      trackName: '21 (acoustic)',
+      artistName: 'Gracie Abrams',
+      albumName: 'minor',
+      duration: 166,
+      instrumental: false,
+      syncedLyrics: '[00:10.00]I missed your twenty-first birthday',
+    });
+    const rightSong = rankCandidate(twice, {
+      id: 203,
+      trackName: "That's So True",
+      artistName: 'Gracie Abrams',
+      albumName: 'The Secret of Us (Deluxe)',
+      duration: 166,
+      instrumental: false,
+      syncedLyrics: '[00:10.00]I could go and read your mind',
+    });
+
+    expect(wrongSong21.confidence).toBe(0);
+    expect(wrongSong21Acoustic.confidence).toBe(0);
+    expect(rightSong.confidence).toBeGreaterThanOrEqual(0.75);
+  });
+
   it('supports simultaneous dual-singer cues on two sides and holds both sides until the second singer finishes', () => {
     const ttml = [
       '<tt xmlns:ttm="http://www.w3.org/ns/ttml#metadata">',
