@@ -4,6 +4,7 @@ import {TEMPLATES,AUDIO_ONLY_SCENES,VOXELWALL_CATEGORIES,byId} from '../visualiz
 import {VOXELVERSE_STYLES,VOXELVERSE_FAMILIES,LYRIC_MOTIONS} from '../visualization/cinematic/kineticTypography';
 
 const DELETED_SCENES=[
+ 'gilded-whirlpool','chroma-moire-voids','signal-chamber',
  'crimson-impact','vinyl-groove','concrete-manifesto','rain-on-glass','neon-velocity',
  'ink-rebellion','ocean-reverie','analog-breakdown','cloud-cathedral','stellar-expansion',
  'fragmented-thoughts','quiet-pages','monochrome-memory','monument-titles','midnight-confession',
@@ -21,13 +22,13 @@ describe('VoxelWall 2D scene & VoxelVerse lyric style registries',()=>{
    expect(activeIds.has(removed)).toBe(false);
   }
  });
- it('covers all 7 VoxelWall categories (Flow, Contours, Sculptures, Space, Nature, Architecture, Journeys) with 23 distinct designs',()=>{
+ it('covers all 7 VoxelWall categories (Flow, Contours, Sculptures, Space, Nature, Architecture, Journeys) with 24 distinct designs',()=>{
   const categories=VOXELWALL_CATEGORIES.map(c=>c.id);
   expect(categories).toEqual(['flow','contours','sculptures','space','nature','architecture','journeys']);
   for(const cat of categories){
    expect(TEMPLATES.filter(t=>t.family===cat).length).toBeGreaterThanOrEqual(3);
   }
-  expect(MOTION_SCENES).toHaveLength(21);
+  expect(MOTION_SCENES).toHaveLength(23);
  });
  it('provides all 25 lyric animation styles across 4 families',()=>{
   expect(LYRIC_MOTIONS).toHaveLength(25);
@@ -38,3 +39,4 @@ describe('VoxelWall 2D scene & VoxelVerse lyric style registries',()=>{
   }
  });
 });
+

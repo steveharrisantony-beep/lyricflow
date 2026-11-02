@@ -5,14 +5,13 @@ import {getAudioFrequencyBands,getAudioSensitivity,setAudioSensitivity} from '..
 import {GraphicCompositions} from '../visualization/cinematic/procedural/GraphicCompositions';
 
 describe('visual architecture',()=>{
- it('exposes three distinct 2D render systems with zero 3D WebGL themes',()=>{
-  expect(visualSystemFor('signal-chamber')).toBe('spectrum');
+ it('routes the active scenes without the retired spectrum theme',()=>{
   expect(visualSystemFor('color-riot')).toBe('geometry');
   expect(visualSystemFor('holographic-tide')).toBe('motion2d');
  });
- it('routes all other 21 VoxelWall scene IDs through the 2D motion engine',()=>{
-  const remaining=TEMPLATES.filter(t=>!['signal-chamber','color-riot'].includes(t.id));
-  expect(remaining).toHaveLength(21);
+ it('routes all other 23 VoxelWall scene IDs through the 2D motion engine',()=>{
+  const remaining=TEMPLATES.filter(t=>t.id!=='color-riot');
+  expect(remaining).toHaveLength(23);
   expect(remaining.every(t=>visualSystemFor(t.id)==='motion2d')).toBe(true);
  });
  it('provides a non-allocating stable 64-band analyzer interface',()=>{

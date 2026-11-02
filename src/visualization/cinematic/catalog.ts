@@ -11,19 +11,17 @@ export type VoxelWallCategory =
  | 'journeys';
 
 /**
- * 23 genuinely distinct VoxelWall 2D music-reactive themes across 7 categories.
+ * 24 distinct VoxelWall 2D music-reactive themes across 7 categories.
  * Duplicate color-swap clones have been consolidated into multi-palette options on each unique theme.
  */
 export type SceneId =
- // Flow (3 unique designs)
+ // Flow
  | 'holographic-tide'
- | 'gilded-whirlpool'
  | 'ribbon-dance'
- // Contours (3 unique designs)
- | 'chroma-moire-voids'
+ // Contours
  | 'cobalt-contours'
  | 'contour-flow'
- // Sculptures (3 unique designs)
+ // Sculptures
  | 'crystal-resonance'
  | 'tidal-bloom'
  | 'paper-cut'
@@ -32,19 +30,22 @@ export type SceneId =
  | 'orbital-halo'
  | 'infinite-tunnel'
  | 'star-map'
- // Nature (3 unique designs)
+ // Nature
  | 'aurora-field'
  | 'glow-lagoon'
  | 'pixel-garden'
- // Architecture (4 unique designs)
- | 'signal-chamber'
+ // Architecture
  | 'neon-metal-matrix'
  | 'bauhaus-beat'
  | 'halftone-club'
  // Journeys (3 unique designs)
  | 'chromatic-drive'
  | 'origami-flight'
- | 'color-riot';
+ | 'color-riot'
+ | 'fluid-ink'
+ | 'spectral-terrain'
+ | 'resonance-plate'
+ | 'mycelium-network';
 
 export type Layout='hero'|'editorial'|'left'|'stack'|'poster'|'scattered';
 export type Transition='flash'|'wipe'|'dissolve'|'glitch'|'ripple'|'ink'|'zoom';
@@ -59,6 +60,8 @@ export interface ThemePalette {
  background:string;
  foreground:string;
  accent:string;
+ /** Surface colours for multicolour geometry; lyric ink stays in foreground. */
+ colors?:readonly string[];
 }
 
 export interface Template {
@@ -79,17 +82,17 @@ export interface Template {
 }
 
 export const VOXELWALL_CATEGORIES:readonly {id:VoxelWallCategory;label:string;description:string}[]=[
- {id:'flow',label:'Flow',description:'Harmonic fluid currents, logarithmic whirlpools, and Lissajous silk looms'},
- {id:'contours',label:'Contours',description:'Interfering moiré fields, organic elevation isolines, and pulsar ridgelines'},
- {id:'sculptures',label:'Sculptures',description:'Radial crystal prisms, acoustic lotus blooms, and layered paper dioramas'},
+ {id:'flow',label:'Flow',description:'Harmonic tides, Lissajous silk looms, and flowing ink'},
+ {id:'contours',label:'Contours',description:'Organic elevation isolines, pulsar ridges, and spectral terrain'},
+ {id:'sculptures',label:'Sculptures',description:'Crystal prisms, acoustic blooms, paper dioramas, and standing-wave plates'},
  {id:'space',label:'Space',description:'Celestial astrolabes, solar corona halos, warp corridors, and star maps'},
- {id:'nature',label:'Nature',description:'Geomagnetic auroras, bioluminescent ocean swells, and voxel botanicals'},
- {id:'architecture',label:'Architecture',description:'64-band spectral chambers, wireframe matrices, Bauhaus plates, and halftones'},
+ {id:'nature',label:'Nature',description:'Auroras, ocean swells, flowering gardens, and luminous mycelium'},
+ {id:'architecture',label:'Architecture',description:'Frequency-driven matrices, Bauhaus plates, and halftones'},
  {id:'journeys',label:'Journeys',description:'Retro-synth horizons, origami flocks, and constructivist hex sculptures'}
 ] as const;
 
 export const TEMPLATES:readonly Template[]=[
- // ==================== FLOW (3 UNIQUE DESIGNS) ====================
+ // ==================== FLOW ====================
  {
   id:'holographic-tide',
   label:'Holographic Tide',
@@ -113,27 +116,6 @@ export const TEMPLATES:readonly Template[]=[
   baseEnergy:.68
  },
  {
-  id:'gilded-whirlpool',
-  label:'Gilded Whirlpool',
-  family:'flow',
-  moods:['celebration','warm','fire'],
-  genres:['pop','funk','dance','cinematic'],
-  background:'#181206',
-  foreground:'#fff8e6',
-  accent:'#f7b93e',
-  palettes:[
-   {id:'solar-gold',name:'Solar Gold',background:'#181206',foreground:'#fff8e6',accent:'#f7b93e'},
-   {id:'abyssal-cyan',name:'Abyssal Cyan',background:'#061824',foreground:'#ecfbff',accent:'#4de8ff'},
-   {id:'magenta-vortex',name:'Magenta Vortex',background:'#1e081c',foreground:'#fff0fc',accent:'#ff6ee0'},
-   {id:'emerald-eddy',name:'Emerald Eddy',background:'#071d15',foreground:'#ebfff5',accent:'#55f2a8'}
-  ],
-  font:'monument',
-  layout:'poster',
-  transition:'zoom',
-  camera:'orbit',
-  baseEnergy:.74
- },
- {
   id:'ribbon-dance',
   label:'Ribbon Dance',
   family:'flow',
@@ -155,28 +137,7 @@ export const TEMPLATES:readonly Template[]=[
   baseEnergy:.64
  },
 
- // ==================== CONTOURS (3 UNIQUE DESIGNS) ====================
- {
-  id:'chroma-moire-voids',
-  label:'Chroma Moire Voids',
-  family:'contours',
-  moods:['abstract','cosmic','solitude'],
-  genres:['experimental','techno','electronic','idm'],
-  background:'#090b18',
-  foreground:'#f3f5ff',
-  accent:'#c98bff',
-  palettes:[
-   {id:'ultraviolet',name:'Ultraviolet Void',background:'#090b18',foreground:'#f3f5ff',accent:'#c98bff'},
-   {id:'cyber-cyan',name:'Cyber Cyan',background:'#051622',foreground:'#ebfbff',accent:'#4ce8ff'},
-   {id:'solar-ember',name:'Solar Ember',background:'#1f0b05',foreground:'#fff4ec',accent:'#ff8847'},
-   {id:'silver-moire',name:'Silver Moiré',background:'#111620',foreground:'#f4f7fc',accent:'#8fb4ff'}
-  ],
-  font:'cyber',
-  layout:'stack',
-  transition:'glitch',
-  camera:'orbit',
-  baseEnergy:.72
- },
+ // ==================== CONTOURS ====================
  {
   id:'cobalt-contours',
   label:'Cobalt Contours',
@@ -436,28 +397,7 @@ export const TEMPLATES:readonly Template[]=[
   baseEnergy:.60
  },
 
- // ==================== ARCHITECTURE (4 UNIQUE DESIGNS) ====================
- {
-  id:'signal-chamber',
-  label:'Signal Chamber',
-  family:'architecture',
-  moods:['fire','abstract','solitude'],
-  genres:['hip-hop','trap','electronic','industrial'],
-  background:'#14121d',
-  foreground:'#f7f2ff',
-  accent:'#ff6e59',
-  palettes:[
-   {id:'infrared-signal',name:'Infrared Signal',background:'#14121d',foreground:'#f7f2ff',accent:'#ff6e59'},
-   {id:'studio-cyan',name:'Studio Cyan',background:'#071521',foreground:'#eefaff',accent:'#4de6ff'},
-   {id:'amber-vu',name:'Amber VU',background:'#1a1206',foreground:'#fff8eb',accent:'#ffb53b'},
-   {id:'emerald-console',name:'Emerald Console',background:'#071c14',foreground:'#ecfff5',accent:'#52f2a2'}
-  ],
-  font:'industrial',
-  layout:'poster',
-  transition:'flash',
-  camera:'push',
-  baseEnergy:.82
- },
+ // ==================== ARCHITECTURE ====================
  {
   id:'neon-metal-matrix',
   label:'Neon Metal Matrix',
@@ -571,20 +511,107 @@ export const TEMPLATES:readonly Template[]=[
   family:'journeys',
   moods:['celebration','warm','abstract'],
   genres:['pop','funk','dance'],
-  background:'#feda36',
-  foreground:'#171829',
-  accent:'#9e1536',
+  background:'#fff1e8',
+  foreground:'#352d46',
+  accent:'#e5a99b',
   palettes:[
-   {id:'festival-gold',name:'Festival Gold',background:'#feda36',foreground:'#171829',accent:'#9e1536'},
-   {id:'neon-carnival',name:'Neon Carnival',background:'#140924',foreground:'#fbf2ff',accent:'#45f2d8'},
-   {id:'crimson-pop',name:'Crimson Pop',background:'#1f0810',foreground:'#fff2f5',accent:'#ff708d'},
-   {id:'cobalt-clash',name:'Cobalt Clash',background:'#071930',foreground:'#eef8ff',accent:'#ffd04d'}
+   {id:'peach-sorbet',name:'Peach Sorbet',background:'#fff1e8',foreground:'#352d46',accent:'#e5a99b',colors:['#f2b9b0','#c6dce5','#d7c9e8','#f5dfb2']},
+   {id:'lavender-milk',name:'Lavender Milk',background:'#f1ecfa',foreground:'#352e4b',accent:'#bca9df',colors:['#cbbce8','#f1c9d8','#c5e1dd','#f5e3bd']},
+   {id:'pistachio-cloud',name:'Pistachio Cloud',background:'#eff6e8',foreground:'#293c3a',accent:'#a7c7ad',colors:['#bbd8b9','#f0cfb8','#c2dcea','#ded0e9']},
+   {id:'powder-sky',name:'Powder Sky',background:'#eaf3fc',foreground:'#2c3850',accent:'#a8c8e7',colors:['#b7d4ec','#f0c8cc','#d4c5e8','#eee1b5']},
+   {id:'rosewater',name:'Rosewater',background:'#fceef2',foreground:'#46313c',accent:'#dfaabe',colors:['#edbfd0','#c6dcda','#d4cae8','#f5d7bc']},
+   {id:'buttercream',name:'Buttercream',background:'#fcf7e5',foreground:'#3b3740',accent:'#dfc891',colors:['#efdda9','#c5ded7','#e8c4cf','#c7d6ec']}
   ],
   font:'ultra',
   layout:'scattered',
   transition:'wipe',
   camera:'side',
-  baseEnergy:.81
+  baseEnergy:0.81
+ },
+ // Additional spectrum-driven environments
+ {
+  id:'fluid-ink',
+  label:'Fluid Ink',
+  family:'flow',
+  moods:['water','abstract','warm'],
+  genres:['ambient','electronic','soul'],
+  background:'#0b1425',
+  foreground:'#eff7ff',
+  accent:'#80d7dd',
+  palettes:[
+   {id:'midnight-ink',name:'Midnight Ink',background:'#0b1425',foreground:'#eff7ff',accent:'#80d7dd'},
+   {id:'plum-ink',name:'Plum Ink',background:'#211429',foreground:'#fff2fc',accent:'#df9ac9'},
+   {id:'jade-ink',name:'Jade Ink',background:'#0d2524',foreground:'#ebfff7',accent:'#8ad8ba'},
+   {id:'porcelain-ink',name:'Porcelain Ink',background:'#f1eee9',foreground:'#292d42',accent:'#9babc9'}
+  ],
+  font:'glass',
+  layout:'hero',
+  transition:'ripple',
+  camera:'drift',
+  baseEnergy:0.56
+ },
+ {
+  id:'spectral-terrain',
+  label:'Spectral Terrain',
+  family:'contours',
+  moods:['cosmic','abstract','nature'],
+  genres:['electronic','cinematic','rock'],
+  background:'#081827',
+  foreground:'#edf9ff',
+  accent:'#74d3ef',
+  palettes:[
+   {id:'glacial-terrain',name:'Glacial Terrain',background:'#081827',foreground:'#edf9ff',accent:'#74d3ef'},
+   {id:'violet-terrain',name:'Violet Terrain',background:'#19122b',foreground:'#f6efff',accent:'#c2a1ed'},
+   {id:'copper-terrain',name:'Copper Terrain',background:'#21150e',foreground:'#fff4e9',accent:'#e5af7b'},
+   {id:'moss-terrain',name:'Moss Terrain',background:'#10231e',foreground:'#eefff3',accent:'#91d4a8'}
+  ],
+  font:'tech',
+  layout:'left',
+  transition:'dissolve',
+  camera:'push',
+  baseEnergy:0.72
+ },
+ {
+  id:'resonance-plate',
+  label:'Resonance Plate',
+  family:'sculptures',
+  moods:['abstract','cosmic','solitude'],
+  genres:['classical','ambient','electronic'],
+  background:'#171923',
+  foreground:'#fff5e4',
+  accent:'#ecd19b',
+  palettes:[
+   {id:'golden-nodes',name:'Golden Nodes',background:'#171923',foreground:'#fff5e4',accent:'#ecd19b'},
+   {id:'ice-nodes',name:'Ice Nodes',background:'#0c2030',foreground:'#edfaff',accent:'#8edeea'},
+   {id:'rose-nodes',name:'Rose Nodes',background:'#261425',foreground:'#fff1fa',accent:'#e7a2c9'},
+   {id:'sage-nodes',name:'Sage Nodes',background:'#12251f',foreground:'#f2fff5',accent:'#b6d9a2'}
+  ],
+  font:'engraved',
+  layout:'hero',
+  transition:'dissolve',
+  camera:'orbit',
+  baseEnergy:0.6
+ },
+ {
+  id:'mycelium-network',
+  label:'Mycelium Network',
+  family:'nature',
+  moods:['nature','memory','cosmic'],
+  genres:['ambient','indie','acoustic'],
+  background:'#0b201b',
+  foreground:'#f0fff1',
+  accent:'#a0e0ba',
+  palettes:[
+   {id:'forest-light',name:'Forest Light',background:'#0b201b',foreground:'#f0fff1',accent:'#a0e0ba'},
+   {id:'deep-spore',name:'Deep Spore',background:'#121d30',foreground:'#eef7ff',accent:'#9dbfe8'},
+   {id:'amber-spore',name:'Amber Spore',background:'#251b10',foreground:'#fff6e8',accent:'#e6c18a'},
+   {id:'orchid-spore',name:'Orchid Spore',background:'#22162c',foreground:'#fff2fd',accent:'#d8afe9'}
+  ],
+  font:'literary',
+  layout:'hero',
+  transition:'ink',
+  camera:'drift',
+  baseEnergy:0.5
  },
 ] as const;
 
@@ -622,7 +649,7 @@ function stableHash(input:string):number {
 
 function normalizeGenre(value:string){return value.toLowerCase().replace(/[-_]/g,' ').trim()}
 
-function compareCandidates(a:Template,b:Template,plan:ScenePlan,genre:string,recent:readonly SceneId[],seed:number,poolSize=23){
+function compareCandidates(a:Template,b:Template,plan:ScenePlan,genre:string,recent:readonly SceneId[],seed:number,poolSize=TEMPLATES.length){
  const isFirstSlot=recent.length===0;
  const noRepeatWindow=Math.max(3,Math.min(poolSize-1,18));
  const grade=(t:Template)=>{
@@ -758,3 +785,4 @@ export function sceneAt(list:readonly DirectedScene[],time:number):DirectedScene
 }
 
 export const AUDIO_ONLY_SCENES:readonly SceneId[]=TEMPLATES.map(t=>t.id);
+

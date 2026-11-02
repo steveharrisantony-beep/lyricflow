@@ -88,7 +88,6 @@ export function resolveActiveCameraView():CameraView{
 
 /** Routes each VoxelWall music-reactive theme to its dedicated 2D rendering grammar (no 3D WebGL themes). */
 export function visualSystemFor(id:SceneId):GraphicSystem|'motion2d'{
- if(id==='signal-chamber')return 'spectrum';
  if(id==='color-riot')return 'geometry';
  if(MOTION_SCENES.includes(id))return 'motion2d';
  return 'motion2d';
@@ -398,7 +397,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      if(!old)target.setTransform(fx.width/w,0,0,fx.height/h,0,0);
      target.save();target.translate(w*.5+cameraFrame.x*w,h*.5+cameraFrame.y*h);
      target.rotate(cameraFrame.roll);target.scale(cameraFrame.zoom*1.025,cameraFrame.zoom*1.025);target.translate(-w*.5,-h*.5);
-     if(mode==='motion2d')drawMotionGraphics(target,w,h,visualTime,pulse,id,factor,config.reducedMotion,paletteId);
+     if(mode==='motion2d')drawMotionGraphics(target,w,h,visualTime,pulse,id,factor,config.reducedMotion,paletteId,{bands:measured?.bands??(isDemo?demoBands:undefined),detail:(quality==='Performance'?.5:quality==='Balanced'?.75:1)*adaptiveScale});
      else art.render(target,w,h,visualTime,{...pulse,bands:measured?.bands??(isDemo?demoBands:undefined)},mode,
        transition<1?0:config.motionBlur,factor,Boolean(isDemo),config.reducedMotion,resolvedPal);
      target.restore();

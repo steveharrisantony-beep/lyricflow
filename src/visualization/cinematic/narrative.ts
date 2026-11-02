@@ -30,7 +30,10 @@ const familyFallback:Partial<Record<SceneId,Motif>>={
  'celestial-orbit':'stars',
  'orbital-halo':'stars',
  'star-map':'stars',
- 'signal-chamber':'city',
+ 'spectral-terrain':'mountain',
+ 'mycelium-network':'flower',
+ 'resonance-plate':'sound',
+ 'fluid-ink':'ocean',
  'tidal-bloom':'flower',
  'pixel-garden':'flower',
  'cobalt-contours':'fire',
@@ -62,3 +65,4 @@ export function drawNarrativeObjects(
  return selectMotif(cue?.text||'',cue?.mood||'abstract',scene.id);
 }
 export {sceneColors};
+

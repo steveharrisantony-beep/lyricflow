@@ -13,11 +13,11 @@ const cues=buildCues(sample,[]);
 const sections=analyzeSections(sample);
 
 describe('VoxelWall cinematic scene catalog',()=>{
- it('provides 23 genuinely distinct VoxelWall music-reactive templates across 7 categories with multi-palette support and no duplicate color-swap clones',()=>{
-  expect(TEMPLATES).toHaveLength(23);
-  expect(new Set(TEMPLATES.map(t=>t.id)).size).toBe(23);
+ it('provides 24 distinct VoxelWall music-reactive templates across 7 categories with multi-palette support and no duplicate color-swap clones',()=>{
+  expect(TEMPLATES).toHaveLength(24);
+  expect(new Set(TEMPLATES.map(t=>t.id)).size).toBe(24);
   expect(new Set(TEMPLATES.map(t=>t.family)).size).toBe(VOXELWALL_CATEGORIES.length);
-  expect(new Set(TEMPLATES.map(t=>t.background)).size).toBe(23);
+  expect(new Set(TEMPLATES.map(t=>t.background)).size).toBe(24);
   const ids=TEMPLATES.map(t=>t.id as string);
   expect(ids).not.toContain('crimson-impact');
   expect(ids).not.toContain('vinyl-groove');
@@ -70,8 +70,9 @@ describe('VoxelWall cinematic scene catalog',()=>{
   expect(sceneAt(directed,directed[1].start+.2)?.id).toBe(directed[1].id);
   expect(sceneAt(directed,-15)).toBeNull();
  });
- it('has 23 distinct audio-only fallback environments',()=>{
-  expect(AUDIO_ONLY_SCENES).toHaveLength(23);
+ it('has 24 distinct audio-only fallback environments',()=>{
+  expect(AUDIO_ONLY_SCENES).toHaveLength(24);
   expect(new Set(AUDIO_ONLY_SCENES).size).toBe(AUDIO_ONLY_SCENES.length);
  });
 });
+

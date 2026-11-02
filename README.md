@@ -40,7 +40,7 @@ The application and its existing Express backend run inside the APK. No external
 [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Tunai-0511/lyricflow?file=README.md)
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Tunai-0511/lyricflow?quickstart=1)
 
-**LyricFlow** is a studio-grade, real-time audio-reactive music visualizer and synchronized kinetic lyric stage. It combines **23 genuinely distinct VoxelWall-inspired 2D music-reactive live wallpapers** (each equipped with **4–5 selectable colour palettes**) across seven curated visual families with **12 persistent lyric animations**, **Stash multi-catalog online streaming**, **Apple Music syllable/word-synced TTML & line-synced LRC engines**, **offline Indic-to-Latin phonetic romanization**, and **Firebase Authentication & Cloud Firestore profile synchronization**.
+**LyricFlow** is a studio-grade, real-time audio-reactive music visualizer and synchronized kinetic lyric stage. It combines **24 distinct VoxelWall-inspired 2D music-reactive live wallpapers** (each equipped with **4–6 selectable colour palettes**) across seven curated visual families with **12 persistent lyric animations**, **Stash multi-catalog online streaming**, **Apple Music syllable/word-synced TTML & line-synced LRC engines**, **offline Indic-to-Latin phonetic romanization**, and **Firebase Authentication & Cloud Firestore profile synchronization**.
 
 > **Maintenance Policy:** This `README.md` is the canonical technical reference for LyricFlow and is continuously updated alongside every architectural, visual, audio, and lyric-engine update.
 
@@ -49,7 +49,7 @@ The application and its existing Express backend run inside the APK. No external
 ## Table of Contents
 
 1. [Core Features & Capabilities](#1-core-features--capabilities)
-2. [VoxelWall Music-Reactive Live Wallpapers (23 Unique Designs × Multi-Palette)](#2-voxelwall-music-reactive-live-wallpapers-23-unique-designs--multi-palette)
+2. [VoxelWall Music-Reactive Live Wallpapers (24 Unique Designs × Multi-Palette)](#2-voxelwall-music-reactive-live-wallpapers-24-unique-designs--multi-palette)
 3. [Persistent Letter Animation](#3-persistent-letter-animation)
 4. [Audio Reactivity & 64-Band Spectral Pipeline](#4-audio-reactivity--64-band-spectral-pipeline)
 5. [Audio Sources & Stash Multi-Catalog Streaming](#5-audio-sources--stash-multi-catalog-streaming)
@@ -65,9 +65,9 @@ The application and its existing Express backend run inside the APK. No external
 
 ## 1. Core Features & Capabilities
 
-- **23 Unique VoxelWall 2D Music-Reactive Backgrounds with Multi-Palette Selector (`https://voxelwall.app/wallpapers`)**:
+- **24 Unique VoxelWall 2D Music-Reactive Backgrounds with Multi-Palette Selector (`https://voxelwall.app/wallpapers`)**:
   - Pure, high-FPS 2D procedural canvas and spectral-geometry wallpapers organized into **7 VoxelWall categories**: *Flow*, *Contours*, *Sculptures*, *Space*, *Nature*, *Architecture*, and *Journeys*.
-  - Every theme uses a 100% distinct procedural visual algorithm—all color-swap duplicate themes have been consolidated into **4–5 interactive Colour Palettes per theme** (`ThemePalette`) selectable directly on each theme card and inside Cinema Mode.
+  - Every theme uses a 100% distinct procedural visual algorithm—all color-swap duplicate themes have been consolidated into **4–6 interactive Colour Palettes per theme** (`ThemePalette`) selectable directly on each theme card and inside Cinema Mode.
   - Every background can be individually toggled **ON/OFF** to curate the active auto-director rotation pool.
 - **Persistent letter choreography**: 12 distinct animations with 8 visible current-word accents. Latin and other independent graphemes move smoothly throughout the line, including after a word is sung. Hindi, Malayalam, Tamil, Arabic and other shaping-dependent scripts keep intact word runs. Romanized Latin text can animate by letter. Both motion controls off keeps the lyric steady.
 - **Adaptive album colours**: pale colours extracted from the artwork are used for unread text and line-synced lyrics. Sung words cycle through more saturated, contrast-checked colours from the same artwork. Theme mode continues to follow the active theme palette; unavailable artwork has a deterministic fallback.
@@ -89,35 +89,36 @@ The application and its existing Express backend run inside the APK. No external
 
 ---
 
-## 2. VoxelWall Music-Reactive Live Wallpapers (23 Unique Designs × Multi-Palette)
+## 2. VoxelWall Music-Reactive Live Wallpapers (24 Unique Designs × Multi-Palette)
 
-Inspired by [VoxelWall Live Wallpapers](https://voxelwall.app/wallpapers), all 23 unique scenes react in real time to 64-band frequency energy, bass envelopes, midrange harmonics, treble shimmer, and beat/onset impulses, and each includes **4–5 curated Colour Palettes**:
+Inspired by [VoxelWall Live Wallpapers](https://voxelwall.app/wallpapers), all 24 unique scenes react in real time to 64-band frequency energy, bass envelopes, midrange harmonics, treble shimmer, and beat/onset impulses, and each includes **4–6 curated Colour Palettes** (99 total). Research notes, implementation choices, and verification scope are in [the visualizer review](docs/theme-visualizer-research.md):
 
 | Category | Scene ID | Label | Palettes Included | Visual Grammar & Audio Reactivity |
 | :--- | :--- | :--- | :--- | :--- |
-| **Flow** | `holographic-tide` | **Holographic Tide** | *Prismatic Cyan, Liquid Filigree, Crimson Current, Silk Waves, Emerald Drift* | Iridescent multi-ribbon fluid tide waves driven by bass swells and midrange phase |
-| **Flow** | `gilded-whirlpool` | **Gilded Whirlpool** | *Imperial Gold, Abyssal Cyan, Rose Vortex, Ultraviolet Spin* | Golden 6-arm logarithmic spiral vortex rotating with midrange and bass |
-| **Flow** | `ribbon-dance` | **Ribbon Dance** | *Magenta Harmonics, Cyber Mint, Solar Ribbon, Ice Filament* | Parametric Lissajous infinity figure-8 weave with orbiting harmonic phase nodes |
-| **Contours** | `chroma-moire-voids` | **Chroma Moire Voids** | *Violet Cyan Moire, Crimson Gold Moire, Emerald Indigo, Monochrome Pulse* | Dual-center chromatic interference moiré rings and phase voids |
-| **Contours** | `cobalt-contours` | **Cobalt Contours** | *Deep Cobalt, Molten Magma, Layered Jade, Arctic Topo, Amber Terraces* | Multi-lobe topographic isolines and terraced frequency elevation ridges |
-| **Contours** | `contour-flow` | **Contour Flow** | *Emerald Precision, Pulsar Cyan, Crimson Ridges, Golden Horizon* | Stepped Joy Division-style pulsar horizon ridgelines stacked in depth |
-| **Sculptures** | `crystal-resonance` | **Crystal Resonance** | *Quartz Prism, Pearl Nacre, Ruby Facet, Emerald Shard* | 12-shard faceted geometric crystal prisms refracting bass and beat impulses |
-| **Sculptures** | `tidal-bloom` | **Tidal Bloom** | *Coral Rose, Pearl Bloom, Lotus Cyan, Golden Sunburst* | 14-petal radial acoustic bloom expanding with bass and treble |
-| **Sculptures** | `paper-cut` | **Paper Cut** | *Warm Terracotta, Midnight Slate, Matcha Forest, Berry Canyon* | Multi-layered brutalist paper diorama canyon with floating geometric slabs |
-| **Space** | `celestial-orbit` | **Celestial Orbit** | *Solar Astrolabe, Orbital Score,Deep Nebula, Brass Orrery* | 8-ring planetary astrolabe with degree calibration ticks and vector chords |
-| **Space** | `orbital-halo` | **Orbital Halo** | *Eclipse Cyan, Solar Corona, Magenta Pulsar, Emerald Ring* | 64-ray luminous eclipse corona and radial frequency halo |
-| **Space** | `infinite-tunnel` | **Infinite Tunnel** | *Ultraviolet Warp, Cyber Matrix, Crimson Hyperdrive, Golden Gates* | 16-layer rotating sacred-geometry portal rushing forward on bass hits |
-| **Space** | `star-map` | **Star Map** | *Astrometric Blue, Emerald Cartography, Amber Observatory, Violet Sky* | 60-node astrometric triangulation network and polar coordinate reticle |
-| **Nature** | `aurora-field` | **Aurora Field** | *Polar Borealis, Solar Storm, Geomagnetic Violet, Arctic Blue* | 7-layer shimmering geomagnetic aurora borealis curtains |
-| **Nature** | `glow-lagoon` | **Glow Lagoon** | *Bioluminescent Teal, Ocean Pulse, Coral Reef, Midnight Plankton* | Nocturnal bioluminescent lagoon ripples and harmonic spore field |
-| **Nature** | `pixel-garden` | **Pixel Garden** | *Neon Flora, Cherry Blossom, Cyber Bamboo, Golden Harvest* | 28-column cyber-botanical voxel equalizer with blooming frequency caps |
-| **Architecture** | `signal-chamber` | **Signal Chamber** | *Emerald Analyzer, Cyan Broadcast, Crimson Mastering, Amber Console* | 64-band spectral sculpture with mirrored reflection floor and upper contour spline |
-| **Architecture** | `neon-metal-matrix` | **Neon Metal Matrix** | *Titanium Cyan, Copper Forge, Matrix Emerald, Crimson Core* | 18×10 cybernetic grid matrix with frequency-modulated cells |
-| **Architecture** | `bauhaus-beat` | **Bauhaus Beat** | *Weimar Primary, Midcentury Warm, Nordic Minimal, Brutalist Red* | Constructivist architectural poster with 16-bar rhythmic step ladder |
-| **Architecture** | `halftone-club` | **Halftone Club** | *Club Magenta, Acid Lime, Laser Cyan, Sunset Strobe* | 26×16 radial frequency-modulated halftone matrix and club aperture rings |
-| **Journeys** | `chromatic-drive` | **Chromatic Drive** | *Outrun Sunset, White Velocity, Nightrunner Cyan, Blood Moon Drive* | Synth-horizon perspective speed lanes and pulsing solar aperture |
-| **Journeys** | `origami-flight` | **Origami Flight** | *Sky Crane, Sunset Flock, Starlight Fold, Emerald Wind* | 14-wing folded geometric paper flock soaring across harmonic wind currents |
-| **Journeys** | `color-riot` | **Color Riot** | *Constructivist Riot, Cyber Punk, Acid Bauhaus, Monochrome Ink* | Constructivist kinetic geometry poster with 64-band hexagonal lattice and 3D hex stack |
+| **Flow** | `holographic-tide` | **Holographic Tide** | *Cyan Tide, Liquid Filigree, Crimson Current, Silk Rose, Emerald Drift* | Iridescent multi-ribbon fluid tide waves driven by bass swells and midrange phase |
+| **Flow** | `ribbon-dance` | **Ribbon Dance** | *Violet Ribbon, Coral Loom, Aqua Pendulum, Ivory Silk* | Parametric Lissajous infinity figure-8 weave with orbiting harmonic phase nodes |
+| **Contours** | `cobalt-contours` | **Cobalt Contours** | *Cobalt Deep, Molten Contours, Layered Emerald, Rose Isoline* | Multi-lobe topographic isolines and terraced frequency elevation ridges |
+| **Contours** | `contour-flow` | **Contour Flow** | *Alpine Sage, Pulsar Ridge, Crimson Horizon, Desert Terrace* | Stepped Joy Division-style pulsar horizon ridgelines stacked in depth |
+| **Sculptures** | `crystal-resonance` | **Crystal Resonance** | *Glacier Prism, Amethyst Shard, Ruby Facet, Topaz Gleam* | 12-shard faceted geometric crystal prisms refracting bass and beat impulses |
+| **Sculptures** | `tidal-bloom` | **Tidal Bloom** | *Lagoon Teal, Pearl Nacre, Sakura Bloom, Indigo Lotus* | 14-petal radial acoustic bloom expanding with bass and treble |
+| **Sculptures** | `paper-cut` | **Paper Cut** | *Terracotta Sand, Nordic Fjord, Matcha Diorama, Plum Atelier* | Multi-layered brutalist paper diorama canyon with floating geometric slabs |
+| **Space** | `celestial-orbit` | **Celestial Orbit** | *Starlight Sapphire, Orbital Teal, Golden Orrery, Nebula Rose* | 8-ring planetary astrolabe with degree calibration ticks and vector chords |
+| **Space** | `orbital-halo` | **Orbital Halo** | *Magenta Eclipse, Solar Corona, Pulsar Cyan, Crimson Nova* | 64-ray luminous eclipse corona and radial frequency halo |
+| **Space** | `infinite-tunnel` | **Infinite Tunnel** | *Hyperdrive Cyan, Synth Magenta, Matrix Emerald, Amber Warp* | 16-layer rotating sacred-geometry portal rushing forward on bass hits |
+| **Space** | `star-map` | **Star Map** | *Mint Astrolabe, Deep Cosmos, Amber Zenith, Rose Chart* | 60-node astrometric triangulation network and polar coordinate reticle |
+| **Nature** | `aurora-field` | **Aurora Field** | *Borealis Emerald, Polar Violet, Solar Storm, Arctic Cyan* | 7-layer shimmering geomagnetic aurora borealis curtains |
+| **Nature** | `glow-lagoon` | **Glow Lagoon** | *Lagoon Turquoise, Silver Current, Coral Reef, Abyssal Gold* | Nocturnal bioluminescent lagoon ripples and harmonic spore field |
+| **Nature** | `pixel-garden` | **Pixel Garden** | *Botanical Mint, Cherry Blossom, Golden Harvest, Neon Terrarium* | Layered flowers with rounded petals, centers, leaves and curved stems; bass growth, mid sway and treble bloom |
+| **Architecture** | `neon-metal-matrix` | **Neon Metal Matrix** | *Cyber Teal, Laser Crimson, Gold Bullion, Cobalt Matrix* | 18×10 cybernetic grid matrix with frequency-modulated cells |
+| **Architecture** | `bauhaus-beat` | **Bauhaus Beat** | *Weimar Classic, Midnight Construct, Blueprint Studio, Ivory Emerald* | Constructivist architectural poster with 16-bar rhythmic step ladder |
+| **Architecture** | `halftone-club` | **Halftone Club** | *Velvet Magenta, Acid Lime, Electric Cyan, Solar Halftone* | 26×16 radial frequency-modulated halftone matrix and club aperture rings |
+| **Journeys** | `chromatic-drive` | **Chromatic Drive** | *Outrun Magenta, White Velocity, Cyber Horizon, Sunset Cruiser* | Synth-horizon perspective speed lanes and pulsing solar aperture |
+| **Journeys** | `origami-flight` | **Origami Flight** | *Paper Crane, Starlight Flock, Jade Wind, Golden Dusk* | 14-wing folded geometric paper flock soaring across harmonic wind currents |
+| **Journeys** | `color-riot` | **Color Riot** | *Peach Sorbet, Lavender Milk, Pistachio Cloud, Powder Sky, Rosewater, Buttercream* | Light pastel kinetic geometry with palette-matched lattice, plates and extruded hex stack |
+| **Flow** | `fluid-ink` | **Fluid Ink** | *Midnight Ink, Plum Ink, Jade Ink, Porcelain Ink* | Translucent liquid membranes with bass mass, midrange drift and treble edge ripples |
+| **Contours** | `spectral-terrain` | **Spectral Terrain** | *Glacial Terrain, Violet Terrain, Copper Terrain, Moss Terrain* | Perspective ridge surface displaced by the live spectrum, with horizon fog |
+| **Sculptures** | `resonance-plate` | **Resonance Plate** | *Golden Nodes, Ice Nodes, Rose Nodes, Sage Nodes* | Grains projected toward standing-wave nodes; bass/mids morph the pattern and highs add flutter |
+| **Nature** | `mycelium-network` | **Mycelium Network** | *Forest Light, Deep Spore, Amber Spore, Orchid Spore* | Branching organic filaments with bass expansion, mid sway and treble-lit travelling signals |
 
 ---
 
@@ -151,7 +152,7 @@ Accessible anytime from the stage bar (**Choose Source**) with a dedicated modal
    - **YouTube Video + Lyrics Stage**:
      - Plays the exact selected YouTube video (`format: 'youtube'`) directly as a **live video background** on the visualizer stage with its own synchronized audio and the **VoxelVerse Lyrics Engine overlaid on top** (never substituting an unrelated audio stream from other catalogs).
      - Uses YouTube's IFrame `listening` / `infoDelivery` `postMessage` protocol (`CinematicStage.tsx` & `LocalPlayer.tsx`) to synchronize play/pause, seek, volume, and real-time `currentTime`/`duration` with the VoxelVerse lyrics clock.
-     - Includes an interactive **Background Option Slider** (`0: YouTube Video` · `1: Built-in Themes`) allowing instant switching between the YouTube video background and the 23 built-in VoxelWall themes.
+     - Includes an interactive **Background Option Slider** (`0: YouTube Video` · `1: Built-in Themes`) allowing instant switching between the YouTube video background and the 24 built-in VoxelWall themes.
      - Permanent layers are YouTube video, animated built-in themes, then transparent lyrics. Themes remain visible during video search/loading, errors and external-player ads. Lyrics stay on top, including on lyrical videos; external ads hide lyrics and cancel lookup.
      - YouTube audio keeps playing from the same iframe when themes cover it. JioSaavn/local/external backgrounds are muted. On Android, external mode also mutes the WebContents through AndroidX to avoid taking the other app's audio focus; unsupported System WebView versions fall back to themes.
      - Background selection compares up to 20 candidates per query, searches both music and lyrical videos for music preference, and rejects Topic/ATV, static audio, album images and visualizers. Lyrical preference requires `lyric`, `lyrical` or `lyrics` in the title. Recording suitability comes before views; missing music videos fall back to lyrical videos. Unknown unlabelled uploads are not used automatically. YouTube metadata cannot guarantee that every labelled video contains moving imagery.
@@ -276,13 +277,13 @@ Set up the shared project using the browser-only [Firebase setup guide](FIREBASE
 │   │   └── romanize.ts                            # 9-script offline Indic-to-Latin transliterator
 │   ├── visualization/cinematic/
 │   │   ├── CinematicStage.tsx                     # Video/Theme compositor, Black Overlay & Cinema Mode Studio Drawer
-│   │   ├── catalog.ts                             # 23 VoxelWall scene templates × 4–5 palettes across 7 categories
+│   │   ├── catalog.ts                             # 24 VoxelWall scene templates × 4–6 palettes across 7 categories
 │   │   ├── kineticTypography.ts                   # Persistent letter animation, shaped words, placements & word accents
 │   │   ├── cameraRig.ts                           # Smooth bass-threshold camera rig with sensitivity control
 │   │   ├── contrast.ts                            # Real-time backdrop luminance sampler & WCAG contrast guard
 │   │   ├── fonts.ts                               # 25 curated display, editorial, & monospace font packs
 │   │   └── procedural/
-│   │       ├── MotionGraphics.ts                  # 21 distinct VoxelWall 2D music-reactive wallpaper painters
+│   │       ├── MotionGraphics.ts                  # 23 distinct VoxelWall 2D music-reactive wallpaper painters
 │   │       ├── GraphicCompositions.ts             # 64-band Signal Chamber spectrum & Color Riot hex geometry
 │   │       └── audioMotion.ts                     # Instrument-role channel routing
 │   └── tests/                                     # Vitest test suites covering audio, lyrics, & visuals

@@ -7,6 +7,8 @@
  * 3D-extruded hex sculptures, frequency-mapped lattices, and beat shockwaves.
  */
 import type {Pulse} from '../paint';
+import type {ThemePalette} from '../catalog';
+type GraphicPalette=Pick<ThemePalette,'background'|'foreground'|'accent'|'colors'>;
 export type GraphicSystem='spectrum'|'geometry';
 const TAU=Math.PI*2;
 const clamp=(x:number,lo=0,hi=1)=>Math.min(hi,Math.max(lo,x));
@@ -77,7 +79,7 @@ export class GraphicCompositions {
   intensity:number,
   demo=false,
   reduced=false,
-  palette?:{background:string;foreground:string;accent:string}
+  palette?:GraphicPalette
  ){
   if(this.lastMode!==mode){this.reset();this.lastMode=mode}
   const effectiveTime=reduced?time*.14:time;
@@ -99,7 +101,7 @@ export class GraphicCompositions {
   blur:number,
   intensity:number,
   reduced:boolean,
-  palette?:{background:string;foreground:string;accent:string}
+  palette?:GraphicPalette
  ){
   const baseline=h*.65,center=w*.5,u=Math.min(w,h);
   const bgCol=palette?.background||'#080b16';
@@ -254,15 +256,18 @@ export class GraphicCompositions {
   blur:number,
   intensity:number,
   reduced:boolean,
-  palette?:{background:string;foreground:string;accent:string}
+  palette?:GraphicPalette
  ){
-  const bgCol=palette?.background||'#f9e9bc';
-  const fgCol=palette?.foreground||'#292b47';
-  const accCol=palette?.accent||'#eb604a';
+  const bgCol=palette?.background||'#fff1e8';
+  const fgCol=palette?.foreground||'#352d46';
+  const accCol=palette?.accent||'#e5a99b';
+  const surfaces=palette?.colors?.length?palette.colors:[accCol,'#c6dce5','#d7c9e8','#f5dfb2'];
+  const surface=(i:number)=>surfaces[i%surfaces.length];
   const bg=c.createLinearGradient(0,0,w,h);
   bg.addColorStop(0,bgCol);
   bg.addColorStop(.53,bgCol);
-  bg.addColorStop(1,accCol+'28');
+  // Keep the light theme opaque: transparent gradient stops expose a black backing canvas.
+  bg.addColorStop(1,surface(3));
   c.globalAlpha=1-blur*.006;
   c.fillStyle=bg;
   c.fillRect(0,0,w,h);
@@ -274,11 +279,11 @@ export class GraphicCompositions {
   c.save();
   c.translate(w*.52,h*.48);
   c.rotate(-.075+Math.sin(t*.065)*.028*(reduced?.1:1));
-  c.fillStyle=fgCol+'cc';
+  c.fillStyle=surface(1)+'b0';
   c.fillRect(-w*.65,-h*.48,w*.48,h*.65);
-  c.fillStyle=accCol;
+  c.fillStyle=surface(0);
   c.fillRect(w*.12,-h*.55,w*.54,h*.56);
-  c.fillStyle=fgCol+'66';
+  c.fillStyle=surface(2)+'99';
   c.fillRect(-w*.33,h*.25,w*.8,h*.55);
   c.restore();
 
@@ -288,7 +293,7 @@ export class GraphicCompositions {
   const minRadius=unit*.13;
   for(let ring=0;ring<9;ring++){
    const a=this.smoothed[(ring*9+5)%64]*intensity;
-   c.strokeStyle=ring%2?'rgba(37,42,78,.38)':'rgba(255,253,231,.86)';
+   c.strokeStyle=ring%2?fgCol+'36':surface(3)+'dd';
    c.lineWidth=1.5+ring*.65+a*3.4;
    const rr=minRadius*(1+ring*.25)+a*unit*.028;
    c.beginPath();
@@ -310,9 +315,8 @@ export class GraphicCompositions {
     const y=offsetY+row*spaceY+Math.sin(t*.14+n*.72)*(reduced?.1:1)*h*.007;
     if(x>w*.9)continue;
     const radius=Math.min(spaceX,spaceY)*(.19+.34*v)+pulse*unit*.006;
-    c.fillStyle=n%5===0?'rgba(255,253,239,.94)':n%4===0?'rgba(35,38,70,.86)':
-      n%3===0?'rgba(35,157,153,.80)':'rgba(237,84,83,.68)';
-    c.strokeStyle='rgba(38,38,66,.26)';
+    c.fillStyle=surface(n)+'dd';
+    c.strokeStyle=fgCol+'30';
     c.lineWidth=.9;
     hex(c,x,y,radius,-Math.PI/6+t*.035*(reduced?.1:1));
     c.fill();
@@ -331,9 +335,9 @@ export class GraphicCompositions {
    const shift=k*unit*.013;
    const rr=size*(1+k*.058);
    hex(c,shift,-shift*.9,rr,t*.038+k*.09);
-   c.fillStyle=k===0?'#272b46':k%2?'#e95e4d':'#229a9c';
+   c.fillStyle=surface(k);
    c.fill();
-   c.strokeStyle='rgba(255,255,239,.48)';
+   c.strokeStyle=fgCol+'38';
    c.lineWidth=1.5;
    c.stroke();
   }
@@ -347,7 +351,7 @@ export class GraphicCompositions {
    for(let i=0;i<16;i++){
     const a=i*TAU/16+t*.14;
     const dist=unit*(.17+(.18*(1-burst)));
-    c.strokeStyle=rgb('38,42,74',burst*.68);
+    c.strokeStyle=fgCol;c.globalAlpha=burst*.48;
     c.lineWidth=1.3;
     c.beginPath();
     c.moveTo(Math.cos(a)*dist,Math.sin(a)*dist);
@@ -358,4 +362,5 @@ export class GraphicCompositions {
   }
  }
 }
+
 

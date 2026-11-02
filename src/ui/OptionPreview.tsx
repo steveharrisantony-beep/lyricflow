@@ -62,12 +62,12 @@ export default function OptionPreview({spec,onClose,reducedMotion=false,lyricLay
    const pulse={loudness:.35,bass:.28,mids:.34,treble:.2,beat:Math.max(0,Math.sin(time*Math.PI*2))**12,onset:0,downbeat:0};
    if(spec.video){
     const gradient=c.createLinearGradient(0,0,w,h);gradient.addColorStop(0,'#1c2442');gradient.addColorStop(.5,'#173d3c');gradient.addColorStop(1,'#36203b');c.fillStyle=gradient;c.fillRect(0,0,w,h);
-   }else if(scene.id==='signal-chamber'||scene.id==='color-riot'){
-    art.render(c,w,h,time,pulse,scene.id==='signal-chamber'?'spectrum':'geometry',0,.7,true,reducedMotion,palette);
-   }else drawMotionGraphics(c,w,h,time,pulse,scene.id,.7,reducedMotion,spec.paletteId);
+   }else if(scene.id==='color-riot'){
+    art.render(c,w,h,time,pulse,'geometry',0,.7,true,reducedMotion,palette);
+   }else drawMotionGraphics(c,w,h,time,pulse,scene.id,.7,reducedMotion,spec.paletteId,{detail:.55});
    if(spec.themeTransition&&previousCtx&&!reducedMotion){
     if(previous.width!==element.width||previous.height!==element.height){previous.width=element.width;previous.height=element.height;}previousCtx.setTransform(dpr,0,0,dpr,0,0);
-    drawMotionGraphics(previousCtx,w,h,time,pulse,'gilded-whirlpool',.7,false);
+    drawMotionGraphics(previousCtx,w,h,time,pulse,'fluid-ink',.7,false);
     drawSceneTransition(c,previous,w,h,Math.min(1,(time%2.2)/.8),spec.themeTransition);
    }
    drawKineticLyrics({c,scene:{...scene,start:0,end:5,variation:0,section:0,reason:'Preview'},cue:sampleCue,time,mode:'original',w,h,intensity:.85,reduced:reducedMotion,emphasis,

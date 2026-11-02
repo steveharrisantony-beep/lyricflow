@@ -1,14 +1,17 @@
 import {byId,resolveThemePalette,TEMPLATES,type SceneId} from '../catalog';
 import type {Pulse} from '../paint';
+import {drawAdvancedTheme,frequencyDrive,type MotionDetail} from './AdvancedThemes';
 
 export const MOTION_SCENES:readonly SceneId[]=TEMPLATES
  .map(t=>t.id)
- .filter((id):id is SceneId=>id!=='signal-chamber'&&id!=='color-riot');
+ .filter((id):id is SceneId=>id!=='color-riot');
 
 const TAU=Math.PI*2;
+const starPositions=new Float32Array(120);
+const orbitPositions=new Float32Array(16);
 
 /**
- * 21 genuinely distinct VoxelWall 2D music-reactive live backgrounds across 7 categories.
+ * 23 distinct VoxelWall 2D music-reactive live backgrounds across 7 categories.
  * Every single theme ID has its own unique procedural geometry and honours the active colour palette.
  */
 export function drawMotionGraphics(
@@ -20,13 +23,18 @@ export function drawMotionGraphics(
  id:SceneId,
  intensity:number,
  reduced:boolean,
- paletteId?:string
+ paletteId?:string,
+ options:MotionDetail={}
 ){
  const baseTheme=byId[id]||TEMPLATES[0];
  const theme=resolveThemePalette(baseTheme.id,paletteId);
  const u=Math.min(w,h),k=intensity*(reduced?.12:1);
  const bass=p.bass*k,mid=p.mids*k,high=p.treble*k,hit=p.beat*k;
  const t=time*(reduced?.1:1);
+ const detail=Math.max(.3,Math.min(1,options.detail??1));
+ const count=(full:number,min:number)=>Math.max(min,Math.round(full*detail));
+ const band=(x:number)=>frequencyDrive(p,options.bands,x)*k;
+ const segments=count(120,48);
 
  c.save();
  c.fillStyle=theme.background;
@@ -56,13 +64,17 @@ export function drawMotionGraphics(
   c.beginPath();c.moveTo(x,y);c.lineTo(x2,y2);c.stroke();
  };
 
- // Subtle architectural plotter grid behind all VoxelWall plates
+ if(drawAdvancedTheme(c,w,h,time,p,id,theme,intensity,reduced,options)){c.restore();return;}
+
+ // Keep the plotter grid within the architectural scenes.
+ if(baseTheme.family==='architecture'){
  c.save();
  c.strokeStyle=theme.foreground+'10';
  c.lineWidth=1;
  for(let gx=1;gx<8;gx++)line(w*gx/8,h*.08,w*gx/8,h*.92);
  for(let gy=1;gy<6;gy++)line(w*.06,h*gy/6,w*.94,h*gy/6);
  c.restore();
+ }
 
  c.lineWidth=Math.max(1.2,u*.0022);
  c.strokeStyle=theme.accent;
@@ -70,13 +82,14 @@ export function drawMotionGraphics(
  switch(id){
  // ==================== FLOW (3 UNIQUE DESIGNS) ====================
  case 'holographic-tide': {
-  const ribbonCount=16;
+  const ribbonCount=count(16,8);
   for(let i=0;i<ribbonCount;i++){
    const yBase=h*(.08+i*(.84/(ribbonCount-1)));
    c.beginPath();
    for(let x=-12;x<=w+12;x+=10){
     const nx=x/w;
-    const wave1=Math.sin(nx*TAU*1.35+t*.52+i*.48)*u*(.042+bass*.16);
+    const voice=band(i/(ribbonCount-1));
+    const wave1=Math.sin(nx*TAU*1.35+t*.52+i*.48)*u*(.042+bass*.10+voice*.10);
     const wave2=Math.cos(nx*TAU*3.2-t*.74+i*.32)*u*(.018+high*.058);
     const y=yBase+wave1+wave2;
     if(x===-12)c.moveTo(x,y);else c.lineTo(x,y);
@@ -87,35 +100,11 @@ export function drawMotionGraphics(
    if(i%3===0){
     const nodeX=w*((.16+i*.11+t*.05)%0.84+0.08);
     const nx=nodeX/w;
-    const nodeY=yBase+Math.sin(nx*TAU*1.35+t*.52+i*.48)*u*(.042+bass*.16);
+    const nodeY=yBase+Math.sin(nx*TAU*1.35+t*.52+i*.48)*u*(.042+bass*.10+band(i/(ribbonCount-1))*.10)
+      +Math.cos(nx*TAU*3.2-t*.74+i*.32)*u*(.018+high*.058);
     circle(nodeX,nodeY,u*(.007+hit*.016),theme.accent);
    }
   }
-  break;
- }
-
- case 'gilded-whirlpool': {
-  c.save();
-  c.translate(w*.5,h*.5);
-  const arms=6;
-  for(let arm=0;arm<arms;arm++){
-   c.beginPath();
-   for(let s=0;s<=90;s++){
-    const frac=s/90;
-    const angle=arm*(TAU/arms)+frac*TAU*2.1-t*(.65+mid*.35);
-    const radius=u*(.02+frac*.46)*(1+bass*.14)+Math.sin(frac*12-t*2.4)*u*.012*high;
-    const x=Math.cos(angle)*radius*1.22;
-    const y=Math.sin(angle)*radius;
-    if(s===0)c.moveTo(x,y);else c.lineTo(x,y);
-   }
-   c.strokeStyle=arm%2===0?theme.accent+'cc':theme.foreground+'66';
-   c.lineWidth=u*(.004+hit*.006);
-   c.stroke();
-  }
-  for(let r=1;r<=5;r++){
-   circle(0,0,u*(.06*r+bass*.04),theme.accent+'44',true);
-  }
-  c.restore();
   break;
  }
 
@@ -126,11 +115,11 @@ export function drawMotionGraphics(
   const loops=7;
   for(let l=0;l<loops;l++){
    const phase=l*.42+t*.38;
-   const rx=w*(.24+l*.022+bass*.06);
+   const rx=w*(.24+l*.022+bass*.03+band(l/6)*.045);
    const ry=h*(.16+l*.025+mid*.05);
    c.beginPath();
-   for(let step=0;step<=120;step++){
-    const a=(step/120)*TAU;
+   for(let step=0;step<=segments;step++){
+    const a=(step/segments)*TAU;
     const x=Math.sin(a*2+phase)*rx;
     const y=Math.sin(a*3-phase*.7)*ry;
     if(step===0)c.moveTo(x,y);else c.lineTo(x,y);
@@ -148,31 +137,15 @@ export function drawMotionGraphics(
   break;
  }
 
- // ==================== CONTOURS (3 UNIQUE DESIGNS) ====================
- case 'chroma-moire-voids': {
-  const shift=u*(.04+bass*.09);
-  const centers=[
-   {x:w*.5+Math.cos(t*.42)*shift,y:h*.5+Math.sin(t*.36)*shift,col:theme.accent+'88'},
-   {x:w*.5-Math.cos(t*.38)*shift,y:h*.5-Math.sin(t*.48)*shift,col:theme.foreground+'55'}
-  ];
-  for(const center of centers){
-   for(let i=1;i<=18;i++){
-    const r=u*(.03*i+mid*.02)+Math.sin(t*1.4+i*.4)*u*high*.012;
-    c.lineWidth=i%4===0?2.0:1.0;
-    circle(center.x,center.y,r,center.col,true);
-   }
-  }
-  break;
- }
-
+ // ==================== CONTOURS ====================
  case 'cobalt-contours': {
-  const rings=21;
+  const rings=count(21,11);
   const lobes=4;
   for(let i=0;i<rings;i++){
    c.beginPath();
-   for(let j=0;j<=120;j++){
-    const a=j/120*TAU;
-    const r=u*(.11+i*.018)*(1+bass*.16)
+   for(let j=0;j<=segments;j++){
+    const a=j/segments*TAU;
+    const r=u*(.11+i/(rings-1)*.36)*(1+bass*.10+band(i/(rings-1))*.09)
      +Math.sin(a*lobes+t*.48+i*.24)*u*(.028+mid*.054)
      +Math.cos(a*7-t*.62+i*.15)*u*(.010+high*.020);
     const x=w*.5+Math.cos(a)*r*1.32;
@@ -189,7 +162,7 @@ export function drawMotionGraphics(
 
  case 'contour-flow': {
   // Isobaric pulsar horizon ridgelines (stacked elevation scanlines)
-  const ridges=18;
+  const ridges=count(18,10);
   const leftX=w*.10,rightX=w*.90,spanW=rightX-leftX;
   for(let r=0;r<ridges;r++){
    const baseY=h*(.18+r*(.68/(ridges-1)));
@@ -198,7 +171,7 @@ export function drawMotionGraphics(
     const frac=s/64;
     const x=leftX+frac*spanW;
     const envelope=Math.exp(-Math.pow((frac-.5)*3.1,2));
-    const ridgeWave=Math.abs(Math.sin(frac*TAU*3.5+t*1.1+r*.55))*u*(.045+bass*.14)*envelope
+    const ridgeWave=Math.abs(Math.sin(frac*TAU*3.5+t*1.1+r*.55))*u*(.045+bass*.07+band(frac)*.10)*envelope
      +Math.cos(frac*TAU*8-t*1.6+r)*u*.012*high*envelope;
     const y=baseY-ridgeWave;
     if(s===0)c.moveTo(x,y);else c.lineTo(x,y);
@@ -210,14 +183,14 @@ export function drawMotionGraphics(
   break;
  }
 
- // ==================== SCULPTURES (3 UNIQUE DESIGNS) ====================
+ // ==================== SCULPTURES ====================
  case 'crystal-resonance': {
   c.save();
   c.translate(w*.5,h*.5);
   const shards=12;
   for(let i=0;i<shards;i++){
    const a=i*(TAU/shards)+t*.18;
-   const len=u*(.16+(i%3)*.08+bass*.16+hit*.06);
+   const len=u*(.16+(i%3)*.08+bass*.07+band(i/(shards-1))*.13+hit*.04);
    const spread=.22+mid*.14;
    c.beginPath();
    c.moveTo(0,0);
@@ -225,8 +198,9 @@ export function drawMotionGraphics(
    c.lineTo(Math.cos(a)*len,Math.sin(a)*len);
    c.lineTo(Math.cos(a+spread)*len*.58,Math.sin(a+spread)*len*.58);
    c.closePath();
-   c.fillStyle=i%2===0?theme.accent+'38':theme.foreground+'22';
-   c.fill();
+   const facet=c.createLinearGradient(0,0,Math.cos(a)*len,Math.sin(a)*len);
+   facet.addColorStop(0,theme.background);facet.addColorStop(.55,theme.accent+'66');facet.addColorStop(1,theme.foreground+'99');
+   c.fillStyle=facet;c.fill();
    c.strokeStyle=i%2===0?theme.accent:theme.foreground+'88';
    c.lineWidth=1.4;
    c.stroke();
@@ -249,7 +223,7 @@ export function drawMotionGraphics(
     c.translate(px,py);
     c.rotate(a);
     c.beginPath();
-    c.ellipse(0,0,baseR*(.52+mid*.18),baseR*(.24+high*.10),0,0,TAU);
+    c.ellipse(0,0,baseR*(.52+mid*.18),baseR*(.24+band(i/(petals-1))*.12),0,0,TAU);
     c.fillStyle=layer%2===0?theme.accent+'28':theme.foreground+'1c';
     c.fill();
     c.strokeStyle=layer%2===0?theme.accent+'aa':theme.foreground+'66';
@@ -274,7 +248,7 @@ export function drawMotionGraphics(
    c.shadowBlur=u*.032;
    c.shadowOffsetY=u*.014;
    c.fillStyle=i%3===0?theme.accent:i%3===1?theme.foreground+'33':theme.accent+'66';
-   const rw=u*(.46+bass*.22),rh=u*(.16+hit*.09);
+   const rw=u*(.46+bass*.12+band(i/9)*.12),rh=u*(.16+hit*.09);
    c.fillRect(-rw*.5,-rh*.5,rw,rh);
    c.strokeStyle=theme.foreground+'55';
    c.lineWidth=1.2;
@@ -297,14 +271,14 @@ export function drawMotionGraphics(
    const inner=deg%6===0?outerR*.93:outerR*.965;
    line(Math.cos(a)*inner,Math.sin(a)*inner,Math.cos(a)*outerR,Math.sin(a)*outerR);
   }
-  const nodes:{x:number;y:number}[]=[];
+  const nodes=orbitPositions;
   for(let i=0;i<8;i++){
    c.save();
    const rot=i*.39+t*(.045+i*.008)*(i%2?1:-1);
    c.rotate(rot);
    c.strokeStyle=i%2?theme.accent+'99':theme.foreground+'66';
    c.lineWidth=u*(i%3===0?.0032:.0018);
-   const r=u*(.15+i*.042+bass*.075);
+   const r=u*(.15+i*.042+bass*.04+band(i/7)*.045);
    c.beginPath();
    c.ellipse(0,0,r,r*(.46+(i%3)*.12),0,0,TAU);
    c.stroke();
@@ -312,16 +286,14 @@ export function drawMotionGraphics(
    const sx=Math.cos(ang)*r,sy=Math.sin(ang)*r*(.46+(i%3)*.12);
    circle(sx,sy,u*(.009+high*.018),theme.accent);
    circle(sx,sy,u*(.022+hit*.025),theme.foreground+'55',true);
-   nodes.push({
-    x:sx*Math.cos(rot)-sy*Math.sin(rot),
-    y:sx*Math.sin(rot)+sy*Math.cos(rot)
-   });
+   nodes[i*2]=sx*Math.cos(rot)-sy*Math.sin(rot);
+   nodes[i*2+1]=sx*Math.sin(rot)+sy*Math.cos(rot);
    c.restore();
   }
   c.strokeStyle=theme.accent+'44';
   c.lineWidth=1;
-  for(let i=0;i<nodes.length-1;i++){
-   line(nodes[i].x,nodes[i].y,nodes[i+1].x,nodes[i+1].y);
+  for(let i=0;i<7;i++){
+   line(nodes[i*2],nodes[i*2+1],nodes[(i+1)*2],nodes[(i+1)*2+1]);
   }
   c.restore();
   break;
@@ -331,10 +303,11 @@ export function drawMotionGraphics(
   c.save();
   c.translate(w*.5,h*.5);
   const baseR=u*(.22+bass*.07);
-  for(let ray=0;ray<64;ray++){
-   const a=ray*TAU/64+t*.12;
+  const rays=count(64,32);
+  for(let ray=0;ray<rays;ray++){
+   const a=ray*TAU/rays+t*.12;
    const harmonic=.5+.5*Math.sin(ray*1.7+t*2.4);
-   const len=baseR+u*(.04+harmonic*.12*(.3+bass+high)+hit*.05);
+   const len=baseR+u*(.04+harmonic*.04+band(ray/(rays-1))*.18+hit*.035);
    c.strokeStyle=ray%2===0?theme.accent+'cc':theme.foreground+'66';
    c.lineWidth=u*.004;
    line(Math.cos(a)*baseR*.88,Math.sin(a)*baseR*.88,Math.cos(a)*len,Math.sin(a)*len);
@@ -348,10 +321,10 @@ export function drawMotionGraphics(
  case 'infinite-tunnel': {
   c.save();
   c.translate(w*.5,h*.5);
-  const depthCount=16;
+  const depthCount=count(16,9);
   for(let i=0;i<depthCount;i++){
    const phase=((i/depthCount)+(t*.24))%1;
-   const r=u*(.03+Math.pow(phase,1.7)*.62)*(1+bass*.12);
+   const r=u*(.03+Math.pow(phase,1.7)*.62)*(1+bass*.06+band(i/(depthCount-1))*.08);
    c.save();
    c.rotate(phase*1.2+t*.15*(i%2?1:-1));
    c.strokeStyle=i%2===0?theme.accent:theme.foreground;
@@ -372,31 +345,32 @@ export function drawMotionGraphics(
   line(w*.5-u*.42,h*.5,w*.5+u*.42,h*.5);
   line(w*.5,h*.5-u*.42,w*.5,h*.5+u*.42);
   c.restore();
-  const pts:{x:number;y:number}[]=[];
-  for(let i=0;i<60;i++){
-   const x=w*(.05+((i*37)%97)/108)+Math.sin(t*.16+i)*u*mid*.038;
-   const y=h*(.08+((i*23)%89)/105)+Math.cos(t*.21+i)*u*high*.055;
-   pts.push({x,y});
+  const stars=count(60,32),pts=starPositions;
+  for(let i=0;i<stars;i++){
+   pts[i*2]=w*(.05+((i*37)%97)/108)+Math.sin(t*.16+i)*u*mid*.038;
+   pts[i*2+1]=h*(.08+((i*23)%89)/105)+Math.cos(t*.21+i)*u*high*.055;
+  }
+  for(let i=0;i<stars;i++){
+   const x=pts[i*2],y=pts[i*2+1];
+   for(let j=i+1;j<stars;j++){
+    const d=Math.hypot(x-pts[j*2],y-pts[j*2+1]);
+    if(d<u*.19){
+     c.globalAlpha=(1-d/(u*.19))*(.18+mid*.40);
+     c.strokeStyle=theme.accent;line(x,y,pts[j*2],pts[j*2+1]);
+    }
+   }
    c.globalAlpha=.38+.55*(.5+.5*Math.sin(i*3.1+t*1.4))*(.4+high);
-   if(i>0&&i%2===0){
-    c.strokeStyle=theme.accent+'55';
-    line(x,y,pts[i-1].x,pts[i-1].y);
-   }
-   if(i>3&&i%5===0){
-    c.strokeStyle=theme.foreground+'33';
-    line(x,y,pts[i-3].x,pts[i-3].y);
-   }
-   circle(x,y,u*(.003+high*.007+(i%7===0?hit*.008:0)),i%7===0?theme.accent:theme.foreground);
+   circle(x,y,u*(.003+band(i/(stars-1))*.008+(i%7===0?hit*.006:0)),i%7===0?theme.accent:theme.foreground);
   }
   c.globalAlpha=1;
   break;
  }
 
- // ==================== NATURE (3 UNIQUE DESIGNS) ====================
+ // ==================== NATURE ====================
  case 'aurora-field': {
-  const curtains=7;
+  const curtains=count(7,4);
   for(let cIdx=0;cIdx<curtains;cIdx++){
-   const baseY=h*(.22+cIdx*.08);
+   const baseY=h*(.22+cIdx/(curtains-1)*.48);
    c.beginPath();
    for(let x=0;x<=w;x+=14){
     const nx=x/w;
@@ -405,17 +379,20 @@ export function drawMotionGraphics(
     const y=baseY+sway;
     if(x===0)c.moveTo(x,y);else c.lineTo(x,y);
    }
-   c.strokeStyle=cIdx%2===0?theme.accent+'aa':theme.foreground+'55';
-   c.lineWidth=u*(.018+mid*.016);
-   c.stroke();
+   c.strokeStyle=cIdx%2===0?theme.accent+'88':theme.foreground+'44';
+   c.lineWidth=u*(.004+band(cIdx/curtains)*.008);c.stroke();
+   c.lineTo(w,h*.96);c.lineTo(0,h*.96);c.closePath();
+   const curtain=c.createLinearGradient(0,baseY-u*.12,0,h*.96);
+   curtain.addColorStop(0,theme.accent+'00');curtain.addColorStop(.24,theme.accent+'32');curtain.addColorStop(1,theme.accent+'00');
+   c.fillStyle=curtain;c.fill();
   }
   break;
  }
 
  case 'glow-lagoon': {
-  const swells=16;
+  const swells=count(16,9);
   for(let i=0;i<swells;i++){
-   const yBase=h*(.18+i*.046);
+   const yBase=h*(.18+i/(swells-1)*.69);
    c.beginPath();
    for(let x=0;x<=w;x+=12){
     const nx=x/w;
@@ -431,36 +408,61 @@ export function drawMotionGraphics(
   for(let s=0;s<28;s++){
    const sx=w*((s*19/28+t*.02)%1);
    const sy=h*(.25+((s*13)%65)/100)+Math.sin(t*1.2+s)*u*.03;
-   circle(sx,sy,u*(.004+high*.009),s%2===0?theme.accent:theme.foreground);
+   circle(sx,sy,u*(.003+band(s/28)*.010),s%2===0?theme.accent:theme.foreground);
   }
   break;
  }
 
  case 'pixel-garden': {
-  const cols=28;
-  for(let i=0;i<cols;i++){
-   const x=i*w/(cols-1),step=u*.019;
-   const harmonic=.5+.5*Math.sin(i*1.9+t*.7);
-   const stem=h*(.08+harmonic*.14+bass*.22+(i%3===0?mid*.1:0));
-   c.fillStyle=i%2?theme.foreground+'55':theme.accent;
-   c.fillRect(x,h-stem,step,stem);
-   const bloom=step*(2.1+high*3.2+hit*1.2);
-   c.fillStyle=i%3?theme.accent:theme.foreground;
-   c.fillRect(x-bloom/2+step/2,h-stem-bloom,bloom,bloom);
-   c.fillStyle=theme.background;
-   c.fillRect(x-step*.3,h-stem-bloom*.65,step*1.6,step*1.6);
-   if(i%2===0){
-    const sy=h*(.12+((i*17)%60)/100)+Math.sin(t*.55+i)*u*(.04+mid*.08);
-    c.fillStyle=theme.accent+'88';
-    c.fillRect(x,sy,step*.85,step*.85);
+  const flowers=count(26,14);
+  c.lineCap='round';
+  for(let i=0;i<flowers;i++){
+   const back=i<flowers/2,layer=back?.66:1;
+   const x=w*(.035+((i*.618033989)%1)*.93);
+   const ground=h*(back?.92:1.06);
+   const voice=band(i/(flowers-1));
+   const stem=h*(.18+((i*7)%11)*.014+bass*.14+voice*.13)*layer;
+   const sway=Math.sin(t*.55+i*1.9)*u*(.008+mid*.035)*layer;
+   const topX=x+sway,topY=ground-stem;
+   c.globalAlpha=back?.48:.94;
+   c.strokeStyle=theme.accent;c.lineWidth=u*.003*layer;
+   c.beginPath();c.moveTo(x,ground);c.bezierCurveTo(x-sway,ground-stem*.3,topX,topY+stem*.3,topX,topY);c.stroke();
+   // Tapered leaves on both sides of a curved stem.
+   for(let side=-1;side<=1;side+=2){
+    const ly=ground-stem*(side<0?.38:.57),lx=x+sway*.45;
+    c.beginPath();c.moveTo(lx,ly);
+    c.quadraticCurveTo(lx+side*u*.047*layer,ly-u*.043*layer,lx+side*u*.05*layer,ly-u*.01*layer);
+    c.quadraticCurveTo(lx+side*u*.026*layer,ly+u*.013*layer,lx,ly);
+    c.fillStyle=theme.accent+'aa';c.fill();
    }
+   const petals=i%3===0?8:5;
+   const radius=u*(.013+((i*3)%5)*.002+high*.014+voice*.008)*layer;
+   const open=1+hit*.15;
+   c.save();c.translate(topX,topY);c.rotate(Math.sin(t*.35+i)*(.06+mid*.15));
+   const petal=c.createRadialGradient(0,0,0,0,0,radius*2.2);
+   petal.addColorStop(0,theme.accent);petal.addColorStop(.65,i%3===0?theme.foreground:theme.accent);petal.addColorStop(1,theme.foreground+'88');
+   c.fillStyle=petal;
+   for(let j=0;j<petals;j++){
+    const a=j/petals*TAU;
+    c.beginPath();c.ellipse(Math.cos(a)*radius*.95*open,Math.sin(a)*radius*.95*open,radius*1.05,radius*.51,a,0,TAU);c.fill();
+   }
+   circle(0,0,radius*.48,theme.foreground);
+   circle(0,0,radius*.26,theme.accent);
+   c.restore();
   }
+  c.globalAlpha=1;
+  // Treble-lit pollen stays round even in the pixel font theme.
+  for(let i=0;i<count(32,12);i++){
+   const x=w*((i*.618+t*.008)%1),y=h*(.15+((i*19)%65)/100)+Math.sin(t*.4+i)*u*.025;
+   c.globalAlpha=.18+high*.55;circle(x,y,u*(.0018+high*.003),theme.foreground);
+  }
+  c.globalAlpha=1;
   break;
  }
 
- // ==================== ARCHITECTURE (3 MOTION2D + 1 SPECTRUM) ====================
+ // ==================== ARCHITECTURE ====================
  case 'neon-metal-matrix': {
-  const cols=18,rows=10;
+  const cols=count(18,11),rows=count(10,6);
   const cellW=w*.84/cols,cellH=h*.76/rows;
   const startX=w*.08,startY=h*.12;
   for(let r=0;r<rows;r++){
@@ -468,11 +470,17 @@ export function drawMotionGraphics(
     const cx=startX+(col+.5)*cellW;
     const cy=startY+(r+.5)*cellH;
     const wave=Math.sin(col*.45+r*.55-t*2.1);
-    const scale=.28+.38*(.5+.5*wave)+bass*.32;
+    const voice=band((col+r*.45)/(cols+rows*.45));
+    const scale=.24+.24*(.5+.5*wave)+voice*.48+bass*.12;
     const bw=cellW*scale,bh=cellH*scale;
     c.strokeStyle=(r+col)%3===0?theme.accent+'cc':theme.foreground+'44';
     c.lineWidth=1.2;
+    const extrusion=u*(.004+bass*.014);
+    c.strokeRect(cx-bw*.5+extrusion,cy-bh*.5-extrusion,bw,bh);
+    c.fillStyle=theme.accent+'12';c.fillRect(cx-bw*.5,cy-bh*.5,bw,bh);
     c.strokeRect(cx-bw*.5,cy-bh*.5,bw,bh);
+    line(cx-bw*.5,cy-bh*.5,cx-bw*.5+extrusion,cy-bh*.5-extrusion);
+    line(cx+bw*.5,cy+bh*.5,cx+bw*.5+extrusion,cy+bh*.5-extrusion);
     if((r+col)%4===0){
      circle(cx,cy,u*(.004+high*.008),theme.accent);
     }
@@ -502,7 +510,7 @@ export function drawMotionGraphics(
   c.strokeRect(-sq*.36,-sq*.36,sq*.72,sq*.72);
   c.restore();
   for(let i=0;i<16;i++){
-   const barH=h*(.06+((i*7)%5)*.022+high*.14+bass*(i%2?.08:0));
+   const barH=h*(.06+((i*7)%5)*.022+band(i/15)*.18+bass*(i%2?.05:0));
    c.fillStyle=i%4===0?theme.accent:theme.foreground;
    c.fillRect(w*.05+i*u*.024,h*.90-barH,u*.014,barH);
   }
@@ -514,7 +522,7 @@ export function drawMotionGraphics(
    const x=(col+.5)*w/26,y=(row+.5)*h/16;
    const dist=Math.hypot(x-w*.5,y-h*.5)/u;
    const wave=.5+.5*Math.sin(dist*10-t*1.8+col*.25);
-   const radius=u*(.003+wave*.010+((row+col)%3===0?bass:high)*.014);
+   const radius=u*(.003+wave*.010+band((col+row*.4)/32)*.016);
    c.globalAlpha=.16+wave*.48;
    circle(x,y,radius,(row+col)%5===0?theme.foreground:theme.accent);
   }
@@ -532,7 +540,7 @@ export function drawMotionGraphics(
   circle(w*.5,horizon,u*(.21+hit*.05),theme.accent,true);
   for(let lane=-8;lane<=8;lane++){
    c.strokeStyle=lane%2===0?theme.accent+'88':theme.foreground+'44';
-   c.lineWidth=lane===0?2.2:1.2;
+   c.lineWidth=(lane===0?2.2:1.2)+band((lane+8)/16)*2;
    line(w*.5+lane*w*.022,horizon,w*.5+lane*w*.13,h);
   }
   for(let row=1;row<=10;row++){
@@ -550,7 +558,7 @@ export function drawMotionGraphics(
   for(let i=0;i<flock;i++){
    const px=w*((.08+i*.068+t*.045)%0.88+0.06);
    const py=h*(.18+((i*29)%64)/100)+Math.sin(t*1.1+i)*u*(.03+mid*.05);
-   const wing=u*(.028+bass*.025+(i%3)*0.008);
+   const wing=u*(.028+bass*.012+band(i/(flock-1))*.018+(i%3)*0.008);
    const flap=Math.sin(t*3.2+i*1.3)*(.25+high*.35);
    c.save();
    c.translate(px,py);
@@ -571,4 +579,5 @@ export function drawMotionGraphics(
 
  c.restore();
 }
+
 

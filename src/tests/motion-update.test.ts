@@ -25,8 +25,8 @@ describe('live motion graphics',()=>{
   expect(objectDrive('treble',1,1,0,1)).toBe(0);
   const e=new BandEnvelope();expect(e.update(.8,.025,0)).toBe(0);
  });
- it('routes twenty-one distinct VoxelWall themes to the 2D motion engine',()=>{
-  expect(new Set(MOTION_SCENES).size).toBe(21);
+ it('routes twenty-three distinct VoxelWall themes to the 2D motion engine',()=>{
+  expect(new Set(MOTION_SCENES).size).toBe(23);
   for(const id of MOTION_SCENES)expect(visualSystemFor(id)).toBe('motion2d');
  });
  it('keeps lyric ink and accents readable against every scene surface and every colour palette',()=>{
@@ -74,3 +74,4 @@ describe('resilient discovery',()=>{
   const result=await resolveSong(song,'https://music.example');expect(result.format).toBe('hls');expect(result.artist).toBe('Test Artist');expect(result.provider).toBe('soundcloud');
  });
 });
+
