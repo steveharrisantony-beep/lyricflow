@@ -250,9 +250,12 @@ it('renders Lift upwards, Zoom larger and Glow on the active word only',()=>{
  const lift=render({...options,enabledWordAnimations:['lift']});
  const zoom=render({...options,enabledWordAnimations:['zoom']});
  const glow=render({...options,enabledWordAnimations:['glow']});
- expect(lift.transforms[1][5]).toBeLessThan(plain.transforms[1][5]);
- expect(zoom.transforms[1][0]).toBeGreaterThan(plain.transforms[1][0]);
- expect(glow.paints[0].blur).toBeGreaterThan(3);expect(glow.paints.slice(1).every(p=>p.blur===3)).toBe(true);
+ expect(plain.result.glyphs).toBe(4);
+ expect(lift.result.glyphs).toBe(17);expect(zoom.result.glyphs).toBe(17);
+ expect(lift.transforms.some(matrix=>matrix[5]<0)).toBe(true);
+ expect(zoom.transforms.some(matrix=>matrix[0]>1.01&&matrix[3]>1.01)).toBe(true);
+ expect(glow.paints[0].blur).toBeGreaterThan(3);
+ expect(glow.paints[4].blur).toBe(3);expect(glow.paints.slice(5).every(p=>p.blur===3)).toBe(true);
 });
 
 it('keeps all-empty effect pools plain even when the master switches are on',()=>{
@@ -287,4 +290,11 @@ it('keeps each of the new letter poses finite, bounded and deterministic during 
    expect(pose).toEqual(letterMotionPose(motion,time,index,160,intensity,connected,duration,1));
   }
  }
+});
+
+it('animates combining marks and emoji as whole graphemes in the word-only layer',()=>{
+ const [sample]=buildCues([{time:0,text:'a\u0301🙂b',words:[{text:'a\u0301🙂b',start:0,end:1,timing:'sourced'}]}],[]);
+ const result=render({cue:sample,animated:false,wordAnimationsEnabled:true,enabledWordAnimations:['lift'],time:.3});
+ expect(result.result.glyphs).toBe(3);
+ expect(result.paints.map(p=>p.text)).toEqual(['a\u0301','🙂','b']);
 });

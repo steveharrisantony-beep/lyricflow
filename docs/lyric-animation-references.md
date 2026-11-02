@@ -67,6 +67,15 @@ lens stays at or below the fitted phrase size.
 - Lift, Glow and Zoom are a separate word-animation pool with an independent
   master switch and individual preview/toggle rows. Each enabled pool chooses one
   effect per line. Empty pools stay empty after reload.
+- Lift and Zoom travel through each word's measured graphemes with overlapping
+  pulses: adjacent letters start before earlier letters finish. The complete wave
+  remains inside the sourced word interval and settles at its boundary.
+- Glow lights letters progressively. Each letter retains its full glow after its
+  attack until the complete word ends. Word boundaries, seeks and pauses use the
+  media clock, so there is no lingering glow or independent timer to clean up.
+- These word effects also segment Latin graphemes when line animation is off.
+  Connected scripts remain single shaped word units. Static decorations stay at
+  word level, and reduced motion disables the word effects.
 - Both word layers require sourced word timing and matching display tokens.
   Reduced motion disables glyph motion and animated glow while retaining static
   decoration. Switching all three layers off leaves steady plain lyrics.

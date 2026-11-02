@@ -621,6 +621,8 @@ export function drawKineticLyrics({
  const activeWordStyle=wordStylesEnabled&&hasWordSync&&selectedWordStyle?selectedWordStyle:'off';
  const animationPool=enabledWordAnimations??['lift'];
  const activeWordAnimation=wordAnimationsEnabled&&hasWordSync&&animationPool.length?animationPool[hash(`${cue.time}|${cue.text}`)%animationPool.length]:'off';
+ const wordLettersActive=activeWordAnimation!=='off'&&wordAnimationEnergy>.001;
+ const renderLetters=energy>.001||wordLettersActive;
  const lineColors=albumPalette?albumColorsForLine(albumPalette,`${cue.time}|${cue.text}`):undefined;
 
  const vocalEnd=duetSide
@@ -680,7 +682,7 @@ export function drawKineticLyrics({
    fillPace,
    placement:activePlacement,
    wordStyle:activeWordStyle,
-  glyphs:energy>.001?unitCount:runs.length,
+  glyphs:renderLetters?unitCount:runs.length,
   letterMode:units.every(parts=>parts[0]?.connected)?'shaped':units.some(parts=>parts[0]?.connected)?'mixed':'letters',
   wordAnimation:activeWordAnimation,
   motionPhase:choreographyPhase(age,duration,energy>.001)
@@ -820,12 +822,6 @@ export function drawKineticLyrics({
   let wordShear=0;
   let wordRotation=0;
 
-  if(activeWordAnimation!=='off'&&isActive){
-   const pose=currentWordAnimationPose(activeWordAnimation,wordProgress,wordAnimationEnergy);
-   y-=pose.y*size/pixelsPerWorld;
-   stretchX*=pose.scale;stretchY*=pose.scale;
-  }
-
   // Cap per-word stretch so adjacent words in a multi-word row or multi-row stack never collide
   const maxStretchX=colCount>1?1.14:1.22;
   const maxStretchY=totalRows>1?1.14:1.24;
@@ -846,8 +842,8 @@ export function drawKineticLyrics({
    const aa=scaleX*stretchX,bb=scaleXY*stretchX,cc=scaleYX+wordShear*scaleX,dd=scaleY*stretchY;
    const mA=aa*cos+cc*sin,mB=bb*cos+dd*sin,mC=cc*cos-aa*sin,mD=dd*cos-bb*sin;
    const measuredW=width*fit;
-   const localHalfW=measuredW*0.56+size*(energy>.01?.38:.14)+8;
-   const localHalfH=size*(energy>.01?1.02:.64)+6;
+   const localHalfW=measuredW*0.56+size*(energy>.01?.38:wordLettersActive?.24:.14)+8;
+   const localHalfH=size*(energy>.01?1.02:wordLettersActive?.90:.64)+6;
    const halfExtentX=Math.abs(mA)*localHalfW+Math.abs(mC)*localHalfH;
    const halfExtentY=Math.abs(mB)*localHalfW+Math.abs(mD)*localHalfH;
 
@@ -936,14 +932,15 @@ export function drawKineticLyrics({
     drawCurrentWordAccent(c,activeWordStyle,measuredW,size,wordProgress,sungColor);c.restore();
    }
 
-   const parts=energy>.001?units[word.index]:[{text:word.text,center:0,width:measuredW,index:0,count:1,connected:true}];
-   const glow=isActive?currentWordAnimationPose(activeWordAnimation,wordProgress,wordAnimationEnergy).glow:0;
-   const glyphGlow=glow>.001?{color:sungColor,blur:Math.min(28,size*glow)}:undefined;
+   const parts=renderLetters?units[word.index]:[{text:word.text,center:0,width:measuredW,index:0,count:1,connected:true}];
    for(const part of parts){
     const pose=letterMotionPose(motion,age,unitOffsets[word.index]+part.index,unitCount,energy,part.connected,duration,cueIndex);
+    const wordPose=currentWordAnimationPose(isActive?activeWordAnimation:'off',wordProgress,wordAnimationEnergy,part.index,part.count);
+    const glyphGlow=wordPose.glow>.001?{color:sungColor,blur:Math.min(28,size*wordPose.glow)}:undefined;
     c.save();
     c.globalAlpha*=pose.alpha;
     c.transform(pose.scaleX*Math.cos(pose.rotation),pose.scaleX*Math.sin(pose.rotation),pose.shear-Math.sin(pose.rotation),pose.scaleY*Math.cos(pose.rotation),part.center*(1+pose.tracking)+pose.x*size,pose.y*size);
+    if(wordPose.y!==0||wordPose.scale!==1)c.transform(wordPose.scale,0,0,wordPose.scale,0,wordPose.y*size);
     if(pose.reveal<1){c.beginPath();c.rect(-part.width*.65,-size*.68,Math.max(1,part.width*1.3),size*1.4*pose.reveal);c.clip();}
     if(pose.revealX<1){
      const left=-part.width*.65,width=Math.max(1,part.width*1.3),shown=width*pose.revealX;
@@ -974,7 +971,7 @@ export function drawKineticLyrics({
   fillPace,
   placement:activePlacement,
   wordStyle:activeWordStyle,
-  glyphs:energy>.001?unitCount:runs.length,
+  glyphs:renderLetters?unitCount:runs.length,
   letterMode:units.every(parts=>parts[0]?.connected)?'shaped':units.some(parts=>parts[0]?.connected)?'mixed':'letters',
   wordAnimation:activeWordAnimation,
   motionPhase:choreographyPhase(age,duration,energy>.001)
