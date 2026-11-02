@@ -1,9 +1,6 @@
 name: Build Android APK
 
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
     inputs:
       publish_update:
@@ -26,11 +23,6 @@ env:
   VITE_FIREBASE_DATABASE_ID: ${{ vars.VITE_FIREBASE_DATABASE_ID }}
 
 jobs:
-  automatic-builds-disabled:
-    if: github.event_name != 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "Automatic APK builds are disabled. This run only cancels older automatic builds."
   apk:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest

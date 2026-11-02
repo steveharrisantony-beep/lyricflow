@@ -15,5 +15,7 @@ Android package. Keep browser development and the Android embedded backend worki
 - App updates must use HTTPS, validate checksums, app IDs, increasing version codes
   and signing identity, and leave installation approval to Android.
 - Never commit signing keys, passwords, session cookies or access tokens.
-- Relevant checks: npm run typecheck, npm test, npm run build, npm run build:backend,
-  npm run test:backend, and the Android APK/emulator workflow.
+- Do not build an Android APK or trigger APK/emulator workflows unless the user
+  explicitly asks. Routine repository updates must not generate APKs.
+- Relevant routine checks: npm run typecheck, npm test, npm run build,
+  npm run build:backend, and npm run test:backend.
