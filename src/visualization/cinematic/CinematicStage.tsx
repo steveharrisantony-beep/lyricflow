@@ -1,3 +1,5 @@
+import {SpectrumThemes,isSpectrumScene} from './procedural/SpectrumThemes';
+import {paletteForSection,type ThemePaletteInput} from './themeSelection';
 import type {LyricLayoutSettings} from '../../lyrics/lyricLayout';
 import {chooseThemeTransition} from './themeTransitions';
 import type {CurrentWordAnimation} from './currentWordAnimations';
@@ -49,8 +51,7 @@ export interface CinematicProps{
  enabledCameraViews?:readonly CameraView[];
  cameraShakeEnabled?:boolean;
  cameraShakeSensitivity?:number;
- themePalettes?:Record<string,string>;
- autoRandomizeThemePalettes?:boolean;
+ themePalettes?:ThemePaletteInput;
  themeDurationLines?:number;
  themeDurationSeconds?:number;
  customLyricAccentColor?:string;
@@ -87,7 +88,8 @@ export function resolveActiveCameraView():CameraView{
 }
 
 /** Routes each VoxelWall music-reactive theme to its dedicated 2D rendering grammar (no 3D WebGL themes). */
-export function visualSystemFor(id:SceneId):GraphicSystem|'motion2d'{
+export function visualSystemFor(id:SceneId):GraphicSystem|'motion2d'|'analyzer'{
+ if(isSpectrumScene(id))return 'analyzer';
  if(id==='color-riot')return 'geometry';
  if(MOTION_SCENES.includes(id))return 'motion2d';
  return 'motion2d';
@@ -165,6 +167,10 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
   const getGraphicArt=()=>{if(!graphicArt)graphicArt=new GraphicCompositions();return graphicArt};
   const getOutgoingArt=()=>{if(!outgoingArt)outgoingArt=new GraphicCompositions();return outgoingArt};
 
+  let spectrumArt:SpectrumThemes|null=null,outgoingSpectrum:SpectrumThemes|null=null;
+  const getSpectrumArt=()=>spectrumArt??(spectrumArt=new SpectrumThemes());
+  const getOutgoingSpectrum=()=>outgoingSpectrum??(outgoingSpectrum=new SpectrumThemes());
+  let spectrumRecordingKey=props.recordingKey;
   const cameraRig=new MusicCameraRig();
   element.dataset.renderer='VOXELWALL 2D ENGINE';
   let raf=0,last=0,elapsed=0,frames=0,fpsTime=0,quality=props.quality,revision=-1,enabledScenesKey='';
@@ -197,12 +203,12 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
     fx.height=Math.max(1,Math.floor(h*dpr));
     const paintCtx=fx.getContext('2d',{alpha:false});
     paintCtx?.setTransform(fx.width/w,0,0,fx.height/h,0,0);
-    graphicArt?.reset();
+    graphicArt?.reset();spectrumArt?.reset();
    }
   };
   const observer=new ResizeObserver(resize);observer.observe(element);resize();
   const pulse:Pulse={...NO_AUDIO};
-  let visualMode:GraphicSystem|'motion2d'='motion2d';
+  let visualMode:GraphicSystem|'motion2d'|'analyzer'='motion2d';
   let smoothMediaClock:number|null=null;
   let lastRawMediaTime:number|null=null;
   const datasetCache:Record<string,string>={};
@@ -224,7 +230,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
     if(useYtVideoBg){
      // Unload theme state while YouTube video is active so zero background theme work runs
      graphicArt?.reset();
-     outgoingArt?.reset();
+     outgoingArt?.reset();spectrumArt?.reset();outgoingSpectrum?.reset();
      setLyricBackdrop(textCtx,null);
     }
     resize();
@@ -297,7 +303,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
    }
    let lyric=getLyricState(time);
    const activeCueNow=(config.audioPaused||config.hideStageLyrics)?null:lyric.cue;
-   const directed=config.autoScenes&&sequence.length>0?sceneAt(sequence,lyric.position):null;
+   const directed=(config.autoScenes||config.enabledScenes?.length===1)&&sequence.length>0?sceneAt(sequence,lyric.position):null;
    const candidateScene=directed??sceneForAudio(time,config.manualScene,config.autoScenes,config.enabledScenes,config.themeDurationSeconds??12,config.recordingKey||'');
    const lockHolder=element as unknown as {_lockedCueKey?:string;_lockedScene?:DirectedScene|null};
    let scene:DirectedScene;
@@ -353,43 +359,35 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
     ytWrapRef.current.style.transform='none';
    }
 
-   const resolveScenePaletteId=(targetSceneId:SceneId,directedPaletteId?:string)=>{
-    if(config.autoRandomizeThemePalettes){
-     if(directedPaletteId)return directedPaletteId;
-     const tpl=byId[targetSceneId];
-     if(tpl&&tpl.palettes.length>0){
-      return tpl.palettes[hashSeed(`${config.recordingKey||''}:${targetSceneId}:${scene.section}`)%tpl.palettes.length]?.id;
-     }
-    }
-    return config.themePalettes?.[targetSceneId];
-   };
+   const resolveScenePaletteId=(targetSceneId:SceneId)=>paletteForSection(targetSceneId,config.themePalettes,scene.section,config.recordingKey||'');
 
    // Draw themes only while visible or transitioning. This canvas is permanently between video and lyrics.
    const fx=effects.current;
    const paintCtx=!useYtVideoBg&&fx?fx.getContext('2d',{alpha:false}):null;
    if(!useYtVideoBg&&fx&&paintCtx){
-    if(scene.id!==previousId){
+    if(spectrumRecordingKey!==config.recordingKey){spectrumArt?.reset();outgoingSpectrum?.reset();spectrumRecordingKey=config.recordingKey;}
+    const chosenPaletteId=resolveScenePaletteId(scene.id);
+    setData('paletteId',chosenPaletteId);
+    if(scene.id!==previousId||chosenPaletteId!==previousPaletteId){
      outgoingId=previousId;
      outgoingPaletteId=previousPaletteId;
+     if(outgoingId&&isSpectrumScene(outgoingId)&&spectrumArt)getOutgoingSpectrum().copyFrom(spectrumArt);
+     if(scene.id!==outgoingId)spectrumArt?.reset();
      previousId=scene.id;
-     previousPaletteId=resolveScenePaletteId(scene.id,scene.paletteId);
+     previousPaletteId=chosenPaletteId;
      transitionStarted=now/1000;
      activeThemeTransition=chooseThemeTransition(scene.transition,config.enabledThemeTransitions,`${scene.id}|${scene.section}`);
      if(outgoingId){outgoing.width=fx.width;outgoing.height=fx.height;getOutgoingArt().reset()}
-    }else if(!config.autoRandomizeThemePalettes){
-     previousPaletteId=config.themePalettes?.[scene.id];
-    }else if(previousPaletteId===undefined){
-     previousPaletteId=resolveScenePaletteId(scene.id,scene.paletteId);
     }
     const transition=outgoingId&&activeThemeTransition&&!config.reducedMotion?transitionProgress(now/1000,transitionStarted):1;
     visualMode=visualSystemFor(scene.id);
-    if(visualMode!==modeLast){modeLast=visualMode;getGraphicArt().reset()}
+    if(visualMode!==modeLast){modeLast=visualMode;graphicArt?.reset()}
 
     if(isDemo)for(let i=0;i<64;i++){
      const oscillation=Math.abs(Math.sin(time*2.2+i*.38)*Math.cos(time*.66+i*.25));
      demoBands[i]=getSpectrumSensitivity()*Math.max(.035,oscillation*(.5+.4*Math.max(0,Math.sin(time*3.9-i*.22))));
     }
-    const background=(id:SceneId,target:CanvasRenderingContext2D,art:GraphicCompositions,old=false)=>{
+    const background=(id:SceneId,target:CanvasRenderingContext2D,old=false)=>{
      const mode=visualSystemFor(id);
      const paletteId=old?outgoingPaletteId:previousPaletteId;
      const resolvedPal=resolveThemePalette(id,paletteId);
@@ -397,13 +395,14 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      if(!old)target.setTransform(fx.width/w,0,0,fx.height/h,0,0);
      target.save();target.translate(w*.5+cameraFrame.x*w,h*.5+cameraFrame.y*h);
      target.rotate(cameraFrame.roll);target.scale(cameraFrame.zoom*1.025,cameraFrame.zoom*1.025);target.translate(-w*.5,-h*.5);
-     if(mode==='motion2d')drawMotionGraphics(target,w,h,visualTime,pulse,id,factor,config.reducedMotion,paletteId,{bands:measured?.bands??(isDemo?demoBands:undefined),detail:(quality==='Performance'?.5:quality==='Balanced'?.75:1)*adaptiveScale});
-     else art.render(target,w,h,visualTime,{...pulse,bands:measured?.bands??(isDemo?demoBands:undefined)},mode,
+     if(isSpectrumScene(id))(old?getOutgoingSpectrum():getSpectrumArt()).render(target,w,h,visualTime,{...pulse,bands:measured?.bands??(isDemo?demoBands:undefined)},id,resolvedPal,factor,config.reducedMotion,(quality==='Performance'?.5:quality==='Balanced'?.75:1)*adaptiveScale,now/1000);
+     else if(mode==='motion2d')drawMotionGraphics(target,w,h,visualTime,pulse,id,factor,config.reducedMotion,paletteId,{bands:measured?.bands??(isDemo?demoBands:undefined),detail:(quality==='Performance'?.5:quality==='Balanced'?.75:1)*adaptiveScale});
+     else if(mode!=='analyzer')(old?getOutgoingArt():getGraphicArt()).render(target,w,h,visualTime,{...pulse,bands:measured?.bands??(isDemo?demoBands:undefined)},mode,
        transition<1?0:config.motionBlur,factor,Boolean(isDemo),config.reducedMotion,resolvedPal);
      target.restore();
     };
-    if(transition<1&&outgoingId&&outgoingCtx)background(outgoingId,outgoingCtx,getOutgoingArt(),true);
-    background(scene.id,paintCtx,getGraphicArt());
+    if(transition<1&&outgoingId&&outgoingCtx)background(outgoingId,outgoingCtx,true);
+    background(scene.id,paintCtx);
     // Scene transitions belong on the theme layer, never on the transparent lyrics canvas.
     if(transition<1&&outgoingId&&outgoing.width>0)drawSceneTransition(paintCtx,outgoing,w,h,transition,activeThemeTransition!);
     if(sampleCtx&&(elapsed-sampleAt>.25||transition<.04)){
@@ -424,7 +423,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
    const secondaryCue=(config.audioPaused||config.hideStageLyrics)?null:lyric.secondaryCue;
    if(activeCue){
     const project=makeLyricProjection(w,h,cameraFrame);
-    const activePaletteId=previousPaletteId??resolveScenePaletteId(scene.id,scene.paletteId);
+    const activePaletteId=previousPaletteId??resolveScenePaletteId(scene.id);
     const isDuet=Boolean(secondaryCue||activeCue.duetSide);
     const primaryDuetSide=activeCue.duetSide??(secondaryCue?'left':undefined);
     const activePlacementMode=useYtVideoBg

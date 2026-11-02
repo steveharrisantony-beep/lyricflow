@@ -1,6 +1,6 @@
 # Music-reactive theme refresh
 
-Reviewed on 3 November 2026. The active catalog contains 24 distinct scenes and 99 palettes.
+Reviewed on 3 November 2026. This initial refresh introduced 24 scenes and 99 palettes. The subsequent [spectrum analyzer update](spectrum-analyzer-themes.md) brings the catalog to 28 scenes and 115 palettes and replaces the rotation switches with automatic selection rules.
 
 ## Repository research
 

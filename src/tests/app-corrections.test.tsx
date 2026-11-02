@@ -417,3 +417,27 @@ it('requests External Player audio only after Start and stops it when notificati
   expect([...host.querySelectorAll('button')].some(b=>b.textContent==='Stop audio capture')).toBe(false);
  }finally{external.setAndroidAppOverrideForTest(null);status.mockRestore();subscribe.mockRestore();capture.mockRestore();stop.mockRestore();}
 });
+
+it('supports multiple palette switches without randomization controls and restores the set after remount',async()=>{
+ expect(host.textContent).not.toContain('Randomize enabled themes');
+ expect(host.textContent).not.toContain('Auto-randomize colour palette');
+ const palette=(name:string)=>host.querySelector<HTMLInputElement>(`input[aria-label="Color Riot · ${name}"]`)!;
+ expect(palette('Peach Sorbet').checked).toBe(true);
+ expect(palette('Lavender Milk').type).toBe('checkbox');
+ await act(async()=>palette('Lavender Milk').click());
+ expect(palette('Peach Sorbet').checked).toBe(true);expect(palette('Lavender Milk').checked).toBe(true);
+ await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App/>));
+ expect(palette('Peach Sorbet').checked).toBe(true);expect(palette('Lavender Milk').checked).toBe(true);
+ await act(async()=>palette('Peach Sorbet').click());
+ expect(palette('Peach Sorbet').checked).toBe(false);expect(palette('Lavender Milk').checked).toBe(true);
+});
+it('derives automatic theme rotation from the enabled set',async()=>{
+ const switches=[...host.querySelectorAll<HTMLInputElement>('.theme-selection > .preview-setting input')];
+ expect(switches.length).toBe(28);
+ await act(async()=>{for(const input of switches)if(input.getAttribute('aria-label')!=='Pixel Garden')input.click();});
+ let prefs=JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!);
+ expect(prefs.enabledScenes).toEqual(['pixel-garden']);expect(prefs.autoScenes).toBe(false);
+ await act(async()=>host.querySelector<HTMLInputElement>('input[aria-label="Spectrum Prism"]')!.click());
+ prefs=JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!);
+ expect(prefs.enabledScenes).toEqual(['pixel-garden','spectrum-prism']);expect(prefs.autoScenes).toBe(true);
+});

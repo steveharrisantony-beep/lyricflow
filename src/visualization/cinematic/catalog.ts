@@ -1,3 +1,4 @@
+import type {SpectrumSceneId} from './procedural/SpectrumThemes';
 import type {Mood,ScenePlan} from '../../lyrics/sceneDirector';
 import type {LyricCue} from '../../lyrics/lyricTimeline';
 
@@ -8,10 +9,11 @@ export type VoxelWallCategory =
  | 'space'
  | 'nature'
  | 'architecture'
- | 'journeys';
+ | 'journeys'
+ | 'spectrum';
 
 /**
- * 24 distinct VoxelWall 2D music-reactive themes across 7 categories.
+ * 28 distinct VoxelWall 2D music-reactive themes across 8 categories.
  * Duplicate color-swap clones have been consolidated into multi-palette options on each unique theme.
  */
 export type SceneId =
@@ -45,7 +47,8 @@ export type SceneId =
  | 'fluid-ink'
  | 'spectral-terrain'
  | 'resonance-plate'
- | 'mycelium-network';
+ | 'mycelium-network'
+ | SpectrumSceneId;
 
 export type Layout='hero'|'editorial'|'left'|'stack'|'poster'|'scattered';
 export type Transition='flash'|'wipe'|'dissolve'|'glitch'|'ripple'|'ink'|'zoom';
@@ -88,6 +91,7 @@ export const VOXELWALL_CATEGORIES:readonly {id:VoxelWallCategory;label:string;de
  {id:'space',label:'Space',description:'Celestial astrolabes, solar corona halos, warp corridors, and star maps'},
  {id:'nature',label:'Nature',description:'Auroras, ocean swells, flowering gardens, and luminous mycelium'},
  {id:'architecture',label:'Architecture',description:'Frequency-driven matrices, Bauhaus plates, and halftones'},
+ {id:'spectrum',label:'Spectrum',description:'LED peaks, radial frequency bars, spectral history, and mirrored envelopes'},
  {id:'journeys',label:'Journeys',description:'Retro-synth horizons, origami flocks, and constructivist hex sculptures'}
 ] as const;
 
@@ -612,6 +616,91 @@ export const TEMPLATES:readonly Template[]=[
   transition:'ink',
   camera:'drift',
   baseEnergy:0.5
+ },
+ // Spectrum analyzer family
+ {
+  id:'spectrum-prism',
+  label:'Spectrum Prism',
+  family:'spectrum',
+  moods:['abstract','celebration','cosmic'],
+  genres:['electronic','pop','rock','hip-hop'],
+  background:'#09111f',
+  foreground:'#eaf6ff',
+  accent:'#65d6f2',
+  palettes:[
+   {id:'studio-prism',name:'Studio Prism',background:'#09111f',foreground:'#eaf6ff',accent:'#65d6f2'},
+   {id:'amber-console',name:'Amber Console',background:'#1b150c',foreground:'#fff4d9',accent:'#edbb69'},
+   {id:'rose-console',name:'Rose Console',background:'#211222',foreground:'#fff0fc',accent:'#ea9dd2'},
+   {id:'mint-console',name:'Mint Console',background:'#0c221f',foreground:'#ecfff4',accent:'#8bddbc'}
+  ],
+  font:'industrial',
+  layout:'poster',
+  transition:'wipe',
+  camera:'push',
+  baseEnergy:0.78
+ },
+ {
+  id:'radial-spectrum',
+  label:'Radial Spectrum',
+  family:'spectrum',
+  moods:['abstract','celebration','cosmic'],
+  genres:['electronic','pop','rock','hip-hop'],
+  background:'#0b1628',
+  foreground:'#f0f6ff',
+  accent:'#96b9f5',
+  palettes:[
+   {id:'polar-spectrum',name:'Polar Spectrum',background:'#0b1628',foreground:'#f0f6ff',accent:'#96b9f5'},
+   {id:'solar-spectrum',name:'Solar Spectrum',background:'#24180d',foreground:'#fff5e2',accent:'#edbc73'},
+   {id:'orchid-spectrum',name:'Orchid Spectrum',background:'#23132b',foreground:'#fff1ff',accent:'#dba5ef'},
+   {id:'jade-spectrum',name:'Jade Spectrum',background:'#0b2825',foreground:'#ebfff7',accent:'#8ce2c5'}
+  ],
+  font:'tech',
+  layout:'hero',
+  transition:'ripple',
+  camera:'orbit',
+  baseEnergy:0.76
+ },
+ {
+  id:'spectrum-waterfall',
+  label:'Spectrum Waterfall',
+  family:'spectrum',
+  moods:['abstract','celebration','cosmic'],
+  genres:['electronic','pop','rock','hip-hop'],
+  background:'#080f20',
+  foreground:'#fcf7e7',
+  accent:'#75b8ed',
+  palettes:[
+   {id:'deep-scan',name:'Deep Scan',background:'#080f20',foreground:'#fcf7e7',accent:'#75b8ed'},
+   {id:'thermal-scan',name:'Thermal Scan',background:'#20101e',foreground:'#fff7dd',accent:'#e596a4'},
+   {id:'forest-scan',name:'Forest Scan',background:'#091c19',foreground:'#f4ffe1',accent:'#79cfa8'},
+   {id:'lilac-scan',name:'Lilac Scan',background:'#18132d',foreground:'#fff2fc',accent:'#b9a3ec'}
+  ],
+  font:'mono',
+  layout:'left',
+  transition:'dissolve',
+  camera:'drift',
+  baseEnergy:0.58
+ },
+ {
+  id:'spectrum-ribbons',
+  label:'Spectrum Ribbons',
+  family:'spectrum',
+  moods:['abstract','celebration','cosmic'],
+  genres:['electronic','pop','rock','hip-hop'],
+  background:'#0a202b',
+  foreground:'#eafaff',
+  accent:'#76d8df',
+  palettes:[
+   {id:'aqua-ribbon',name:'Aqua Ribbon',background:'#0a202b',foreground:'#eafaff',accent:'#76d8df'},
+   {id:'coral-ribbon',name:'Coral Ribbon',background:'#27151c',foreground:'#fff2ed',accent:'#e7a1a2'},
+   {id:'periwinkle-ribbon',name:'Periwinkle Ribbon',background:'#151a30',foreground:'#f2f3ff',accent:'#a8b1f1'},
+   {id:'pistachio-ribbon',name:'Pistachio Ribbon',background:'#19251a',foreground:'#f6ffeb',accent:'#b3d497'}
+  ],
+  font:'glass',
+  layout:'hero',
+  transition:'ripple',
+  camera:'drift',
+  baseEnergy:0.64
  },
 ] as const;
 

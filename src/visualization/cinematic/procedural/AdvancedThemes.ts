@@ -11,7 +11,7 @@ export function frequencyDrive(p:Pulse,bands:Float32Array|undefined,position:num
  const x=clamp(position);
  if(!bands?.length)return clamp(x<.3?p.bass:x<.7?p.mids:p.treble);
  const index=x*(bands.length-1),lo=Math.floor(index),mix=index-lo;
- return clamp((bands[lo]??0)*(1-mix)+(bands[Math.min(lo+1,bands.length-1)]??0)*mix);
+ return clamp(bands[lo]??0)*(1-mix)+clamp(bands[Math.min(lo+1,bands.length-1)]??0)*mix;
 }
 
 // Fixed, repeatable seeds; no per-frame particle arrays or random re-seeding.

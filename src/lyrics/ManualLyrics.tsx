@@ -1,3 +1,4 @@
+import {selectedPaletteIds,type ThemePaletteSelections} from '../visualization/cinematic/themeSelection';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { TrackInfo } from "../metadata/trackInfo";
@@ -358,7 +359,7 @@ export default function ManualLyrics({
   ) => void;
   enabledScenes?: readonly SceneId[];
   activeSceneId?: SceneId;
-  themePalettes?: Record<string, string>;
+  themePalettes?: ThemePaletteSelections;
   lyricColorMode?: LyricColorMode;
   onLyricColorModeChange?: (mode: LyricColorMode) => void;
   albumArtPalette?: AlbumArtLyricPalette | null;
@@ -796,7 +797,7 @@ export default function ManualLyrics({
       : "holographic-tide";
     const palette = resolveThemePalette(
       resolvedSceneId,
-      themePalettes?.[resolvedSceneId],
+      selectedPaletteIds(resolvedSceneId,themePalettes)[0],
     );
     const customOverride =
       lyricColorMode !== "auto"
@@ -1603,3 +1604,4 @@ export default function ManualLyrics({
     </>
   );
 }
+

@@ -1,3 +1,4 @@
+import {isSpectrumScene,SPECTRUM_SCENES} from '../visualization/cinematic/procedural/SpectrumThemes';
 import {describe,it,expect} from 'vitest';
 import {visualSystemFor} from '../visualization/cinematic/CinematicStage';
 import {TEMPLATES} from '../visualization/cinematic/catalog';
@@ -7,10 +8,11 @@ import {GraphicCompositions} from '../visualization/cinematic/procedural/Graphic
 describe('visual architecture',()=>{
  it('routes the active scenes without the retired spectrum theme',()=>{
   expect(visualSystemFor('color-riot')).toBe('geometry');
+  for(const id of SPECTRUM_SCENES)expect(visualSystemFor(id)).toBe('analyzer');
   expect(visualSystemFor('holographic-tide')).toBe('motion2d');
  });
  it('routes all other 23 VoxelWall scene IDs through the 2D motion engine',()=>{
-  const remaining=TEMPLATES.filter(t=>t.id!=='color-riot');
+  const remaining=TEMPLATES.filter(t=>t.id!=='color-riot'&&!isSpectrumScene(t.id));
   expect(remaining).toHaveLength(23);
   expect(remaining.every(t=>visualSystemFor(t.id)==='motion2d')).toBe(true);
  });

@@ -1,10 +1,11 @@
+import {isSpectrumScene} from './SpectrumThemes';
 import {byId,resolveThemePalette,TEMPLATES,type SceneId} from '../catalog';
 import type {Pulse} from '../paint';
 import {drawAdvancedTheme,frequencyDrive,type MotionDetail} from './AdvancedThemes';
 
 export const MOTION_SCENES:readonly SceneId[]=TEMPLATES
  .map(t=>t.id)
- .filter((id):id is SceneId=>id!=='color-riot');
+ .filter((id):id is SceneId=>id!=='color-riot'&&!isSpectrumScene(id));
 
 const TAU=Math.PI*2;
 const starPositions=new Float32Array(120);

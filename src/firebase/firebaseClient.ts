@@ -1,3 +1,4 @@
+import {normalizePaletteSelections,type ThemePaletteSelections} from '../visualization/cinematic/themeSelection';
 import { initializeApp } from 'firebase/app';
 import {
   getAuth, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword,
@@ -104,7 +105,7 @@ export interface UserPreferencesData {
   cameraShakeSensitivity: number;
   lyricMinFontSize: number;
   lyricMaxFontSize: number;
-  themePalettes: Record<string, string>;
+  themePalettes: ThemePaletteSelections;
 }
 
 export interface SongDelayRecord {
@@ -176,10 +177,10 @@ function sanitizeDisplay(raw: Partial<DisplayPreferences> | null | undefined): D
     lyricDisplayMode: oneOf(r.lyricDisplayMode, ['original','romanized','both'], 'both'),
   };
 }
-export function sanitizePreferences(raw: Partial<UserPreferencesData> | null | undefined): UserPreferencesData {
+export function sanitizePreferences(raw: (Partial<Omit<UserPreferencesData,'themePalettes'>> & {themePalettes?:unknown}) | null | undefined): UserPreferencesData {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_USER_PREFERENCES };
   const validScenes = Array.isArray(raw.enabledScenes)
-    ? raw.enabledScenes.filter((id): id is SceneId => ALL_SCENE_IDS.includes(id as SceneId)).slice(0, ALL_SCENE_IDS.length)
+    ? [...new Set(raw.enabledScenes.filter((id): id is SceneId => ALL_SCENE_IDS.includes(id as SceneId)))].slice(0, ALL_SCENE_IDS.length)
     : [];
   const validMotions=normalizeMotionPool(raw.enabledKineticMotions)||[];
   const validPlacements = Array.isArray(raw.enabledPlacements)
@@ -196,14 +197,7 @@ export function sanitizePreferences(raw: Partial<UserPreferencesData> | null | u
     ? raw.quality
     : 'Balanced';
   const cameraMode: CameraMode = 'Front';
-  const cleanPalettes: Record<string, string> = {};
-  if (raw.themePalettes && typeof raw.themePalettes === 'object') {
-    for (const [k, v] of Object.entries(raw.themePalettes)) {
-      if (ALL_SCENE_IDS.includes(k as SceneId) && typeof v === 'string' && v.length <= 48) {
-        cleanPalettes[k] = v;
-      }
-    }
-  }
+  const cleanPalettes=normalizePaletteSelections(raw.themePalettes);
   const minFont = clampNum(raw.lyricMinFontSize, 16, 72, DEFAULT_USER_PREFERENCES.lyricMinFontSize);
   const maxFont = Math.max(minFont, clampNum(raw.lyricMaxFontSize, 32, 130, DEFAULT_USER_PREFERENCES.lyricMaxFontSize));
 
@@ -215,7 +209,7 @@ export function sanitizePreferences(raw: Partial<UserPreferencesData> | null | u
     spectrumGain: clampNum(raw.spectrumGain, 0, 100, DEFAULT_USER_PREFERENCES.spectrumGain),
     motionBlur: clampNum(raw.motionBlur, 0, 80, DEFAULT_USER_PREFERENCES.motionBlur),
     quality,
-    autoScenes: typeof raw.autoScenes === 'boolean' ? raw.autoScenes : DEFAULT_USER_PREFERENCES.autoScenes,
+    autoScenes: (validScenes.length || ALL_SCENE_IDS.length) > 1,
     spatialTypography: typeof raw.spatialTypography === 'boolean' ? raw.spatialTypography : DEFAULT_USER_PREFERENCES.spatialTypography,
     narrativeObjects: false,
     cameraMode,
@@ -300,3 +294,4 @@ export function watchCloudPreferences(user: User, next: (prefs: UserPreferencesD
       : snapshot.metadata.fromCache ? 'Offline · using saved settings' : 'Account settings synced');
   }, () => status('Saved on device · cloud sync unavailable'));
 }
+

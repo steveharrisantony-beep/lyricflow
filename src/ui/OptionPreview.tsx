@@ -1,3 +1,4 @@
+import {SpectrumThemes,isSpectrumScene} from '../visualization/cinematic/procedural/SpectrumThemes';
 import type {LyricLayoutSettings} from '../lyrics/lyricLayout';
 import {useEffect,useId,useRef,type ReactNode} from 'react';
 import {createPortal} from 'react-dom';
@@ -49,7 +50,8 @@ export default function OptionPreview({spec,onClose,reducedMotion=false,lyricLay
   const font=spec.font||'impact';void preloadLyricFonts([font]).then(()=>{if(reducedMotion&&!disposed)frame(performance.now());});
   const scene=byId[spec.scene||'holographic-tide'];
   const palette=resolveThemePalette(scene.id,spec.paletteId);
-  const art=new GraphicCompositions();
+  const art=new GraphicCompositions(),spectrum=new SpectrumThemes();
+  const bands=new Float32Array(64);
   const previous=document.createElement('canvas'),previousCtx=previous.getContext('2d');
   const frame=(now:number)=>{
    if(disposed)return;
@@ -62,6 +64,9 @@ export default function OptionPreview({spec,onClose,reducedMotion=false,lyricLay
    const pulse={loudness:.35,bass:.28,mids:.34,treble:.2,beat:Math.max(0,Math.sin(time*Math.PI*2))**12,onset:0,downbeat:0};
    if(spec.video){
     const gradient=c.createLinearGradient(0,0,w,h);gradient.addColorStop(0,'#1c2442');gradient.addColorStop(.5,'#173d3c');gradient.addColorStop(1,'#36203b');c.fillStyle=gradient;c.fillRect(0,0,w,h);
+   }else if(isSpectrumScene(scene.id)){
+    for(let i=0;i<64;i++)bands[i]=Math.max(0,Math.sin(time*1.6+i*.22))*(.35+.35*Math.cos(i*.15-time)**2);
+    spectrum.render(c,w,h,time,{...pulse,bands},scene.id,palette,.85,reducedMotion,.55,now/1000);
    }else if(scene.id==='color-riot'){
     art.render(c,w,h,time,pulse,'geometry',0,.7,true,reducedMotion,palette);
    }else drawMotionGraphics(c,w,h,time,pulse,scene.id,.7,reducedMotion,spec.paletteId,{detail:.55});

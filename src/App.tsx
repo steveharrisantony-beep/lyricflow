@@ -1,3 +1,4 @@
+import {selectedPaletteIds,togglePaletteSelection,type ThemePaletteSelections} from './visualization/cinematic/themeSelection';
 import {normalizeLyricLayout,type LyricLayoutSettings} from './lyrics/lyricLayout';
 import {
   AudioLines,
@@ -73,7 +74,6 @@ import {
 import {
   TEMPLATES,
   byId,
-  resolveThemePalette,
   type FontPack,
   type SceneId,
   type VoxelWallCategory,
@@ -268,13 +268,13 @@ export default function App({ user = null }: { user?: User | null }) {
   );
   const [motionBlur, setMotionBlur] = useState(initialPrefs.motionBlur);
   const [quality, setQuality] = useState<Quality>(initialPrefs.quality);
-  const [autoScenes, setAutoScenes] = useState(initialPrefs.autoScenes);
   const [spatialTypography, setSpatialTypography] = useState(
     initialPrefs.spatialTypography,
   );
   const [enabledScenes, setEnabledScenes] = useState<SceneId[]>(
     initialPrefs.enabledScenes,
   );
+  const autoScenes=enabledScenes.length>1;
   const [autoKineticMotion, setAutoKineticMotion] = useState<boolean>(
     initialPrefs.autoKineticMotion ?? true,
   );
@@ -349,7 +349,7 @@ export default function App({ user = null }: { user?: User | null }) {
     }
     return [...ALL_PLACEMENT_MODES];
   });
-  // Theme Director duration (in lines of lyrics and seconds for songs without lyrics) & auto-randomize colour palettes
+  // Theme rotation duration in lyric lines and seconds without lyrics
   const [themeDurationLines, setThemeDurationLines] = useState<number>(() => {
     const n = Number(initialExtended.themeDurationLines);
     return Number.isFinite(n) && n >= 1 && n <= 16 ? Math.round(n) : 2;
@@ -360,12 +360,6 @@ export default function App({ user = null }: { user?: User | null }) {
       return Number.isFinite(n) && n >= 4 && n <= 60 ? Math.round(n) : 12;
     },
   );
-  const [autoRandomizeThemePalettes, setAutoRandomizeThemePalettes] =
-    useState<boolean>(() =>
-      typeof initialExtended.autoRandomizeThemePalettes === "boolean"
-        ? initialExtended.autoRandomizeThemePalettes
-        : true,
-    );
   // Romanization master toggle & supported languages
   const [romanizationEnabled, setRomanizationEnabledState] = useState<boolean>(
     () => getRomanizationMasterEnabled(),
@@ -417,7 +411,7 @@ export default function App({ user = null }: { user?: User | null }) {
     if (Number.isFinite(saved) && saved >= 0.5 && saved <= 1.8) return saved;
     return 1;
   });
-  const [themePalettes, setThemePalettes] = useState<Record<string, string>>(
+  const [themePalettes, setThemePalettes] = useState<ThemePaletteSelections>(
     initialPrefs.themePalettes,
   );
 
@@ -685,7 +679,6 @@ export default function App({ user = null }: { user?: User | null }) {
     setSpectrumControl(prefs.spectrumGain);
     setMotionBlur(prefs.motionBlur);
     setQuality(prefs.quality);
-    setAutoScenes(prefs.autoScenes);
     setSpatialTypography(prefs.spatialTypography);
     setEnabledScenes(prefs.enabledScenes);
     setAutoKineticMotion(prefs.autoKineticMotion ?? true);
@@ -758,7 +751,6 @@ export default function App({ user = null }: { user?: User | null }) {
           enabledThemePlacements,
           themeDurationLines,
           themeDurationSeconds,
-          autoRandomizeThemePalettes,
         }),
       );
     } catch {}
@@ -782,7 +774,6 @@ export default function App({ user = null }: { user?: User | null }) {
     enabledThemePlacements,
     themeDurationLines,
     themeDurationSeconds,
-    autoRandomizeThemePalettes,
   ]);
 
   // Debounce network writes; nothing is sent from the visualizer render loop.
@@ -1639,7 +1630,6 @@ export default function App({ user = null }: { user?: User | null }) {
                 enabledThemePlacements={enabledThemePlacements}
                 themeDurationLines={themeDurationLines}
                 themeDurationSeconds={themeDurationSeconds}
-                autoRandomizeThemePalettes={autoRandomizeThemePalettes}
                 enabledFonts={effectiveFonts}
                 enabledCameraViews={["Front"]}
                 cameraShakeEnabled={cameraShakeEnabled}
@@ -2059,16 +2049,6 @@ export default function App({ user = null }: { user?: User | null }) {
                   </div>
                 </SettingGroup>
                 <SettingGroup title="Themes">
-                  <SwitchSetting
-                    label="Randomize enabled themes"
-                    checked={autoScenes}
-                    onChange={setAutoScenes}
-                  />
-                  <SwitchSetting
-                    label="Auto-randomize colour palette"
-                    checked={autoRandomizeThemePalettes}
-                    onChange={setAutoRandomizeThemePalettes}
-                  />
                   <RangeSetting
                     label="Theme duration with lyrics"
                     value={themeDurationLines}
@@ -2104,13 +2084,13 @@ export default function App({ user = null }: { user?: User | null }) {
                       {choices.map((item) => (
                         <div className="theme-selection" key={item.id}>
                           <PreviewSetting label={item.label} checked={enabledScenes.includes(item.id)} onChange={()=>toggleSceneEnabled(item.id)}
-                            onPreview={()=>setOptionPreview({label:item.label,scene:item.id,paletteId:themePalettes[item.id]})}/>
+                            onPreview={()=>setOptionPreview({label:item.label,scene:item.id,paletteId:selectedPaletteIds(item.id,themePalettes)[0]})}/>
                           <details className="palette-options">
                             <summary>Colour palettes</summary>
                             {byId[item.id].palettes.map(palette=>(
-                              <PreviewSetting key={palette.id} label={palette.name} accessibleLabel={`${item.label} · ${palette.name}`} radioGroup={`palette-${item.id}`}
-                                checked={!autoRandomizeThemePalettes && resolveThemePalette(item.id,themePalettes[item.id]).id===palette.id}
-                                onChange={()=>{setThemePalettes(prev=>({...prev,[item.id]:palette.id}));setAutoRandomizeThemePalettes(false);}}
+                              <PreviewSetting key={palette.id} label={palette.name} accessibleLabel={`${item.label} · ${palette.name}`}
+                                checked={selectedPaletteIds(item.id,themePalettes).includes(palette.id)}
+                                onChange={()=>setThemePalettes(prev=>togglePaletteSelection(item.id,palette.id,prev))}
                                 onPreview={()=>setOptionPreview({label:`${item.label} · ${palette.name}`,scene:item.id,paletteId:palette.id})}>
                                 <span className="palette-swatches" aria-hidden="true">{[palette.background,palette.foreground,palette.accent].map((color,i)=><i key={i} style={{background:color}}/>)}</span>
                               </PreviewSetting>

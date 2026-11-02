@@ -40,7 +40,7 @@ The application and its existing Express backend run inside the APK. No external
 [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Tunai-0511/lyricflow?file=README.md)
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Tunai-0511/lyricflow?quickstart=1)
 
-**LyricFlow** is a studio-grade, real-time audio-reactive music visualizer and synchronized kinetic lyric stage. It combines **24 distinct VoxelWall-inspired 2D music-reactive live wallpapers** (each equipped with **4–6 selectable colour palettes**) across seven curated visual families with **12 persistent lyric animations**, **Stash multi-catalog online streaming**, **Apple Music syllable/word-synced TTML & line-synced LRC engines**, **offline Indic-to-Latin phonetic romanization**, and **Firebase Authentication & Cloud Firestore profile synchronization**.
+**LyricFlow** is a studio-grade, real-time audio-reactive music visualizer and synchronized kinetic lyric stage. It combines **28 distinct VoxelWall-inspired 2D music-reactive live wallpapers** (each equipped with **4–6 selectable colour palettes**) across eight curated visual families with **12 persistent lyric animations**, **Stash multi-catalog online streaming**, **Apple Music syllable/word-synced TTML & line-synced LRC engines**, **offline Indic-to-Latin phonetic romanization**, and **Firebase Authentication & Cloud Firestore profile synchronization**.
 
 > **Maintenance Policy:** This `README.md` is the canonical technical reference for LyricFlow and is continuously updated alongside every architectural, visual, audio, and lyric-engine update.
 
@@ -49,7 +49,7 @@ The application and its existing Express backend run inside the APK. No external
 ## Table of Contents
 
 1. [Core Features & Capabilities](#1-core-features--capabilities)
-2. [VoxelWall Music-Reactive Live Wallpapers (24 Unique Designs × Multi-Palette)](#2-voxelwall-music-reactive-live-wallpapers-24-unique-designs--multi-palette)
+2. [VoxelWall Music-Reactive Live Wallpapers (28 Unique Designs × Multi-Palette)](#2-voxelwall-music-reactive-live-wallpapers-28-unique-designs--multi-palette)
 3. [Persistent Letter Animation](#3-persistent-letter-animation)
 4. [Audio Reactivity & 64-Band Spectral Pipeline](#4-audio-reactivity--64-band-spectral-pipeline)
 5. [Audio Sources & Stash Multi-Catalog Streaming](#5-audio-sources--stash-multi-catalog-streaming)
@@ -65,10 +65,11 @@ The application and its existing Express backend run inside the APK. No external
 
 ## 1. Core Features & Capabilities
 
-- **24 Unique VoxelWall 2D Music-Reactive Backgrounds with Multi-Palette Selector (`https://voxelwall.app/wallpapers`)**:
-  - Pure, high-FPS 2D procedural canvas and spectral-geometry wallpapers organized into **7 VoxelWall categories**: *Flow*, *Contours*, *Sculptures*, *Space*, *Nature*, *Architecture*, and *Journeys*.
+- **28 Unique VoxelWall 2D Music-Reactive Backgrounds with Multi-Palette Selector (`https://voxelwall.app/wallpapers`)**:
+  - Pure, high-FPS 2D procedural canvas and spectral-geometry wallpapers organized into **8 VoxelWall categories**: *Flow*, *Contours*, *Sculptures*, *Space*, *Nature*, *Architecture*, *Journeys*, and *Spectrum*.
   - Every theme uses a 100% distinct procedural visual algorithm—all color-swap duplicate themes have been consolidated into **4–6 interactive Colour Palettes per theme** (`ThemePalette`) selectable directly on each theme card and inside Cinema Mode.
-  - Every background can be individually toggled **ON/OFF** to curate the active auto-director rotation pool.
+  - Every background can be individually toggled **ON/OFF**. One enabled theme stays fixed; multiple themes rotate automatically using the duration controls. Colour palettes are also multi-select: one stays fixed; multiple selected palettes rotate automatically. At least one theme and one palette per theme remain selected.
+  - Four **Spectrum** themes use the shared 64-band analyzer: LED bars with peak hold, a radial spectrum, a scrolling spectral-history waterfall, and mirrored frequency ribbons. See [spectrum research and behaviour](docs/spectrum-analyzer-themes.md).
 - **Persistent letter choreography**: 12 distinct animations with 8 visible current-word accents. Latin and other independent graphemes move smoothly throughout the line, including after a word is sung. Hindi, Malayalam, Tamil, Arabic and other shaping-dependent scripts keep intact word runs. Romanized Latin text can animate by letter. Both motion controls off keeps the lyric steady.
 - **Adaptive album colours**: pale colours extracted from the artwork are used for unread text and line-synced lyrics. Sung words cycle through more saturated, contrast-checked colours from the same artwork. Theme mode continues to follow the active theme palette; unavailable artwork has a deterministic fallback.
 - **Selection windows and previews**: independently enable animations, word styles, theme transitions and lyric transitions. All-off transition windows produce cuts. Previews use a separate sample canvas without changing playback. Old lookalike IDs migrate to the closest retained effect; deliberately empty selections remain empty. Settings are stored on this device.
@@ -89,9 +90,9 @@ The application and its existing Express backend run inside the APK. No external
 
 ---
 
-## 2. VoxelWall Music-Reactive Live Wallpapers (24 Unique Designs × Multi-Palette)
+## 2. VoxelWall Music-Reactive Live Wallpapers (28 Unique Designs × Multi-Palette)
 
-Inspired by [VoxelWall Live Wallpapers](https://voxelwall.app/wallpapers), all 24 unique scenes react in real time to 64-band frequency energy, bass envelopes, midrange harmonics, treble shimmer, and beat/onset impulses, and each includes **4–6 curated Colour Palettes** (99 total). Research notes, implementation choices, and verification scope are in [the visualizer review](docs/theme-visualizer-research.md):
+Inspired by [VoxelWall Live Wallpapers](https://voxelwall.app/wallpapers), all 28 unique scenes react in real time to 64-band frequency energy, bass envelopes, midrange harmonics, treble shimmer, and beat/onset impulses, and each includes **4–6 curated Colour Palettes** (115 total). Research notes, implementation choices, and verification scope are in [the visualizer review](docs/theme-visualizer-research.md):
 
 | Category | Scene ID | Label | Palettes Included | Visual Grammar & Audio Reactivity |
 | :--- | :--- | :--- | :--- | :--- |
@@ -119,6 +120,10 @@ Inspired by [VoxelWall Live Wallpapers](https://voxelwall.app/wallpapers), all 2
 | **Contours** | `spectral-terrain` | **Spectral Terrain** | *Glacial Terrain, Violet Terrain, Copper Terrain, Moss Terrain* | Perspective ridge surface displaced by the live spectrum, with horizon fog |
 | **Sculptures** | `resonance-plate` | **Resonance Plate** | *Golden Nodes, Ice Nodes, Rose Nodes, Sage Nodes* | Grains projected toward standing-wave nodes; bass/mids morph the pattern and highs add flutter |
 | **Nature** | `mycelium-network` | **Mycelium Network** | *Forest Light, Deep Spore, Amber Spore, Orchid Spore* | Branching organic filaments with bass expansion, mid sway and treble-lit travelling signals |
+| **Spectrum** | `spectrum-prism` | **Spectrum Prism** | *Studio Prism, Amber Console, Rose Console, Mint Console* | Segmented spectrum lamps, falling peak caps and a reflected floor |
+| **Spectrum** | `radial-spectrum` | **Radial Spectrum** | *Polar Spectrum, Solar Spectrum, Orchid Spectrum, Jade Spectrum* | Circular frequency bars with a held-peak constellation |
+| **Spectrum** | `spectrum-waterfall` | **Spectrum Waterfall** | *Deep Scan, Thermal Scan, Forest Scan, Lilac Scan* | Four seconds of bounded spectral history, colour-coded by intensity |
+| **Spectrum** | `spectrum-ribbons` | **Spectrum Ribbons** | *Aqua Ribbon, Coral Ribbon, Periwinkle Ribbon, Pistachio Ribbon* | Three mirrored filled envelopes driven by measured frequency bands |
 
 ---
 
@@ -152,7 +157,7 @@ Accessible anytime from the stage bar (**Choose Source**) with a dedicated modal
    - **YouTube Video + Lyrics Stage**:
      - Plays the exact selected YouTube video (`format: 'youtube'`) directly as a **live video background** on the visualizer stage with its own synchronized audio and the **VoxelVerse Lyrics Engine overlaid on top** (never substituting an unrelated audio stream from other catalogs).
      - Uses YouTube's IFrame `listening` / `infoDelivery` `postMessage` protocol (`CinematicStage.tsx` & `LocalPlayer.tsx`) to synchronize play/pause, seek, volume, and real-time `currentTime`/`duration` with the VoxelVerse lyrics clock.
-     - Includes an interactive **Background Option Slider** (`0: YouTube Video` · `1: Built-in Themes`) allowing instant switching between the YouTube video background and the 24 built-in VoxelWall themes.
+     - Includes an interactive **Background Option Slider** (`0: YouTube Video` · `1: Built-in Themes`) allowing instant switching between the YouTube video background and the 28 built-in VoxelWall themes.
      - Permanent layers are YouTube video, animated built-in themes, then transparent lyrics. Themes remain visible during video search/loading, errors and external-player ads. Lyrics stay on top, including on lyrical videos; external ads hide lyrics and cancel lookup.
      - YouTube audio keeps playing from the same iframe when themes cover it. JioSaavn/local/external backgrounds are muted. On Android, external mode also mutes the WebContents through AndroidX to avoid taking the other app's audio focus; unsupported System WebView versions fall back to themes.
      - Background selection compares up to 20 candidates per query, searches both music and lyrical videos for music preference, and rejects Topic/ATV, static audio, album images and visualizers. Lyrical preference requires `lyric`, `lyrical` or `lyrics` in the title. Recording suitability comes before views; missing music videos fall back to lyrical videos. Unknown unlabelled uploads are not used automatically. YouTube metadata cannot guarantee that every labelled video contains moving imagery.
@@ -277,7 +282,7 @@ Set up the shared project using the browser-only [Firebase setup guide](FIREBASE
 │   │   └── romanize.ts                            # 9-script offline Indic-to-Latin transliterator
 │   ├── visualization/cinematic/
 │   │   ├── CinematicStage.tsx                     # Video/Theme compositor, Black Overlay & Cinema Mode Studio Drawer
-│   │   ├── catalog.ts                             # 24 VoxelWall scene templates × 4–6 palettes across 7 categories
+│   │   ├── catalog.ts                             # 28 VoxelWall scene templates × 4–6 palettes across 8 categories
 │   │   ├── kineticTypography.ts                   # Persistent letter animation, shaped words, placements & word accents
 │   │   ├── cameraRig.ts                           # Smooth bass-threshold camera rig with sensitivity control
 │   │   ├── contrast.ts                            # Real-time backdrop luminance sampler & WCAG contrast guard

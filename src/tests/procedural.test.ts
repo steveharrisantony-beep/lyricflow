@@ -22,9 +22,9 @@ describe('VoxelWall 2D scene & VoxelVerse lyric style registries',()=>{
    expect(activeIds.has(removed)).toBe(false);
   }
  });
- it('covers all 7 VoxelWall categories (Flow, Contours, Sculptures, Space, Nature, Architecture, Journeys) with 24 distinct designs',()=>{
+ it('covers all 8 VoxelWall categories with 28 distinct designs',()=>{
   const categories=VOXELWALL_CATEGORIES.map(c=>c.id);
-  expect(categories).toEqual(['flow','contours','sculptures','space','nature','architecture','journeys']);
+  expect(categories).toEqual(['flow','contours','sculptures','space','nature','architecture','spectrum','journeys']);
   for(const cat of categories){
    expect(TEMPLATES.filter(t=>t.family===cat).length).toBeGreaterThanOrEqual(3);
   }
