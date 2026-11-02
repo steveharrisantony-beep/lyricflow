@@ -7,7 +7,7 @@ import {lightLyricColor,vibrantLyricColor,paintLyric,readableChromaticInk,readab
 import type {AlbumArtLyricPalette,TextGlow} from './contrast';
 import {drawCurrentWordAccent,type CurrentWordStyle} from './currentWordStyles';
 import {currentWordAnimationPose,type CurrentWordAnimation} from './currentWordAnimations';
-import {buildLetterUnits,choreographyPhase,letterMotionPose,lineMotionPose,type LetterUnit} from './letterMotion';
+import {buildLetterUnits,choreographyPhase,letterMotionPose,lineMotionPose,phraseTracking,type LetterUnit} from './letterMotion';
 import {makeLyricProjection,STILL_CAMERA,type ProjectPoint} from './cameraRig';
 
 /** Keep the original twelve in their original order; new designs append to this catalog. */
@@ -76,19 +76,19 @@ export const VOXELVERSE_STYLES:readonly VoxelVerseStyleMeta[]=[
  {id:'carnival',name:'Carnival',family:'editorial',detail:'Alternating letter steps settle into a gentle rhythmic hold'},
  {id:'broadside',name:'Broadside',family:'editorial',detail:'An angled sweep, breathing tracking and onward exit'},
  {id:'portal',name:'Portal',family:'editorial',detail:'Letters open from the centre and expand away at the end'},
- {id:'venetian',name:'Venetian',family:'editorial',detail:'Vertical shutters unfold, breathe and fold closed'},
- {id:'fan',name:'Fan',family:'spatial',detail:'A fan of tilted letters opens into an arched, breathing phrase'},
- {id:'curtain-sweep',name:'Curtain Sweep',family:'editorial',detail:'A sloping curtain rises letter by letter and lifts away in reverse'},
- {id:'letter-rain',name:'Letter Rain',family:'spatial',detail:'Wind-tossed letters arrive in a varied order and fall away'},
- {id:'concertina',name:'Concertina',family:'editorial',detail:'Stacked letters open into measured tracking and gather again'},
- {id:'silk-stretch',name:'Silk Stretch',family:'editorial',detail:'Tall silk-like letters relax into shape, then stretch downward'},
- {id:'domino',name:'Domino',family:'kinetic',detail:'Letters tip upright from their baseline and topple onward'},
- {id:'pendulum',name:'Pendulum',family:'kinetic',detail:'Suspended letters swing from a shared upper pivot'},
- {id:'helix',name:'Helix',family:'signature',detail:'A travelling spiral combines height, depth and gentle rotation'},
- {id:'zipper',name:'Zipper',family:'editorial',detail:'Opposing horizontal masks interlock and unzip at the end'},
- {id:'iris',name:'Iris',family:'signature',detail:'Centre-out oval apertures open around each letter and close again'},
- {id:'rosette',name:'Rosette',family:'spatial',detail:'A radial flower of letters gathers into the line and blooms outward'},
- {id:'switchback',name:'Switchback',family:'kinetic',detail:'Small letter groups weave through opposite horizontal lanes'}
+ {id:'venetian',name:'Venetian',family:'editorial',detail:'A visible shutter fold travels vertically through the letters'},
+ {id:'fan',name:'Fan',family:'spatial',detail:'A tilted fan holds a breathing arch across the whole phrase'},
+ {id:'curtain-sweep',name:'Curtain Sweep',family:'editorial',detail:'A sloping entrance becomes a continuous whole-line banner pan'},
+ {id:'letter-rain',name:'Letter Rain',family:'spatial',detail:'Independent wind-tossed letters flutter throughout the line'},
+ {id:'concertina',name:'Concertina',family:'editorial',detail:'The whole phrase expands and contracts its letter spacing'},
+ {id:'silk-stretch',name:'Silk Stretch',family:'editorial',detail:'Tall letters stretch along a fixed baseline in a travelling pulse'},
+ {id:'domino',name:'Domino',family:'kinetic',detail:'One-way tipping knocks travel along the lower letter pivots'},
+ {id:'pendulum',name:'Pendulum',family:'kinetic',detail:'Groups swing back and forth from upper pivots'},
+ {id:'helix',name:'Helix',family:'signature',detail:'A visible depth spiral carries larger and smaller letters through the line'},
+ {id:'zipper',name:'Zipper',family:'editorial',detail:'Alternating upper and lower teeth breathe apart and zip closed'},
+ {id:'iris',name:'Iris',family:'signature',detail:'Oval apertures reveal a slow full-composition lens zoom'},
+ {id:'rosette',name:'Rosette',family:'spatial',detail:'Radial petals bloom and relax along fixed rays throughout the hold'},
+ {id:'switchback',name:'Switchback',family:'kinetic',detail:'Groups of three weave sideways with opposing slants'}
 ];
 export const VOXELVERSE_FAMILIES:readonly {id:VoxelVerseFamily;name:string;count:number}[]=(
  [{id:'signature',name:'Signature'},{id:'spatial',name:'Spatial'},
@@ -812,7 +812,7 @@ export function drawKineticLyrics({
     :0;
 
   const baseRowY=((totalRows-1)*0.5-row)*rowSpacingWorld+stageOffsetY+rowSlideY;
-  let x=(rowX*fit)/pixelsPerWorld+stageOffsetX+alignShiftX+rowSlideX;
+  let x=(rowX*fit)*(1+phraseTracking(motion,age,energy))/pixelsPerWorld+stageOffsetX+alignShiftX+rowSlideX;
   let y=baseRowY;
   let z=0;
   let stretchX=1;
@@ -883,7 +883,10 @@ export function drawKineticLyrics({
   const boundRight=duetSide==='left'?w*0.485:w-padX;
   const boundTop=padY;
   const boundBottom=h-padY;
-  const maxAllowedW=Math.max(40,boundRight-boundLeft);
+  // Reserve room for the banner pan before fitting, so it cannot clip on side placements.
+  const panReserve=motion==='curtain-sweep'?Math.min((boundRight-boundLeft)*.08,w*.035)*Math.min(1,energy):0;
+  const fitLeft=boundLeft+panReserve,fitRight=boundRight-panReserve;
+  const maxAllowedW=Math.max(40,fitRight-fitLeft);
   const maxAllowedH=Math.max(40,boundBottom-boundTop);
   const bboxW=Math.max(1,maxScreenX-minScreenX);
   const bboxH=Math.max(1,maxScreenY-minScreenY);
@@ -896,8 +899,8 @@ export function drawKineticLyrics({
   const scaledMaxY=centerY+(maxScreenY-centerY)*clampScale;
 
   let shiftX=0;
-  if(scaledMinX<boundLeft)shiftX=boundLeft-scaledMinX;
-  else if(scaledMaxX>boundRight)shiftX=boundRight-scaledMaxX;
+  if(scaledMinX<fitLeft)shiftX=fitLeft-scaledMinX;
+  else if(scaledMaxX>fitRight)shiftX=fitRight-scaledMaxX;
 
   let shiftY=0;
   if(scaledMinY<boundTop)shiftY=boundTop-scaledMinY;
@@ -905,8 +908,10 @@ export function drawKineticLyrics({
 
   const linePose=lineMotionPose(motion,age,duration,cueIndex,w,energy);
   c.save();
-  c.beginPath();c.rect(boundLeft,boundTop,maxAllowedW,maxAllowedH);c.clip();
-  c.transform(1,0,0,1,linePose.x,0);
+  c.beginPath();c.rect(boundLeft,boundTop,boundRight-boundLeft,maxAllowedH);c.clip();
+  const lineX=motion==='curtain-sweep'?clamp(linePose.x,-panReserve,panReserve):linePose.x;
+  c.transform(1,0,0,1,lineX,0);
+  if(linePose.scale!==undefined){const scale=linePose.scale;c.transform(scale,0,0,scale,(centerX+shiftX)*(1-scale),(centerY+shiftY)*(1-scale));}
   for(const pw of preparedWords){
    const {item,wordProgress,isSpokenStart,isSpokenEnd,isActive,measuredW,mA,mB,mC,mD,screenX,screenY}=pw;
    const {word}=item;

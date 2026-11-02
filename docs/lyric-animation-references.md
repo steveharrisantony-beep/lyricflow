@@ -16,19 +16,19 @@ Thirteen additions bring the catalog to 25:
 
 | New design | Entrance, hold and exit |
 | --- | --- |
-| Venetian | Horizontal-axis shutters unfold, breathe vertically and fold closed |
-| Fan | Tilted letters open from a fan into a breathing arch, then lift away |
-| Curtain Sweep | A sloping masked entrance rises across the line; the exit reverses its order |
-| Letter Rain | Deterministic varied delays and angles gather falling letters; a windy hold leads to a falling exit |
-| Concertina | Letters unstack within each word, breathe through tracking, then gather again |
-| Silk Stretch | Tall, narrow letters relax into shape, stretch gently and flow downward |
-| Domino | Letters pivot upright from their lower edge, rock gently and tip onward |
-| Pendulum | Letters swing from upper pivots, with a coordinated swing into and out of the line |
-| Helix | A travelling spiral combines vertical motion, apparent depth and rotation |
-| Zipper | Opposing horizontal masks interlock; letter pairs separate at the exit |
-| Iris | Centre-out oval apertures reveal each letter and close at the end |
-| Rosette | A radial arrangement gathers into the phrase and blooms outward |
-| Switchback | Groups of three letters enter through opposing horizontal lanes and weave gently |
+| Venetian | A travelling vertical shutter pulse folds and unfolds the held letters |
+| Fan | A visible tilted arch opens and relaxes throughout the hold, then lifts away |
+| Curtain Sweep | A sloping entrance becomes a whole-line banner pan with reserved travel room |
+| Letter Rain | Varied entrances lead to independent, visible wind flutter and a falling exit |
+| Concertina | Word anchors and glyph spacing expand and contract together, with steady glyph size |
+| Silk Stretch | A travelling vertical stretch keeps the lower letter edge on its baseline |
+| Domino | One-way lower-pivot kicks ripple through the held letters before toppling onward |
+| Pendulum | Coherent groups swing both ways from upper pivots |
+| Helix | A depth spiral moves larger and smaller letters through the held line |
+| Zipper | Horizontal masks interlock; alternating upper/lower teeth breathe apart during the hold |
+| Iris | Oval apertures reveal a slow whole-composition lens zoom, then close |
+| Rosette | Letters bloom along fixed radial rays during the hold, then disperse outward |
+| Switchback | Groups of three weave sideways with opposing slants and no vertical bob |
 
 The expanded study also inspected Codrops `fx12`–`fx18`: horizontal-axis folds,
 fan-like offsets, diagonal ordering, varied delay, stacking and anisotropic
@@ -38,6 +38,19 @@ original derivatives; it is not a numbered reproduction of the Codrops demo.
 A versioned device migration expands a previously all-enabled set of twelve once.
 Custom subsets and empty pools are retained. Selecting just the original twelve
 in the new catalog remains a deliberate choice after reload.
+
+## Distinct motion during the readable hold
+
+The first expansion differentiated many entrances more clearly than their holds.
+Several new designs settled into very small sine-based floating motions. The new
+thirteen now have separate composition, spacing, scale, pivot and lane behaviours,
+listed above. The approved original twelve keep their previous rendering.
+
+Identity tests check those visible behaviours throughout the hold, in addition to
+checking that numerical poses differ. Browser comparisons still cover all 125
+animation/style combinations, connected-script shaping and the original twelve's
+pixel baselines. The banner reserves space before bounds fitting, and the Iris
+lens stays at or below the fitted phrase size.
 
 ## Behaviour
 

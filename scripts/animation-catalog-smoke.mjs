@@ -53,6 +53,19 @@ try{
    await page.evaluate(motion=>window.catalogQA.draw(motion,2.1),motion);
    await page.locator('canvas').screenshot({path:`${shots}/${motion}-hold.png`});
   }
+  for(const [part,ids] of [Object.keys(result.samples).slice(12,19),Object.keys(result.samples).slice(19)].entries()){
+   await page.evaluate(ids=>{
+    const gallery=document.createElement('canvas');gallery.dataset.gallery='true';gallery.width=1200;gallery.height=ids.length*200;
+    const g=gallery.getContext('2d');g.fillStyle='#07090e';g.fillRect(0,0,gallery.width,gallery.height);g.font='15px sans-serif';
+    const source=document.querySelector('canvas');
+    ids.forEach((id,row)=>[.18,1.4,4.8,5.95].forEach((time,col)=>{
+     window.catalogQA.draw(id,time);g.drawImage(source,col*300,row*200,300,169);g.fillStyle='#cbd5e1';g.fillText(`${id} · ${time}s`,col*300+8,row*200+188);
+    }));
+    document.body.append(gallery);
+   },ids);
+   await page.locator('canvas[data-gallery]').screenshot({path:`${shots}/storyboard-${part+1}.png`});
+   await page.locator('canvas[data-gallery]').evaluate(canvas=>canvas.remove());
+  }
   console.log(`PASS browser: 25 moving holds and complete outros, intact Hindi in every animation${originals?', and pixel-identical original 12':'. No comparison baseline supplied'}.`);
  }
  assert.deepEqual(errors,[]);

@@ -90,79 +90,91 @@ export function letterMotionPose(motion:LyricMotion,age:number,index:number,coun
    y=.14*Math.sin(phase*1.2)+.65*incoming+.6*outgoing;
    rotation=.035*Math.cos(phase*1.2);reveal=clamp(enter*1.8)*(1-outgoing);break;
   case 'venetian':{
-   // Rotate about the horizontal shutter edge with bounded projected height.
-   const fold=incoming+outgoing;
-   scaleY=Math.max(.08,Math.cos(fold*Math.PI*.48))+.035*Math.sin(phase*.8)*(1-fold);
+   const fold=incoming+outgoing,pulse=Math.max(0,Math.sin(age*1.8-index*.48))**3;
+   // A travelling shutter fold stays visible during the readable hold.
+   scaleY=Math.max(.08,Math.cos(fold*Math.PI*.48))*(1-.25*pulse);
    y=.46*(1-scaleY)*sign;shear=.08*sign*(incoming-outgoing);break;
   }
   case 'fan':{
-   const arch=(1-n*n)*(.045+.025*Math.sin(age*1.2));
-   rotation=n*(.65*incoming-.40*outgoing)-n*.025*Math.sin(age*.85);
+   const opening=.11+.045*Math.sin(age*1.1),arch=(1-n*n)*(.14+.055*Math.cos(age*1.1));
+   rotation=n*(.65*incoming-.40*outgoing)-n*opening;
    y=(.35+.55*Math.abs(n))*incoming-.70*outgoing-arch;
    x=n*.22*(incoming+outgoing);break;
   }
   case 'curtain-sweep':
-   y=(.32+.50*forward)*incoming-(.32+.50*(1-forward))*outgoing+.025*Math.sin(phase*.7);
-   rotation=.18*(incoming+outgoing);shear=-.12*incoming+.12*outgoing;
-   reveal=clamp(enter*1.6)*(1-outgoing);break;
+   // The readable hold travels as a single banner in lineMotionPose.
+   y=(.32+.50*forward)*incoming-(.32+.50*(1-forward))*outgoing;
+   rotation=.18*(incoming+outgoing);shear=-.12*incoming+.12*outgoing;break;
   case 'letter-rain':{
    const gust=Math.sin(index*12.9898+count*.31),sway=Math.cos(index*7.37);
-   x=gust*(.22*incoming+.18*outgoing)+.035*Math.sin(age*.85+index*.73);
-   y=-.95*incoming+.90*outgoing+.035*Math.sin(age*1.05+index*.83);
-   rotation=gust*(.32*incoming-.25*outgoing)+sway*.022*Math.sin(age*.9);break;
+   x=gust*(.22*incoming+.18*outgoing)+.065*Math.sin(age*.95+index*.73);
+   y=-.95*incoming+.90*outgoing+.10*Math.sin(age*1.2+index*.83);
+   rotation=gust*(.32*incoming-.25*outgoing)+.10*Math.sin(age*1.55+sway*3);break;
   }
   case 'concertina':
-   tracking=-.92*incoming-.85*outgoing+.022*Math.sin(age*1.1);
-   scaleX=1-.18*incoming-.35*outgoing;shear=.13*sign*(incoming-outgoing);
-   y=.022*Math.sin(phase*.6);break;
+   // Tracking changes glyph positions, with no breathing zoom or vertical bob.
+   tracking=-.92*incoming-.85*outgoing+phraseTracking(motion,age,1);
+   scaleX=1-.18*incoming-.35*outgoing;shear=.13*sign*(incoming-outgoing);break;
   case 'silk-stretch':{
-   const silk=.045*Math.sin(phase*.9);
-   scaleX=1-.42*incoming-.40*outgoing-silk*.4;scaleY=1+.85*incoming+.90*outgoing+silk;
-   y=-.65*incoming+.65*outgoing;rotation=.012*Math.sin(phase*.6);break;
+   const silk=.13*Math.sin(phase*.9);
+   scaleX=1-.42*incoming-.40*outgoing-silk*.38;scaleY=1+.85*incoming+.90*outgoing+silk;
+   y=-.65*incoming+.65*outgoing+.46*(1-scaleY);break;
   }
   case 'domino':{
-   rotation=-1.12*incoming+.90*outgoing+.025*Math.sin(phase*.8);
-   // Keep the lower edge as a pivot instead of spinning around each glyph centre.
+   const knock=Math.max(0,Math.sin(age*2.0-index*.65))**3;
+   rotation=-1.12*incoming+.90*outgoing+.20*knock;
+   // One-way tipping from the lower edge, rather than a back-and-forth swing.
    x=.46*Math.sin(rotation);y=.46*(1-Math.cos(rotation));break;
   }
   case 'pendulum':{
-   const swing=.07*Math.sin(age*1.7-index*.14);
+   const swing=.13*Math.sin(age*1.35-Math.floor(index/4)*.5);
    rotation=sign*.42*incoming-sign*.32*outgoing+swing;
    x=-.50*Math.sin(rotation);y=.50*(Math.cos(rotation)-1);break;
   }
   case 'helix':{
    const spiral=age*2.1-index*.62,depth=Math.cos(spiral);
-   y=.12*Math.sin(spiral)+.35*sign*(incoming-outgoing);
-   x=.035*depth+n*.24*(incoming+outgoing);scaleX=scaleY=1+.045*depth-.2*incoming-.18*outgoing;
-   rotation=.035*Math.cos(spiral);break;
+   y=.075*Math.sin(spiral)+.35*sign*(incoming-outgoing);
+   x=.065*Math.sin(spiral*2)+n*.24*(incoming+outgoing);
+   scaleX=scaleY=1+.13*depth-.2*incoming-.18*outgoing;break;
   }
   case 'zipper':
    clipSide=sign;revealX=clamp(enter*1.5)*(1-outgoing);
-   x=sign*(.36*incoming-.36*outgoing)+sign*.025*Math.sin(age*1.1);
-   y=sign*.08*(incoming+outgoing);shear=sign*.10*(incoming-outgoing);break;
+   x=sign*(.36*incoming-.36*outgoing);
+   y=sign*(.065+.035*Math.sin(age*1.7)+.08*(incoming+outgoing));break;
   case 'iris':
-   iris=clamp(enter*1.55)*(1-outgoing);
-   scaleX=scaleY=1+.022*Math.sin(age*1.1+index*.1);
-   y=.018*Math.sin(phase*.6);break;
+   // A shared lens breathes the whole composition; each aperture owns its reveal.
+   iris=clamp(enter*1.55)*(1-outgoing);break;
   case 'rosette':{
-   const angle=forward*Math.PI*2,petal=incoming*.72+outgoing*.78;
-   x=Math.cos(angle)*petal+.018*Math.cos(age+angle);
-   y=Math.sin(angle)*petal+.025*Math.sin(age+angle);
-   rotation=Math.sin(angle)*(.48*incoming-.40*outgoing);scaleX=scaleY=1-.22*incoming-.2*outgoing;break;
+   const angle=forward*Math.PI*2,bloom=.5+.5*Math.sin(age*1.05);
+   const petal=incoming*.72+outgoing*.78;
+   x=Math.cos(angle)*(petal+.065*bloom);
+   y=Math.sin(angle)*(petal+.105*bloom);
+   rotation=Math.sin(angle)*(.48*incoming-.40*outgoing+.12*bloom);
+   scaleX=scaleY=1-.22*incoming-.2*outgoing;break;
   }
   case 'switchback':{
-   const lane=Math.floor(index/3)%2?1:-1;
-   x=lane*(.75*incoming-.65*outgoing)+lane*.035*Math.sin(age*1.15);
-   y=lane*.10*(incoming+outgoing);shear=lane*(.14*incoming+.10*outgoing)+lane*.018*Math.sin(age*.9);break;
+   const lane=Math.floor(index/3)%2?1:-1,pulse=Math.sin(age*1.4);
+   x=lane*(.75*incoming-.65*outgoing)+lane*.055*pulse;
+   y=lane*.10*(incoming+outgoing);
+   scaleX=1-.065*Math.abs(pulse);shear=lane*(.14*incoming+.10*outgoing+.065*pulse);break;
   }
  }
  return {x:x*gain,y:y*gain,rotation:rotation*gain,scaleX:1+(scaleX-1)*Math.min(1,gain),scaleY:1+(scaleY-1)*Math.min(1,gain),shear:shear*gain,
   alpha:clamp(enter*2.5)*(1-outgoing),reveal,tracking:tracking*Math.min(1,gain),revealX,clipSide,iris};
 }
 
-/** Alternating lines enter opposite stage sides and leave in their direction of travel. */
-export function lineMotionPose(motion:LyricMotion,age:number,duration:number,lineIndex:number,w:number,energy:number){
- if(energy<=.001||motion!=='alternating')return {x:0};
+/** Spacing breathes across both word anchors and glyph positions. */
+export function phraseTracking(motion:LyricMotion,age:number,energy:number){
+ return motion==='concertina'&&energy>.001?(.02+.065*(.5+.5*Math.sin(age*1.1)))*Math.min(1,energy):0;
+}
+export interface LineMotionPose{x:number;scale?:number}
+/** Whole-composition motion is reserved for designs with a clear line-level identity. */
+export function lineMotionPose(motion:LyricMotion,age:number,duration:number,lineIndex:number,w:number,energy:number):LineMotionPose{
+ if(energy<=.001)return {x:0};
+ const gain=Math.min(1,energy);
+ if(motion==='curtain-sweep')return {x:w*.035*Math.sin(age*.65)*gain};
+ if(motion==='iris')return {x:0,scale:1-.07*(.5+.5*Math.sin(age*.95))*gain};
+ if(motion!=='alternating')return {x:0};
  const {intro,outro}=choreographyTiming(duration),direction=lineIndex%2===0?-1:1;
  return {x:direction*w*.32*((1-clamp(age/intro))**4-clamp((age-duration+outro)/outro)**3)*Math.min(1,energy)};
 }
