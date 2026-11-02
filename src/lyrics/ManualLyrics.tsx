@@ -767,14 +767,14 @@ export default function ManualLyrics({
   // 1. Entire line starts in a single uniform `baseColor` based on the active background.
   // 2. `sungColor` is applied sequentially (letter-by-letter for slow songs, word-by-word for fast songs)
   //    only when real word-by-word sync is available.
-  const { baseLineColor, sungAccentColor, sungAccentColors } = useMemo(() => {
+  const { baseLineColor, sungAccentColor } = useMemo(() => {
     if (
       albumArtPalette &&
       (lyricColorMode === "album" ||
         (lyricColorMode === "auto" && isVideoBackground))
     ) {
       const colors=albumColorsForLine(albumArtPalette,`${current?.time||0}|${current?.text||''}`);
-      return {baseLineColor:colors.baseColor,sungAccentColor:colors.sungColor,sungAccentColors:colors.sungColors};
+      return {baseLineColor:colors.baseColor,sungAccentColor:colors.sungColor};
     }
     const scheduledScene =
       storyboard.find((s) => lyricTime >= s.start && lyricTime < s.end)?.id ||
@@ -797,7 +797,7 @@ export default function ManualLyrics({
       customOverride,
       isVideoBackground,
     );
-    return { baseLineColor: baseColor, sungAccentColor: sungColor, sungAccentColors:[sungColor] };
+    return { baseLineColor: baseColor, sungAccentColor: sungColor };
   }, [
     lyricColorMode,
     albumArtPalette,
@@ -1207,8 +1207,7 @@ export default function ManualLyrics({
                             ? "active"
                             : "upcoming";
 
-                        const accentIndex=activeSourcedWords.indexOf(w);
-                        const wordAccent=sungAccentColors[Math.max(0,accentIndex)%sungAccentColors.length]||sungAccentColor;
+                        const wordAccent=sungAccentColor;
                         if (activeFillPace === "letter") {
                           // A single shaped text run preserves connected scripts and ligatures.
                           const sweep=!isSpokenStart?0:isSpokenEnd?100:prog*100;

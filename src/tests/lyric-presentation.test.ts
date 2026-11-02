@@ -186,13 +186,17 @@ describe('persistent letters, shaped-script fallback and selectable transitions'
   expect(normalizeWordStylePool(['halo','classic-ring'])).toEqual(['classic-capsule']);
   expect(normalizeMotionPool([])).toEqual([]);expect(normalizeWordStylePool([])).toEqual([]);
  });
- it('uses pale album colours for unread/line-only lyrics and multiple vibrant colours after singing',()=>{
+ it('uses pale unread ink and one vibrant accent for every sung word in the line',()=>{
   const palette=getDeterministicSongPalette('multi-colour fixture');
   const line=render({cue:{...cue,timing:'estimated'},albumPalette:palette,forceLightText:true});
   expect(palette.colors).toContain(line.result.baseColor);
   expect(new Set(line.paints.map(p=>p.color))).toEqual(new Set([line.result.baseColor]));
-  const sung=render({time:3.4,albumPalette:palette,forceLightText:true});
-  expect(new Set(sung.paints.map(p=>p.color)).size).toBeGreaterThan(1);
+  for(const forceLightText of [false,true])for(const time of [.5,1.8,3.4]){
+   const sung=render({time,albumPalette:palette,forceLightText,wordStylesEnabled:false});
+   const startedLetters=cue.words.filter(word=>time>=word.start).reduce((total,word)=>total+word.text.length,0);
+   expect(new Set(sung.paints.slice(0,startedLetters).map(p=>p.color))).toEqual(new Set([sung.result.activeColor]));
+   if(time<2.5)expect(new Set(sung.paints.slice(startedLetters).map(p=>p.color))).toEqual(new Set([sung.result.baseColor]));
+  }
   for(const color of palette.sungColors)expect(contrastRatio(color,'#07090e')).toBeGreaterThanOrEqual(4.5);
   expect(palette.sungColors.every((color,index)=>luminance(color)<luminance(palette.colors[index]))).toBe(true);
  });

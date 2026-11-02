@@ -901,10 +901,9 @@ export function drawKineticLyrics({
    c.textBaseline='middle';
    applySceneFont(c,font,size,word.text);
 
-   const candidateSung=lineColors?.sungColors?.[(word.index+(duetSide==='right'?1:0))%lineColors.sungColors.length];
-   const wordSungColor=candidateSung?(forceLightText?candidateSung:readableChromaticInk(theme.background,candidateSung)):sungColor;
+   // Every sung word in this cue shares its contrast-adjusted line accent.
    if(activeWordStyle!=='off'&&isActive){
-    drawCurrentWordAccent(c,activeWordStyle,measuredW,size,wordProgress,wordSungColor,styleEnergy,word.text);
+    drawCurrentWordAccent(c,activeWordStyle,measuredW,size,wordProgress,sungColor,styleEnergy,word.text);
    }
 
    const parts=energy>.001?units[word.index]:[{text:word.text,center:0,width:measuredW,index:0,count:1,connected:true}];
@@ -913,7 +912,7 @@ export function drawKineticLyrics({
     c.save();
     c.transform(pose.scaleX*Math.cos(pose.rotation),pose.scaleX*Math.sin(pose.rotation),pose.shear-Math.sin(pose.rotation),pose.scaleY*Math.cos(pose.rotation),part.center+pose.x*size,pose.y*size);
     const letterProgress=part.connected?wordProgress:clamp(wordProgress*part.count-part.index);
-    paintWordWithSequentialColor(c,part.text,Math.max(1,part.width*1.12),hasWordSync&&(animated||wordStylesEnabled),fillPace,letterProgress,isSpokenStart,isSpokenEnd,baseColor,wordSungColor,effectiveBgHex);
+    paintWordWithSequentialColor(c,part.text,Math.max(1,part.width*1.12),hasWordSync&&(animated||wordStylesEnabled),fillPace,letterProgress,isSpokenStart,isSpokenEnd,baseColor,sungColor,effectiveBgHex);
     c.restore();
    }
 

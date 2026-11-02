@@ -365,7 +365,7 @@ export async function fetchAppleMusicWordSyncedLyrics(
 ): Promise<AppleLyricResult | null> {
   const isYt = !rawOverride && (isYouTubeAudioTrack(track));
   const title = rawOverride ? track.title.trim() : cleanLyricMetadata(track.title.trim());
-  // Skip artist and album names when searching lyrics of songs sourced from YouTube unless rawOverride is active
+  // Album names are never search terms. YouTube channel names are also skipped unless manually overridden.
   const artist = rawOverride ? track.artist.trim() : isYt ? '' : cleanLyricMetadata(track.artist.trim());
   if (title.length < 2) return null;
 
@@ -440,7 +440,6 @@ export async function fetchAppleMusicWordSyncedLyrics(
 
   let appleTrackName = title;
   let appleArtistName = artist;
-  let appleAlbumName = isYt ? '' : track.album || '';
   let appleDuration = track.duration || 0;
   let appleTrackViewUrl = '';
 
@@ -489,7 +488,6 @@ export async function fetchAppleMusicWordSyncedLyrics(
       if (best) {
         appleTrackName = String(best.trackName || title);
         appleArtistName = String(best.artistName || artist);
-        appleAlbumName = String(best.collectionName || appleAlbumName);
         if (Number(best.trackTimeMillis) > 0) {
           appleDuration = Math.round(Number(best.trackTimeMillis) / 1000);
         }
@@ -509,7 +507,6 @@ export async function fetchAppleMusicWordSyncedLyrics(
       new URLSearchParams({
         s: appleTrackName,
         a: appleArtistName,
-        al: appleAlbumName,
         d: String(Math.round(appleDuration || track.duration || 0)),
       }).toString(),
   ];

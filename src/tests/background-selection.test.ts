@@ -25,7 +25,7 @@ it('compares a broad candidate pool and falls back from missing music video to l
   return new Response(JSON.stringify({data:songs}));
  }));
  const result=await findYouTubeBackgrounds(track,'music','https://resolver.example');
- expect(requests).toHaveLength(2);
+ expect(requests).toHaveLength(4);
  expect(result.candidateCount).toBe(16);
  expect(result.usedLyricalFallback).toBe(true);
  expect(result.videos.map(s=>s.id)).toEqual(['yt_00000000099']);
@@ -93,3 +93,41 @@ it('ranks Think Music India 109.1M views official music video #1 for Radhimaa ov
 });
 
 
+
+const boomShaka={title:'Boom Shaka',artist:'KR$NA, Dhanda Nyoliwala',duration:219};
+const boomTitle='Boom Shaka (Official Music Video) | KR$NA | Dhanda Nyoliwala';
+it('chooses the KRSNA upload in the Boom Shaka screenshot over the BeatVibe copy',()=>{
+ const copy=video(50,boomTitle,{artist:'BeatVibe Studio',duration:219,viewCount:980_300,videoType:'OMV'});
+ const official=video(51,boomTitle,{artist:'KRSNA',duration:219,viewCount:151_700_000});
+ expect(rankYouTubeBackgroundCandidates([copy,official],boomShaka)[0].id).toBe(official.id);
+ // Popularity and an inferred OMV flag cannot promote an unrelated publisher
+ // above a matching artist, even when that artist's view count is unavailable.
+ expect(rankYouTubeBackgroundCandidates([{...copy,viewCount:1e9},{...official,viewCount:undefined}],boomShaka)[0].id).toBe(official.id);
+});
+it('recognizes either credited artist and keeps fan channels separate from the uploader identity',()=>{
+ for(const uploader of ['KRSNA','KR$NA Official','Dhanda Nyoliwala','DhandaNyoliwalaVEVO']){
+  const artistVideo=video(53,boomTitle,{artist:uploader,duration:219});
+  const fanVideo=video(52,boomTitle,{artist:'KRSNA Fans',duration:219,viewCount:1e9,videoType:'OMV'});
+  expect(rankYouTubeBackgroundCandidates([fanVideo,artistVideo],boomShaka)[0].id,uploader).toBe(artistVideo.id);
+ }
+});
+it('prefers an artist lyric upload to a popular unaffiliated music reupload',()=>{
+ const copy=video(54,boomTitle,{artist:'BeatVibe Studio',duration:219,viewCount:10e6});
+ const lyric=video(55,'Boom Shaka Official Lyrics | KR$NA | Dhanda Nyoliwala',{artist:'KRSNA',duration:219,viewCount:100});
+ expect(rankYouTubeBackgroundCandidates([copy,lyric],boomShaka)[0].id).toBe(lyric.id);
+});
+it('automatically discovers the artist upload through a shorter title search and merges repeated metadata',async()=>{
+ const queries:string[]=[];
+ vi.stubGlobal('fetch',vi.fn(async(input:string)=>{
+  const q=new URL(input).searchParams.get('q')||'';queries.push(q);
+  const copy=video(56,boomTitle,{artist:'BeatVibe Studio',duration:219,viewCount:980_300,videoType:'OMV'});
+  const official=video(57,boomTitle,{artist:'KRSNA',duration:219,viewCount:151_700_000});
+  const incomplete={...official,artist:'YouTube',duration:0,viewCount:undefined};
+  return new Response(JSON.stringify({data:q==='Boom Shaka official music video'?[official]:[copy,incomplete]}));
+ }));
+ const result=await findYouTubeBackgrounds(boomShaka,'music','https://resolver.example');
+ expect(queries).toContain('Boom Shaka official music video');expect(queries).toContain('Boom Shaka');
+ expect(result.candidateCount).toBe(2);
+ expect(result.videos[0]).toMatchObject({id:'yt_00000000057',artist:'KRSNA',duration:219,viewCount:151_700_000});
+ expect(result.usedLyricalFallback).toBe(false);
+});

@@ -29,8 +29,8 @@ try{
   };
   const line=draw(1,{cue:{...cue,timing:'estimated'}}),lineColors=new Set(paints);
   if(lineColors.size!==1||!palette.colors.includes(line.baseColor))throw Error('Line-only ink is not the pale album palette');
-  draw(3.6);const afterColors=new Set(paints),a=canvas.toDataURL();draw(3.75);const b=canvas.toDataURL();
-  if(afterColors.size<2||a===b)throw Error('Vibrant sung colours or persistent letter motion missing');
+  const sung=draw(3.6);const afterColors=new Set(paints),a=canvas.toDataURL();draw(3.75);const b=canvas.toDataURL();
+  if(afterColors.size!==1||!afterColors.has(sung.activeColor)||a===b)throw Error('Uniform vibrant line accent or persistent letter motion missing');
   const hindi='संगीत दिल को छू ले';
   const [hindiCue]=buildCues([{time:0,text:hindi}],[]);
   const shaped=draw(1.1,{cue:hindiCue});
@@ -41,10 +41,10 @@ try{
   window.letterQA={draw,hindiCue};
   return {letters:draw(1).glyphs,hindiGlyphs:shaped.glyphs,sungColors:afterColors.size,transitions:LYRIC_TRANSITIONS.length+ALL_THEME_TRANSITIONS.length};
  });
- assert.equal(results.letters,17);assert.equal(results.hindiGlyphs,5);assert.ok(results.sungColors>=2);assert.equal(results.transitions,13);
+ assert.equal(results.letters,17);assert.equal(results.hindiGlyphs,5);assert.equal(results.sungColors,1);assert.equal(results.transitions,13);
  for(const [name,time,mode] of [['album-unread',.2,'normal'],['album-sung',3.7,'normal'],['hindi-shaped',1.3,'hindi'],['line-synced',1,'line']]){
   await page.evaluate(([time,mode])=>window.letterQA.draw(time,mode==='hindi'?{cue:window.letterQA.hindiCue}:mode==='line'?{cue:{...window.letterQA.hindiCue,text:'Carry the light home',timing:'estimated'}}:{}),[time,mode]);
   await page.locator('canvas').screenshot({path:`${shots}/${name}.png`});
  }
- assert.deepEqual(errors,[]);console.log('PASS browser: persistent letters, intact Hindi shaping, pale unread/line ink, multiple vibrant sung colours and all 13 transitions.');
+ assert.deepEqual(errors,[]);console.log('PASS browser: persistent letters, intact Hindi shaping, pale unread/line ink, one vibrant accent per sung line and all 13 transitions.');
 }finally{await browser.close();await server.close();}

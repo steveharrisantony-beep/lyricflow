@@ -78,17 +78,14 @@ export default function TrackFinder({
   const [message, setMessage] = useState("");
   const [manualTitle, setManualTitle] = useState(() => track?.title || "");
   const [manualArtist, setManualArtist] = useState(() => track?.artist || "");
-  const [manualAlbum, setManualAlbum] = useState(() => track?.album || "");
   const [overrideBracketFilter, setOverrideBracketFilter] = useState(true);
   const [autoSearchedSummary, setAutoSearchedSummary] = useState<{
     title: string;
     artist: string;
-    album: string;
     isYt: boolean;
   }>({
     title: "",
     artist: "",
-    album: "",
     isYt: false,
   });
 
@@ -145,17 +142,14 @@ export default function TrackFinder({
         )
       : autoNorm.title || track.title;
     const searchedArtist = isYt ? "" : autoNorm.artist || track.artist;
-    const searchedAlbum = isYt ? "" : autoNorm.album || track.album;
 
     setAutoSearchedSummary({
       title: searchedTitle,
       artist: searchedArtist,
-      album: searchedAlbum,
       isYt,
     });
     setManualTitle(searchedTitle || track.title);
     setManualArtist(track.artist || "");
-    setManualAlbum(track.album || "");
   }, [autoTrackKey]);
 
   // Automatic lyrics lookup across the 4 selectable Lyrics Engine options
@@ -389,7 +383,6 @@ export default function TrackFinder({
       title: manualTitle.trim(),
       videoTitle: manualTitle.trim(),
       artist: manualArtist.trim(),
-      album: manualAlbum.trim(),
       source: "manual",
       confidence: 1,
     };
@@ -563,22 +556,8 @@ export default function TrackFinder({
                 onChange={(e) => setManualArtist(e.target.value)}
               />
             </label>
-            <label>
-              Album / version
-              <input
-                type="text"
-                inputMode="text"
-                autoComplete="off"
-                value={manualAlbum}
-                placeholder="Optional"
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === "Enter") void search();
-                }}
-                onChange={(e) => setManualAlbum(e.target.value)}
-              />
-            </label>
           </div>
+          <p className="player-footnote">Searches use song title and artist.</p>
           <div
             style={{
               margin: "6px 0 10px",
