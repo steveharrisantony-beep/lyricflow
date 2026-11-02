@@ -314,7 +314,7 @@ export async function fetchYouTubeSubtitlesForTrack(
   const controller=new AbortController();
   const cancel=()=>controller.abort(signal?.reason);
   signal?.addEventListener('abort',cancel,{once:true});
-  const timer=setTimeout(()=>controller.abort(new Error('YouTube caption lookup timed out.')),17000);
+  const timer=setTimeout(()=>controller.abort(new Error('YouTube caption lookup timed out.')),35000);
   try {
     signal?.throwIfAborted();
     const res = await fetch(

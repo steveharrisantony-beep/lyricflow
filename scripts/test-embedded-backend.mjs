@@ -24,7 +24,11 @@ globalThis.fetch = async (input, options) => {
   }
   if(url.hostname==='www.youtube.com'&&url.pathname==='/watch'){
     if(url.searchParams.get('v')==='blocked1234')return new Response('',{status:403});
-    return new Response('var ytInitialPlayerResponse = '+JSON.stringify({videoDetails:{videoId:url.searchParams.get('v')},playabilityStatus:{status:'OK'},captions:{playerCaptionsTracklistRenderer:{captionTracks:[{baseUrl:'https://www.youtube.com/api/timedtext?v='+url.searchParams.get('v')+'&fmt=srv3',vssId:'.en',languageCode:'en',name:{runs:[{text:'English [CC]'}]}}]}}})+';');
+    return new Response('"INNERTUBE_API_KEY":"fixture-key"; var ytInitialPlayerResponse = '+JSON.stringify({videoDetails:{videoId:url.searchParams.get('v')},playabilityStatus:{status:'OK'},captions:{playerCaptionsTracklistRenderer:{captionTracks:[{baseUrl:'https://www.youtube.com/api/timedtext?v='+url.searchParams.get('v')+'&fmt=srv3',vssId:'.en',languageCode:'en',name:{runs:[{text:'English [CC]'}]}}]}}})+';');
+  }
+  if(url.hostname==='www.youtube.com'&&url.pathname==='/youtubei/v1/player'){
+    const {videoId}=JSON.parse(options.body);
+    return Response.json({videoDetails:{videoId},playabilityStatus:{status:'OK'},captions:{playerCaptionsTracklistRenderer:{captionTracks:[{baseUrl:'https://www.youtube.com/api/timedtext?v='+videoId+'&fmt=srv3',vssId:'.en',languageCode:'en',name:{runs:[{text:'English [CC]'}]}}]}}});
   }
   if(url.hostname==='www.youtube.com'&&url.pathname==='/api/timedtext'){
     captionRequests++;

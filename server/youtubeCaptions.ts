@@ -1,3 +1,5 @@
+import { fetchYouTubeSubtitles, parseYouTubeSubtitles, YouTubeSubtitleError } from './youtubeSubtitles';
+
 /** Direct caption requests with verified TLS, one deadline and no public proxy pools. */
 export interface CaptionTrack {
   baseUrl:string; languageCode?:string; kind?:string; vssId?:string;
@@ -47,30 +49,8 @@ export function extractCaptionMetadata(html:string,videoId:string):{tracks:Capti
   const value=match?readBalancedJson(html,match.index+match[0].length):null;
   return {tracks:Array.isArray(value)?value as CaptionTrack[]:[],status:'UNKNOWN',recognized:Array.isArray(value)};
 }
-const decode=(text:string)=>text.replace(/&#(x[\da-f]+|\d+);/gi,(_,v:string)=>{const n=v[0].toLowerCase()==='x'?parseInt(v.slice(1),16):Number(v);return n>=0&&n<=0x10ffff?String.fromCodePoint(n):'';}).replace(/&quot;/g,'"').replace(/&apos;|&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
-const clean=(text:string)=>decode(text.replace(/<[^>]*>/g,' ')).replace(/\s+/g,' ').trim();
-const stamp=(seconds:number)=>`[${String(Math.floor(seconds/60)).padStart(2,'0')}:${(seconds%60).toFixed(2).padStart(5,'0')}]`;
-export function parseCaptionBody(raw:string):string {
-  const text=raw.trim(),cues:Array<{time:number;text:string}>=[];
-  const add=(time:number,value:string)=>{const words=clean(value);if(Number.isFinite(time)&&time>=0&&words&&!/^\[(?:music|applause|silence)\]$/i.test(words))cues.push({time,text:words});};
-  if(text.startsWith('{')){
-    try{const data=JSON.parse(text) as {events?:Array<{tStartMs?:number;segs?:Array<{utf8?:string}>}>};for(const event of data.events||[])if(typeof event.tStartMs==='number')add(event.tStartMs/1000,(event.segs||[]).map(s=>s.utf8||'').join(''));}catch{/* Try XML/VTT below. */}
-  }
-  if(!cues.length){
-    for(const match of text.matchAll(/<text\b[^>]*\bstart=["']([\d.]+)["'][^>]*>([\s\S]*?)<\/text>/gi))add(Number(match[1]),match[2]);
-    for(const match of text.matchAll(/<p\b[^>]*\bt=["'](\d+)["'][^>]*>([\s\S]*?)<\/p>/gi))add(Number(match[1])/1000,match[2]);
-  }
-  if(!cues.length){
-    for(const block of text.replace(/\r/g,'').split(/\n\s*\n/)){
-      const lines=block.split('\n'),index=lines.findIndex(line=>line.includes('-->'));
-      if(index<0)continue;
-      const time=lines[index].trim().match(/^(?:(\d+):)?(\d{2}):(\d{2})[.,](\d{3})\s*-->/);
-      if(time)add(Number(time[1]||0)*3600+Number(time[2])*60+Number(time[3])+Number(time[4])/1000,lines.slice(index+1).join(' '));
-    }
-  }
-  const seen=new Set<string>();
-  return cues.sort((a,b)=>a.time-b.time).filter(cue=>{const key=cue.time+'|'+cue.text;if(seen.has(key))return false;seen.add(key);return true;}).map(cue=>stamp(cue.time)+cue.text).join('\n');
-}
+/** Keep the Android caption interface while sharing the corrected timedtext parser. */
+export const parseCaptionBody = parseYouTubeSubtitles;
 export function captionFormatUrls(base:string):string[]{
   const url=new URL(base);
   if(url.protocol!=='https:'||!['www.youtube.com','youtube.com','www.youtube-nocookie.com','video.google.com'].includes(url.hostname)||!url.pathname.endsWith('/timedtext')||url.username||url.password)throw new CaptionFetchError('YouTube returned an invalid caption address.','invalid-response');
@@ -79,161 +59,30 @@ export function captionFormatUrls(base:string):string[]{
   return [...new Set(candidates)];
 }
 
-async function fetchInnertubeCaptionTracks(
-  videoId:string,
-  request:typeof fetch,
-  signal:AbortSignal,
-  extraHeaders?:Record<string,string>
-):Promise<CaptionTrack[]>{
-  const clients=[
-    {
-      name:'ANDROID',
-      version:'20.10.38',
-      ua:'com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip',
-      extra:{androidSdkVersion:34,osName:'Android',osVersion:'14'}
-    },
-    {
-      name:'IOS',
-      version:'20.10.4',
-      ua:'com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_1 like Mac OS X;)',
-      extra:{deviceMake:'Apple',deviceModel:'iPhone16,2',osName:'iPhone',osVersion:'18.3.1.22D72'}
-    },
-    {
-      name:'WEB',
-      version:'2.20250219.01.00',
-      ua:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      extra:{}
-    }
-  ];
-  const results=await Promise.all(
-    clients.map(async client=>{
-      try{
-        const res=await request('https://www.youtube.com/youtubei/v1/player?prettyPrint=false',{
-          method:'POST',
-          headers:{
-            'Content-Type':'application/json',
-            'User-Agent':client.ua,
-            'Accept-Language':'en-US,en;q=0.9',
-            Origin:'https://www.youtube.com',
-            ...(client.name==='WEB'?extraHeaders:{})
-          },
-          body:JSON.stringify({
-            videoId,
-            context:{
-              client:{
-                clientName:client.name,
-                clientVersion:client.version,
-                hl:'en',
-                gl:'US',
-                ...client.extra
-              }
-            },
-            contentCheckOk:true,
-            racyCheckOk:true
-          }),
-          signal
-        });
-        if(!res.ok)return [];
-        const json=(await res.json()) as {
-          captions?:{playerCaptionsTracklistRenderer?:{captionTracks?:CaptionTrack[]}};
-        };
-        const list=json?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-        return Array.isArray(list)?list:[];
-      }catch{
-        return [];
-      }
-    })
-  );
-  for(const list of results){
-    if(list.length>0)return list;
-  }
-  return [];
-}
-
+/** Use the same direct transcript flow for real and injected HTTP requests. */
 export async function fetchYouTubeCaptions(videoId:string,options:{headers?:Record<string,string>;signal?:AbortSignal;request?:typeof fetch}={}):Promise<CaptionResult|null>{
   if(!/^[\w-]{11}$/.test(videoId))return null;
-  const isCustomRequest=Boolean(options.request);
-  const request=options.request||fetch,deadline=new AbortController();
-  const cancel=()=>deadline.abort(options.signal?.reason);
-  options.signal?.addEventListener('abort',cancel,{once:true});
-  if(options.signal?.aborted)cancel();
-  const timer=setTimeout(()=>deadline.abort(new Error('Caption request timed out.')),14000);
-  const headers={'User-Agent':'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36','Accept-Language':'en-US,en;q=0.9',...options.headers};
-  const androidHeaders={'User-Agent':'com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip','Accept-Language':'en-US,en;q=0.9',...options.headers};
-  let blocked=false;
-  const get=async(url:string,useAndroidUa=false)=>{
-    deadline.signal.throwIfAborted();
-    const attempt=new AbortController();
-    const stop=()=>attempt.abort(deadline.signal.reason);
-    deadline.signal.addEventListener('abort',stop,{once:true});
-    const timeout=setTimeout(()=>attempt.abort(),4000);
-    try{
-      const response=await request(url,{headers:useAndroidUa?androidHeaders:headers,signal:attempt.signal,redirect:'follow'});
-      if([401,403,429].includes(response.status)){blocked=true;throw new CaptionFetchError('YouTube restricted this caption request. Try signing in, retry later, or import a subtitle file.','restricted');}
-      if(!response.ok)throw new CaptionFetchError('YouTube captions are temporarily unavailable.','unavailable');
-      if(Number(response.headers.get('content-length'))>10_000_000)throw new CaptionFetchError('The caption response was too large.','invalid-response');
-      const body=await response.text();
-      if(body.length>10_000_000)throw new CaptionFetchError('The caption response was too large.','invalid-response');
-      return body;
-    }catch(error){
-      if(attempt.signal.aborted&&!deadline.signal.aborted)throw new CaptionFetchError('YouTube caption lookup timed out.','timeout');
-      throw error;
-    }finally{clearTimeout(timeout);deadline.signal.removeEventListener('abort',stop);}
-  };
-  try{
-    let rawTracks:CaptionTrack[]=[];
-    let metadataStatus='UNKNOWN';
-    let metadataRecognized=false;
-
-    if(!isCustomRequest){
-      // First query Innertube ANDROID / IOS / WEB player API (roundyyy/yt-bulk-subtitles-downloader)
-      // without checking playabilityStatus or creator download flags.
-      rawTracks=await fetchInnertubeCaptionTracks(videoId,request,deadline.signal,options.headers);
-      if(rawTracks.length>0){
-        metadataRecognized=true;
-        metadataStatus='OK';
-      }
+  try {
+    const result = await fetchYouTubeSubtitles(videoId, {
+      fetch: options.request,
+      signal: options.signal,
+      headers: options.headers,
+    });
+    return {
+      ...result,
+      hasWordSync: false,
+      subtitleTracks: result.subtitleTracks.map(({isGenerated, ...track}) => ({...track, isAutoGenerated: isGenerated})),
+    };
+  } catch (error) {
+    if (options.signal?.aborted) throw options.signal.reason;
+    if (error instanceof YouTubeSubtitleError) {
+      if (error.code === 'NO_CAPTIONS') return null;
+      const code = error.status === 504 ? 'timeout'
+        : ['REQUEST_BLOCKED', 'VIDEO_RESTRICTED', 'PO_TOKEN_REQUIRED', 'CONSENT_REQUIRED'].includes(error.code) ? 'restricted'
+        : ['PLAYER_UNREADABLE', 'CAPTIONS_UNREADABLE'].includes(error.code) ? 'invalid-response'
+        : 'unavailable';
+      throw new CaptionFetchError(error.message, code);
     }
-
-    if(rawTracks.length===0){
-      const html=await get(`https://www.youtube.com/watch?v=${videoId}`);
-      const metadata=extractCaptionMetadata(html,videoId);
-      rawTracks=metadata.tracks;
-      metadataStatus=metadata.status;
-      metadataRecognized=metadata.recognized;
-    }
-
-    if(!metadataRecognized)throw new CaptionFetchError('YouTube did not expose caption metadata to this request. Import a subtitle file or retry later.','restricted');
-    if(!rawTracks.length){
-      if(metadataStatus==='OK'||!isCustomRequest)return null;
-      throw new CaptionFetchError('This video requires access that the caption service does not have.','restricted');
-    }
-    const tracks=rawTracks.filter(t=>typeof t?.baseUrl==='string').sort((a,b)=>Number(Boolean(a.kind==='asr'||a.vssId?.startsWith('a.')))-Number(Boolean(b.kind==='asr'||b.vssId?.startsWith('a.')))).slice(0,6);
-    const subtitleTracks=(await Promise.all(tracks.map(async(track,index)=>{
-      let urls:string[];try{urls=captionFormatUrls(track.baseUrl);}catch{return null;}
-      for(const address of urls){
-        try{
-          let body=await get(address,false);
-          let lrc=parseCaptionBody(body);
-          if(!lrc&&!isCustomRequest){
-            body=await get(address,true);
-            lrc=parseCaptionBody(body);
-          }
-          if(!lrc)continue;
-          const languageCode=track.languageCode||'und',isAutoGenerated=track.kind==='asr'||Boolean(track.vssId?.startsWith('a.'));
-          const name=track.name?.simpleText||(track.name?.runs||[]).map(r=>r.text||'').join('')||languageCode.toUpperCase();
-          return {id:track.vssId||languageCode+'-'+index,languageCode,label:name+(isAutoGenerated&&!/auto.generated/i.test(name)?' (auto-generated)':''),lrc,lineCount:lrc.split('\n').length,isAutoGenerated};
-        }catch(error){if(deadline.signal.aborted)throw error;if(error instanceof CaptionFetchError&&error.code==='restricted'&&isCustomRequest)break;}
-      }
-      return null;
-    }))).filter((track):track is NonNullable<typeof track>=>Boolean(track));
-    if(!subtitleTracks.length)throw new CaptionFetchError(blocked?'YouTube restricted the caption download.':'Caption tracks exist, but YouTube did not return usable subtitle text.',blocked?'restricted':'unavailable');
-    const primary=subtitleTracks[0];
-    return {lrc:primary.lrc,source:`YouTube Subtitles (${primary.label})`,sourceUrl:`https://www.youtube.com/watch?v=${videoId}`,hasWordSync:false,subtitleTracks};
-  }catch(error){
-    if(options.signal?.aborted)throw options.signal.reason;
-    if(deadline.signal.aborted)throw new CaptionFetchError('YouTube caption lookup timed out. Try again or import a subtitle file.','timeout');
-    if(error instanceof CaptionFetchError)throw error;
-    throw new CaptionFetchError('The caption service could not reach YouTube. Check your connection and retry.','unavailable');
-  }finally{clearTimeout(timer);options.signal?.removeEventListener('abort',cancel);}
+    throw new CaptionFetchError('The caption service could not reach YouTube. Check your connection and retry.', 'unavailable');
+  }
 }

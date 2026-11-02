@@ -167,7 +167,7 @@ LyricFlow dynamically probes and displays **only the Lyrics Engine options that 
 
 1. **LyricFlow Engine (`lyricflow` — Hybrid Video-Aligned Sync with Parallel Library Lookup)**:
    - Designed specifically to solve music video vs. studio audio duration mismatches.
-   - Collects **creator-uploaded YouTube Subtitles** (line-by-line timed to the exact music video timeline) **AND** **Apple Library** word-by-word TTML/syllable sync (`<mm:ss.xx>`).
+   - Collects **uploaded YouTube Subtitles** (line-by-line timed to the exact music video timeline) **AND** **Apple Library** word-by-word TTML/syllable sync (`<mm:ss.xx>`).
    - Compares each line between the two transcripts (`alignAppleWordSyncWithYouTubeSubtitles`) and shifts/scales every Apple Music word timestamp onto the YouTube video's actual timeline.
    - **Smart Fallback**: If Apple Library lyrics are not found, LyricFlow Engine automatically falls back to aligning **LRC Library** onto **YouTube Subtitles**, or displaying **YouTube Subtitles** or **LRC Library** directly.
 2. **Apple Library (`apple` — Direct Word-by-Word TTML & Dual-Singer Duets)**:
@@ -175,10 +175,11 @@ LyricFlow dynamically probes and displays **only the Lyrics Engine options that 
    - Preserves overlapping dual-singer vocal timestamps (`ttm:agent="v1"` / `"v2"` and multi-word `x-bg` phrases) so when two singers perform simultaneously, both vocal lines render on **Left and Right sides of the stage at the same time**.
 3. **LRC Library (`lrclib` — Direct Timed LRC)**:
    - Direct duration-aware timed LRC lookup from LRCLIB (`lrclib.net/api/get` & `/api/search`) and KuGou.
-4. **YouTube Subtitles (`youtube` — Creator-Uploaded Video Captions + Multi-Track Selector)**:
-   - Uses the [`jdepoix/youtube-transcript-api`](https://github.com/jdepoix/youtube-transcript-api) architecture (fetching the watch page with `CONSENT=YES+cb`, extracting `INNERTUBE_API_KEY`, and querying the `ANDROID` InnerTube `/youtubei/v1/player` endpoint).
-   - **Creator-Uploaded Captions Only**: Strictly filters out auto-generated ASR captions (`kind !== 'asr'` and `!vssId.startsWith('a.')`) for high accuracy across Tamil, Malayalam, Hindi, Telugu, and international songs.
-   - **Multiple Subtitle Tracks**: When a video includes multiple creator-uploaded subtitle tracks, collects all tracks and provides a track selector in the UI.
+4. **YouTube Subtitles (`youtube` — Uploaded & Auto-Generated Captions + Multi-Track Selector)**:
+   - Uses the [`jdepoix/youtube-transcript-api`](https://github.com/jdepoix/youtube-transcript-api) mechanism in the embedded Node server: fetch the watch page, retain session cookies, complete consent if required, extract `INNERTUBE_API_KEY`, query the `ANDROID` InnerTube player, then download its signed timedtext URL. Existing sign-in headers are retained throughout; no extra Python service is needed.
+   - **Caption preference**: Uploaded captions come first; auto-generated tracks remain available and are labelled. Automatic captions stay excluded from timing alignment. A valid one-line transcript is accepted.
+   - **Timeouts and sessions**: Each upstream request allows 10 seconds within a shared 30-second deadline; the frontend allows 35 seconds. Session/consent cookies remain local to each lookup, and the existing account-scoped cache and playback-change cancellation are preserved. Missing captions, restricted access and timeouts remain distinct. YouTube can still restrict individual videos or hosting IPs.
+   - **Multiple Subtitle Tracks**: When a video includes multiple uploaded or auto-generated subtitle tracks, collects all tracks and provides a track selector in the UI.
 
 ### Smart YouTube Metadata Cleaner & Post-Search Candidate Ranking
 - **YouTube Title Sanitization (`cleanYouTubeTitleForLyrics`)**:
