@@ -4,10 +4,10 @@ import {hasDistinctRomanized} from '../../romanization/romanize';
 import {byId,resolveThemePalette,TEMPLATES,type DirectedScene,type FontPack} from './catalog';
 import {applySceneFont,getFontLoadRevision,isFontPackLoaded,preloadLyricFonts} from './fonts';
 import {lightLyricColor,vibrantLyricColor,paintLyric,readableChromaticInk,readableInk,albumColorsForLine} from './contrast';
-import type {AlbumArtLyricPalette} from './contrast';
-import {currentWordPose,drawCurrentWordAccent,type CurrentWordStyle} from './currentWordStyles';
-import {buildLetterUnits,letterMotionPose,type LetterUnit} from './letterMotion';
-import {chooseLyricTransition,lyricEntryPose,type LyricTransition} from './lyricTransitions';
+import type {AlbumArtLyricPalette,TextGlow} from './contrast';
+import {drawCurrentWordAccent,type CurrentWordStyle} from './currentWordStyles';
+import {currentWordAnimationPose,type CurrentWordAnimation} from './currentWordAnimations';
+import {buildLetterUnits,choreographyPhase,letterMotionPose,lineMotionPose,type LetterUnit} from './letterMotion';
 import {makeLyricProjection,STILL_CAMERA,type ProjectPoint} from './cameraRig';
 
 /** A smaller set of distinct, persistent letter choreographies. */
@@ -64,18 +64,18 @@ export const VOXELVERSE_FAMILIES:readonly {id:VoxelVerseFamily;name:string;count
  {id:'kinetic',name:'Kinetic',count:3},{id:'editorial',name:'Editorial',count:4}
 ];
 export const VOXELVERSE_STYLES:readonly VoxelVerseStyleMeta[]=[
- {id:'ship',name:'Ship',family:'signature',detail:'Depth glide with a continuing letter drift'},
- {id:'fisheye',name:'Fisheye',family:'signature',detail:'A breathing lens across individual letters'},
- {id:'orbit',name:'Orbit',family:'spatial',detail:'Letters float in small orbital paths'},
- {id:'cascade',name:'Cascade',family:'spatial',detail:'Staggered falling letters with a flowing hold'},
- {id:'scatter',name:'Scatter',family:'spatial',detail:'Angled letters gather into a living phrase'},
- {id:'elastic',name:'Elastic',family:'kinetic',detail:'Springing letters with a soft elastic hold'},
- {id:'wave',name:'Wave',family:'kinetic',detail:'A continuous travelling wave across the letters'},
- {id:'alternating',name:'Alternating Sides',family:'kinetic',detail:'Consecutive lines enter from opposite sides'},
- {id:'hinge',name:'Hinge',family:'editorial',detail:'Folded letters with alternating perspective'},
- {id:'carnival',name:'Carnival',family:'editorial',detail:'Bold rhythmic letter bounce'},
- {id:'broadside',name:'Broadside',family:'editorial',detail:'Slanted tracking with persistent letter sway'},
- {id:'portal',name:'Portal',family:'editorial',detail:'Letters expand through a turning portal'}
+ {id:'ship',name:'Ship',family:'signature',detail:'Letters glide from depth, drift gently, then travel onward'},
+ {id:'fisheye',name:'Fisheye',family:'signature',detail:'A centre-out lens reveal, travelling focus and closing contraction'},
+ {id:'orbit',name:'Orbit',family:'spatial',detail:'Letters gather along arcs, float, then spiral away'},
+ {id:'cascade',name:'Cascade',family:'spatial',detail:'A masked waterfall entrance, flowing hold and falling exit'},
+ {id:'scatter',name:'Scatter',family:'spatial',detail:'Angled letters assemble from the centre and disperse outward'},
+ {id:'elastic',name:'Elastic',family:'kinetic',detail:'A damped spring entrance and coordinated squash exit'},
+ {id:'wave',name:'Wave',family:'kinetic',detail:'A travelling crest reveals and carries the letters away'},
+ {id:'alternating',name:'Alternating Sides',family:'kinetic',detail:'Lines arrive from alternating sides and exit in their direction of travel'},
+ {id:'hinge',name:'Hinge',family:'editorial',detail:'Letters unfold, hold a subtle fold and close again'},
+ {id:'carnival',name:'Carnival',family:'editorial',detail:'Alternating letter steps settle into a gentle rhythmic hold'},
+ {id:'broadside',name:'Broadside',family:'editorial',detail:'An angled sweep, breathing tracking and onward exit'},
+ {id:'portal',name:'Portal',family:'editorial',detail:'Letters open from the centre and expand away at the end'}
 ];
 const LEGACY_MOTIONS:Record<string,LyricMotion>={visual:'orbit','fisheye-visual':'fisheye',prism:'hinge',surge:'wave',echo:'portal',halo:'orbit',ribbon:'wave',reel:'cascade',fable:'scatter',mosaic:'carnival'};
 export function normalizeLyricMotion(value:unknown):LyricMotion|null{
@@ -254,7 +254,8 @@ export interface KineticArgs {
  wordStylesEnabled?:boolean;
  currentWordStyle?:CurrentWordStyle;
  enabledWordStyles?:readonly CurrentWordStyle[];
- enabledLyricTransitions?:readonly LyricTransition[];
+ wordAnimationsEnabled?:boolean;
+ enabledWordAnimations?:readonly CurrentWordAnimation[];
  cueIndex?:number;
  albumPalette?:AlbumArtLyricPalette;
  enabledMotions?:readonly LyricMotion[];
@@ -288,7 +289,8 @@ export interface KineticResult {
  wordStyle?:CurrentWordStyle|'off';
  glyphs?:number;
  letterMode?:'letters'|'shaped'|'mixed';
- lyricTransition?:LyricTransition|'none';
+ wordAnimation?:CurrentWordAnimation|'off';
+ motionPhase?:'intro'|'hold'|'outro'|'still';
 }
 
 export interface WordPlacement {
@@ -416,30 +418,31 @@ function paintWordWithSequentialColor(
  isSpokenEnd:boolean,
  baseColor:string,
  sungColor:string,
- backgroundHex:string
+ backgroundHex:string,
+ glow?:TextGlow
 ){
  if(!hasWordSync||fillPace==='line'){
-  paintLyric(c,wordText,0,0,maxWidth,baseColor,backgroundHex);
+  paintLyric(c,wordText,0,0,maxWidth,baseColor,backgroundHex,undefined,glow);
   return;
  }
  if(fillPace==='word'){
   const col=isSpokenStart?sungColor:baseColor;
-  paintLyric(c,wordText,0,0,maxWidth,col,backgroundHex);
+  paintLyric(c,wordText,0,0,maxWidth,col,backgroundHex,undefined,glow);
   return;
  }
  // Slow song: letter-by-letter color transition as each letter is said
  if(!isSpokenStart||wordProgress<=0){
-  paintLyric(c,wordText,0,0,maxWidth,baseColor,backgroundHex);
+  paintLyric(c,wordText,0,0,maxWidth,baseColor,backgroundHex,undefined,glow);
   return;
  }
  if(isSpokenEnd||wordProgress>=1){
-  paintLyric(c,wordText,0,0,maxWidth,sungColor,backgroundHex);
+  paintLyric(c,wordText,0,0,maxWidth,sungColor,backgroundHex,undefined,glow);
   return;
  }
  // Paint the shaped word once. A colour sweep preserves Indic conjuncts, kerning,
  // and ligatures instead of splitting the glyph run into individual code points.
  if(typeof c.createLinearGradient!=='function'){
-  paintLyric(c,wordText,0,0,maxWidth,wordProgress>=.5?sungColor:baseColor,backgroundHex);
+  paintLyric(c,wordText,0,0,maxWidth,wordProgress>=.5?sungColor:baseColor,backgroundHex,undefined,glow);
   return;
  }
  const width=Math.min(maxWidth,c.measureText(wordText).width);
@@ -447,7 +450,7 @@ function paintWordWithSequentialColor(
  const edge=clamp(wordProgress,.001,.999);
  gradient.addColorStop(0,sungColor);gradient.addColorStop(edge,sungColor);
  gradient.addColorStop(edge,baseColor);gradient.addColorStop(1,baseColor);
- paintLyric(c,wordText,0,0,maxWidth,baseColor,backgroundHex,gradient);
+ paintLyric(c,wordText,0,0,maxWidth,baseColor,backgroundHex,gradient,glow);
 }
 
 export function resolveCuePlacement(
@@ -495,9 +498,10 @@ export function drawKineticLyrics({
  project=makeLyricProjection(w,h,STILL_CAMERA),
  animated=true,
  wordStylesEnabled=false,
- currentWordStyle='bloom',
+ currentWordStyle='classic-capsule',
  enabledWordStyles,
- enabledLyricTransitions,
+ wordAnimationsEnabled=false,
+ enabledWordAnimations,
  cueIndex=0,
  albumPalette,
  enabledMotions,
@@ -520,10 +524,11 @@ export function drawKineticLyrics({
  const baseTemplate=byId[scene.id]||TEMPLATES[0];
  const theme=resolveThemePalette(baseTemplate.id,paletteId);
  const unit=Math.min(w,h);
+ const lineAnimationsActive=animated&&enabledMotions?.length!==0;
  // Disable camera movement as well as glyph movement when line animation is off.
- if(!animated||reduced)project=makeLyricProjection(w,h,STILL_CAMERA);
- const energy=reduced||!animated?0:clamp(intensity,0,1.25);
- const styleEnergy=reduced||!wordStylesEnabled?0:clamp(intensity,0,1.25);
+ if(!lineAnimationsActive||reduced)project=makeLyricProjection(w,h,STILL_CAMERA);
+ const energy=reduced||!lineAnimationsActive?0:clamp(intensity,0,1.25);
+ const wordAnimationEnergy=reduced||!wordAnimationsEnabled?0:clamp(intensity,0,1.25);
  const age=Math.max(0,time-cue.time);
  let hasWordSync=false;
  const activePlacement:Exclude<LyricPlacementMode,'auto'>=duetSide
@@ -541,7 +546,7 @@ export function drawKineticLyrics({
  const proportionalMinFont=Math.max(10,unit*0.052*scaleFactor);
  const proportionalMaxFont=Math.max(proportionalMinFont,unit*0.21*scaleFactor);
  const fontRev=getFontLoadRevision();
- const layoutKey=`${cue.time}|${cue.end}|${cue.text}|${cue.romanized}|${cue.words.length}|${mode}|${font}|${fontRev}|${w}|${h}|${scaleFactor.toFixed(3)}|${motion}|${activePlacement}|${duetSide||''}`;
+ const layoutKey=`${cue.time}|${cue.end}|${cue.text}|${cue.romanized}|${cue.words.length}|${mode}|${font}|${fontRev}|${w}|${h}|${scaleFactor.toFixed(3)}|${motion}|${activePlacement}|${duetSide||''}|${wordAnimationsEnabled}|${wordStylesEnabled}`;
 
  let runs:LyricRun[];
  let placements:WordPlacement[];
@@ -561,7 +566,7 @@ export function drawKineticLyrics({
   const duetScale=duetSide?0.78:1;
   const rawBaseline=unit*(runs.length<=3?0.155:runs.length<=6?0.128:runs.length<=10?0.108:0.092)*duetScale*scaleFactor;
   const baseline=clamp(rawBaseline,proportionalMinFont,proportionalMaxFont);
-  const space=baseline*0.30;
+  const space=baseline*((wordAnimationsEnabled||wordStylesEnabled)?0.44:0.30);
   const widths=runs.map(word=>{
    applySceneFont(c,font,baseline,word.text);
    return c.measureText(word.text).width;
@@ -596,6 +601,8 @@ export function drawKineticLyrics({
   cue.words.reduce((count,word)=>count+word.text.trim().split(/\s+/).filter(Boolean).length,0)===runs.length;
  const selectedWordStyle=enabledWordStyles ? enabledWordStyles[hash(`${cue.time}|${cue.text}`)%Math.max(1,enabledWordStyles.length)] : currentWordStyle;
  const activeWordStyle=wordStylesEnabled&&hasWordSync&&selectedWordStyle?selectedWordStyle:'off';
+ const animationPool=enabledWordAnimations??['lift'];
+ const activeWordAnimation=wordAnimationsEnabled&&hasWordSync&&animationPool.length?animationPool[hash(`${cue.time}|${cue.text}`)%animationPool.length]:'off';
  const lineColors=albumPalette?albumColorsForLine(albumPalette,`${cue.time}|${cue.text}`):undefined;
 
  const vocalEnd=duetSide
@@ -636,7 +643,7 @@ export function drawKineticLyrics({
   effectiveBaseOverride
  );
  const fillPace:'letter'|'word'|'line'=hasWordSync
-  ?wordStylesEnabled?resolveLyricFillPace(runs,bpm,fillPaceMode):'word'
+  ?(activeWordStyle!=='off'||activeWordAnimation!=='off')?resolveLyricFillPace(runs,bpm,fillPaceMode):'word'
   :'line';
 
  // If this side of a dual-singer duet has finished its line before the other singer finishes,
@@ -657,7 +664,8 @@ export function drawKineticLyrics({
    wordStyle:activeWordStyle,
   glyphs:energy>.001?unitCount:runs.length,
   letterMode:units.every(parts=>parts[0]?.connected)?'shaped':units.some(parts=>parts[0]?.connected)?'mixed':'letters',
-  lyricTransition:energy>.001?(motion==='alternating'?'alternate':chooseLyricTransition(enabledLyricTransitions,cueIndex)||'none'):'none'
+  wordAnimation:activeWordAnimation,
+  motionPhase:choreographyPhase(age,duration,energy>.001)
   };
  }
 
@@ -704,11 +712,11 @@ export function drawKineticLyrics({
 
  // Phrase perspective supports the independent, persistent letter choreography
  const yaw=energy*(
-  motion==='orbit'?0.30*Math.sin(progress*Math.PI*2):
-  motion==='hinge'?0.38*(0.5-progress):
-  motion==='ship'?0.18*Math.sin(progress*Math.PI*2):
-  motion==='cascade'?-0.12*(1-progress*0.6):
-  motion==='broadside'?0.14*Math.sin(progress*Math.PI-0.4):0
+  motion==='orbit'?0.08*Math.sin(age*.7):
+  motion==='hinge'?0.025*Math.sin(age*.8):
+  motion==='ship'?0.055*Math.sin(age*.6):
+  motion==='cascade'?0:
+  motion==='broadside'?0.035*Math.sin(age*.5):0
  );
  const pitch=energy*(
   motion==='wave'?0.06*Math.sin(age):
@@ -716,15 +724,15 @@ export function drawKineticLyrics({
   motion==='ship'?-0.05*Math.cos(progress*Math.PI):0
  );
  const roll=energy*(
-  motion==='scatter'?0.075*Math.sin(progress*Math.PI*2):
-  motion==='carnival'?-0.045*Math.cos(progress*Math.PI):
-  motion==='broadside'?0.045:
+  motion==='scatter'?0.018*Math.sin(age*.6):
+  motion==='carnival'?-0.015*Math.cos(age*.7):
+  motion==='broadside'?0.015:
   0
  );
  const lineZ=energy*(
-  motion==='ship'?0.65*(progress-0.35):
-  motion==='orbit'?0.40*Math.sin(progress*Math.PI):
-  motion==='portal'?0.38*Math.exp(-age*4):0
+  motion==='ship'?0.08*Math.sin(age*.5):
+  motion==='orbit'?0.06*Math.sin(age*.6):
+  0
  );
 
  const cy=Math.cos(yaw),sy=Math.sin(yaw);
@@ -794,14 +802,14 @@ export function drawKineticLyrics({
   let wordShear=0;
   let wordRotation=0;
 
-  if(activeWordStyle!=='off'&&isActive){
-   const pose=currentWordPose(activeWordStyle,wordProgress,styleEnergy);
-   y+=pose.y*size/pixelsPerWorld;
-   stretchX*=pose.scaleX;stretchY*=pose.scaleY;wordRotation+=pose.rotation;
+  if(activeWordAnimation!=='off'&&isActive){
+   const pose=currentWordAnimationPose(activeWordAnimation,wordProgress,wordAnimationEnergy);
+   y-=pose.y*size/pixelsPerWorld;
+   stretchX*=pose.scale;stretchY*=pose.scale;
   }
 
   // Cap per-word stretch so adjacent words in a multi-word row or multi-row stack never collide
-  const maxStretchX=colCount>1?1.10:1.22;
+  const maxStretchX=colCount>1?1.14:1.22;
   const maxStretchY=totalRows>1?1.14:1.24;
   stretchX=clamp(stretchX,0.82,maxStretchX);
   stretchY=clamp(stretchY,0.82,maxStretchY);
@@ -877,12 +885,10 @@ export function drawKineticLyrics({
   if(scaledMinY<boundTop)shiftY=boundTop-scaledMinY;
   else if(scaledMaxY>boundBottom)shiftY=boundBottom-scaledMaxY;
 
-  const entry=lyricEntryPose(energy>.001?(motion==='alternating'?'alternate':chooseLyricTransition(enabledLyricTransitions,cueIndex)):null,age,w,h,cueIndex);
+  const linePose=lineMotionPose(motion,age,duration,cueIndex,w,energy);
   c.save();
-  if(entry.reveal<1){c.beginPath();c.rect(0,0,w*entry.reveal,h);c.clip();}
-  c.globalAlpha*=entry.alpha;
-  const entryA=entry.scale*Math.cos(entry.rotation),entryB=entry.scale*Math.sin(entry.rotation);
-  c.transform(entryA,entryB,-entryB,entryA,w*.5+entry.x-entryA*w*.5+entryB*h*.5,h*.5+entry.y-entryB*w*.5-entryA*h*.5);
+  c.beginPath();c.rect(boundLeft,boundTop,maxAllowedW,maxAllowedH);c.clip();
+  c.transform(1,0,0,1,linePose.x,0);
   for(const pw of preparedWords){
    const {item,wordProgress,isSpokenStart,isSpokenEnd,isActive,measuredW,mA,mB,mC,mD,screenX,screenY}=pw;
    const {word}=item;
@@ -903,16 +909,21 @@ export function drawKineticLyrics({
 
    // Every sung word in this cue shares its contrast-adjusted line accent.
    if(activeWordStyle!=='off'&&isActive){
-    drawCurrentWordAccent(c,activeWordStyle,measuredW,size,wordProgress,sungColor,styleEnergy,word.text);
+    c.save();c.globalAlpha*=letterMotionPose(motion,age,unitOffsets[word.index],unitCount,energy,true,duration,cueIndex).alpha;
+    drawCurrentWordAccent(c,activeWordStyle,measuredW,size,wordProgress,sungColor);c.restore();
    }
 
    const parts=energy>.001?units[word.index]:[{text:word.text,center:0,width:measuredW,index:0,count:1,connected:true}];
+   const glow=isActive?currentWordAnimationPose(activeWordAnimation,wordProgress,wordAnimationEnergy).glow:0;
+   const glyphGlow=glow>.001?{color:sungColor,blur:Math.min(28,size*glow)}:undefined;
    for(const part of parts){
-    const pose=letterMotionPose(motion,age,unitOffsets[word.index]+part.index,unitCount,energy,part.connected);
+    const pose=letterMotionPose(motion,age,unitOffsets[word.index]+part.index,unitCount,energy,part.connected,duration,cueIndex);
     c.save();
+    c.globalAlpha*=pose.alpha;
     c.transform(pose.scaleX*Math.cos(pose.rotation),pose.scaleX*Math.sin(pose.rotation),pose.shear-Math.sin(pose.rotation),pose.scaleY*Math.cos(pose.rotation),part.center+pose.x*size,pose.y*size);
+    if(pose.reveal<1){c.beginPath();c.rect(-part.width*.65,-size*.68,Math.max(1,part.width*1.3),size*1.4*pose.reveal);c.clip();}
     const letterProgress=part.connected?wordProgress:clamp(wordProgress*part.count-part.index);
-    paintWordWithSequentialColor(c,part.text,Math.max(1,part.width*1.12),hasWordSync&&(animated||wordStylesEnabled),fillPace,letterProgress,isSpokenStart,isSpokenEnd,baseColor,sungColor,effectiveBgHex);
+    paintWordWithSequentialColor(c,part.text,Math.max(1,part.width*1.12),hasWordSync&&(lineAnimationsActive||activeWordStyle!=='off'||activeWordAnimation!=='off'),fillPace,letterProgress,isSpokenStart,isSpokenEnd,baseColor,sungColor,effectiveBgHex,glyphGlow);
     c.restore();
    }
 
@@ -937,6 +948,7 @@ export function drawKineticLyrics({
   wordStyle:activeWordStyle,
   glyphs:energy>.001?unitCount:runs.length,
   letterMode:units.every(parts=>parts[0]?.connected)?'shaped':units.some(parts=>parts[0]?.connected)?'mixed':'letters',
-  lyricTransition:energy>.001?(motion==='alternating'?'alternate':chooseLyricTransition(enabledLyricTransitions,cueIndex)||'none'):'none'
+  wordAnimation:activeWordAnimation,
+  motionPhase:choreographyPhase(age,duration,energy>.001)
  };
 }

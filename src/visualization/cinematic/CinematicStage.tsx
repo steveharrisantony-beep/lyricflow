@@ -1,4 +1,5 @@
-import {chooseThemeTransition,type LyricTransition} from './lyricTransitions';
+import {chooseThemeTransition} from './themeTransitions';
+import type {CurrentWordAnimation} from './currentWordAnimations';
 import type {Transition} from './catalog';
 import {videoSyncTarget} from '../../audio/videoTiming';
 import type {AlbumArtLyricPalette} from './contrast';
@@ -34,7 +35,8 @@ export interface CinematicProps{
  currentWordStyle?:CurrentWordStyle;
  enabledWordStyles?:readonly CurrentWordStyle[];
  enabledThemeTransitions?:readonly Transition[];
- enabledLyricTransitions?:readonly LyricTransition[];
+ wordAnimationsEnabled?:boolean;
+ enabledWordAnimations?:readonly CurrentWordAnimation[];
  albumLyricPalette?:AlbumArtLyricPalette;
  narrativeObjects?:boolean;motionBlur:number;
  enabledScenes?:readonly SceneId[];
@@ -447,7 +449,8 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      wordStylesEnabled:config.wordStylesEnabled,
      currentWordStyle:config.currentWordStyle,
      enabledWordStyles:config.enabledWordStyles,
-     enabledLyricTransitions:config.enabledLyricTransitions,
+     wordAnimationsEnabled:config.wordAnimationsEnabled,
+     enabledWordAnimations:config.enabledWordAnimations,
      albumPalette:config.albumLyricPalette,
      enabledMotions:config.enabledKineticMotions,
      enabledPlacements:activeEnabledPlacements,
@@ -483,7 +486,8 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      wordStylesEnabled:config.wordStylesEnabled,
      currentWordStyle:config.currentWordStyle,
      enabledWordStyles:config.enabledWordStyles,
-     enabledLyricTransitions:config.enabledLyricTransitions,
+     wordAnimationsEnabled:config.wordAnimationsEnabled,
+     enabledWordAnimations:config.enabledWordAnimations,
      albumPalette:config.albumLyricPalette,
       enabledMotions:config.enabledKineticMotions,
       enabledPlacements:activeEnabledPlacements,
@@ -511,7 +515,8 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      setData('lyricWordStyle',result.wordStyle||'off');
      setData('lyricGlyphs',String(result.glyphs||0));
      setData('lyricLetterMode',result.letterMode||'shaped');
-     setData('lyricTransition',result.lyricTransition||'none');
+     setData('lyricMotionPhase',result.motionPhase||'still');
+     setData('lyricWordAnimation',result.wordAnimation||'off');
      setData('lyricBaseColor',result.baseColor||'');
      setData('lyricActiveColor',result.activeColor||'');
     }else{
@@ -523,7 +528,8 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      setData('lyricWordStyle',result.wordStyle||'off');
      setData('lyricGlyphs',String(result.glyphs||0));
      setData('lyricLetterMode',result.letterMode||'shaped');
-     setData('lyricTransition',result.lyricTransition||'none');
+     setData('lyricMotionPhase',result.motionPhase||'still');
+     setData('lyricWordAnimation',result.wordAnimation||'off');
      setData('lyricBaseColor',result.baseColor||'');
      setData('lyricActiveColor',result.activeColor||'');
     }

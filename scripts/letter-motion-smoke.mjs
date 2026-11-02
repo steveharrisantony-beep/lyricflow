@@ -13,9 +13,9 @@ try{
  await page.addStyleTag({url:'/node_modules/@fontsource/noto-sans-devanagari/800.css'});
  await page.addStyleTag({url:'/node_modules/@fontsource/anton/400.css'});
  const results=await page.evaluate(async()=>{
-  const [{drawKineticLyrics},{buildCues},{analyzeLyricWords},{TEMPLATES},{paletteFromArtworkPixels},{preloadLyricFonts},{LYRIC_TRANSITIONS,ALL_THEME_TRANSITIONS},{drawSceneTransition}]=await Promise.all([
+  const [{drawKineticLyrics},{buildCues},{analyzeLyricWords},{TEMPLATES},{paletteFromArtworkPixels},{preloadLyricFonts},{ALL_THEME_TRANSITIONS},{drawSceneTransition}]=await Promise.all([
    import('/src/visualization/cinematic/kineticTypography.ts'),import('/src/lyrics/lyricTimeline.ts'),import('/src/lyrics/wordEmphasis.ts'),import('/src/visualization/cinematic/catalog.ts'),
-   import('/src/visualization/cinematic/contrast.ts'),import('/src/visualization/cinematic/fonts.ts'),import('/src/visualization/cinematic/lyricTransitions.ts'),import('/src/visualization/cinematic/transitions.ts')]);
+   import('/src/visualization/cinematic/contrast.ts'),import('/src/visualization/cinematic/fonts.ts'),import('/src/visualization/cinematic/themeTransitions.ts'),import('/src/visualization/cinematic/transitions.ts')]);
   await preloadLyricFonts(['impact']);await document.fonts.load('400 72px Anton','Carry');await document.fonts.load('800 72px "Noto Sans Devanagari"','संगीत');
   const canvas=document.querySelector('canvas'),c=canvas.getContext('2d');
   const pixels=new Uint8ClampedArray(Array.from({length:120},(_,i)=>i<40?[220,35,70,255]:i<80?[20,120,215,255]:[25,175,95,255]).flat());
@@ -24,27 +24,40 @@ try{
   const paints=[],fill=c.fillText.bind(c);c.fillText=(...args)=>{paints.push(c.fillStyle);fill(...args);};
   const draw=(time,overrides={})=>{
    paints.length=0;c.resetTransform();c.fillStyle='#07090e';c.fillRect(0,0,1200,650);
-   return drawKineticLyrics({c,scene,cue,time,mode:'original',w:1200,h:650,intensity:1,reduced:false,emphasis:analyzeLyricWords([cue]),enabledFonts:['impact'],enabledMotions:['wave'],enabledLyricTransitions:[],
+   return drawKineticLyrics({c,scene,cue,time,mode:'original',w:1200,h:650,intensity:1,reduced:false,emphasis:analyzeLyricWords([cue]),enabledFonts:['impact'],enabledMotions:['wave'],
     wordStylesEnabled:true,currentWordStyle:'classic-focus',albumPalette:palette,forceLightText:true,placementMode:'center',fillPaceMode:'word',...overrides});
   };
   const line=draw(1,{cue:{...cue,timing:'estimated'}}),lineColors=new Set(paints);
   if(lineColors.size!==1||!palette.colors.includes(line.baseColor))throw Error('Line-only ink is not the pale album palette');
   const sung=draw(3.6);const afterColors=new Set(paints),a=canvas.toDataURL();draw(3.75);const b=canvas.toDataURL();
   if(afterColors.size!==1||!afterColors.has(sung.activeColor)||a===b)throw Error('Uniform vibrant line accent or persistent letter motion missing');
+  const wordOptions={animated:false,wordStylesEnabled:false,wordAnimationsEnabled:true,enabledWordAnimations:[]};
+  draw(.5,wordOptions);const stillWord=canvas.toDataURL();
+  for(const id of ['lift','glow','zoom']){
+   const result=draw(.5,{...wordOptions,enabledWordAnimations:[id]});
+   if(result.wordAnimation!==id||canvas.toDataURL()===stillWord)throw Error(`Missing word animation: ${id}`);
+  }
   const hindi='संगीत दिल को छू ले';
   const [hindiCue]=buildCues([{time:0,text:hindi}],[]);
   const shaped=draw(1.1,{cue:hindiCue});
   if(shaped.letterMode!=='shaped'||shaped.glyphs!==5)throw Error('Hindi was split into letters');
-  for(const item of LYRIC_TRANSITIONS)if(draw(.15,{enabledLyricTransitions:[item.id]}).lyricTransition!==item.id)throw Error('Lyric transition selection failed');
+  for(const time of [.05,1,5.99]){
+   const result=draw(time,{cue:{...cue,end:6}});
+   if(result.motionPhase!==(time<.1?'intro':time<5?'hold':'outro'))throw Error('Integrated choreography timing failed');
+  }
   const previous=document.createElement('canvas');previous.width=1200;previous.height=650;previous.getContext('2d').fillRect(0,0,1200,650);
   for(const kind of ALL_THEME_TRANSITIONS)drawSceneTransition(c,previous,1200,650,.4,kind);
   window.letterQA={draw,hindiCue};
-  return {letters:draw(1).glyphs,hindiGlyphs:shaped.glyphs,sungColors:afterColors.size,transitions:LYRIC_TRANSITIONS.length+ALL_THEME_TRANSITIONS.length};
+  return {letters:draw(1).glyphs,hindiGlyphs:shaped.glyphs,sungColors:afterColors.size,transitions:ALL_THEME_TRANSITIONS.length};
  });
- assert.equal(results.letters,17);assert.equal(results.hindiGlyphs,5);assert.equal(results.sungColors,1);assert.equal(results.transitions,13);
+ assert.equal(results.letters,17);assert.equal(results.hindiGlyphs,5);assert.equal(results.sungColors,1);assert.equal(results.transitions,7);
+ for(const id of ['lift','glow','zoom']){
+  await page.evaluate(id=>window.letterQA.draw(.5,{animated:false,wordStylesEnabled:false,wordAnimationsEnabled:true,enabledWordAnimations:[id]}),id);
+  await page.locator('canvas').screenshot({path:`${shots}/word-${id}.png`});
+ }
  for(const [name,time,mode] of [['album-unread',.2,'normal'],['album-sung',3.7,'normal'],['hindi-shaped',1.3,'hindi'],['line-synced',1,'line']]){
   await page.evaluate(([time,mode])=>window.letterQA.draw(time,mode==='hindi'?{cue:window.letterQA.hindiCue}:mode==='line'?{cue:{...window.letterQA.hindiCue,text:'Carry the light home',timing:'estimated'}}:{}),[time,mode]);
   await page.locator('canvas').screenshot({path:`${shots}/${name}.png`});
  }
- assert.deepEqual(errors,[]);console.log('PASS browser: persistent letters, intact Hindi shaping, pale unread/line ink, one vibrant accent per sung line and all 13 transitions.');
+ assert.deepEqual(errors,[]);console.log('PASS browser: persistent letters, intact Hindi shaping, pale unread/line ink, one vibrant accent per sung line, Lift/Glow/Zoom, integrated intro/hold/outro and 7 theme transitions.');
 }finally{await browser.close();await server.close();}

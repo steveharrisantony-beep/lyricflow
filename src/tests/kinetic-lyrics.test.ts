@@ -11,7 +11,7 @@ const cues=buildCues(source,[]),emphasis=analyzeLyricWords(cues);
 const t=TEMPLATES[0],scene:DirectedScene={...t,start:0,end:12,variation:2,section:0,reason:'test'};
 const quiet={loudness:0,bass:0,mids:0,treble:0,beat:0,onset:0,downbeat:0};
 function context(){
- const c={font:'800 50px sans-serif',canvas:{width:1000,height:600},save:vi.fn(),restore:vi.fn(),transform:vi.fn(),
+ const c={font:'800 50px sans-serif',globalAlpha:1,beginPath:vi.fn(),rect:vi.fn(),clip:vi.fn(),canvas:{width:1000,height:600},save:vi.fn(),restore:vi.fn(),transform:vi.fn(),
   fillText:vi.fn(),strokeText:vi.fn(()=>{throw Error('Outlined lyrics are not allowed')}),
   getTransform:()=>({a:1,b:0,c:0,d:1,e:0,f:0}),
   measureText(text:string){return {width:text.length*(parseFloat(this.font.match(/([\d.]+)px/)?.[1]||'50'))*.56}}};

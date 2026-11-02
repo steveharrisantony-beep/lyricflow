@@ -54,7 +54,8 @@ export function setLyricBackdrop(c:CanvasRenderingContext2D,pixels:ImageData|nul
  else backdrops.delete(c);
 }
 /** Sample the scene beneath the text. Keep solid typography free of stroked outlines. */
-export function paintLyric(c:CanvasRenderingContext2D,text:string,x:number,y:number,maxWidth:number,preferred:string,surface?:string,fill?:CanvasGradient){
+export type TextGlow={color:string;blur:number};
+export function paintLyric(c:CanvasRenderingContext2D,text:string,x:number,y:number,maxWidth:number,preferred:string,surface?:string,fill?:CanvasGradient,glow?:TextGlow){
  const backdrop=backdrops.get(c),m=c.getTransform();
  if(!surface&&backdrop){
   const width=Math.min(maxWidth,c.measureText(text).width);
@@ -72,9 +73,9 @@ export function paintLyric(c:CanvasRenderingContext2D,text:string,x:number,y:num
  }
  const ink=readableChromaticInk(surface||'#101521',preferred);
  c.save();
- c.shadowColor=luminance(ink)<.25?'rgba(255,250,242,.28)':'rgba(0,0,0,.62)';
- c.shadowBlur=3;
- c.shadowOffsetY=1.5;
+ c.shadowColor=glow?.color||(luminance(ink)<.25?'rgba(255,250,242,.28)':'rgba(0,0,0,.62)');
+ c.shadowBlur=glow?.blur||3;
+ c.shadowOffsetY=glow?0:1.5;
  c.fillStyle=fill||ink;
  c.fillText(text,x,y,maxWidth);
  c.restore();

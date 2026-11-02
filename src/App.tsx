@@ -124,7 +124,8 @@ import {
   usePrivateLyrics,
 } from "./firebase/usePrivateLyrics";
 import YouTubeBackgroundPicker from "./music/YouTubeBackgroundPicker";
-import {ALL_THEME_TRANSITIONS,ALL_LYRIC_TRANSITIONS,THEME_TRANSITIONS,LYRIC_TRANSITIONS,type LyricTransition} from "./visualization/cinematic/lyricTransitions";
+import {ALL_THEME_TRANSITIONS,THEME_TRANSITIONS} from "./visualization/cinematic/themeTransitions";
+import {ALL_CURRENT_WORD_ANIMATION_IDS,CURRENT_WORD_ANIMATIONS,normalizeWordAnimationPool,type CurrentWordAnimation} from "./visualization/cinematic/currentWordAnimations";
 import type {Transition} from "./visualization/cinematic/catalog";
 import OptionPreview,{PreviewSetting,type OptionPreviewSpec} from "./ui/OptionPreview";
 import SettingsPanel, {
@@ -287,7 +288,7 @@ export default function App({ user = null }: { user?: User | null }) {
   >(initialPrefs.enabledPlacements || [...ALL_PLACEMENT_MODES]);
   const [wordStylesEnabled, setWordStylesEnabled] = useState(initialExtended.wordStylesEnabled !== false);
   const [currentWordStyle] = useState<CurrentWordStyle>(() =>
-    normalizeWordStyle(initialExtended.currentWordStyle)||"bloom",
+    normalizeWordStyle(initialExtended.currentWordStyle)||"classic-capsule",
   );
   const [enabledWordStyles,setEnabledWordStyles]=useState<CurrentWordStyle[]>(()=>{
     const saved=initialExtended.enabledWordStyles;
@@ -297,10 +298,10 @@ export default function App({ user = null }: { user?: User | null }) {
     const saved=initialExtended.enabledThemeTransitions;
     return Array.isArray(saved)?saved.filter((id):id is Transition=>ALL_THEME_TRANSITIONS.includes(id as Transition)):[...ALL_THEME_TRANSITIONS];
   });
-  const [enabledLyricTransitions,setEnabledLyricTransitions]=useState<LyricTransition[]>(()=>{
-    const saved=initialExtended.enabledLyricTransitions;
-    return Array.isArray(saved)?saved.filter((id):id is LyricTransition=>ALL_LYRIC_TRANSITIONS.includes(id as LyricTransition)):[...ALL_LYRIC_TRANSITIONS];
-  });
+  const [wordAnimationsEnabled,setWordAnimationsEnabled]=useState(initialExtended.wordAnimationsEnabled===undefined?initialExtended.wordStylesEnabled!==false:initialExtended.wordAnimationsEnabled!==false);
+  const [enabledWordAnimations,setEnabledWordAnimations]=useState<CurrentWordAnimation[]>(()=>
+    normalizeWordAnimationPool(initialExtended.enabledWordAnimations)??[...ALL_CURRENT_WORD_ANIMATION_IDS],
+  );
   const [optionPreview,setOptionPreview]=useState<OptionPreviewSpec|null>(null);
   const closeOptionPreview=useCallback(()=>setOptionPreview(null),[]);
   // Two separate placement sets: Video Background (default 'bottom-right' / Right Bottom) vs Built-in Themes (default 'center' / Centre Stage)
@@ -735,7 +736,8 @@ export default function App({ user = null }: { user?: User | null }) {
           currentWordStyle,
           enabledWordStyles,
           enabledThemeTransitions,
-          enabledLyricTransitions,
+          wordAnimationsEnabled,
+          enabledWordAnimations,
           enabledKineticMotions,
           enabledFonts,
           showFps,
@@ -757,7 +759,8 @@ export default function App({ user = null }: { user?: User | null }) {
     currentWordStyle,
     enabledWordStyles,
     enabledThemeTransitions,
-    enabledLyricTransitions,
+    wordAnimationsEnabled,
+    enabledWordAnimations,
     enabledKineticMotions,
     enabledFonts,
     showFps,
@@ -1614,7 +1617,8 @@ export default function App({ user = null }: { user?: User | null }) {
                 currentWordStyle={currentWordStyle}
                 enabledWordStyles={enabledWordStyles}
                 enabledThemeTransitions={enabledThemeTransitions}
-                enabledLyricTransitions={enabledLyricTransitions}
+                wordAnimationsEnabled={wordAnimationsEnabled}
+                enabledWordAnimations={enabledWordAnimations}
                 albumLyricPalette={useAlbumArtColors ? effectiveAlbumArtPalette : undefined}
                 motionBlur={motionBlur}
                 enabledScenes={enabledScenes}
@@ -2110,7 +2114,8 @@ export default function App({ user = null }: { user?: User | null }) {
                 <SettingGroup title="Fonts & motion">
                   <SwitchSetting label="Lyric animations" checked={spatialTypography} onChange={setSpatialTypography}/>
                   <SwitchSetting label="Current word styles" checked={wordStylesEnabled} onChange={setWordStylesEnabled}/>
-                  <p className="muted">Enabled choices rotate. Word styles require word-synced lyrics.</p>
+                  <SwitchSetting label="Current word animations" checked={wordAnimationsEnabled} onChange={setWordAnimationsEnabled}/>
+                  <p className="muted">Styles stay still. Word effects require word-synced lyrics.</p>
                   <details className="disclosure">
                     <summary>Fonts</summary>
                     <div className="selection-list">
@@ -2136,12 +2141,12 @@ export default function App({ user = null }: { user?: User | null }) {
                     </div>
                   </details>
                   <details className="disclosure">
-                    <summary>Lyric transitions <span>{enabledLyricTransitions.length} / {LYRIC_TRANSITIONS.length}</span></summary>
+                    <summary>Current word animations <span>{enabledWordAnimations.length} / {CURRENT_WORD_ANIMATIONS.length}</span></summary>
                     <div className="selection-list">
-                      {LYRIC_TRANSITIONS.map(transition=><PreviewSetting key={transition.id} label={transition.name} accessibleLabel={`Lyric transition · ${transition.name}`}
-                        checked={enabledLyricTransitions.includes(transition.id)}
-                        onChange={()=>setEnabledLyricTransitions(prev=>prev.includes(transition.id)?prev.filter(id=>id!==transition.id):[...prev,transition.id])}
-                        onPreview={()=>setOptionPreview({label:transition.name,lyricTransition:transition.id})}/>)}
+                      {CURRENT_WORD_ANIMATIONS.map(animation=><PreviewSetting key={animation.id} label={animation.name} accessibleLabel={`Word animation · ${animation.name}`}
+                        checked={enabledWordAnimations.includes(animation.id)}
+                        onChange={()=>setEnabledWordAnimations(prev=>prev.includes(animation.id)?prev.filter(id=>id!==animation.id):[...prev,animation.id])}
+                        onPreview={()=>setOptionPreview({label:animation.name,wordAnimation:animation.id})}/>)}
                     </div>
                   </details>
                 </SettingGroup>

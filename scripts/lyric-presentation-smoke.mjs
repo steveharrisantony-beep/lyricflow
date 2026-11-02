@@ -32,6 +32,8 @@ try{
  };
  const animations=page.getByRole('switch',{name:'Lyric animations',exact:true});
  const styles=page.getByRole('switch',{name:'Current word styles',exact:true});
+ const wordAnimations=page.getByRole('switch',{name:'Current word animations',exact:true});
+ assert.equal(await page.locator('summary').filter({hasText:/^Lyric transitions/}).count(),0);
  for(const name of ['Theme selection','Theme colour palette','Video lyric placement','Theme lyric placement','Lyric font','Lyric animation','Current word style']){
   assert.equal(await page.locator(`select[aria-label="${name}"]`).count(),0);
  }
@@ -57,6 +59,22 @@ try{
  assert.equal(await page.getByRole('switch',{name:'Ship',exact:true}).isChecked(),false);
  assert.equal(await page.getByRole('switch',{name:'Classic Focus',exact:true}).isChecked(),false);
  await animations.check();await styles.check();
+ await openWindow('Current word animations');
+ const animationWindow=page.locator('details').filter({has:page.locator('summary',{hasText:/^Current word animations/})}).first();
+ assert.equal(await animationWindow.locator('input[role="switch"]').count(),3);
+ for(const name of ['Lift','Glow','Zoom']){
+  const option=page.getByRole('switch',{name:`Word animation · ${name}`,exact:true});
+  await option.uncheck();const before=await page.evaluate(()=>localStorage.getItem('lyricflow.extendedSettings.v1'));
+  await page.getByRole('button',{name:`Preview Word animation · ${name}`,exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.option-preview-canvas')?.width>0);
+  assert.equal(await page.evaluate(()=>localStorage.getItem('lyricflow.extendedSettings.v1')),before);
+  await page.getByRole('button',{name:'Close preview',exact:true}).dispatchEvent('click');
+  await option.check();
+ }
+ await wordAnimations.uncheck();await page.reload({waitUntil:'networkidle'});
+ if(!await page.getByRole('tab',{name:'Lyrics',exact:true}).isVisible())await page.getByRole('button',{name:'Settings',exact:true}).click();
+ await page.getByRole('tab',{name:'Lyrics',exact:true}).click();
+ assert.equal(await wordAnimations.isChecked(),false);await wordAnimations.check();
  await mkdir(shots,{recursive:true});
  await openWindow('Fonts');
  const fontWindow=page.locator('details').filter({has:page.locator('summary', {hasText:/^Fonts$/})}).first();
@@ -73,12 +91,14 @@ try{
   for(const [width,height] of [[390,844],[800,1280],[1280,800]]){
    await page.setViewportSize({width,height});
    if(!await page.getByRole('tab',{name:'Lyrics',exact:true}).isVisible())await page.getByRole('button',{name:'Settings',exact:true}).click();
+   await openWindow('Current word styles');
    await page.getByRole('switch',{name:'Classic Focus',exact:true}).scrollIntoViewIfNeeded();
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
    const fields=await page.locator('#settings-page-lyrics .preview-setting').evaluateAll(nodes=>nodes.filter(n=>n.getClientRects().length).map(node=>({left:node.getBoundingClientRect().left,right:node.getBoundingClientRect().right,width:innerWidth})));
    assert.ok(fields.every(field=>field.left>=0&&field.right<=field.width));
    assert.equal(await page.locator('#settings-page-lyrics input.option-toggle').evaluateAll(nodes=>nodes.filter(n=>n.getClientRects().length).every(n=>n.getBoundingClientRect().width>=32)),true);
    await page.screenshot({path:`${shots}/selections-${theme.toLowerCase()}-${width}.png`});
+   console.log(`PASS layout ${theme.toLowerCase()} ${width}px`);
    await page.getByRole('button',{name:'Preview Classic Focus',exact:true}).click();
    await page.waitForFunction(()=>document.querySelector('.option-preview-canvas')?.width>0);
    assert.equal(await page.evaluate(()=>document.querySelector('.option-preview-dialog').getBoundingClientRect().right<=innerWidth),true);
@@ -104,10 +124,10 @@ try{
  await page.waitForTimeout(250);await page.screenshot({path:`${shots}/theme-transition.png`});
  await page.getByRole('button',{name:'Close preview',exact:true}).dispatchEvent('click');
  await page.getByRole('tab',{name:'Lyrics',exact:true}).click();
- await openWindow('Lyric transitions');
- await page.getByRole('button',{name:'Preview Lyric transition · Alternating side entry',exact:true}).click();
+ await openWindow('Animations');
+ await page.getByRole('button',{name:'Preview Alternating Sides',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('.option-preview-canvas')?.width>0);
- await page.waitForTimeout(250);await page.screenshot({path:`${shots}/lyric-transition.png`});
+ await page.waitForTimeout(250);await page.screenshot({path:`${shots}/choreography-preview.png`});
  await page.getByRole('button',{name:'Close preview',exact:true}).dispatchEvent('click');
  // Exercise the real canvas renderer with every effect on browser Canvas 2D.
  const qa=await page.evaluate(async()=>{
@@ -136,17 +156,17 @@ try{
   }};
   return count;
  });
- assert.equal(qa,96);
+ assert.equal(qa,60);
  await page.evaluate(()=>window.lyricQA.draw('wave','underline',.9));
  await page.locator('canvas').screenshot({path:`${shots}/wave-early.png`});
  await page.evaluate(()=>window.lyricQA.draw('wave','underline',3.4));
  await page.locator('canvas').screenshot({path:`${shots}/wave-late.png`});
- for(const [motion,style] of [['wave','underline'],['hinge','classic-focus'],['cascade','classic-capsule'],['orbit','sparkle']]){
+ for(const [motion,style] of [['wave','underline'],['hinge','classic-focus'],['cascade','classic-capsule'],['orbit','halo']]){
   await page.evaluate(([motion,style])=>window.lyricQA.draw(motion,style,.45),[motion,style]);
   await page.locator('canvas').screenshot({path:`${shots}/${motion}-${style}.png`});
  }
  assert.deepEqual(errors,[]);
- console.log('PASS browser: 12 letter animations × 8 word styles, isolated previews, saved selection windows, nested palettes, and light/dark layouts at 390/800/1280px.');
+ console.log('PASS browser: 12 letter choreographies × 5 static styles, isolated previews, Lift/Glow/Zoom previews and switches, saved selection windows, nested palettes, and light/dark layouts at 390/800/1280px.');
 }catch(error){
  console.log({errors,body:(await page.locator('body').innerText()).slice(0,1600)});
  throw error;

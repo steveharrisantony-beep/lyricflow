@@ -7,12 +7,12 @@ import {byId,resolveThemePalette,type FontPack,type SceneId,type Transition} fro
 import {drawKineticLyrics,type LyricMotion,type LyricPlacementMode} from '../visualization/cinematic/kineticTypography';
 import {preloadLyricFonts} from '../visualization/cinematic/fonts';
 import {drawSceneTransition} from '../visualization/cinematic/transitions';
-import type {LyricTransition} from '../visualization/cinematic/lyricTransitions';
+import type {CurrentWordAnimation} from '../visualization/cinematic/currentWordAnimations';
 import type {CurrentWordStyle} from '../visualization/cinematic/currentWordStyles';
 import {drawMotionGraphics} from '../visualization/cinematic/procedural/MotionGraphics';
 import {GraphicCompositions} from '../visualization/cinematic/procedural/GraphicCompositions';
 
-export type OptionPreviewSpec={label:string;scene?:SceneId;paletteId?:string;font?:FontPack;motion?:LyricMotion;wordStyle?:CurrentWordStyle;placement?:LyricPlacementMode;video?:boolean;themeTransition?:Transition;lyricTransition?:LyricTransition};
+export type OptionPreviewSpec={label:string;scene?:SceneId;paletteId?:string;font?:FontPack;motion?:LyricMotion;wordStyle?:CurrentWordStyle;placement?:LyricPlacementMode;video?:boolean;themeTransition?:Transition;wordAnimation?:CurrentWordAnimation};
 
 /** Separate targets keep preview taps from accidentally toggling an option. */
 export function PreviewSetting({label,checked,onChange,onPreview,children,radioGroup,accessibleLabel=label}:{label:string;checked:boolean;onChange:()=>void;onPreview:()=>void;children?:ReactNode;radioGroup?:string;accessibleLabel?:string}){
@@ -57,7 +57,7 @@ export default function OptionPreview({spec,onClose,reducedMotion=false}:{spec:O
    const dpr=Math.min(window.devicePixelRatio||1,1.5);
    if(element.width!==Math.round(w*dpr)||element.height!==Math.round(h*dpr)){element.width=Math.round(w*dpr);element.height=Math.round(h*dpr);}
    c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,w,h);
-   const time=reducedMotion?1.8:((now-start)/1000)%4.8;
+   const time=reducedMotion?1.8:((now-start)/1000)%(sampleCue.end+.35);
    const pulse={loudness:.35,bass:.28,mids:.34,treble:.2,beat:Math.max(0,Math.sin(time*Math.PI*2))**12,onset:0,downbeat:0};
    if(spec.video){
     const gradient=c.createLinearGradient(0,0,w,h);gradient.addColorStop(0,'#1c2442');gradient.addColorStop(.5,'#173d3c');gradient.addColorStop(1,'#36203b');c.fillStyle=gradient;c.fillRect(0,0,w,h);
@@ -70,8 +70,8 @@ export default function OptionPreview({spec,onClose,reducedMotion=false}:{spec:O
     drawSceneTransition(c,previous,w,h,Math.min(1,(time%2.2)/.8),spec.themeTransition);
    }
    drawKineticLyrics({c,scene:{...scene,start:0,end:5,variation:0,section:0,reason:'Preview'},cue:sampleCue,time,mode:'original',w,h,intensity:.85,reduced:reducedMotion,emphasis,
-    enabledFonts:[font],enabledMotions:[spec.motion||'wave'],animated:Boolean(spec.motion||spec.placement||spec.lyricTransition),
-    wordStylesEnabled:Boolean(spec.wordStyle),currentWordStyle:spec.wordStyle,paletteId:spec.paletteId,placementMode:spec.placement||'center',enabledLyricTransitions:spec.lyricTransition?[spec.lyricTransition]:[],cueIndex:0,forceLightText:spec.video,fillPaceMode:'word'});
+    enabledFonts:[font],enabledMotions:[spec.motion||'wave'],animated:Boolean(spec.motion||spec.placement),
+    wordStylesEnabled:Boolean(spec.wordStyle),currentWordStyle:spec.wordStyle,paletteId:spec.paletteId,placementMode:spec.placement||'center',wordAnimationsEnabled:Boolean(spec.wordAnimation),enabledWordAnimations:spec.wordAnimation?[spec.wordAnimation]:[],cueIndex:0,forceLightText:spec.video,fillPaceMode:'word'});
    if(!reducedMotion)raf=requestAnimationFrame(frame);
   };
   raf=requestAnimationFrame(frame);

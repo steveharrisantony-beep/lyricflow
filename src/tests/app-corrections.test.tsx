@@ -247,7 +247,7 @@ it('allows every animation and word style to be disabled and persists empty sele
   for(const summary of ['Animations','Current word styles']){
     const details=[...host.querySelectorAll('details')].find(el=>el.querySelector('summary')?.textContent?.startsWith(summary))!;
     const inputs=[...details.querySelectorAll<HTMLInputElement>('input[role="switch"]')];
-    expect(inputs).toHaveLength(summary==='Animations'?12:8);
+    expect(inputs).toHaveLength(summary==='Animations'?12:5);
     await act(async()=>{for(const input of inputs)input.click();});
     expect(inputs.every(input=>!input.checked)).toBe(true);
   }
@@ -270,16 +270,18 @@ it('previews a disabled option without changing its toggle or saved preferences'
 });
 
 
-it('stores independently disabled theme and lyric transitions, including an empty window',async()=>{
- for(const name of ['Theme transitions','Lyric transitions']){
-  const window=[...host.querySelectorAll('details')].find(el=>el.querySelector('summary')?.textContent?.startsWith(name))!;
-  const inputs=[...window.querySelectorAll<HTMLInputElement>('input[role="switch"]')];
-  expect(inputs).toHaveLength(name==='Theme transitions'?7:6);
-  await act(async()=>{for(const input of inputs)input.click();});
- }
+it('removes lyric transition choices and persists independent word animation switches',async()=>{
+ expect(host.textContent).not.toContain('Lyric transitions');
+ const wordWindow=[...host.querySelectorAll('details')].find(el=>el.querySelector('summary')?.textContent?.startsWith('Current word animations'))!;
+ const wordOptions=[...wordWindow.querySelectorAll<HTMLInputElement>('input[role="switch"]')];
+ expect(wordOptions.map(input=>input.getAttribute('aria-label'))).toEqual(['Word animation · Lift','Word animation · Glow','Word animation · Zoom']);
+ const themeWindow=[...host.querySelectorAll('details')].find(el=>el.querySelector('summary')?.textContent?.startsWith('Theme transitions'))!;
+ const themes=[...themeWindow.querySelectorAll<HTMLInputElement>('input[role="switch"]')];expect(themes).toHaveLength(7);
+ await act(async()=>{for(const input of [...wordOptions,...themes])input.click();});
  await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App/>));
  const saved=JSON.parse(localStorage.getItem('lyricflow.extendedSettings.v1')!);
- expect(saved.enabledThemeTransitions).toEqual([]);expect(saved.enabledLyricTransitions).toEqual([]);
+ expect(saved.enabledThemeTransitions).toEqual([]);expect(saved.enabledLyricTransitions).toBeUndefined();
+ expect(saved.enabledWordAnimations).toEqual([]);expect(saved.wordStylesEnabled).toBe(true);
 });
 
 it('positions Save for current song above Lyrics mapping, shows exact fetched lyrics title, and does not restart song on manual search',async()=>{
