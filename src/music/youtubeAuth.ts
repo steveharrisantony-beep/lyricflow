@@ -40,7 +40,7 @@ function loadInitialState(): YouTubeAuthState {
         connected: Boolean(parsed.connected),
         method: parsed.method ?? null,
         accountLabel: parsed.accountLabel || (parsed.connected ? 'YouTube Account' : ''),
-        interactivePlayer: Boolean(parsed.interactivePlayer),
+        interactivePlayer: false,
         useNoCookieDomain: Boolean(parsed.useNoCookieDomain),
         reloadNonce: 0,
         hasServerAuth: Boolean(memoryAccessToken || memoryCookieHeader),
@@ -75,7 +75,7 @@ function saveAndNotify(next: Partial<YouTubeAuthState>) {
         connected: currentState.connected,
         method: currentState.method,
         accountLabel: currentState.accountLabel,
-        interactivePlayer: currentState.interactivePlayer,
+        interactivePlayer: false,
         useNoCookieDomain: currentState.useNoCookieDomain,
         cookieHeader: memoryCookieHeader || undefined,
       };

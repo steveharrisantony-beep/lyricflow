@@ -125,19 +125,23 @@ export default function TrackFinder({
     [],
   );
 
-  // Stable song identity for automatic search so typing in Manual Search inputs does not re-trigger auto-search or close the Android keyboard
+  // Stable song identity for automatic search so typing in Manual Search inputs or mid-load duration/SponsorBlock updates do not abort in-flight auto-search
   const autoTrackKey = track
     ? track.source === "manual"
       ? ""
       : [
+          track.provider || "",
           track.title,
           track.artist,
-          Math.round(track.duration),
           track.videoId || "",
           track.sourceTrackId || "",
+          track.fileName || "",
           track.isAd ? "ad" : "",
         ].join("|")
     : "";
+
+  const latestLeadingOffset = useRef(leadingNonMusicOffsetSec);
+  latestLeadingOffset.current = leadingNonMusicOffsetSec;
 
   // Pre-fill the manual search box with what was searched automatically before whenever a new automatic song loads
   useEffect(() => {
@@ -302,44 +306,48 @@ export default function TrackFinder({
       const selectedId = preferredSelection?.lrclibId;
       const resolvePreferred = async () => {
         if (selectedId) {
-          const lyric = await retrievePermittedLyrics(
-            {
-              id: selectedId,
-              title: track.title,
-              artist: track.artist,
-              album: "",
-              duration: track.duration,
-              instrumental: false,
-              hasSynced: true,
-              hasWordSync: false,
-              url: `https://lrclib.net/api/get/${selectedId}`,
-              confidence: 1,
-            },
-            controller.signal,
-          );
-          if (!lyric.synced && !lyric.plain)
-            throw new Error(
-              "Saved lyrics selection is unavailable. Use default lyrics selection or choose another match.",
+          try {
+            const lyric = await retrievePermittedLyrics(
+              {
+                id: selectedId,
+                title: track.title,
+                artist: track.artist,
+                album: "",
+                duration: track.duration,
+                instrumental: false,
+                hasSynced: true,
+                hasWordSync: false,
+                url: `https://lrclib.net/api/get/${selectedId}`,
+                confidence: 1,
+              },
+              controller.signal,
             );
-          return {
-            original: lyric.synced,
-            romanized: "",
-            plain: lyric.plain,
-            source: lyric.source,
-            sourceUrl: lyric.sourceUrl,
-            title: lyric.title || cleanedYtTitle || track.title,
-            artist: lyric.artist || track.artist,
-            hasWordSync: Boolean(lyric.synced && lyric.synced.includes("<")),
-            candidates: [],
-            availableEngines: ["lrclib" as LyricEngineOption],
-            subtitleTracks: [] as YouTubeSubtitleTrackItem[],
-          };
+            if (lyric.synced || lyric.plain) {
+              return {
+                original: lyric.synced,
+                romanized: "",
+                plain: lyric.plain,
+                source: lyric.source,
+                sourceUrl: lyric.sourceUrl,
+                title: lyric.title || cleanedYtTitle || track.title,
+                artist: lyric.artist || track.artist,
+                hasWordSync: Boolean(
+                  lyric.synced && lyric.synced.includes("<"),
+                ),
+                candidates: [],
+                availableEngines: ["lrclib" as LyricEngineOption],
+                subtitleTracks: [] as YouTubeSubtitleTrackItem[],
+              };
+            }
+          } catch (err) {
+            if (controller.signal.aborted) throw err;
+          }
         }
         return resolveStashLyricsChain(
           track,
           controller.signal,
           lyricEngineOption,
-          leadingNonMusicOffsetSec,
+          latestLeadingOffset.current,
           selectedSubtitleTrackId,
           applyResolved,
         );
@@ -369,7 +377,6 @@ export default function TrackFinder({
     selectedSubtitleTrackId,
     preferredSelection?.lrclibId,
     preferredSourceFile?.url,
-    Math.round(leadingNonMusicOffsetSec),
   ]);
 
   const canSearch = Boolean(track && manualTitle.trim().length >= 2);

@@ -89,6 +89,7 @@ export function SwitchSetting({
       <input
         type="checkbox"
         role="switch"
+        aria-label={label}
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}

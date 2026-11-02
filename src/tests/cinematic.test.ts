@@ -45,7 +45,8 @@ describe('VoxelWall cinematic scene catalog',()=>{
    expect(fontLabel(item.font).length).toBeGreaterThan(3);
    expect(fontSpec(item.font,48,'PREMIUM LYRICS')).toContain(fontLabel(item.font));
   }
-  expect(FONT_SHOWCASE.length).toBeGreaterThanOrEqual(17);
+  expect(FONT_SHOWCASE.length).toBe(11);
+  expect(new Set(FONT_SHOWCASE.map(fontLabel)).size).toBe(11);
   expect(new Set(TEMPLATES.map(t=>t.font)).size).toBeGreaterThanOrEqual(15);
  });
  it('supports deterministic scene plans for identical songs',()=>{

@@ -29,9 +29,7 @@ export function applySceneFont(c:CanvasRenderingContext2D,pack:FontPack,size:num
 }
 export function fontLabel(pack:FontPack){return fontFamilies[pack].replaceAll('"','')}
 export const FONT_SHOWCASE:readonly FontPack[]=[
- 'impact','street','editorial','tech','grunge','rounded','mono','literary',
- 'monument','noir','glass','collage','pixel','handwritten','retro','cyber','industrial','ultra',
- 'couture','vogue','engraved','techno','manuscript','typewriter','retrograde'
+ 'impact','editorial','tech','grunge','rounded','mono','literary','glass','pixel','retro','cyber'
 ] as const;
 
 const loadedFontPacks=new Set<FontPack>();

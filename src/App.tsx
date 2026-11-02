@@ -476,6 +476,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const playerRef = useRef<LocalPlayerHandle>(null);
   const audioHubRef = useRef<AudioSourceHubHandle>(null);
   const [cinemaControlsOpen, setCinemaControlsOpen] = useState(false);
+  const [fullscreenPlayerOpen, setFullscreenPlayerOpen] = useState(false);
   const [cinemaHudVisible, setCinemaHudVisible] = useState(true);
   const cinemaHudTimerRef = useRef<number | null>(null);
   const videoCorrectionSaveRef = useRef<(() => boolean) | null>(null);
@@ -508,63 +509,78 @@ export default function App({ user = null }: { user?: User | null }) {
   const [fileEpoch, setFileEpoch] = useState(0);
   const [performance, setPerformance] = useState(false);
 
-  // Full screen mode: show controls and exit full screen button on tap and hide after 2 seconds (2000ms)
-  const scheduleCinemaHudHide = useCallback(() => {
+  // Full screen mode: show controls on tap/click, hide on second tap/click, and auto-hide after 2 seconds (2000ms)
+  const clearCinemaHudTimer = useCallback(() => {
     if (cinemaHudTimerRef.current !== null) {
       window.clearTimeout(cinemaHudTimerRef.current);
       cinemaHudTimerRef.current = null;
     }
-    if (
-      (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
-        .IS_REACT_ACT_ENVIRONMENT
-    ) {
-      return;
-    }
+  }, []);
+
+  const scheduleCinemaHudHide = useCallback(() => {
+    clearCinemaHudTimer();
     cinemaHudTimerRef.current = window.setTimeout(() => {
       setCinemaHudVisible(false);
     }, 2000);
-  }, []);
+  }, [clearCinemaHudTimer]);
 
   const revealCinemaHud = useCallback(() => {
     setCinemaHudVisible(true);
     scheduleCinemaHudHide();
   }, [scheduleCinemaHudHide]);
 
+  const hideCinemaHud = useCallback(() => {
+    clearCinemaHudTimer();
+    setCinemaHudVisible(false);
+    setFullscreenPlayerOpen(false);
+    setCinemaControlsOpen(false);
+  }, [clearCinemaHudTimer]);
+
+  const toggleCinemaHud = useCallback(() => {
+    if (cinemaHudVisible || fullscreenPlayerOpen || cinemaControlsOpen) {
+      hideCinemaHud();
+    } else {
+      revealCinemaHud();
+    }
+  }, [
+    cinemaHudVisible,
+    fullscreenPlayerOpen,
+    cinemaControlsOpen,
+    hideCinemaHud,
+    revealCinemaHud,
+  ]);
+
   useEffect(() => {
     if (!performance) {
-      if (cinemaHudTimerRef.current !== null) {
-        window.clearTimeout(cinemaHudTimerRef.current);
-        cinemaHudTimerRef.current = null;
-      }
+      clearCinemaHudTimer();
       setCinemaHudVisible(true);
+      setFullscreenPlayerOpen(false);
       return;
     }
-    setCinemaHudVisible(true);
-    if (!cinemaControlsOpen && !playerOverlayOpen && !sourceOpen) {
-      scheduleCinemaHudHide();
-    } else if (cinemaHudTimerRef.current !== null) {
-      window.clearTimeout(cinemaHudTimerRef.current);
-      cinemaHudTimerRef.current = null;
-    }
-    const onWindowBlur = () => {
-      // Tapping an embedded YouTube iframe shifts focus from window to iframe; wake the HUD
-      revealCinemaHud();
-    };
-    window.addEventListener("blur", onWindowBlur);
-    return () => {
-      window.removeEventListener("blur", onWindowBlur);
-      if (cinemaHudTimerRef.current !== null) {
-        window.clearTimeout(cinemaHudTimerRef.current);
-        cinemaHudTimerRef.current = null;
+    if (
+      !cinemaControlsOpen &&
+      !fullscreenPlayerOpen &&
+      !playerOverlayOpen &&
+      !sourceOpen
+    ) {
+      if (cinemaHudVisible) {
+        scheduleCinemaHudHide();
       }
+    } else {
+      clearCinemaHudTimer();
+    }
+    return () => {
+      clearCinemaHudTimer();
     };
   }, [
     performance,
+    cinemaHudVisible,
     cinemaControlsOpen,
+    fullscreenPlayerOpen,
     playerOverlayOpen,
     sourceOpen,
     scheduleCinemaHudHide,
-    revealCinemaHud,
+    clearCinemaHudTimer,
   ]);
 
   const songMapping = useSongMapping(localTrack, uid);
@@ -931,7 +947,10 @@ export default function App({ user = null }: { user?: User | null }) {
 
   useEffect(() => {
     const onFullscreen = () => {
-      if (!document.fullscreenElement) setPerformance(false);
+      if (!document.fullscreenElement) {
+        setPerformance(false);
+        setFullscreenPlayerOpen(false);
+      }
     };
     document.addEventListener("fullscreenchange", onFullscreen);
     return () => document.removeEventListener("fullscreenchange", onFullscreen);
@@ -1023,12 +1042,15 @@ export default function App({ user = null }: { user?: User | null }) {
     if (performance) {
       setPerformance(false);
       setCinemaControlsOpen(false);
+      setFullscreenPlayerOpen(false);
       if (document.fullscreenElement)
         await document.exitFullscreen().catch(() => {});
       return;
     }
     setPerformance(true);
     setCinemaControlsOpen(false);
+    setFullscreenPlayerOpen(false);
+    setCinemaHudVisible(true);
     try {
       if (!document.fullscreenElement)
         await document.documentElement.requestFullscreen();
@@ -1292,6 +1314,7 @@ export default function App({ user = null }: { user?: User | null }) {
           setAvailableLyricEngines([]);
           setYoutubeSubtitleTracks([]);
           setSelectedSubtitleTrackId(undefined);
+          setLyricEngineOption("lyricflow");
           return {
             title: nextTitle,
             artist: nextArtist,
@@ -1547,6 +1570,7 @@ export default function App({ user = null }: { user?: User | null }) {
         (performance ? "performance-mode " : "") +
         (cinemaHudVisible ||
         cinemaControlsOpen ||
+        fullscreenPlayerOpen ||
         playerOverlayOpen ||
         sourceOpen
           ? "hud-visible"
@@ -1577,8 +1601,7 @@ export default function App({ user = null }: { user?: User | null }) {
           <section className="visualizer-section" aria-label="Visualizer">
             <div
               className="stage"
-              onClick={performance ? revealCinemaHud : undefined}
-              onPointerMove={performance ? revealCinemaHud : undefined}
+              onClick={performance ? toggleCinemaHud : undefined}
               aria-label="Music visualizer"
             >
               <CinematicStage
@@ -1664,6 +1687,7 @@ export default function App({ user = null }: { user?: User | null }) {
                 <>
                   {!cinemaHudVisible &&
                     !cinemaControlsOpen &&
+                    !fullscreenPlayerOpen &&
                     !playerOverlayOpen && (
                       <button
                         type="button"
@@ -1682,7 +1706,39 @@ export default function App({ user = null }: { user?: User | null }) {
                     <button
                       type="button"
                       className="glass"
-                      onClick={() => setCinemaControlsOpen((v) => !v)}
+                      onClick={() =>
+                        setFullscreenPlayerOpen((v) => {
+                          const next = !v;
+                          if (next) {
+                            setCinemaControlsOpen(false);
+                            setCinemaHudVisible(true);
+                          } else {
+                            revealCinemaHud();
+                          }
+                          return next;
+                        })
+                      }
+                      aria-expanded={fullscreenPlayerOpen}
+                      aria-controls="fullscreen-player-window"
+                    >
+                      <AudioLines size={17} />
+                      Player
+                    </button>
+                    <button
+                      type="button"
+                      className="glass"
+                      onClick={() =>
+                        setCinemaControlsOpen((v) => {
+                          const next = !v;
+                          if (next) {
+                            setFullscreenPlayerOpen(false);
+                            setCinemaHudVisible(true);
+                          } else {
+                            revealCinemaHud();
+                          }
+                          return next;
+                        })
+                      }
                       aria-expanded={cinemaControlsOpen}
                       aria-controls="app-settings"
                     >
@@ -1704,9 +1760,12 @@ export default function App({ user = null }: { user?: User | null }) {
             </div>
           </section>
           <div
-            className="player-section"
-            onPointerMove={performance ? revealCinemaHud : undefined}
-            onClick={performance ? revealCinemaHud : undefined}
+            id="fullscreen-player-window"
+            className={
+              "player-section" +
+              (fullscreenPlayerOpen ? " player-window-open" : "")
+            }
+            onClick={performance ? (e) => e.stopPropagation() : undefined}
           >
             <LocalPlayer
               ref={playerRef}
@@ -1737,6 +1796,7 @@ export default function App({ user = null }: { user?: User | null }) {
                 setAvailableLyricEngines([]);
                 setYoutubeSubtitleTracks([]);
                 setSelectedSubtitleTrackId(undefined);
+                setLyricEngineOption("lyricflow");
               }}
               onTrackChange={(track) => {
                 if (track)
@@ -1748,6 +1808,7 @@ export default function App({ user = null }: { user?: User | null }) {
                 setAvailableLyricEngines([]);
                 setYoutubeSubtitleTracks([]);
                 setSelectedSubtitleTrackId(undefined);
+                setLyricEngineOption("lyricflow");
               }}
               onDurationChange={(duration) =>
                 setLocalTrack((p) => (p ? { ...p, duration } : p))
@@ -1989,16 +2050,6 @@ export default function App({ user = null }: { user?: User | null }) {
                       </button>
                     </div>
                   </div>
-                  <SwitchSetting
-                    label="Hide overlay lyrics on lyrical videos"
-                    checked={autoHideYoutubeLyrics}
-                    onChange={setAutoHideYoutubeLyrics}
-                  />
-                  <SwitchSetting
-                    label="Skip non-music segments"
-                    checked={sponsorBlockEnabled}
-                    onChange={setSponsorBlockEnabled}
-                  />
                 </SettingGroup>
                 <SettingGroup title="Themes">
                   <SwitchSetting
@@ -2076,6 +2127,13 @@ export default function App({ user = null }: { user?: User | null }) {
             ),
             lyrics: (
               <>
+                <SettingGroup title="Overlay">
+                  <SwitchSetting
+                    label="Hide overlay lyrics on lyrical videos"
+                    checked={autoHideYoutubeLyrics}
+                    onChange={setAutoHideYoutubeLyrics}
+                  />
+                </SettingGroup>
                 <SettingGroup title="Placement">
                   {(["video", "theme"] as const).map(kind=>(
                     <details className="disclosure" key={kind}>
@@ -2106,7 +2164,7 @@ export default function App({ user = null }: { user?: User | null }) {
                   <SwitchSetting label="Current word animations" checked={wordAnimationsEnabled} onChange={setWordAnimationsEnabled}/>
                   <p className="muted">Styles stay still. Word effects require word-synced lyrics.</p>
                   <details className="disclosure">
-                    <summary>Fonts</summary>
+                    <summary>Fonts <span>{enabledFonts.length} / {FONT_SHOWCASE.length}</span></summary>
                     <div className="selection-list">
                       <button className="text-button" type="button" onClick={()=>setEnabledFonts([...ALL_FONT_PACKS])}>Enable all fonts</button>
                       {FONT_SHOWCASE.map(font=><PreviewSetting key={font} label={fontLabel(font)} checked={enabledFonts.includes(font)} onChange={()=>toggleFontEnabled(font)}
@@ -2140,7 +2198,12 @@ export default function App({ user = null }: { user?: User | null }) {
                   </details>
                 </SettingGroup>
                 <ManualLyrics
-                  key={"editor-" + (recordingKey || fileEpoch)}
+                  key={
+                    "editor-" +
+                    (localTrack
+                      ? `${fileEpoch}-${localTrack.provider || ""}-${localTrack.sourceTrackId || localTrack.videoId || localTrack.fileName || localTrack.title}-${localTrack.artist}`
+                      : fileEpoch)
+                  }
                   onLyricContentChange={onLyricContentChange}
                   mappingTarget={mappingTarget}
                   changeLyricsSlot={
@@ -2376,6 +2439,13 @@ export default function App({ user = null }: { user?: User | null }) {
             ),
             others: (
               <>
+                <SettingGroup title="Playback">
+                  <SwitchSetting
+                    label="Skip non-music segments"
+                    checked={sponsorBlockEnabled}
+                    onChange={setSponsorBlockEnabled}
+                  />
+                </SettingGroup>
                 <SettingGroup title="Appearance">
                   <div
                     className="segmented"

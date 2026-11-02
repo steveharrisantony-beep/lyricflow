@@ -392,3 +392,19 @@ it('switches to built-in themes when a YouTube background video starts late or e
  expect(host.querySelector('.cinematic-stack')?.getAttribute('data-background-state')).toBe('video');
 });
 
+it('hides YouTube title and controls inside the visualizer via controls=0, vertical overscan, and quiet playback ticks',async()=>{
+ await act(async()=>root.render(<CinematicStage {...base} playbackTime={10} videoDelaySeconds={0}/>));
+ const backdrop=host.querySelector<HTMLElement>('.youtube-stage-backdrop')!;
+ const frame=host.querySelector<HTMLIFrameElement>('iframe')!;
+ expect(backdrop.style.overflow).toBe('hidden');
+ expect(frame.src).toContain('controls=0');
+ expect(parseFloat(frame.style.height)).toBeGreaterThan(720);
+
+ const send=vi.spyOn(frame.contentWindow!,'postMessage');
+ // Normal 120ms playbackTime ticks must not spam playVideo/mute commands that wake YouTube's mobile HUD
+ await act(async()=>root.render(<CinematicStage {...base} playbackTime={10.12} videoDelaySeconds={0}/>));
+ await act(async()=>root.render(<CinematicStage {...base} playbackTime={10.24} videoDelaySeconds={0}/>));
+ expect(send).not.toHaveBeenCalled();
+});
+
+

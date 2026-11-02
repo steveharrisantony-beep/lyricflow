@@ -1502,11 +1502,14 @@ summary > span {
 .performance-mode .player-fullscreen {
   display: none;
 }
+.performance-mode .player-section:not(.player-window-open),
 .performance-mode.hud-hidden .player-section,
 .performance-mode.hud-hidden .fullscreen-toolbar {
   opacity: 0;
   pointer-events: none;
+  visibility: hidden;
 }
+.performance-mode .player-section:not(.player-window-open),
 .performance-mode.hud-hidden .player-section {
   transform: translate(-50%, 8px);
 }

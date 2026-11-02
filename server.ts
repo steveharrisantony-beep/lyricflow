@@ -1414,7 +1414,10 @@ function normalizeServerText(text: string): string {
 
 function cleanServerYouTubeTitle(rawTitle: string, channelHint = ''): string {
   if (!rawTitle) return '';
-  const strippedUnicode = rawTitle.replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g, '');
+  const strippedUnicode = rawTitle
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g, '')
+    .replace(/[\u2018\u2019\u02BC]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"');
   const withoutHandles = strippedUnicode.replace(/(?:^|\s)@\S+/g, ' ').trim();
   const firstBracketIdx = withoutHandles.search(/[([{]/);
   const preBracket = firstBracketIdx >= 0 ? withoutHandles.slice(0, firstBracketIdx) : withoutHandles;
@@ -1633,10 +1636,11 @@ function scoreServerCandidateAgainstContext(
   const candDur = Number(cand.duration || 0);
   if (ctx.durationSec > 0 && candDur > 0) {
     if (!ctx.rawOverride && !isDurationCompatible(candDur, ctx.durationSec, ctx.isYouTube)) {
-      return -1;
+      score -= 15;
+    } else {
+      const dist = durationDistanceScore(candDur, ctx.durationSec, ctx.isYouTube || Boolean(ctx.rawOverride));
+      score += Math.max(0, 20 - Math.round(dist * 1.2));
     }
-    const dist = durationDistanceScore(candDur, ctx.durationSec, ctx.isYouTube || Boolean(ctx.rawOverride));
-    score += Math.max(0, 20 - Math.round(dist * 1.2));
   }
 
   if (cand.hasWordSync) score += 8;
@@ -1850,10 +1854,6 @@ async function fetchItunesPaxsenixLyrics(
   rawArtist = '',
   rawOverride = false
 ): Promise<{ appleTrackViewUrl?: string; lyrics?: ServerLyricsResponse }> {
-  let songId = '';
-  let trackViewUrl = '';
-  let matchedTitle = title;
-  let matchedArtist = artist;
   const effectiveArtist = isYouTube && !rawOverride ? '' : artist;
   const matchCtx = {
     cleanTitle: title,
@@ -1863,25 +1863,34 @@ async function fetchItunesPaxsenixLyrics(
     isYouTube,
     rawOverride,
   };
-  try {
-    const itunesUrl =
-      'https://itunes.apple.com/search?' +
-      new URLSearchParams({
-        term: `${title} ${effectiveArtist}`.trim(),
-        media: 'music',
-        entity: 'song',
-        limit: '20',
-      }).toString();
+  const scoredCandidates: Array<{ item: Record<string, unknown>; score: number }> = [];
+  const searchTerms = [`${title} ${effectiveArtist}`.trim()];
+  const channelArtistHint = (rawArtist || artist || '').replace(/\s*-\s*Topic$/i, '').trim();
+  if (isYouTube && !effectiveArtist && channelArtistHint && !searchTerms.includes(`${title} ${channelArtistHint}`.trim())) {
+    searchTerms.push(`${title} ${channelArtistHint}`.trim());
+  }
 
-    const res = await fetch(itunesUrl, {
-      headers: { 'User-Agent': STASH_ANDROID_UA, Accept: 'application/json' },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (res.ok) {
-      const data = (await res.json()) as { results?: Array<Record<string, unknown>> };
-      const results = Array.isArray(data.results) ? data.results : [];
-      const scored = results
-        .map(item => {
+  for (const term of searchTerms) {
+    try {
+      const itunesUrl =
+        'https://itunes.apple.com/search?' +
+        new URLSearchParams({
+          term,
+          media: 'music',
+          entity: 'song',
+          limit: '20',
+        }).toString();
+
+      const res = await fetch(itunesUrl, {
+        headers: { 'User-Agent': STASH_ANDROID_UA, Accept: 'application/json' },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { results?: Array<Record<string, unknown>> };
+        const results = Array.isArray(data.results) ? data.results : [];
+        for (const item of results) {
+          const trackId = String(item.trackId || '').trim();
+          if (!trackId || scoredCandidates.some(c => String(c.item.trackId || '').trim() === trackId)) continue;
           const trackName = String(item.trackName || '');
           const artistName = String(item.artistName || '');
           const albumName = String(item.collectionName || '');
@@ -1890,85 +1899,94 @@ async function fetchItunesPaxsenixLyrics(
             { title: trackName, artist: artistName, album: albumName, duration: dur },
             matchCtx
           );
-          return { item, score };
-        })
-        .filter(x => x.score >= 45)
-        .sort((a, b) => b.score - a.score);
-
-      const best = scored[0]?.item;
-      if (best) {
-        songId = String(best.trackId || '').trim();
-        trackViewUrl = String(best.trackViewUrl || '').trim();
-        matchedTitle = String(best.trackName || title).trim();
-        matchedArtist = String(best.artistName || artist).trim();
+          if (score >= 45) {
+            scoredCandidates.push({ item, score });
+          }
+        }
       }
+      scoredCandidates.sort((a, b) => b.score - a.score);
+      if (scoredCandidates[0] && scoredCandidates[0].score >= 70) {
+        break;
+      }
+    } catch {
+      // Ignore iTunes error
     }
-  } catch {
-    // Ignore iTunes error
   }
 
-  if (!songId || Date.now() < paxsenixSkipUntilMs) {
-    return { appleTrackViewUrl: trackViewUrl || undefined };
+  const firstTrackViewUrl = scoredCandidates[0]?.item
+    ? String(scoredCandidates[0].item.trackViewUrl || '').trim()
+    : '';
+
+  if (scoredCandidates.length === 0 || Date.now() < paxsenixSkipUntilMs) {
+    return { appleTrackViewUrl: firstTrackViewUrl || undefined };
   }
 
-  const paxUrls = [
-    { url: `https://lyrics.paxsenix.org/apple-music/cache/${encodeURIComponent(songId)}`, timeout: 3500 },
-    {
-      url: `https://lyrics.paxsenix.org/apple-music/lyrics?id=${encodeURIComponent(songId)}&ttml=true`,
-      timeout: 5000,
-    },
-  ];
+  for (const cand of scoredCandidates.slice(0, 3)) {
+    const songId = String(cand.item.trackId || '').trim();
+    const trackViewUrl = String(cand.item.trackViewUrl || '').trim() || firstTrackViewUrl;
+    const matchedTitle = String(cand.item.trackName || title).trim();
+    const matchedArtist = String(cand.item.artistName || artist).trim();
+    if (!songId || Date.now() < paxsenixSkipUntilMs) continue;
 
-  for (const endpoint of paxUrls) {
-    try {
-      const res = await fetch(endpoint.url, {
-        headers: { 'User-Agent': STASH_ANDROID_UA },
-        signal: AbortSignal.timeout(endpoint.timeout),
-      });
-      paxsenixConsecutiveTimeouts = 0;
-      if (!res.ok) continue;
-      const body = await res.text();
-      if (!body || body.length < 15) continue;
-      if (body.includes('<tt') || body.includes('<p')) {
-        return {
-          appleTrackViewUrl: trackViewUrl || undefined,
-          lyrics: {
-            ttml: body,
-            source: 'Apple Music · Word-Synced TTML (Paxsenix)',
-            sourceUrl: trackViewUrl || undefined,
-            title: matchedTitle,
-            artist: matchedArtist || undefined,
-            hasWordSync: body.includes('<span'),
-          },
-        };
-      }
-      if (body.trim().startsWith('{') || body.trim().startsWith('[')) {
-        const parsed = JSON.parse(body) as Record<string, unknown>;
-        const embeddedTtml = String(parsed.ttmlContent || parsed.ttml || '');
-        if (embeddedTtml.includes('<p')) {
+    const paxUrls = [
+      { url: `https://lyrics.paxsenix.org/apple-music/cache/${encodeURIComponent(songId)}`, timeout: 3500 },
+      {
+        url: `https://lyrics.paxsenix.org/apple-music/lyrics?id=${encodeURIComponent(songId)}&ttml=true`,
+        timeout: 5000,
+      },
+    ];
+
+    for (const endpoint of paxUrls) {
+      try {
+        const res = await fetch(endpoint.url, {
+          headers: { 'User-Agent': STASH_ANDROID_UA },
+          signal: AbortSignal.timeout(endpoint.timeout),
+        });
+        paxsenixConsecutiveTimeouts = 0;
+        if (!res.ok) continue;
+        const body = await res.text();
+        if (!body || body.length < 15) continue;
+        if (body.includes('<tt') || body.includes('<p')) {
           return {
             appleTrackViewUrl: trackViewUrl || undefined,
             lyrics: {
-              ttml: embeddedTtml,
+              ttml: body,
               source: 'Apple Music · Word-Synced TTML (Paxsenix)',
               sourceUrl: trackViewUrl || undefined,
               title: matchedTitle,
               artist: matchedArtist || undefined,
-              hasWordSync: embeddedTtml.includes('<span'),
+              hasWordSync: body.includes('<span'),
             },
           };
         }
-      }
-    } catch {
-      paxsenixConsecutiveTimeouts += 1;
-      if (paxsenixConsecutiveTimeouts >= PAXSENIX_SKIP_AFTER_TIMEOUTS) {
-        paxsenixSkipUntilMs = Date.now() + PAXSENIX_SKIP_WINDOW_MS;
-        break;
+        if (body.trim().startsWith('{') || body.trim().startsWith('[')) {
+          const parsed = JSON.parse(body) as Record<string, unknown>;
+          const embeddedTtml = String(parsed.ttmlContent || parsed.ttml || '');
+          if (embeddedTtml.includes('<p')) {
+            return {
+              appleTrackViewUrl: trackViewUrl || undefined,
+              lyrics: {
+                ttml: embeddedTtml,
+                source: 'Apple Music · Word-Synced TTML (Paxsenix)',
+                sourceUrl: trackViewUrl || undefined,
+                title: matchedTitle,
+                artist: matchedArtist || undefined,
+                hasWordSync: embeddedTtml.includes('<span'),
+              },
+            };
+          }
+        }
+      } catch {
+        paxsenixConsecutiveTimeouts += 1;
+        if (paxsenixConsecutiveTimeouts >= PAXSENIX_SKIP_AFTER_TIMEOUTS) {
+          paxsenixSkipUntilMs = Date.now() + PAXSENIX_SKIP_WINDOW_MS;
+          break;
+        }
       }
     }
   }
 
-  return { appleTrackViewUrl: trackViewUrl || undefined };
+  return { appleTrackViewUrl: firstTrackViewUrl || undefined };
 }
 
 // 5C. LRCLIB Synced & Word-Synced Lyrics (Stash LrclibLyricsSource.kt)
@@ -2019,51 +2037,67 @@ async function fetchLrclibServerLyrics(
       }
     }
 
-    const searchParams = new URLSearchParams({ track_name: title });
-    if (effectiveArtist) searchParams.set('artist_name', effectiveArtist);
-    const searchRes = await fetch(`https://lrclib.net/api/search?${searchParams.toString()}`, {
-      headers: { 'User-Agent': STASH_ANDROID_UA, Accept: 'application/json' },
-      signal: AbortSignal.timeout(5500),
-    });
-    if (searchRes.ok) {
-      const list = (await searchRes.json()) as Array<Record<string, unknown>>;
-      if (Array.isArray(list)) {
-        const scored = list
-          .map(item => {
-            if (item.instrumental === true) return { item, score: -1 };
-            const synced = typeof item.syncedLyrics === 'string' ? item.syncedLyrics : '';
-            if (!synced.includes('[')) return { item, score: -1 };
-            const trackName = String(item.trackName || '');
-            const artistName = String(item.artistName || '');
-            const albumName = String(item.albumName || '');
-            const dur = Number(item.duration || 0);
-            const score = scoreServerCandidateAgainstContext(
-              {
-                title: trackName,
-                artist: artistName,
-                album: albumName,
-                duration: dur,
-                hasWordSync: synced.includes('<'),
-              },
-              matchCtx
-            );
-            return { item, score };
-          })
-          .filter(x => x.score >= 45)
-          .sort((a, b) => b.score - a.score);
+    const searchQueries: Array<URLSearchParams> = [];
+    const primaryParams = new URLSearchParams({ track_name: title });
+    if (effectiveArtist) primaryParams.set('artist_name', effectiveArtist);
+    searchQueries.push(primaryParams);
 
-        const best = scored[0]?.item;
-        if (best && typeof best.syncedLyrics === 'string') {
-          const synced = best.syncedLyrics.trim();
-          return {
-            lrc: synced,
-            source: synced.includes('<') ? 'LRCLIB · Word-Synced' : 'LRCLIB · Synced',
-            sourceUrl: best.id ? `https://lrclib.net/api/get/${String(best.id)}` : undefined,
-            title: String(best.trackName || title).trim(),
-            artist: String(best.artistName || effectiveArtist).trim() || undefined,
-            hasWordSync: synced.includes('<'),
-          };
-        }
+    const channelArtistHint = (rawArtist || artist || '').replace(/\s*-\s*Topic$/i, '').trim();
+    if (effectiveArtist && /[,&]|\b(?:feat|ft)\b/i.test(effectiveArtist)) {
+      searchQueries.push(new URLSearchParams({ track_name: title }));
+    } else if (isYouTube && !effectiveArtist && channelArtistHint) {
+      searchQueries.push(
+        new URLSearchParams({
+          track_name: title,
+          artist_name: channelArtistHint,
+        })
+      );
+    }
+
+    for (const searchParams of searchQueries) {
+      const searchRes = await fetch(`https://lrclib.net/api/search?${searchParams.toString()}`, {
+        headers: { 'User-Agent': STASH_ANDROID_UA, Accept: 'application/json' },
+        signal: AbortSignal.timeout(5500),
+      });
+      if (!searchRes.ok) continue;
+      const list = (await searchRes.json()) as Array<Record<string, unknown>>;
+      if (!Array.isArray(list) || list.length === 0) continue;
+
+      const scored = list
+        .map(item => {
+          if (item.instrumental === true) return { item, score: -1 };
+          const synced = typeof item.syncedLyrics === 'string' ? item.syncedLyrics : '';
+          if (!synced.includes('[')) return { item, score: -1 };
+          const trackName = String(item.trackName || '');
+          const artistName = String(item.artistName || '');
+          const albumName = String(item.albumName || '');
+          const dur = Number(item.duration || 0);
+          const score = scoreServerCandidateAgainstContext(
+            {
+              title: trackName,
+              artist: artistName,
+              album: albumName,
+              duration: dur,
+              hasWordSync: synced.includes('<'),
+            },
+            matchCtx
+          );
+          return { item, score };
+        })
+        .filter(x => x.score >= 45)
+        .sort((a, b) => b.score - a.score);
+
+      const best = scored[0]?.item;
+      if (best && typeof best.syncedLyrics === 'string') {
+        const synced = best.syncedLyrics.trim();
+        return {
+          lrc: synced,
+          source: synced.includes('<') ? 'LRCLIB · Word-Synced' : 'LRCLIB · Synced',
+          sourceUrl: best.id ? `https://lrclib.net/api/get/${String(best.id)}` : undefined,
+          title: String(best.trackName || title).trim(),
+          artist: String(best.artistName || effectiveArtist).trim() || undefined,
+          hasWordSync: synced.includes('<'),
+        };
       }
     }
   } catch {

@@ -84,3 +84,29 @@ it('wires progressive results to TrackFinder without changing a lyric in the mid
   expect(received).toHaveBeenCalledTimes(2);
  }finally{await act(async()=>root.unmount());}
 });
+it('does not abort an in-flight automatic lyric lookup when track.duration or leadingNonMusicOffsetSec updates mid-load',async()=>{
+ vi.useFakeTimers();
+ (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
+ const provider=await import('../lyrics/providers');
+ let capturedSignal:AbortSignal|undefined;
+ const finished=deferred<StashResolvedLyrics|null>();
+ const spy=vi.spyOn(provider,'resolveStashLyricsChain').mockImplementation((_track,signal)=>{capturedSignal=signal;return finished.promise;});
+ const host=document.createElement('div'),root=createRoot(host),received=vi.fn();
+ const resolved:StashResolvedLyrics={original:lrc,romanized:'',source:'LyricFlow Engine · LRC Library',hasWordSync:false,candidates:[],availableEngines:['lyricflow','lrclib'],title:'Original rain',artist:'Test Artist'};
+ try{
+  await act(async()=>root.render(<TrackFinder track={{...track,duration:0}} leadingNonMusicOffsetSec={0} onMetadataChange={()=>{}} onLyricsFound={received}/>));
+  await act(async()=>vi.advanceTimersByTimeAsync(180));
+  expect(spy).toHaveBeenCalledTimes(1);
+  expect(capturedSignal?.aborted).toBe(false);
+  // Simulate <audio onLoadedMetadata> updating duration and SponsorBlock resolving offset while lyrics are still fetching
+  await act(async()=>root.render(<TrackFinder track={{...track,duration:204.6}} leadingNonMusicOffsetSec={12.4} onMetadataChange={()=>{}} onLyricsFound={received}/>));
+  await act(async()=>vi.advanceTimersByTimeAsync(200));
+  expect(spy).toHaveBeenCalledTimes(1);
+  expect(capturedSignal?.aborted).toBe(false);
+  finished.resolve(resolved);
+  await act(async()=>{});
+  expect(received).toHaveBeenCalledTimes(1);
+  expect(received.mock.calls[0]?.[0].title).toBe('Original rain');
+ }finally{await act(async()=>root.unmount());}
+});
+

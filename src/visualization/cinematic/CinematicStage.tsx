@@ -584,7 +584,9 @@ export default function CinematicStage(props:CinematicProps){
  const ytWrapRef=useRef<HTMLDivElement>(null);
  const ytIframeRef=useRef<HTMLIFrameElement>(null);
  const lastSyncTimeRef=useRef<number>(0);
+ const lastTargetTimeRef=useRef<number>(0);
  const lastVideoMappingRef=useRef('');
+ const lastControlSigRef=useRef('');
  const videoWaitingRef=useRef(false);
  const ytReadyRef=useRef<boolean>(false);
  const ytEndedFiredRef=useRef<boolean>(false);
@@ -607,6 +609,7 @@ export default function CinematicStage(props:CinematicProps){
   setPlaybackError('');
   ytDurationRef.current=0;
   ytEndedEarlyRef.current=false;
+  lastControlSigRef.current='';
   setYtVideoDuration(0);
   setYtVideoEnded(false);
  },[playbackKey]);
@@ -644,7 +647,11 @@ export default function CinematicStage(props:CinematicProps){
   const target=videoSyncTarget(cur.playbackTime??0,cur.videoDelaySeconds,Boolean(cur.hasSeparateAudioStream));
   const dur=ytDurationRef.current;
   const endedEarly=Boolean(cur.hasSeparateAudioStream&&(ytEndedEarlyRef.current||(dur>15&&target.time>=dur-0.35)));
-  if(cur.hasSeparateAudioStream&&!endedEarly)sendYouTubeCommand(iframe,'seekTo',[target.time,true]);
+  if(cur.hasSeparateAudioStream&&!endedEarly){
+   sendYouTubeCommand(iframe,'seekTo',[target.time,true]);
+   lastSyncTimeRef.current=target.time;
+   lastTargetTimeRef.current=target.time;
+  }
   if(mustPauseVideo(cur,target.waiting,endedEarly)){
    sendYouTubeCommand(iframe,'pauseVideo');
   }else{
@@ -807,6 +814,8 @@ export default function CinematicStage(props:CinematicProps){
   },[mountedVideoId,playbackKey,nativePolicy.allowed]);
 
   // Video timing is independent of the audio clock and lyric timing.
+  // Avoid spamming mute/playVideo/seekTo on every 120ms playbackTime tick so YouTube's
+  // internal HUD stays in autohide and playback stays smooth.
   useEffect(()=>{
    if(!ytId||!ytIframeRef.current||typeof props.playbackTime!=='number')return;
    const target=videoSyncTarget(props.playbackTime,props.videoDelaySeconds,Boolean(props.hasSeparateAudioStream));
@@ -819,23 +828,46 @@ export default function CinematicStage(props:CinematicProps){
    const mapping=ytId+'|'+(props.hasSeparateAudioStream?props.videoDelaySeconds??0:0)+'|'+Boolean(props.hasSeparateAudioStream);
    const changed=mapping!==lastVideoMappingRef.current;
    const resumed=videoWaitingRef.current&&!target.waiting;
+   const shouldPause=mustPauseVideo(props,target.waiting||reachedEnd);
+   const controlSig=[
+    mapping,
+    String(shouldPause),
+    props.youtubeBackgroundMode||'',
+    String(Boolean(props.audioPaused)),
+    String(Boolean(props.videoSearchPending)),
+    String(Boolean(props.advertisementPlaying)),
+    String(props.playerVolume??85)
+   ].join('|');
+   const controlChanged=controlSig!==lastControlSigRef.current;
    lastVideoMappingRef.current=mapping;
+   lastControlSigRef.current=controlSig;
    videoWaitingRef.current=target.waiting;
+
+   const targetDelta=target.time-lastTargetTimeRef.current;
+   lastTargetTimeRef.current=target.time;
+   if(!changed&&!resumed&&!shouldPause&&targetDelta>0&&targetDelta<=0.75){
+    lastSyncTimeRef.current+=targetDelta;
+   }
+
    if(props.hasSeparateAudioStream){
-    sendYouTubeCommand(ytIframeRef.current,'mute');
-    if(!reachedEnd&&(changed||resumed||Math.abs(target.time-lastSyncTimeRef.current)>.75)){
+    if(controlChanged)sendYouTubeCommand(ytIframeRef.current,'mute');
+    if(!reachedEnd&&(changed||resumed||Math.abs(target.time-lastSyncTimeRef.current)>1.25)){
      sendYouTubeCommand(ytIframeRef.current,'seekTo',[target.time,true]);
      lastSyncTimeRef.current=target.time;
     }
    }else{
-    sendYouTubeCommand(ytIframeRef.current,'unMute');
-    sendYouTubeCommand(ytIframeRef.current,'setVolume',[props.playerVolume??85]);
+    if(controlChanged){
+     sendYouTubeCommand(ytIframeRef.current,'unMute');
+     sendYouTubeCommand(ytIframeRef.current,'setVolume',[props.playerVolume??85]);
+    }
     if(Math.abs(target.time-lastSyncTimeRef.current)>1.5){
      sendYouTubeCommand(ytIframeRef.current,'seekTo',[target.time,true]);
      lastSyncTimeRef.current=target.time;
     }
    }
-   sendYouTubeCommand(ytIframeRef.current,mustPauseVideo(props,target.waiting||reachedEnd)?'pauseVideo':'playVideo');
+   if(controlChanged||changed||resumed){
+    sendYouTubeCommand(ytIframeRef.current,shouldPause?'pauseVideo':'playVideo');
+   }
   },[ytId,props.playbackTime,props.videoDelaySeconds,props.hasSeparateAudioStream,props.audioPaused,props.playerVolume,props.youtubeBackgroundMode,props.videoSearchPending,props.advertisementPlaying,nativePolicy.allowed]);
 
  const [stageSize,setStageSize]=useState<{w:number;h:number}>({w:1280,h:720});
@@ -900,9 +932,11 @@ export default function CinematicStage(props:CinematicProps){
   :'';
  const embedHost=ytAuth.useNoCookieDomain?'https://www.youtube-nocookie.com':'https://www.youtube.com';
  const activeEmbedVid=mountedVideoId||ytId;
- const controlsParam=ytAuth.interactivePlayer?'1':'0';
+ const allowIframePointer=!showThemes&&ytAuth.interactivePlayer&&(!props.hasSeparateAudioStream||Boolean(playbackError));
+ const showInteractiveControls=Boolean(ytAuth.interactivePlayer&&!props.hasSeparateAudioStream&&playbackError);
+ const controlsParam=showInteractiveControls?'1':'0';
  const embedSrc=activeEmbedVid
-  ?`${embedHost}/embed/${encodeURIComponent(activeEmbedVid)}?autoplay=0&controls=${controlsParam}&disablekb=${ytAuth.interactivePlayer?'0':'1'}&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&enablejsapi=1${props.hasSeparateAudioStream?'&mute=1':''}${originParam}`
+  ?`${embedHost}/embed/${encodeURIComponent(activeEmbedVid)}?autoplay=0&controls=${controlsParam}&disablekb=${showInteractiveControls?'0':'1'}&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&showinfo=0&enablejsapi=1${props.hasSeparateAudioStream?'&mute=1':''}${originParam}`
   :'';
 
  const fitMode:VideoFitMode=props.videoFitMode||'default';
@@ -911,12 +945,12 @@ export default function CinematicStage(props:CinematicProps){
  const stageAspect=safeStageW/safeStageH;
  const safeVideoAspect=Math.max(0.5,Math.min(3.2,videoAspect||16/9));
 
- // Native YouTube Zoom-to-Fill sizing:
- // Never apply CSS scale() to the <iframe> embed (which distorts/crops IMAX videos and UI).
- // Instead, compute the exact aspect-ratio-preserving cover viewport (coverW x coverH) where
- // coverW / coverH === safeVideoAspect and tell YouTube's player via setSize(coverW, coverH).
- let playerWidthStyle='100%';
- let playerHeightStyle='100%';
+ // Native YouTube Zoom-to-Fill & Chrome-Hiding Vertical Overscan:
+ // YouTube pins its title bar (.ytp-chrome-top) to top:0 of the iframe and its progress bar /
+ // watermark (.ytp-chrome-bottom) to bottom:0 of the iframe, while centering the <video> stream
+ // vertically at its native aspect ratio. Adding vertical overscan (chromeOverscanY) pushes
+ // the YouTube title bar and bottom controls outside the overflow:hidden stage backdrop without
+ // cropping or distorting the centered <video> frame.
  let targetPlayerW=safeStageW;
  let targetPlayerH=safeStageH;
 
@@ -928,24 +962,34 @@ export default function CinematicStage(props:CinematicProps){
    targetPlayerH=safeStageH;
    targetPlayerW=Math.ceil(safeStageH*safeVideoAspect);
   }
-  // When an IMAX or ultrawide video is encoded inside a 16:9 stream on a ~16:9 stage,
-  // expand both axes identically by the exact same factor so coverW / coverH stays 100% locked to safeVideoAspect
   if(Math.abs(stageAspect-safeVideoAspect)<0.03){
    const imaxFillFactor=1.18;
    targetPlayerW=Math.ceil(targetPlayerW*imaxFillFactor);
    targetPlayerH=Math.ceil(targetPlayerH*imaxFillFactor);
   }
-  playerWidthStyle=`${targetPlayerW}px`;
-  playerHeightStyle=`${targetPlayerH}px`;
+ }else{
+  if(stageAspect>=safeVideoAspect){
+   targetPlayerH=safeStageH;
+   targetPlayerW=Math.ceil(safeStageH*safeVideoAspect);
+  }else{
+   targetPlayerW=safeStageW;
+   targetPlayerH=Math.ceil(safeStageW/safeVideoAspect);
+  }
  }
+
+ const chromeOverscanY=showInteractiveControls?0:Math.max(180,Math.ceil(safeStageH*0.45));
+ const targetIframeW=targetPlayerW;
+ const targetIframeH=targetPlayerH+chromeOverscanY*2;
+ const playerWidthStyle=fitMode==='stretch'?`${targetIframeW}px`:'100%';
+ const playerHeightStyle=showInteractiveControls
+  ?(fitMode==='stretch'?`${targetPlayerH}px`:'100%')
+  :`${targetIframeH}px`;
 
  useEffect(()=>{
   const iframe=ytIframeRef.current;
   if(!iframe||!activeEmbedVid||!nativePolicy.allowed)return;
-  sendYouTubeCommand(iframe,'setSize',[targetPlayerW,targetPlayerH]);
- },[activeEmbedVid,fitMode,targetPlayerW,targetPlayerH,nativePolicy.allowed]);
-
- const allowIframePointer=!showThemes&&ytAuth.interactivePlayer&&(!props.hasSeparateAudioStream||Boolean(playbackError));
+  sendYouTubeCommand(iframe,'setSize',[targetIframeW,targetIframeH]);
+ },[activeEmbedVid,fitMode,targetIframeW,targetIframeH,nativePolicy.allowed]);
 
  return <div className="cinematic-stack" ref={host} data-background-state={showThemes?'themes':'video'} data-video-ready={playingVideoKey===playbackKey?'yes':'no'} data-video-fit={fitMode}>
   {activeEmbedVid&&nativePolicy.allowed&&(
@@ -960,7 +1004,7 @@ export default function CinematicStage(props:CinematicProps){
       try{
        ytIframeRef.current?.contentWindow?.postMessage(JSON.stringify({event:'listening',id:'lyricflow-yt',channel:'widget'}),'*');
        for(const event of ['onReady','onStateChange','onError','onAutoplayBlocked'])sendYouTubeCommand(ytIframeRef.current,'addEventListener',[event]);
-       sendYouTubeCommand(ytIframeRef.current,'setSize',[targetPlayerW,targetPlayerH]);
+       sendYouTubeCommand(ytIframeRef.current,'setSize',[targetIframeW,targetIframeH]);
       }catch{}
       syncYtPlayerState();
      }}/>

@@ -1007,12 +1007,6 @@ function LocalPlayer(
           </div>
         )}
 
-        {externalTrack && (
-          <p className="quiet-status">
-            Playback is controlled in{" "}
-            {externalTrack.audioSource || "your music app"}.
-          </p>
-        )}
         {sponsorNotice && (
           <p className="quiet-status" role="status">
             {sponsorNotice}
