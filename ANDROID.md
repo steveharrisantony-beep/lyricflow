@@ -10,19 +10,60 @@ Launcher name: `LyricFlow`
 ## Get an APK using only your tablet
 
 1. Open this repository's **Actions** tab.
-2. Select **Build Android APK**. A build starts automatically after a push to `main`.
-   To build again, choose **Run workflow**, leave branch `main`, then **Run workflow**.
+2. Only when you want an APK, select **Build Android APK**, choose **Run workflow**,
+   leave branch `main`, then **Run workflow**. Source updates do not trigger APK builds.
 3. Wait for the run to finish successfully and open the run.
 4. Under **Artifacts**, download **LyricFlow-Android** (GitHub requires sign-in).
 5. Extract the downloaded ZIP using your tablet's Files app.
 6. Open `LyricFlow-Android.apk` and allow installation from that Files app
    if Android asks. Then launch **LyricFlow**.
 
-This is a debug-signed APK for device testing, not a Google Play release. A release
-needs a private signing key and release configuration. Never commit signing keys.
+The workflow uses persistent release signing when its signing secrets are configured;
+otherwise it produces a debug-signed test APK. Never commit signing keys.
 GitHub-hosted runners may use different debug keys between runs; an APK signed
 with another key cannot update an existing installation. Export permitted local
 data before uninstalling an older test build, since uninstalling removes app data.
+
+## External Player permission setup
+
+Selecting **External player** opens an ordered setup. It does not request audio permission.
+
+1. On Android 13+, **Open App info** opens this app's Android settings. Enable
+   **Allow restricted settings** if required: Xiaomi may show it under Advanced
+   settings, while other devices use the overflow menu. Return and confirm that
+   you checked it. Opening App info alone is not treated as granting access.
+   Older Android versions skip this step; devices with notification access already
+   granted go directly to audio selection.
+2. **Enable notification listening** opens LyricFlow's notification-access page
+   (or the general list when the device does not support the app-specific page).
+   LyricFlow rechecks the real permission on return; **Check access** is a fallback.
+   It uses media playback metadata for matching lyrics/video, not ordinary messages.
+3. Choose **Internal Audio** or **Microphone**, then press its **Start** button.
+   Only then is Android audio permission requested. Internal Audio uses Android's
+   `Visualizer(0)` and may require a permission labelled Microphone; OEM restrictions
+   may make it unavailable. The app does not silently switch to Microphone.
+
+Audio is optional. Song metadata and timed lyrics can work without audio capture.
+Changing source/mode, stopping, revoking access or leaving during a pending audio
+permission request releases capture resources. Settings must be changed by the
+user; the app cannot enable restricted settings or notification access itself.
+The restricted-settings confirmation is a user acknowledgement, not a claim that
+Android exposed the switch's value. No hidden settings APIs are used.
+
+### Play Protect installation warnings
+
+The setup above happens **after installation** and cannot remove a Play Protect
+installation block. Google documents region-dependent blocking of internet-sideloaded
+apps that request sensitive access, including notification listeners. An APK's
+signing key is important for update continuity, but does not exempt it from these
+checks. If Google offers an app scan, let the scan finish. Review any exact harmful-app
+warning before proceeding; if the app is incorrectly classified after reviewing
+permissions, SDKs and Google's policies, use Google's developer appeal process.
+Keep Play Protect enabled.
+
+- [Google's Play Protect developer guidance](https://developers.google.com/android/play-protect/warning-dev-guidance)
+- [Google's app-verification appeal](https://support.google.com/android/answer/2992033)
+- [Android restricted settings](https://support.google.com/android/answer/12623953)
 
 ## On-device backend: no external hosting
 

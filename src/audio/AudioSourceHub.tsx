@@ -1,10 +1,8 @@
+import ExternalPlayerSetup from './ExternalPlayerSetup';
 import {
-  BellRing,
   CheckCircle2,
   ChevronRight,
   Disc3,
-  Mic,
-  Radio,
   RefreshCw,
   Smartphone,
   Upload,
@@ -44,7 +42,11 @@ type Props = {
   onExternalAudioModeChange?: (mode: ExternalAudioCaptureMode) => void;
   externalMedia?: ExternalMediaState | null;
   notificationAccessGranted?: boolean;
-  onRequestNotificationAccess?: () => void;
+  onNotificationAccessChange?: (granted:boolean) => void;
+  externalAudioStarting?:boolean;
+  externalAudioActive?:boolean;
+  onStartExternalAudio?:()=>void;
+  onStopExternalAudio?:()=>void;
   onRefreshExternalMedia?: () => void;
   externalAudioStatus?: string;
   youtubeBackgroundMode?: YouTubeBackgroundMode;
@@ -64,7 +66,11 @@ function AudioSourceHub(
     onExternalAudioModeChange,
     externalMedia = null,
     notificationAccessGranted = false,
-    onRequestNotificationAccess,
+    onNotificationAccessChange,
+    externalAudioStarting,
+    externalAudioActive,
+    onStartExternalAudio,
+    onStopExternalAudio,
     onRefreshExternalMedia,
     externalAudioStatus = "",
   }: Props,
@@ -278,39 +284,14 @@ function AudioSourceHub(
                   </div>
                 ) : (
                   <div className="external-android-panel">
-                    <div className="external-panel-row">
-                      <div>
-                        <strong>
-                          <BellRing size={15} /> 1. Android Notification
-                          Listening (Song Details)
-                        </strong>
-                        <small>
-                          {notificationAccessGranted
-                            ? "Notification Listener active — reading track title, artist, album, and playback position from active media notifications."
-                            : "Grant Notification Listener access so LyricFlow can detect songs playing in Spotify, YouTube Music, or other Android players."}
-                        </small>
-                      </div>
-                      <div
-                        style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
-                      >
-                        {!notificationAccessGranted && (
-                          <button
-                            type="button"
-                            className="source-primary"
-                            onClick={onRequestNotificationAccess}
-                          >
-                            Grant Notification Access
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="upload-button"
-                          onClick={onRefreshExternalMedia}
-                        >
-                          <RefreshCw size={14} /> Refresh Song
-                        </button>
-                      </div>
-                    </div>
+                    <ExternalPlayerSetup notificationAccessGranted={notificationAccessGranted}
+                      onNotificationAccessChange={onNotificationAccessChange} audioMode={externalAudioMode}
+                      onAudioModeChange={onExternalAudioModeChange} audioStatus={externalAudioStatus}
+                      audioStarting={externalAudioStarting} audioActive={externalAudioActive}
+                      onStartAudio={onStartExternalAudio} onStopAudio={onStopExternalAudio}/>
+                    {notificationAccessGranted&&<button type="button" className="upload-button" onClick={onRefreshExternalMedia}>
+                      <RefreshCw size={14}/> Refresh Song
+                    </button>}
 
                     <div className="external-detected-song">
                       {externalMedia && externalMedia.title ? (
@@ -349,50 +330,6 @@ function AudioSourceHub(
                       )}
                     </div>
 
-                    <div className="external-panel-row">
-                      <div>
-                        <strong>
-                          2. Audio Source for Visualizer Reactivity
-                        </strong>
-                        <small>
-                          Choose whether LyricFlow analyzes{" "}
-                          <b>Internal Audio</b> (device media output) or{" "}
-                          <b>Mic</b> (ambient microphone).
-                        </small>
-                      </div>
-                      <div
-                        className="source-pref-pills"
-                        role="group"
-                        aria-label="External player audio source"
-                      >
-                        <button
-                          type="button"
-                          className={
-                            externalAudioMode === "internal" ? "active" : ""
-                          }
-                          onClick={() =>
-                            onExternalAudioModeChange?.("internal")
-                          }
-                        >
-                          <Radio size={14} /> Internal Audio
-                        </button>
-                        <button
-                          type="button"
-                          className={
-                            externalAudioMode === "mic" ? "active" : ""
-                          }
-                          onClick={() => onExternalAudioModeChange?.("mic")}
-                        >
-                          <Mic size={14} /> Mic
-                        </button>
-                      </div>
-                    </div>
-
-                    {externalAudioStatus && (
-                      <p className="external-audio-status" role="status">
-                        {externalAudioStatus}
-                      </p>
-                    )}
                   </div>
                 )}
               </div>

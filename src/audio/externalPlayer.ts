@@ -21,7 +21,8 @@ export interface ExternalMediaState {
 }
 
 export interface ExternalMediaPluginInterface {
-  checkNotificationAccess(): Promise<{ granted: boolean }>;
+  checkNotificationAccess(): Promise<{ granted: boolean; androidSdk?: number }>;
+  openAppInfoSettings(): Promise<{ opened: boolean }>;
   openNotificationSettings(): Promise<{ opened: boolean }>;
   getCurrentMedia(): Promise<{ granted: boolean; media: ExternalMediaState | null }>;
   startListening(): Promise<{ listening: boolean; granted: boolean; media: ExternalMediaState | null }>;
@@ -31,6 +32,7 @@ export interface ExternalMediaPluginInterface {
   getYouTubeAuthStatus(): Promise<{ signedIn: boolean; cookie?: string }>;
   openYouTubeSignIn(): Promise<{ signedIn: boolean; cookie?: string }>;
   signOutYouTube(): Promise<{ signedIn: boolean }>;
+  addListener(eventName: 'notificationAccessChange', listenerFunc: (status: {granted:boolean;androidSdk?:number}) => void): Promise<PluginListenerHandle>;
   addListener(
     eventName: 'mediaChange',
     listenerFunc: (state: ExternalMediaState) => void
@@ -62,14 +64,28 @@ export function isAndroidApp(): boolean {
   }
 }
 
-export async function checkExternalNotificationAccess(): Promise<boolean> {
-  if (!isAndroidApp()) return false;
-  try {
-    const res = await ExternalMedia.checkNotificationAccess();
-    return Boolean(res?.granted);
-  } catch {
-    return false;
-  }
+export async function getExternalSetupStatus():Promise<{granted:boolean;androidSdk:number|null}>{
+  if(!isAndroidApp())return {granted:false,androidSdk:null};
+  try{
+    const result=await ExternalMedia.checkNotificationAccess();
+    return {granted:result.granted===true,androidSdk:typeof result.androidSdk==='number'&&Number.isFinite(result.androidSdk)?result.androidSdk:null};
+  }catch{return {granted:false,androidSdk:null};}
+}
+
+export async function checkExternalNotificationAccess():Promise<boolean>{
+  return (await getExternalSetupStatus()).granted;
+}
+
+export async function openExternalAppInfoSettings():Promise<boolean>{
+  if(!isAndroidApp())return false;
+  try{return (await ExternalMedia.openAppInfoSettings()).opened===true;}catch{return false;}
+}
+
+/** Native resume events cover WebViews that do not send a window focus event. */
+export async function watchExternalNotificationAccess(refresh:()=>void):Promise<()=>void>{
+  if(!isAndroidApp())return ()=>{};
+  try{const handle=await ExternalMedia.addListener('notificationAccessChange',refresh);return ()=>{void handle.remove();};}
+  catch{return ()=>{};}
 }
 
 export async function openExternalNotificationSettings(): Promise<boolean> {
@@ -106,6 +122,7 @@ export async function subscribeExternalMedia(
     return () => {};
   }
   let handle: PluginListenerHandle | null = null;
+  let stopWatching: (()=>void)|null=null;
   let cancelled = false;
   try {
     handle = await ExternalMedia.addListener('mediaChange', state => {
@@ -113,6 +130,9 @@ export async function subscribeExternalMedia(
       if (state && typeof state.title === 'string' && state.title.trim()) {
         onMediaChange(state, true);
       }
+    });
+    stopWatching=await watchExternalNotificationAccess(()=>{
+      void getCurrentExternalMedia().then(result=>{if(!cancelled)onMediaChange(result.media,result.granted);});
     });
     const initial = await ExternalMedia.startListening();
     if (!cancelled) {
@@ -128,6 +148,7 @@ export async function subscribeExternalMedia(
   return () => {
     cancelled = true;
     void handle?.remove();
+    stopWatching?.();
     void ExternalMedia.stopListening().catch(() => {});
   };
 }
@@ -136,7 +157,7 @@ let activeAudioCtx: AudioContext | null = null;
 let activeMediaStream: MediaStream | null = null;
 let activeCaptureListener: PluginListenerHandle | null = null;
 
-export async function stopExternalAudioCapture(): Promise<void> {
+async function releaseExternalAudioCapture(): Promise<void> {
   if (activeCaptureListener) {
     try {
       await activeCaptureListener.remove();
@@ -164,87 +185,57 @@ export async function stopExternalAudioCapture(): Promise<void> {
   connectExternalAudio(null);
 }
 
-/**
- * Starts audio reactivity capture for the External Player on Android:
- * - `'mic'`: Captures microphone input via Web Audio `AnalyserNode` (after ensuring Android RECORD_AUDIO permission).
- * - `'internal'`: Captures Android internal system output mix via native `Visualizer(0)` and feeds the 64-band analyzer.
- */
-export async function startExternalAudioCapture(
-  mode: ExternalAudioCaptureMode
-): Promise<{ ok: boolean; activeMode: ExternalAudioCaptureMode; message: string }> {
-  await stopExternalAudioCapture();
+let captureGeneration=0;
+let captureQueue:Promise<unknown>=Promise.resolve();
+function enqueueCapture<T>(task:()=>Promise<T>):Promise<T>{
+ const pending=captureQueue.then(task,task);captureQueue=pending.catch(()=>{});return pending;
+}
+export function stopExternalAudioCapture():Promise<void>{
+ ++captureGeneration;
+ return enqueueCapture(releaseExternalAudioCapture);
+}
 
-  if (!isAndroidApp()) {
-    return {
-      ok: false,
-      activeMode: mode,
-      message: 'External Player audio capture is only available in the Android app.',
-    };
+/** Explicit opt-in only; canceled permission prompts cannot leave a capture running. */
+export function startExternalAudioCapture(mode:ExternalAudioCaptureMode):Promise<{ok:boolean;activeMode:ExternalAudioCaptureMode;message:string}>{
+ const generation=++captureGeneration;
+ const cancelled=()=>generation!==captureGeneration;
+ const stopped=()=>({ok:false,activeMode:mode,message:'Audio capture cancelled.'});
+ return enqueueCapture(async()=>{
+  if(cancelled())return stopped();
+  await releaseExternalAudioCapture();
+  if(cancelled())return stopped();
+  if(!isAndroidApp())return {ok:false,activeMode:mode,message:'External Player audio capture is only available in the Android app.'};
+  if(!await checkExternalNotificationAccess())return {ok:false,activeMode:mode,message:'Enable notification listening before starting audio.'};
+  if(cancelled())return stopped();
+  try{
+   if(mode==='internal'){
+    activeCaptureListener=await ExternalMedia.addListener('audioCapture',payload=>{
+     if(!cancelled()&&Array.isArray(payload.fft)&&Array.isArray(payload.waveform))feedExternalVisualizerData(payload.waveform,payload.fft,'INTERNAL AUDIO');
+    });
+    if(cancelled()){await releaseExternalAudioCapture();return stopped();}
+    const result=await ExternalMedia.startAudioCapture({mode});
+    if(!result.started)throw Error('Internal audio capture did not start.');
+   }else{
+    const result=await ExternalMedia.startAudioCapture({mode});
+    if(!result.started)throw Error('Microphone permission was not granted.');
+    if(cancelled()){await releaseExternalAudioCapture();return stopped();}
+    if(!navigator.mediaDevices?.getUserMedia)throw Error('Microphone capture is unavailable in this Android WebView.');
+    activeMediaStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false});
+    if(cancelled()){await releaseExternalAudioCapture();return stopped();}
+    activeAudioCtx=new AudioContext();
+    const source=activeAudioCtx.createMediaStreamSource(activeMediaStream),analyser=activeAudioCtx.createAnalyser();
+    analyser.fftSize=2048;analyser.smoothingTimeConstant=.42;source.connect(analyser);
+    await activeAudioCtx.resume();
+    if(!cancelled())connectMicrophoneAudio(analyser);
+   }
+   const stillGranted=await checkExternalNotificationAccess();
+   if(cancelled()||!stillGranted){
+    await releaseExternalAudioCapture();return stopped();
+   }
+   return {ok:true,activeMode:mode,message:mode==='internal'?'Internal audio capture active · reacting to device media output':'Microphone audio capture active · reacting to ambient song audio'};
+  }catch(error){
+   await releaseExternalAudioCapture();
+   return {ok:false,activeMode:mode,message:cancelled()?'Audio capture cancelled.':error instanceof Error?error.message:mode==='internal'?'Internal audio is unavailable. Try Microphone.':'Microphone access was denied. Try again or check Android app permissions.'};
   }
-
-  if (mode === 'internal') {
-    try {
-      activeCaptureListener = await ExternalMedia.addListener('audioCapture', payload => {
-        if (payload && Array.isArray(payload.fft) && Array.isArray(payload.waveform)) {
-          feedExternalVisualizerData(payload.waveform, payload.fft, 'INTERNAL AUDIO');
-        }
-      });
-      await ExternalMedia.startAudioCapture({ mode: 'internal' });
-      return {
-        ok: true,
-        activeMode: 'internal',
-        message: 'Internal audio capture active · reacting to device media output',
-      };
-    } catch (err) {
-      await stopExternalAudioCapture();
-      return {
-        ok: false,
-        activeMode: 'internal',
-        message:
-          err instanceof Error
-            ? err.message
-            : 'Internal audio capture failed. Try switching audio source to Mic.',
-      };
-    }
-  }
-
-  // Microphone mode
-  try {
-    await ExternalMedia.startAudioCapture({ mode: 'mic' });
-    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
-        video: false,
-      });
-      const ctx = new AudioContext();
-      const source = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 2048;
-      analyser.smoothingTimeConstant = 0.42;
-      source.connect(analyser);
-      await ctx.resume();
-      activeMediaStream = stream;
-      activeAudioCtx = ctx;
-      connectMicrophoneAudio(analyser);
-    }
-    return {
-      ok: true,
-      activeMode: 'mic',
-      message: 'Microphone audio capture active · reacting to ambient song audio',
-    };
-  } catch (err) {
-    await stopExternalAudioCapture();
-    return {
-      ok: false,
-      activeMode: 'mic',
-      message:
-        err instanceof Error
-          ? err.message
-          : 'Microphone access was denied. Grant audio permission in Android settings.',
-    };
-  }
+ });
 }

@@ -3,10 +3,13 @@ package com.steveharrisantony.lyricflow;
 import android.Manifest;
 import android.app.Activity;
 import android.app.Dialog;
+import android.app.NotificationManager;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.graphics.Color;
 import android.media.audiofx.Visualizer;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
@@ -53,6 +56,12 @@ public class ExternalMediaPlugin extends Plugin {
     public void load() {
         super.load();
         activeInstance = this;
+    }
+
+    @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        notifyListeners("notificationAccessChange", notificationAccessStatus(), false);
     }
 
     @Override
@@ -261,25 +270,67 @@ public class ExternalMediaPlugin extends Plugin {
 
     private boolean hasNotificationListenerAccess() {
         if (getContext() == null) return false;
+        ComponentName cn = new ComponentName(getContext(), MediaNotificationService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            NotificationManager manager = getContext().getSystemService(NotificationManager.class);
+            if (manager != null) return manager.isNotificationListenerAccessGranted(cn);
+        }
         String flat = Settings.Secure.getString(
             getContext().getContentResolver(),
             "enabled_notification_listeners"
         );
         if (flat == null || flat.isEmpty()) return false;
-        ComponentName cn = new ComponentName(getContext(), MediaNotificationService.class);
-        return flat.contains(cn.flattenToString()) || flat.contains(getContext().getPackageName());
+        for (String entry : flat.split(":")) {
+            if (cn.equals(ComponentName.unflattenFromString(entry))) return true;
+        }
+        return false;
+    }
+
+    private JSObject notificationAccessStatus() {
+        JSObject ret = new JSObject();
+        ret.put("granted", hasNotificationListenerAccess());
+        ret.put("androidSdk", Build.VERSION.SDK_INT);
+        return ret;
     }
 
     @PluginMethod
     public void checkNotificationAccess(PluginCall call) {
-        JSObject ret = new JSObject();
-        ret.put("granted", hasNotificationListenerAccess());
-        call.resolve(ret);
+        call.resolve(notificationAccessStatus());
+    }
+
+    @PluginMethod
+    public void openAppInfoSettings(PluginCall call) {
+        try {
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.fromParts("package", getContext().getPackageName(), null));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            JSObject ret = new JSObject();
+            ret.put("opened", true);
+            call.resolve(ret);
+        } catch (Exception error) {
+            call.reject("Unable to open LyricFlow App info. Open Android Settings > Apps > LyricFlow.", error);
+        }
     }
 
     @PluginMethod
     public void openNotificationSettings(PluginCall call) {
         try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    Intent detail = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS);
+                    detail.putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME,
+                        new ComponentName(getContext(), MediaNotificationService.class).flattenToString());
+                    detail.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    getContext().startActivity(detail);
+                    JSObject ret = new JSObject();
+                    ret.put("opened", true);
+                    call.resolve(ret);
+                    return;
+                } catch (Exception ignored) {
+                    // Some OEMs expose only the general notification-access list.
+                }
+            }
             Intent intent = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             getContext().startActivity(intent);
@@ -309,9 +360,17 @@ public class ExternalMediaPlugin extends Plugin {
     public void startListening(PluginCall call) {
         stopPollingInternal();
         pollRunnable = new Runnable() {
+            private Boolean lastGranted = null;
+
             @Override
             public void run() {
-                if (hasNotificationListenerAccess()) {
+                boolean granted = hasNotificationListenerAccess();
+                if (lastGranted == null || lastGranted.booleanValue() != granted) {
+                    lastGranted = granted;
+                    if (!granted) stopVisualizerInternal();
+                    notifyListeners("notificationAccessChange", notificationAccessStatus(), false);
+                }
+                if (granted) {
                     MediaNotificationService.refreshFromActiveSessions(getContext());
                 }
                 handler.postDelayed(this, 350);
@@ -338,6 +397,10 @@ public class ExternalMediaPlugin extends Plugin {
 
     @PluginMethod
     public void startAudioCapture(PluginCall call) {
+        if (!hasNotificationListenerAccess()) {
+            call.reject("Enable notification listening before starting External Player audio.");
+            return;
+        }
         if (getPermissionState("audio") != PermissionState.GRANTED) {
             requestPermissionForAlias("audio", call, "audioPermissionCallback");
             return;
@@ -355,6 +418,10 @@ public class ExternalMediaPlugin extends Plugin {
     }
 
     private void startCaptureWithPermission(PluginCall call) {
+        if (!hasNotificationListenerAccess()) {
+            call.reject("Notification access was removed. Enable it before starting audio.");
+            return;
+        }
         String mode = call.getString("mode", "internal");
         stopVisualizerInternal();
         if ("internal".equalsIgnoreCase(mode)) {

@@ -161,8 +161,10 @@ it('switches external advertisements to themes, aborts video search and unmounts
   try{
     await act(async()=>click('Select source'));
     await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('.source-option-card')].find(b=>b.textContent?.includes('External player'))!.click());
+    expect(capture).not.toHaveBeenCalled();
     const media={title:'Original fixture song',artist:'Fixture Artist',album:'',duration:200,position:1,playing:true,packageName:'fixture.player',appName:'Fixture Player',updatedAt:Date.now()};
     await act(async()=>deliver!(media,true));
+    expect(capture).not.toHaveBeenCalled();
     expect(host.querySelector('[data-testid="lyrics-lookup"]')).not.toBeNull();
     const calls=vi.mocked(searchStashCatalog).mock.calls;
     const searchSignal=calls.at(-1)?.[3];
@@ -392,4 +394,26 @@ it('saves independent lyric padding and placement-box controls without changing 
  await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App/>));
  for(const [label,value] of Object.entries(controls))expect(input(label).value).toBe(String(value));
  expect(input('Minimum lyric font size').value).toBe('26');expect(input('Maximum lyric font size').value).toBe('88');
+});
+
+it('requests External Player audio only after Start and stops it when notification access is revoked',async()=>{
+ const external=await import('../audio/externalPlayer');
+ let granted=true;
+ const status=vi.spyOn(external,'getExternalSetupStatus').mockImplementation(async()=>({granted,androidSdk:35}));
+ const subscribe=vi.spyOn(external,'subscribeExternalMedia').mockImplementation(async callback=>{callback(null,true);return()=>{};});
+ const capture=vi.spyOn(external,'startExternalAudioCapture').mockResolvedValue({ok:true,activeMode:'mic',message:'Fixture capture active'});
+ const stop=vi.spyOn(external,'stopExternalAudioCapture').mockResolvedValue();
+ external.setAndroidAppOverrideForTest(true);
+ try{
+  await act(async()=>click('Select source'));
+  await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('.source-option-card')].find(b=>b.textContent?.includes('External player'))!.click());
+  expect(capture).not.toHaveBeenCalled();
+  await act(async()=>click('Microphone'));expect(capture).not.toHaveBeenCalled();
+  await act(async()=>click('Start microphone'));expect(capture).toHaveBeenCalledExactlyOnceWith('mic');
+  expect(host.textContent).toContain('Fixture capture active');
+  const stopCount=stop.mock.calls.length;granted=false;
+  await act(async()=>window.dispatchEvent(new Event('focus')));
+  expect(stop.mock.calls.length).toBeGreaterThan(stopCount);
+  expect([...host.querySelectorAll('button')].some(b=>b.textContent==='Stop audio capture')).toBe(false);
+ }finally{external.setAndroidAppOverrideForTest(null);status.mockRestore();subscribe.mockRestore();capture.mockRestore();stop.mockRestore();}
 });

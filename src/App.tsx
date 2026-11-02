@@ -21,7 +21,6 @@ import AudioSourceHub, {
 } from "./audio/AudioSourceHub";
 import {
   getCurrentExternalMedia,
-  openExternalNotificationSettings,
   startExternalAudioCapture,
   stopExternalAudioCapture,
   subscribeExternalMedia,
@@ -252,6 +251,9 @@ export default function App({ user = null }: { user?: User | null }) {
   const [notificationAccessGranted, setNotificationAccessGranted] =
     useState<boolean>(false);
   const [externalAudioStatus, setExternalAudioStatus] = useState<string>("");
+  const [externalAudioStarting, setExternalAudioStarting] = useState(false);
+  const [externalAudioActive, setExternalAudioActive] = useState(false);
+  const externalCaptureRequest=useRef(0);
 
   // Visualizer & VoxelWall / VoxelVerse filter state
   const [,] = useState<"all" | VoxelWallCategory | "enabled">("all");
@@ -1338,21 +1340,25 @@ export default function App({ user = null }: { user?: User | null }) {
     };
   }, [sourceMode]);
 
-  // Android External Player: start/stop Mic or Internal Audio reactivity capture
-  useEffect(() => {
-    if (sourceMode !== "external") {
-      void stopExternalAudioCapture();
-      setExternalAudioStatus("");
-      return;
-    }
-    let cancelled = false;
-    void startExternalAudioCapture(externalAudioMode).then((res) => {
-      if (!cancelled) setExternalAudioStatus(res.message);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [sourceMode, externalAudioMode]);
+  // Selecting External Player never requests audio. Capture follows the explicit setup action.
+  useEffect(()=>{
+    ++externalCaptureRequest.current;
+    setExternalAudioStarting(false);setExternalAudioActive(false);setExternalAudioStatus('');
+    void stopExternalAudioCapture();
+    return()=>{++externalCaptureRequest.current;void stopExternalAudioCapture();};
+  },[sourceMode,externalAudioMode,notificationAccessGranted]);
+  const startExternalAudio=async()=>{
+    if(sourceMode!=="external"||!notificationAccessGranted||externalAudioStarting)return;
+    const request=++externalCaptureRequest.current;
+    setExternalAudioStarting(true);setExternalAudioStatus('Waiting for Android audio permission…');
+    const result=await startExternalAudioCapture(externalAudioMode);
+    if(request!==externalCaptureRequest.current)return;
+    setExternalAudioStarting(false);setExternalAudioActive(result.ok);setExternalAudioStatus(result.message);
+  };
+  const stopExternalAudio=()=>{
+    ++externalCaptureRequest.current;setExternalAudioStarting(false);setExternalAudioActive(false);
+    setExternalAudioStatus('Audio capture stopped.');void stopExternalAudioCapture();
+  };
 
   // Smoothly advance playback clock between notification ticks when External Player is playing
   useEffect(() => {
@@ -2550,9 +2556,11 @@ export default function App({ user = null }: { user?: User | null }) {
         onExternalAudioModeChange={setExternalAudioMode}
         externalMedia={externalMedia}
         notificationAccessGranted={notificationAccessGranted}
-        onRequestNotificationAccess={() =>
-          void openExternalNotificationSettings()
-        }
+        onNotificationAccessChange={setNotificationAccessGranted}
+        externalAudioStarting={externalAudioStarting}
+        externalAudioActive={externalAudioActive}
+        onStartExternalAudio={()=>void startExternalAudio()}
+        onStopExternalAudio={stopExternalAudio}
         onRefreshExternalMedia={() => {
           void getCurrentExternalMedia().then((res) => {
             setNotificationAccessGranted(res.granted);

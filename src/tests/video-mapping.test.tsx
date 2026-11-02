@@ -202,7 +202,7 @@ it('detects Spotify advertisements and pauses lyrics lookup during ads',async()=
   expect(onStatusChange).toHaveBeenCalledWith(expect.stringContaining('Advertisement playing'));
 });
 
-it('shows External player as Not available in web on browsers and enables Notification + Mic/Internal Audio on Android app',async()=>{
+it('keeps External player unavailable in browsers and starts Android setup before audio controls',async()=>{
   const {default:AudioSourceHub}=await import('../audio/AudioSourceHub');
   const {setAndroidAppOverrideForTest}=await import('../audio/externalPlayer');
   setAndroidAppOverrideForTest(false);
@@ -229,9 +229,8 @@ it('shows External player as Not available in web on browsers and enables Notifi
   const androidExtCard=Array.from(host.querySelectorAll<HTMLButtonElement>('.source-option-card')).find(b=>b.textContent?.includes('External player'))!;
   await act(async()=>androidExtCard.click());
   expect(selectedMode).toBe('external');
-  expect(host.textContent).toContain('Android Notification Listening');
-  expect(host.textContent).toContain('Internal Audio');
-  expect(host.textContent).toContain('Mic');
+  expect(host.textContent).toContain('Allow restricted settings');
+  expect(host.querySelector('[aria-label="External player audio source"]')).toBeNull();
   setAndroidAppOverrideForTest(null);
 });
 
