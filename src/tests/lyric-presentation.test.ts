@@ -298,3 +298,14 @@ it('animates combining marks and emoji as whole graphemes in the word-only layer
  expect(result.result.glyphs).toBe(3);
  expect(result.paints.map(p=>p.text)).toEqual(['a\u0301','🙂','b']);
 });
+
+it('applies independent pixel minimum and maximum sizes even when overall scaling is supplied',()=>{
+ const fontSize=(output:ReturnType<typeof render>)=>Number(output.c.font.match(/([\d.]+)px/)?.[1]);
+ expect(fontSize(render({minFontSize:24,maxFontSize:42,fontScale:1.8,animated:false}))).toBeLessThanOrEqual(42);
+ const short={...cue,text:'Hi',romanized:'',words:[],timing:'estimated' as const};
+ const raised=fontSize(render({cue:short,w:360,h:203,minFontSize:60,maxFontSize:90,fontScale:.5,animated:false}));
+ expect(raised).toBeGreaterThanOrEqual(60);expect(raised).toBeLessThanOrEqual(90);
+ const low=fontSize(render({cue:short,minFontSize:24,maxFontSize:40,fontScale:1,animated:false}));
+ const high=fontSize(render({cue:short,minFontSize:24,maxFontSize:90,fontScale:1,animated:false}));
+ expect(high).toBeGreaterThan(low);expect(low).toBeLessThanOrEqual(40);expect(high).toBeLessThanOrEqual(90);
+});

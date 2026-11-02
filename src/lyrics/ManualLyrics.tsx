@@ -32,8 +32,10 @@ import { parseLRC, type TimedWord } from "./lrc";
 import {
   buildCues,
   computeNaturalLineEnd,
+  nextLyricTime,
   setLyricTimeline,
 } from "./lyricTimeline";
+import {lyricFontBounds} from './fontSizing';
 import { clampLyricDelay, effectiveLyricTime } from "./lyricTiming";
 import { analyzeSections } from "./sceneDirector";
 import { saveUserLyrics } from "./userLibrary";
@@ -473,15 +475,15 @@ export default function ManualLyrics({
   useLayoutEffect(() => {
     onLyricContentChange?.(raw, sourceUrl, source, offset);
   }, [raw, sourceUrl, source, offset, onLyricContentChange]);
-  const lines = useMemo(() => parseLRC(raw), [raw]);
-  const romanLines = useMemo(() => parseLRC(roman), [roman]);
+  const lines = useMemo(() => parseLRC(raw,track?.duration), [raw,track?.duration]);
+  const romanLines = useMemo(() => parseLRC(roman,track?.duration), [roman,track?.duration]);
   const language = useMemo(() => detectLanguage(raw || plain), [raw, plain]);
   const sections = useMemo(() => analyzeSections(lines, genre), [lines, genre]);
   const storyboard = useMemo(
     () =>
       buildCinematicSchedule(
         sections,
-        buildCues(lines, romanLines, genre),
+        buildCues(lines, romanLines, genre, track?.duration),
         genre,
         lines
           .map((l) => l.text)
@@ -489,18 +491,18 @@ export default function ManualLyrics({
           .slice(0, 1500),
         enabledScenes,
       ),
-    [sections, lines, romanLines, genre, enabledScenes],
+    [sections, lines, romanLines, genre, enabledScenes, track?.duration],
   );
 
   useEffect(() => {
     setLyricTimeline(
-      buildCues(lines, romanLines, genre),
+      buildCues(lines, romanLines, genre, track?.duration),
       offset - delay,
       mode,
       genre,
     );
     return () => setLyricTimeline([]);
-  }, [lines, romanLines, offset, delay, mode, genre]);
+  }, [lines, romanLines, offset, delay, mode, genre, track?.duration]);
 
   useEffect(() => {
     if (!incoming) return;
@@ -685,7 +687,7 @@ export default function ManualLyrics({
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].time <= lyricTime) {
       idx = i;
-      const lEnd = computeNaturalLineEnd(lines[i], lines[i + 1]?.time);
+      const lEnd = computeNaturalLineEnd(lines[i], nextLyricTime(lines,i), track?.duration);
       if (
         lines[i].text.trim().length > 0 &&
         lyricTime < lEnd &&
@@ -703,12 +705,12 @@ export default function ManualLyrics({
   const candidateEnd = useMemo(
     () =>
       candidate
-        ? computeNaturalLineEnd(candidate, lines[primaryIdx + 1]?.time)
+        ? computeNaturalLineEnd(candidate, nextLyricTime(lines,primaryIdx), track?.duration)
         : 0,
-    [candidate, lines, primaryIdx],
+    [candidate, lines, primaryIdx, track?.duration],
   );
 
-  // Do NOT hold previous lyrics during pause or instrumental music breaks!
+  // Source end times and blank markers clear lyrics during vocal breaks.
   const isWithinVocalWindow = activeLineIndices.length > 0;
   const current = isWithinVocalWindow ? lines[activeLineIndices[0]] : undefined;
   const duetPartnerLine =
@@ -860,29 +862,11 @@ export default function ManualLyrics({
     [secondaryLineText],
   );
 
-  // Proportional lyric font scale (50% to 180%, default 100%)
-  const effectiveScale = Math.max(
-    0.5,
-    Math.min(
-      1.8,
-      Number.isFinite(fontScale)
-        ? fontScale
-        : (minFontSize / 26 + maxFontSize / 88) * 0.5,
-    ),
-  );
-  const fontScalePct = Math.round(effectiveScale * 100);
-  const stageFontSizeCss = `calc(${effectiveScale.toFixed(2)} * clamp(15px, 2.6vw, 28px))`;
-  const handleScalePctChange = (pct: number) => {
-    const clampedPct = Math.max(50, Math.min(180, Math.round(pct)));
-    const nextScale = clampedPct / 100;
-    onFontScaleChange?.(nextScale);
-    onMinFontSizeChange?.(
-      Math.max(16, Math.min(72, Math.round(26 * nextScale))),
-    );
-    onMaxFontSizeChange?.(
-      Math.max(32, Math.min(130, Math.round(88 * nextScale))),
-    );
-  };
+  const effectiveScale=Math.max(.5,Math.min(1.8,Number.isFinite(fontScale)?fontScale:1));
+  const fontScalePct=Math.round(effectiveScale*100);
+  const fontBounds=lyricFontBounds(minFontSize,maxFontSize);
+  const stageFontSizeCss=`clamp(${fontBounds.min}px, calc(${effectiveScale.toFixed(2)} * 2.6vw), ${fontBounds.max}px)`;
+  const handleScalePctChange=(pct:number)=>onFontScaleChange?.(Math.max(50,Math.min(180,Math.round(pct)))/100);
 
   // Instrumental interlude indicator when between vocal lines
   const interludeProgress = useMemo(() => {
@@ -1492,6 +1476,17 @@ export default function ManualLyrics({
               onChange={(e) => handleScalePctChange(Number(e.target.value))}
             />
           </label>
+          <label>
+            Minimum font size ({fontBounds.min}px)
+            <input aria-label="Minimum lyric font size" type="range" min="16" max="72" step="1" value={fontBounds.min}
+              onChange={e=>onMinFontSizeChange?.(Number(e.target.value))}/>
+          </label>
+          <label>
+            Maximum font size ({fontBounds.max}px)
+            <input aria-label="Maximum lyric font size" type="range" min="32" max="130" step="1" value={fontBounds.max}
+              onChange={e=>onMaxFontSizeChange?.(Number(e.target.value))}/>
+          </label>
+          <p className="muted">Limits apply before animation. Long lines shrink further to fit.</p>
           <label>
             Genre
             <select value={genre} onChange={(e) => setGenre(e.target.value)}>

@@ -408,11 +408,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const [lyricFontScale, setLyricFontScale] = useState<number>(() => {
     const saved = Number(initialExtended.lyricFontScale);
     if (Number.isFinite(saved) && saved >= 0.5 && saved <= 1.8) return saved;
-    const derived =
-      (initialPrefs.lyricMinFontSize / 26 +
-        initialPrefs.lyricMaxFontSize / 88) *
-      0.5;
-    return Math.max(0.5, Math.min(1.8, Math.round(derived * 20) / 20 || 1));
+    return 1;
   });
   const [themePalettes, setThemePalettes] = useState<Record<string, string>>(
     initialPrefs.themePalettes,
@@ -685,18 +681,6 @@ export default function App({ user = null }: { user?: User | null }) {
     setCameraShakeSensitivity(prefs.cameraShakeSensitivity);
     setLyricMinFontSize(prefs.lyricMinFontSize);
     setLyricMaxFontSize(prefs.lyricMaxFontSize);
-    const syncedScale = Math.max(
-      0.5,
-      Math.min(
-        1.8,
-        Math.round(
-          (prefs.lyricMinFontSize / 26 + prefs.lyricMaxFontSize / 88) *
-            0.5 *
-            20,
-        ) / 20,
-      ),
-    );
-    setLyricFontScale(syncedScale);
     setThemePalettes(prefs.themePalettes);
     const d = prefs.display;
     setPreferredVideoType(d.preferredVideoType);
@@ -900,12 +884,6 @@ export default function App({ user = null }: { user?: User | null }) {
       Math.min(1.8, Math.round(scale * 20) / 20),
     );
     setLyricFontScale(clampedScale);
-    setLyricMinFontSize(
-      Math.max(16, Math.min(72, Math.round(26 * clampedScale))),
-    );
-    setLyricMaxFontSize(
-      Math.max(32, Math.min(130, Math.round(88 * clampedScale))),
-    );
   };
 
   const handleMinFontSizeChange = (val: number) => {
@@ -914,9 +892,6 @@ export default function App({ user = null }: { user?: User | null }) {
     if (clamped > lyricMaxFontSize) {
       setLyricMaxFontSize(clamped);
     }
-    setLyricFontScale(
-      Math.max(0.5, Math.min(1.8, Math.round((clamped / 26) * 20) / 20)),
-    );
   };
 
   const handleMaxFontSizeChange = (val: number) => {
@@ -925,9 +900,6 @@ export default function App({ user = null }: { user?: User | null }) {
     if (clamped < lyricMinFontSize) {
       setLyricMinFontSize(Math.max(16, clamped));
     }
-    setLyricFontScale(
-      Math.max(0.5, Math.min(1.8, Math.round((clamped / 88) * 20) / 20)),
-    );
   };
 
   const handleSaveCustomOverride = (lrc: string) => {

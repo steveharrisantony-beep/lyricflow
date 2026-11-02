@@ -1,4 +1,5 @@
 import type {LyricCue} from '../../lyrics/lyricTimeline';
+import {lyricFontBounds} from '../../lyrics/fontSizing';
 import {wordEmphasis,type WordEmphasis} from '../../lyrics/wordEmphasis';
 import {hasDistinctRomanized} from '../../romanization/romanize';
 import {byId,resolveThemePalette,TEMPLATES,type DirectedScene,type FontPack} from './catalog';
@@ -7,7 +8,7 @@ import {lightLyricColor,vibrantLyricColor,paintLyric,readableChromaticInk,readab
 import type {AlbumArtLyricPalette,TextGlow} from './contrast';
 import {drawCurrentWordAccent,type CurrentWordStyle} from './currentWordStyles';
 import {currentWordAnimationPose,type CurrentWordAnimation} from './currentWordAnimations';
-import {buildLetterUnits,choreographyPhase,letterMotionPose,lineMotionPose,phraseTracking,type LetterUnit} from './letterMotion';
+import {buildLetterUnits,choreographyDuration,choreographyPhase,letterMotionPose,lineMotionPose,phraseTracking,type LetterUnit} from './letterMotion';
 import {makeLyricProjection,STILL_CAMERA,type ProjectPoint} from './cameraRig';
 
 /** Keep the original twelve in their original order; new designs append to this catalog. */
@@ -554,17 +555,11 @@ export function drawKineticLyrics({
   :resolveCuePlacement(cue,scene,placementMode,enabledPlacements);
  const cueParity=cueIndex%2;
 
- // Proportional font scale factor: ensures lyrics maintain the exact same proportion
- // relative to the stage in both normal view and full screen view.
- const derivedScale=
-  typeof fontScale==='number'&&Number.isFinite(fontScale)
-   ?fontScale
-   :((minFontSize/26)+(maxFontSize/88))*0.5;
- const scaleFactor=clamp(derivedScale,0.45,2.0);
- const proportionalMinFont=Math.max(10,unit*0.052*scaleFactor);
- const proportionalMaxFont=Math.max(proportionalMinFont,unit*0.21*scaleFactor);
+ // Keep a responsive preferred size inside two independent CSS-pixel bounds.
+ const scaleFactor=clamp(typeof fontScale==='number'&&Number.isFinite(fontScale)?fontScale:1,.45,2);
+ const {min:minimumFont,max:maximumFont}=lyricFontBounds(minFontSize,maxFontSize);
  const fontRev=getFontLoadRevision();
- const layoutKey=`${cue.time}|${cue.end}|${cue.text}|${cue.romanized}|${cue.words.length}|${mode}|${font}|${fontRev}|${w}|${h}|${scaleFactor.toFixed(3)}|${motion}|${activePlacement}|${duetSide||''}|${wordAnimationsEnabled}|${wordStylesEnabled}`;
+ const layoutKey=`${cue.time}|${cue.end}|${cue.text}|${cue.romanized}|${cue.words.length}|${mode}|${font}|${fontRev}|${w}|${h}|${scaleFactor.toFixed(3)}|${minimumFont}|${maximumFont}|${motion}|${activePlacement}|${duetSide||''}|${wordAnimationsEnabled}|${wordStylesEnabled}`;
 
  let runs:LyricRun[];
  let placements:WordPlacement[];
@@ -583,7 +578,7 @@ export function drawKineticLyrics({
   runs=lyricRuns(cue,mode,emphasis);
   const duetScale=duetSide?0.78:1;
   const rawBaseline=unit*(runs.length<=3?0.155:runs.length<=6?0.128:runs.length<=10?0.108:0.092)*duetScale*scaleFactor;
-  const baseline=clamp(rawBaseline,proportionalMinFont,proportionalMaxFont);
+  const baseline=clamp(rawBaseline,minimumFont,maximumFont);
   const space=baseline*((wordAnimationsEnabled||wordStylesEnabled)?0.44:0.30);
   const widths=runs.map(word=>{
    applySceneFont(c,font,baseline,word.text);
@@ -604,8 +599,8 @@ export function drawKineticLyrics({
   const heightFit=availHeight/Math.max(1,totalRowsCount*baseline*1.38);
   const maxAllowedFit=Math.min(1.15,widthFit,heightFit);
   const maxSafeFont=Math.max(9,baseline*maxAllowedFit);
-  const effectiveMinFont=Math.min(proportionalMinFont,maxSafeFont);
-  size=clamp(baseline*maxAllowedFit,effectiveMinFont,Math.min(proportionalMaxFont,maxSafeFont));
+  const effectiveMinFont=Math.min(minimumFont,maxSafeFont);
+  size=clamp(baseline*maxAllowedFit,effectiveMinFont,Math.min(maximumFont,maxSafeFont));
   fit=size/Math.max(1,baseline);
   joinedText=runs.map(word=>word.text).join(' ');
   units=runs.map(word=>{applySceneFont(c,font,size,word.text);return buildLetterUnits(c,word.text);});
@@ -630,6 +625,7 @@ export function drawKineticLyrics({
   :cue.end;
  const duration=Math.max(.18,vocalEnd-cue.time);
  const progress=clamp(age/duration);
+ const motionDuration=choreographyDuration(duration,(cue.vocalEnd??vocalEnd)-cue.time);
 
  const origin=project(0,0,0),one=project(1,0,0);
  const pixelsPerWorld=Math.max(10,Math.hypot(one.x-origin.x,one.y-origin.y));
@@ -685,7 +681,7 @@ export function drawKineticLyrics({
   glyphs:renderLetters?unitCount:runs.length,
   letterMode:units.every(parts=>parts[0]?.connected)?'shaped':units.some(parts=>parts[0]?.connected)?'mixed':'letters',
   wordAnimation:activeWordAnimation,
-  motionPhase:choreographyPhase(age,duration,energy>.001)
+  motionPhase:choreographyPhase(age,motionDuration,energy>.001)
   };
  }
 
@@ -902,7 +898,7 @@ export function drawKineticLyrics({
   if(scaledMinY<boundTop)shiftY=boundTop-scaledMinY;
   else if(scaledMaxY>boundBottom)shiftY=boundBottom-scaledMaxY;
 
-  const linePose=lineMotionPose(motion,age,duration,cueIndex,w,energy);
+  const linePose=lineMotionPose(motion,age,motionDuration,cueIndex,w,energy);
   c.save();
   c.beginPath();c.rect(boundLeft,boundTop,boundRight-boundLeft,maxAllowedH);c.clip();
   const lineX=motion==='curtain-sweep'?clamp(linePose.x,-panReserve,panReserve):linePose.x;
@@ -928,13 +924,13 @@ export function drawKineticLyrics({
 
    // Every sung word in this cue shares its contrast-adjusted line accent.
    if(activeWordStyle!=='off'&&isActive){
-    c.save();c.globalAlpha*=letterMotionPose(motion,age,unitOffsets[word.index],unitCount,energy,true,duration,cueIndex).alpha;
+    c.save();c.globalAlpha*=letterMotionPose(motion,age,unitOffsets[word.index],unitCount,energy,true,motionDuration,cueIndex).alpha;
     drawCurrentWordAccent(c,activeWordStyle,measuredW,size,wordProgress,sungColor);c.restore();
    }
 
    const parts=renderLetters?units[word.index]:[{text:word.text,center:0,width:measuredW,index:0,count:1,connected:true}];
    for(const part of parts){
-    const pose=letterMotionPose(motion,age,unitOffsets[word.index]+part.index,unitCount,energy,part.connected,duration,cueIndex);
+    const pose=letterMotionPose(motion,age,unitOffsets[word.index]+part.index,unitCount,energy,part.connected,motionDuration,cueIndex);
     const wordPose=currentWordAnimationPose(isActive?activeWordAnimation:'off',wordProgress,wordAnimationEnergy,part.index,part.count);
     const glyphGlow=wordPose.glow>.001?{color:sungColor,blur:Math.min(28,size*wordPose.glow)}:undefined;
     c.save();
@@ -974,6 +970,6 @@ export function drawKineticLyrics({
   glyphs:renderLetters?unitCount:runs.length,
   letterMode:units.every(parts=>parts[0]?.connected)?'shaped':units.some(parts=>parts[0]?.connected)?'mixed':'letters',
   wordAnimation:activeWordAnimation,
-  motionPhase:choreographyPhase(age,duration,energy>.001)
+  motionPhase:choreographyPhase(age,motionDuration,energy>.001)
  };
 }

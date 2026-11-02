@@ -361,3 +361,20 @@ it('enables the expanded catalog for an old all-enabled install, then preserves 
  expect(saved.enabledKineticMotions).toEqual([...ORIGINAL_LYRIC_MOTIONS]);
  expect(saved.motionCatalogVersion).toBe(2);
 });
+
+it('adjusts font-size limits independently of the overall slider and restores them after reload',async()=>{
+ const input=(label:string)=>host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+ const set=async(label:string,value:number)=>act(async()=>{
+  const control=input(label);expect(control).not.toBeNull();
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(control,String(value));
+  control.dispatchEvent(new Event('input',{bubbles:true}));control.dispatchEvent(new Event('change',{bubbles:true}));
+ });
+ await set('Minimum lyric font size',60);
+ expect(input('Minimum lyric font size').value).toBe('60');expect(input('Lyrics font size scale').value).toBe('100');
+ await set('Maximum lyric font size',40);
+ expect(input('Maximum lyric font size').value).toBe('40');expect(input('Minimum lyric font size').value).toBe('40');
+ await set('Lyrics font size scale',150);
+ expect(input('Maximum lyric font size').value).toBe('40');expect(input('Minimum lyric font size').value).toBe('40');
+ await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App/>));
+ expect(input('Lyrics font size scale').value).toBe('150');expect(input('Maximum lyric font size').value).toBe('40');expect(input('Minimum lyric font size').value).toBe('40');
+});

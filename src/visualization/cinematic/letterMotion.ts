@@ -20,7 +20,12 @@ export function buildLetterUnits(c:CanvasRenderingContext2D,text:string):LetterU
  });
 }
 
-export const choreographyTiming=(duration:number)=>({intro:Math.min(.58,duration*.28),outro:Math.min(.30,duration*.14)});
+const OUTRO_MAX=.30,OUTRO_FRACTION=.14;
+export const choreographyTiming=(duration:number)=>({intro:Math.min(.58,duration*.28),outro:Math.min(OUTRO_MAX,duration*OUTRO_FRACTION)});
+export function choreographyDuration(displayDuration:number,earliestOutroAge:number){
+ const vocalAge=Math.max(0,earliestOutroAge);
+ return Math.max(displayDuration,Math.min(vocalAge/(1-OUTRO_FRACTION),vocalAge+OUTRO_MAX));
+}
 export function choreographyPhase(age:number,duration:number,animated=true):'intro'|'hold'|'outro'|'still'{
  if(!animated)return 'still';
  const timing=choreographyTiming(duration);

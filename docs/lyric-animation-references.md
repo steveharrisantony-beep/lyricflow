@@ -93,3 +93,25 @@ and `node scripts/lyric-presentation-smoke.mjs`. The catalog check can capture a
 pixel baseline with `--baseline` before modifying the original twelve designs.
 Browser scripts accept `CHROME_PATH` for an installed Chromium executable.
 Android APK and emulator builds require an explicit user request.
+
+## Font limits and slow-line visibility
+
+Minimum and maximum font controls are independent CSS-pixel bounds for base text.
+The overall percentage selects a preferred size within that range and does not
+rewrite either bound. Long lines wrap first; an oversized line can shrink below
+the chosen minimum to remain inside the stage. Animation emphasis is applied after
+base sizing. The editor preview follows the same bounds instead of a fixed 22px rule.
+
+Line-only lyrics follow their next distinct timestamp, with known track duration
+used for a final line. There is no 4.8-second word-count cutoff. Blank timestamps,
+explicit line-end markers and sourced word ends clear real instrumental gaps.
+An unspecified final enhanced-LRC word extends through its timed interval instead
+of being assumed to last 0.6 seconds. TTML line ends and parent ends for an
+untimed final span survive conversion. When no next boundary or media duration is
+available, the editor uses a finite estimated tail.
+
+Animation outros do not start before the last known sung end. A cue whose vocal
+end is uncertain stays fully visible through its next timestamp; it is replaced
+at that boundary rather than fading early. Known ends keep room for an outro when
+the source interval allows it. `scripts/lyric-size-timing-smoke.mjs` covers the
+controls, responsive layouts, font bounds and all 25 animations at late vocal times.

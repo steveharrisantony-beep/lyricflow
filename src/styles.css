@@ -1071,7 +1071,8 @@ summary > span {
   display: none;
 }
 .spicy-word-line {
-  font-size: 22px !important;
+  font-size: 22px;
+  overflow-wrap: anywhere;
   font-weight: 700;
   line-height: 1.6;
   margin: 4px 0;

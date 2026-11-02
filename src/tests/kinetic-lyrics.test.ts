@@ -64,14 +64,14 @@ describe('single-phrase typography & sequential lyric colour engine',()=>{
   expect(fontSpec('ultra',70,'Thunder')).toContain('800');
  });
  it('clears finished lyrics naturally before long instrumental music gaps instead of holding the previous line',()=>{
-  const gapped=buildCues([{time:0,text:'First line before solo'},{time:28,text:'Back after solo'}],[]);
+  const gapped=buildCues([{time:0,text:'First line before solo'},{time:5,text:''},{time:28,text:'Back after solo'}],[]);
   expect(gapped[0].end).toBeLessThanOrEqual(5);
   setLyricTimeline(gapped);
   expect(getLyricState(1.5).cue?.text).toBe('First line before solo');
   expect(getLyricState(12).cue).toBeNull();
   setLyricTimeline([]);
  });
- it('scales lyrics proportionally across normal view and full screen view based on fontScale',()=>{
+ it('keeps responsive normal and full screen sizes within the chosen pixel limits',()=>{
   const normalFonts:string[]=[];
   const fullFonts:string[]=[];
   const makeTrackedCtx=(w:number,h:number,sink:string[])=>{
@@ -90,8 +90,7 @@ describe('single-phrase typography & sequential lyric colour engine',()=>{
   const fullPx=parseFloat(fullFonts[fullFonts.length-1]?.match(/([\d.]+)px/)?.[1]||'0');
   expect(normalPx).toBeGreaterThan(0);
   expect(fullPx).toBeGreaterThan(normalPx);
-  // Ratio of font size to stage height should match closely between normal view and full screen view
-  expect(Math.abs((normalPx/202.5)-(fullPx/1080))).toBeLessThan(0.015);
+  expect(normalPx).toBeGreaterThanOrEqual(26);expect(fullPx).toBeLessThanOrEqual(88);
  });
 });
 describe('music camera and continuity',()=>{

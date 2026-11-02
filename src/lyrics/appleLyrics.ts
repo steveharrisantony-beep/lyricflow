@@ -81,7 +81,7 @@ export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; romanized
   let hasWordSync = false;
 
   const parseLeafTokens = (fragment: string) => {
-    const wordTokens: { text: string; start: number; end: number; trailingSpace: boolean }[] = [];
+    const wordTokens: { text: string; start: number; end: number; trailingSpace: boolean; endEstimated:boolean }[] = [];
     let lastSpanEndIndex = -1;
     for (const sMatch of fragment.matchAll(leafSpanRegex)) {
       const sAttrs = sMatch[1] || '';
@@ -103,17 +103,20 @@ export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; romanized
 
       if (text && sBegin !== null) {
         const endSec = sEnd !== null && sEnd >= sBegin ? sEnd : sBegin + 0.35;
+        const endEstimated=sEnd===null||sEnd<=sBegin;
         const prev = wordTokens[wordTokens.length - 1];
         if (prev && !hasGapWhitespace && !prev.trailingSpace && !hadLeadingSpace) {
           prev.text += text;
           prev.end = Math.max(prev.end, endSec);
           prev.trailingSpace = hadTrailingSpace;
+          prev.endEstimated=endEstimated;
         } else {
           wordTokens.push({
             text,
             start: sBegin,
             end: endSec,
             trailingSpace: hadTrailingSpace,
+            endEstimated,
           });
         }
       }
@@ -125,6 +128,7 @@ export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; romanized
     const pAttrs = pMatch[1] || '';
     let pInner = pMatch[2] || '';
     const pBegin = parseTtmlTime(getAttr(pAttrs, 'begin'));
+    const pEnd=parseTtmlTime(getAttr(pAttrs,'end'));
 
     // Extract any embedded <span ttm:role="x-roman"> romanized line before stripping
     const romanMatches = [...pInner.matchAll(romanSpanRegex)];
@@ -158,7 +162,7 @@ export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; romanized
             .map(w => `${formatLrcTimestamp(w.start, '<')}${w.text}`)
             .join(' ');
           secondaryBgLines.push(
-            `${formatLrcTimestamp(bgStart, '[')}${bgBody}${formatLrcTimestamp(bgEnd, '<')}`
+            `${formatLrcTimestamp(bgStart, '[')}${bgBody}${bgTokens[lastIdx].endEstimated?'':formatLrcTimestamp(bgEnd, '<')}`
           );
           return '';
         }
@@ -169,13 +173,15 @@ export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; romanized
     const wordTokens = parseLeafTokens(pInner);
 
     if (wordTokens.length > 0) {
+      const last=wordTokens[wordTokens.length-1];
+      if(last.endEstimated&&pEnd!==null&&pEnd>last.start){last.end=pEnd;last.endEstimated=false;}
       hasWordSync = true;
       const lineStart = pBegin !== null ? pBegin : wordTokens[0].start;
       const body = wordTokens
         .map(w => `${formatLrcTimestamp(w.start, '<')}${w.text}`)
         .join(' ');
       const lastEnd = wordTokens[wordTokens.length - 1].end;
-      lines.push(`${formatLrcTimestamp(lineStart, '[')}${body}${formatLrcTimestamp(lastEnd, '<')}`);
+      lines.push(`${formatLrcTimestamp(lineStart, '[')}${body}${last.endEstimated?'':formatLrcTimestamp(lastEnd, '<')}`);
       for (const bgLine of secondaryBgLines) {
         lines.push(bgLine);
       }
@@ -185,7 +191,7 @@ export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; romanized
     } else {
       const plainText = decodeEntities(pInner.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
       if (plainText && pBegin !== null) {
-        lines.push(`${formatLrcTimestamp(pBegin, '[')}${plainText}`);
+        lines.push(`${formatLrcTimestamp(pBegin, '[')}${plainText}${pEnd!==null&&pEnd>pBegin?formatLrcTimestamp(pEnd,'<'):''}`);
         if (extractedRoman) {
           romanLines.push(`${formatLrcTimestamp(pBegin, '[')}${extractedRoman}`);
         }
