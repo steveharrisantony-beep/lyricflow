@@ -767,14 +767,14 @@ export default function ManualLyrics({
   // 1. Entire line starts in a single uniform `baseColor` based on the active background.
   // 2. `sungColor` is applied sequentially (letter-by-letter for slow songs, word-by-word for fast songs)
   //    only when real word-by-word sync is available.
-  const { baseLineColor, sungAccentColor } = useMemo(() => {
+  const { baseLineColor, sungAccentColor, sungAccentColors } = useMemo(() => {
     if (
       albumArtPalette &&
       (lyricColorMode === "album" ||
         (lyricColorMode === "auto" && isVideoBackground))
     ) {
       const colors=albumColorsForLine(albumArtPalette,`${current?.time||0}|${current?.text||''}`);
-      return {baseLineColor:colors.baseColor,sungAccentColor:colors.sungColor};
+      return {baseLineColor:colors.baseColor,sungAccentColor:colors.sungColor,sungAccentColors:colors.sungColors};
     }
     const scheduledScene =
       storyboard.find((s) => lyricTime >= s.start && lyricTime < s.end)?.id ||
@@ -797,7 +797,7 @@ export default function ManualLyrics({
       customOverride,
       isVideoBackground,
     );
-    return { baseLineColor: baseColor, sungAccentColor: sungColor };
+    return { baseLineColor: baseColor, sungAccentColor: sungColor, sungAccentColors:[sungColor] };
   }, [
     lyricColorMode,
     albumArtPalette,
@@ -1207,53 +1207,20 @@ export default function ManualLyrics({
                             ? "active"
                             : "upcoming";
 
+                        const accentIndex=activeSourcedWords.indexOf(w);
+                        const wordAccent=sungAccentColors[Math.max(0,accentIndex)%sungAccentColors.length]||sungAccentColor;
                         if (activeFillPace === "letter") {
-                          // Slow song: change colour of letters one by one as it is said
-                          const chars = Array.from(w.text);
-                          const sungLetters = !isSpokenStart
-                            ? 0
-                            : isSpokenEnd
-                              ? chars.length
-                              : Math.max(
-                                  1,
-                                  Math.min(
-                                    chars.length,
-                                    Math.ceil(prog * chars.length),
-                                  ),
-                                );
-                          return (
-                            <span
-                              key={rowIdx + "-" + wIdx + "-" + w.start}
-                              className={`spicy-word ${state}`}
-                              style={{ color: baseLineColor }}
-                            >
-                              {chars.map((ch, cIdx) => {
-                                const isLetterSung = cIdx < sungLetters;
-                                return (
-                                  <span
-                                    key={cIdx}
-                                    style={{
-                                      color: isLetterSung
-                                        ? sungAccentColor
-                                        : baseLineColor,
-                                      textShadow: isLetterSung
-                                        ? `0 0 14px ${sungAccentColor}66`
-                                        : undefined,
-                                      transition: "color 70ms linear",
-                                    }}
-                                  >
-                                    {ch}
-                                  </span>
-                                );
-                              })}
-                              {wIdx < rowWords.length - 1 ? " " : ""}
-                            </span>
-                          );
+                          // A single shaped text run preserves connected scripts and ligatures.
+                          const sweep=!isSpokenStart?0:isSpokenEnd?100:prog*100;
+                          return <span key={rowIdx+"-"+wIdx+"-"+w.start} className={`spicy-word ${state}`} style={{
+                            backgroundImage:`linear-gradient(to right, ${wordAccent} 0%, ${wordAccent} ${sweep}%, ${baseLineColor} ${sweep}%, ${baseLineColor} 100%)`,
+                            backgroundClip:'text',WebkitBackgroundClip:'text',color:'transparent'
+                          }}>{w.text}{wIdx<rowWords.length-1?" ":""}</span>;
                         }
 
                         // Fast-paced song: change colour of words one by one as it is said
                         const wordColor = isSpokenStart
-                          ? sungAccentColor
+                          ? wordAccent
                           : baseLineColor;
                         return (
                           <span
@@ -1262,7 +1229,7 @@ export default function ManualLyrics({
                             style={{
                               color: wordColor,
                               textShadow: isSpokenStart
-                                ? `0 0 16px ${sungAccentColor}55`
+                                ? `0 0 16px ${wordAccent}55`
                                 : undefined,
                               transition: "color 80ms linear",
                             }}

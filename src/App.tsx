@@ -92,11 +92,12 @@ import {
   fontLabel,
   preloadLyricFonts,
 } from "./visualization/cinematic/fonts";
-import {ALL_CURRENT_WORD_STYLE_IDS,CURRENT_WORD_STYLES,type CurrentWordStyle} from "./visualization/cinematic/currentWordStyles";
+import {ALL_CURRENT_WORD_STYLE_IDS,CURRENT_WORD_STYLES,normalizeWordStyle,normalizeWordStylePool,type CurrentWordStyle} from "./visualization/cinematic/currentWordStyles";
 import {
   ALL_PLACEMENT_MODES,
   LYRIC_PLACEMENT_MODES,
   VOXELVERSE_STYLES,
+  normalizeMotionPool,
   type LyricFillPaceMode,
   type LyricMotion,
   type LyricPlacementMode,
@@ -123,6 +124,8 @@ import {
   usePrivateLyrics,
 } from "./firebase/usePrivateLyrics";
 import YouTubeBackgroundPicker from "./music/YouTubeBackgroundPicker";
+import {ALL_THEME_TRANSITIONS,ALL_LYRIC_TRANSITIONS,THEME_TRANSITIONS,LYRIC_TRANSITIONS,type LyricTransition} from "./visualization/cinematic/lyricTransitions";
+import type {Transition} from "./visualization/cinematic/catalog";
 import OptionPreview,{PreviewSetting,type OptionPreviewSpec} from "./ui/OptionPreview";
 import SettingsPanel, {
   RangeSetting,
@@ -277,18 +280,26 @@ export default function App({ user = null }: { user?: User | null }) {
     LyricMotion[]
   >(() => {
     const saved=initialExtended.enabledKineticMotions;
-    return Array.isArray(saved)?saved.filter((id):id is LyricMotion=>ALL_KINETIC_MOTIONS.includes(id as LyricMotion)):initialPrefs.enabledKineticMotions;
+    return normalizeMotionPool(saved)??initialPrefs.enabledKineticMotions;
   });
   const [enabledPlacements, setEnabledPlacements] = useState<
     Exclude<LyricPlacementMode, "auto">[]
   >(initialPrefs.enabledPlacements || [...ALL_PLACEMENT_MODES]);
   const [wordStylesEnabled, setWordStylesEnabled] = useState(initialExtended.wordStylesEnabled !== false);
   const [currentWordStyle] = useState<CurrentWordStyle>(() =>
-    CURRENT_WORD_STYLES.find(style => style.id === initialExtended.currentWordStyle)?.id || "lift",
+    normalizeWordStyle(initialExtended.currentWordStyle)||"bloom",
   );
   const [enabledWordStyles,setEnabledWordStyles]=useState<CurrentWordStyle[]>(()=>{
     const saved=initialExtended.enabledWordStyles;
-    return Array.isArray(saved)?saved.filter((id):id is CurrentWordStyle=>ALL_CURRENT_WORD_STYLE_IDS.includes(id as CurrentWordStyle)):[...ALL_CURRENT_WORD_STYLE_IDS];
+    return normalizeWordStylePool(saved)??[...ALL_CURRENT_WORD_STYLE_IDS];
+  });
+  const [enabledThemeTransitions,setEnabledThemeTransitions]=useState<Transition[]>(()=>{
+    const saved=initialExtended.enabledThemeTransitions;
+    return Array.isArray(saved)?saved.filter((id):id is Transition=>ALL_THEME_TRANSITIONS.includes(id as Transition)):[...ALL_THEME_TRANSITIONS];
+  });
+  const [enabledLyricTransitions,setEnabledLyricTransitions]=useState<LyricTransition[]>(()=>{
+    const saved=initialExtended.enabledLyricTransitions;
+    return Array.isArray(saved)?saved.filter((id):id is LyricTransition=>ALL_LYRIC_TRANSITIONS.includes(id as LyricTransition)):[...ALL_LYRIC_TRANSITIONS];
   });
   const [optionPreview,setOptionPreview]=useState<OptionPreviewSpec|null>(null);
   const closeOptionPreview=useCallback(()=>setOptionPreview(null),[]);
@@ -661,7 +672,7 @@ export default function App({ user = null }: { user?: User | null }) {
     // Selection windows are stored on this device, including an intentionally empty pool.
     try{
       const saved=JSON.parse(localStorage.getItem("lyricflow.extendedSettings.v1")||"{}");
-      setEnabledKineticMotions(Array.isArray(saved.enabledKineticMotions)?saved.enabledKineticMotions.filter((id:unknown):id is LyricMotion=>ALL_KINETIC_MOTIONS.includes(id as LyricMotion)):prefs.enabledKineticMotions);
+      setEnabledKineticMotions(normalizeMotionPool(saved.enabledKineticMotions)??prefs.enabledKineticMotions);
       const fonts=Array.isArray(saved.enabledFonts)?saved.enabledFonts.filter((id:unknown):id is FontPack=>ALL_FONT_PACKS.includes(id as FontPack)):[];
       setEnabledFonts(fonts.length?fonts:prefs.enabledFonts||[...ALL_FONT_PACKS]);
     }catch{setEnabledKineticMotions(prefs.enabledKineticMotions);setEnabledFonts(prefs.enabledFonts||[...ALL_FONT_PACKS]);}
@@ -722,6 +733,8 @@ export default function App({ user = null }: { user?: User | null }) {
           wordStylesEnabled,
           currentWordStyle,
           enabledWordStyles,
+          enabledThemeTransitions,
+          enabledLyricTransitions,
           enabledKineticMotions,
           enabledFonts,
           showFps,
@@ -742,6 +755,8 @@ export default function App({ user = null }: { user?: User | null }) {
     wordStylesEnabled,
     currentWordStyle,
     enabledWordStyles,
+    enabledThemeTransitions,
+    enabledLyricTransitions,
     enabledKineticMotions,
     enabledFonts,
     showFps,
@@ -1574,6 +1589,8 @@ export default function App({ user = null }: { user?: User | null }) {
                 wordStylesEnabled={wordStylesEnabled}
                 currentWordStyle={currentWordStyle}
                 enabledWordStyles={enabledWordStyles}
+                enabledThemeTransitions={enabledThemeTransitions}
+                enabledLyricTransitions={enabledLyricTransitions}
                 albumLyricPalette={useAlbumArtColors ? effectiveAlbumArtPalette : undefined}
                 motionBlur={motionBlur}
                 enabledScenes={enabledScenes}
@@ -2094,6 +2111,15 @@ export default function App({ user = null }: { user?: User | null }) {
                       ))}
                     </div>
                   </details>
+                  <details className="disclosure">
+                    <summary>Theme transitions <span>{enabledThemeTransitions.length} / {THEME_TRANSITIONS.length}</span></summary>
+                    <div className="selection-list">
+                      {THEME_TRANSITIONS.map(transition=><PreviewSetting key={transition.id} label={transition.name} accessibleLabel={`Theme transition · ${transition.name}`}
+                        checked={enabledThemeTransitions.includes(transition.id)}
+                        onChange={()=>setEnabledThemeTransitions(prev=>prev.includes(transition.id)?prev.filter(id=>id!==transition.id):[...prev,transition.id])}
+                        onPreview={()=>setOptionPreview({label:transition.name,themeTransition:transition.id})}/>)}
+                    </div>
+                  </details>
                 </SettingGroup>
               </>
             ),
@@ -2140,6 +2166,15 @@ export default function App({ user = null }: { user?: User | null }) {
                       <button className="text-button" type="button" onClick={()=>setEnabledWordStyles([...ALL_CURRENT_WORD_STYLE_IDS])}>Enable all word styles</button>
                       {CURRENT_WORD_STYLES.map(style=><PreviewSetting key={style.id} label={style.name} checked={enabledWordStyles.includes(style.id)} onChange={()=>toggleWordStyleEnabled(style.id)}
                         onPreview={()=>setOptionPreview({label:style.name,wordStyle:style.id})}/>)}
+                    </div>
+                  </details>
+                  <details className="disclosure">
+                    <summary>Lyric transitions <span>{enabledLyricTransitions.length} / {LYRIC_TRANSITIONS.length}</span></summary>
+                    <div className="selection-list">
+                      {LYRIC_TRANSITIONS.map(transition=><PreviewSetting key={transition.id} label={transition.name} accessibleLabel={`Lyric transition · ${transition.name}`}
+                        checked={enabledLyricTransitions.includes(transition.id)}
+                        onChange={()=>setEnabledLyricTransitions(prev=>prev.includes(transition.id)?prev.filter(id=>id!==transition.id):[...prev,transition.id])}
+                        onPreview={()=>setOptionPreview({label:transition.name,lyricTransition:transition.id})}/>)}
                     </div>
                   </details>
                 </SettingGroup>

@@ -3,14 +3,16 @@ import {createPortal} from 'react-dom';
 import {Eye,X} from 'lucide-react';
 import {buildCues} from '../lyrics/lyricTimeline';
 import {analyzeLyricWords} from '../lyrics/wordEmphasis';
-import {byId,resolveThemePalette,type FontPack,type SceneId} from '../visualization/cinematic/catalog';
+import {byId,resolveThemePalette,type FontPack,type SceneId,type Transition} from '../visualization/cinematic/catalog';
 import {drawKineticLyrics,type LyricMotion,type LyricPlacementMode} from '../visualization/cinematic/kineticTypography';
 import {preloadLyricFonts} from '../visualization/cinematic/fonts';
+import {drawSceneTransition} from '../visualization/cinematic/transitions';
+import type {LyricTransition} from '../visualization/cinematic/lyricTransitions';
 import type {CurrentWordStyle} from '../visualization/cinematic/currentWordStyles';
 import {drawMotionGraphics} from '../visualization/cinematic/procedural/MotionGraphics';
 import {GraphicCompositions} from '../visualization/cinematic/procedural/GraphicCompositions';
 
-export type OptionPreviewSpec={label:string;scene?:SceneId;paletteId?:string;font?:FontPack;motion?:LyricMotion;wordStyle?:CurrentWordStyle;placement?:LyricPlacementMode;video?:boolean};
+export type OptionPreviewSpec={label:string;scene?:SceneId;paletteId?:string;font?:FontPack;motion?:LyricMotion;wordStyle?:CurrentWordStyle;placement?:LyricPlacementMode;video?:boolean;themeTransition?:Transition;lyricTransition?:LyricTransition};
 
 /** Separate targets keep preview taps from accidentally toggling an option. */
 export function PreviewSetting({label,checked,onChange,onPreview,children,radioGroup,accessibleLabel=label}:{label:string;checked:boolean;onChange:()=>void;onPreview:()=>void;children?:ReactNode;radioGroup?:string;accessibleLabel?:string}){
@@ -47,6 +49,7 @@ export default function OptionPreview({spec,onClose,reducedMotion=false}:{spec:O
   const scene=byId[spec.scene||'holographic-tide'];
   const palette=resolveThemePalette(scene.id,spec.paletteId);
   const art=new GraphicCompositions();
+  const previous=document.createElement('canvas'),previousCtx=previous.getContext('2d');
   const frame=(now:number)=>{
    if(disposed)return;
    if(!start)start=now;
@@ -61,9 +64,14 @@ export default function OptionPreview({spec,onClose,reducedMotion=false}:{spec:O
    }else if(scene.id==='signal-chamber'||scene.id==='color-riot'){
     art.render(c,w,h,time,pulse,scene.id==='signal-chamber'?'spectrum':'geometry',0,.7,true,reducedMotion,palette);
    }else drawMotionGraphics(c,w,h,time,pulse,scene.id,.7,reducedMotion,spec.paletteId);
-   drawKineticLyrics({c,scene:{...scene,start:0,end:5,variation:0,section:0,reason:'Preview'},cue:sampleCue,time:Math.min(time,4.49),mode:'original',w,h,intensity:.85,reduced:reducedMotion,emphasis,
-    enabledFonts:[font],enabledMotions:[spec.motion||'ribbon'],animated:Boolean(spec.motion||spec.placement),
-    wordStylesEnabled:Boolean(spec.wordStyle),currentWordStyle:spec.wordStyle,paletteId:spec.paletteId,placementMode:spec.placement||'center',forceLightText:spec.video,fillPaceMode:'word'});
+   if(spec.themeTransition&&previousCtx&&!reducedMotion){
+    if(previous.width!==element.width||previous.height!==element.height){previous.width=element.width;previous.height=element.height;}previousCtx.setTransform(dpr,0,0,dpr,0,0);
+    drawMotionGraphics(previousCtx,w,h,time,pulse,'gilded-whirlpool',.7,false);
+    drawSceneTransition(c,previous,w,h,Math.min(1,(time%2.2)/.8),spec.themeTransition);
+   }
+   drawKineticLyrics({c,scene:{...scene,start:0,end:5,variation:0,section:0,reason:'Preview'},cue:sampleCue,time,mode:'original',w,h,intensity:.85,reduced:reducedMotion,emphasis,
+    enabledFonts:[font],enabledMotions:[spec.motion||'wave'],animated:Boolean(spec.motion||spec.placement||spec.lyricTransition),
+    wordStylesEnabled:Boolean(spec.wordStyle),currentWordStyle:spec.wordStyle,paletteId:spec.paletteId,placementMode:spec.placement||'center',enabledLyricTransitions:spec.lyricTransition?[spec.lyricTransition]:[],cueIndex:0,forceLightText:spec.video,fillPaceMode:'word'});
    if(!reducedMotion)raf=requestAnimationFrame(frame);
   };
   raf=requestAnimationFrame(frame);

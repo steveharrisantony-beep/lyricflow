@@ -1,3 +1,5 @@
+import {chooseThemeTransition,type LyricTransition} from './lyricTransitions';
+import type {Transition} from './catalog';
 import {videoSyncTarget} from '../../audio/videoTiming';
 import type {AlbumArtLyricPalette} from './contrast';
 import type {CurrentWordStyle} from './currentWordStyles';
@@ -31,6 +33,8 @@ export interface CinematicProps{
  wordStylesEnabled?:boolean;
  currentWordStyle?:CurrentWordStyle;
  enabledWordStyles?:readonly CurrentWordStyle[];
+ enabledThemeTransitions?:readonly Transition[];
+ enabledLyricTransitions?:readonly LyricTransition[];
  albumLyricPalette?:AlbumArtLyricPalette;
  narrativeObjects?:boolean;motionBlur:number;
  enabledScenes?:readonly SceneId[];
@@ -170,6 +174,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
   let needsFrame=true;
   let previousId:SceneId|null=null,outgoingId:SceneId|null=null,transitionStarted=-100;
   let previousPaletteId:string|undefined=undefined,outgoingPaletteId:string|undefined=undefined;
+  let activeThemeTransition:Transition|null=null;
   const demoBands=new Float32Array(64);
   const resize=()=>{
    needsFrame=true;
@@ -366,13 +371,14 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      previousId=scene.id;
      previousPaletteId=resolveScenePaletteId(scene.id,scene.paletteId);
      transitionStarted=now/1000;
+     activeThemeTransition=chooseThemeTransition(scene.transition,config.enabledThemeTransitions,`${scene.id}|${scene.section}`);
      if(outgoingId){outgoing.width=fx.width;outgoing.height=fx.height;getOutgoingArt().reset()}
     }else if(!config.autoRandomizeThemePalettes){
      previousPaletteId=config.themePalettes?.[scene.id];
     }else if(previousPaletteId===undefined){
      previousPaletteId=resolveScenePaletteId(scene.id,scene.paletteId);
     }
-    const transition=outgoingId&&!config.reducedMotion?transitionProgress(now/1000,transitionStarted):1;
+    const transition=outgoingId&&activeThemeTransition&&!config.reducedMotion?transitionProgress(now/1000,transitionStarted):1;
     visualMode=visualSystemFor(scene.id);
     if(visualMode!==modeLast){modeLast=visualMode;getGraphicArt().reset()}
 
@@ -396,7 +402,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
     if(transition<1&&outgoingId&&outgoingCtx)background(outgoingId,outgoingCtx,getOutgoingArt(),true);
     background(scene.id,paintCtx,getGraphicArt());
     // Scene transitions belong on the theme layer, never on the transparent lyrics canvas.
-    if(transition<1&&outgoingId&&outgoing.width>0)drawSceneTransition(paintCtx,outgoing,w,h,transition,scene.transition);
+    if(transition<1&&outgoingId&&outgoing.width>0)drawSceneTransition(paintCtx,outgoing,w,h,transition,activeThemeTransition!);
     if(sampleCtx&&(elapsed-sampleAt>.25||transition<.04)){
      sampleCtx.drawImage(fx,0,0,48,30);
      setLyricBackdrop(textCtx,sampleCtx.getImageData(0,0,48,30));sampleAt=elapsed;
@@ -405,8 +411,8 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
 
    textCtx.setTransform(element.width/w,0,0,element.height/h,0,0);
    textCtx.clearRect(0,0,w,h);
-   const displayTransition=useYtVideoBg||config.reducedMotion?1:transitionProgress(now/1000,transitionStarted);
-   setData('transition',!useYtVideoBg&&outgoingId&&displayTransition<1?scene.transition:'none');
+   const displayTransition=useYtVideoBg||config.reducedMotion||!activeThemeTransition?1:transitionProgress(now/1000,transitionStarted);
+   setData('transition',!useYtVideoBg&&outgoingId&&displayTransition<1?activeThemeTransition!:'none');
    textCtx.save();
    const lyricClock=smoothMediaClock??time;
    lyric=getLyricState(lyricClock);
@@ -428,6 +434,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      c:textCtx,
      scene,
      cue:activeCue,
+     cueIndex:snapshot.cues.indexOf(activeCue),
      time:lyric.position,
      mode:lyric.mode,
      w,
@@ -440,6 +447,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      wordStylesEnabled:config.wordStylesEnabled,
      currentWordStyle:config.currentWordStyle,
      enabledWordStyles:config.enabledWordStyles,
+     enabledLyricTransitions:config.enabledLyricTransitions,
      albumPalette:config.albumLyricPalette,
      enabledMotions:config.enabledKineticMotions,
      enabledPlacements:activeEnabledPlacements,
@@ -462,6 +470,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
       c:textCtx,
       scene,
       cue:secondaryCue,
+      cueIndex:snapshot.cues.indexOf(secondaryCue),
       time:lyric.position,
       mode:lyric.mode,
       w,
@@ -474,6 +483,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      wordStylesEnabled:config.wordStylesEnabled,
      currentWordStyle:config.currentWordStyle,
      enabledWordStyles:config.enabledWordStyles,
+     enabledLyricTransitions:config.enabledLyricTransitions,
      albumPalette:config.albumLyricPalette,
       enabledMotions:config.enabledKineticMotions,
       enabledPlacements:activeEnabledPlacements,
@@ -499,6 +509,9 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      setData('lyricFont',result.drawn>0?result.font:rightResult.font);
      setData('lyricFillPace',result.fillPace||'line');
      setData('lyricWordStyle',result.wordStyle||'off');
+     setData('lyricGlyphs',String(result.glyphs||0));
+     setData('lyricLetterMode',result.letterMode||'shaped');
+     setData('lyricTransition',result.lyricTransition||'none');
      setData('lyricBaseColor',result.baseColor||'');
      setData('lyricActiveColor',result.activeColor||'');
     }else{
@@ -508,6 +521,9 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      setData('lyricHighlights',String(result.highlights));setData('lyricFont',result.font);
      setData('lyricFillPace',result.fillPace||'line');
      setData('lyricWordStyle',result.wordStyle||'off');
+     setData('lyricGlyphs',String(result.glyphs||0));
+     setData('lyricLetterMode',result.letterMode||'shaped');
+     setData('lyricTransition',result.lyricTransition||'none');
      setData('lyricBaseColor',result.baseColor||'');
      setData('lyricActiveColor',result.activeColor||'');
     }
@@ -592,13 +608,13 @@ export default function CinematicStage(props:CinematicProps){
  const [themeExitPending,setThemeExitPending]=useState(true);
  useEffect(()=>{
   if(showThemes){setThemeExitPending(true);return;}
-  const timer=window.setTimeout(()=>setThemeExitPending(false),props.reducedMotion?0:TRANSITION_SECONDS*1000);
+  const timer=window.setTimeout(()=>setThemeExitPending(false),props.reducedMotion||props.enabledThemeTransitions?.length===0?0:TRANSITION_SECONDS*1000);
   return()=>window.clearTimeout(timer);
- },[showThemes,props.reducedMotion]);
+ },[showThemes,props.reducedMotion,props.enabledThemeTransitions]);
  const renderThemes=showThemes||themeExitPending;
  const {host,canvas,effects}=useCinematicRenderer({...props,renderThemes},ytWrapRef);
  const backgroundPose=sceneEntryPose(showThemes?1:0,byId[props.manualScene].transition);
- const transitionMs=props.reducedMotion?0:TRANSITION_SECONDS*1000;
+ const transitionMs=props.reducedMotion||props.enabledThemeTransitions?.length===0?0:TRANSITION_SECONDS*1000;
  const mustPauseVideo=(config:CinematicProps,waiting:boolean,endedEarly=false)=>Boolean(config.audioPaused||waiting||endedEarly||(config.hasSeparateAudioStream&&(config.youtubeBackgroundMode==='theme'||config.videoSearchPending||config.advertisementPlaying)));
 
  const blackOverlayOpacity=Math.max(0,Math.min(0.92,props.videoOverlayOpacity??0.45));

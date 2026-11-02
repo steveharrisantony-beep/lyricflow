@@ -36,7 +36,7 @@ The application and its existing Express backend run inside the APK. No external
 [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Tunai-0511/lyricflow?file=README.md)
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Tunai-0511/lyricflow?quickstart=1)
 
-**LyricFlow** is a studio-grade, real-time audio-reactive music visualizer and synchronized kinetic lyric stage. It combines **23 genuinely distinct VoxelWall-inspired 2D music-reactive live wallpapers** (each equipped with **4–5 selectable colour palettes**) across seven curated visual families with **20 animated lyric choreography styles**, **Stash multi-catalog online streaming**, **Apple Music syllable/word-synced TTML & line-synced LRC engines**, **offline Indic-to-Latin phonetic romanization**, and **Firebase Authentication & Cloud Firestore profile synchronization**.
+**LyricFlow** is a studio-grade, real-time audio-reactive music visualizer and synchronized kinetic lyric stage. It combines **23 genuinely distinct VoxelWall-inspired 2D music-reactive live wallpapers** (each equipped with **4–5 selectable colour palettes**) across seven curated visual families with **12 persistent lyric animations**, **Stash multi-catalog online streaming**, **Apple Music syllable/word-synced TTML & line-synced LRC engines**, **offline Indic-to-Latin phonetic romanization**, and **Firebase Authentication & Cloud Firestore profile synchronization**.
 
 > **Maintenance Policy:** This `README.md` is the canonical technical reference for LyricFlow and is continuously updated alongside every architectural, visual, audio, and lyric-engine update.
 
@@ -46,7 +46,7 @@ The application and its existing Express backend run inside the APK. No external
 
 1. [Core Features & Capabilities](#1-core-features--capabilities)
 2. [VoxelWall Music-Reactive Live Wallpapers (23 Unique Designs × Multi-Palette)](#2-voxelwall-music-reactive-live-wallpapers-23-unique-designs--multi-palette)
-3. [VoxelVerse Animated Lyric Styles (19 Choreography Modes)](#3-voxelverse-animated-lyric-styles-19-choreography-modes)
+3. [Persistent Letter Animation](#3-persistent-letter-animation)
 4. [Audio Reactivity & 64-Band Spectral Pipeline](#4-audio-reactivity--64-band-spectral-pipeline)
 5. [Audio Sources & Stash Multi-Catalog Streaming](#5-audio-sources--stash-multi-catalog-streaming)
 6. [Synchronized Lyrics Engine & Provider Attribution](#6-synchronized-lyrics-engine--provider-attribution)
@@ -65,15 +65,13 @@ The application and its existing Express backend run inside the APK. No external
   - Pure, high-FPS 2D procedural canvas and spectral-geometry wallpapers organized into **7 VoxelWall categories**: *Flow*, *Contours*, *Sculptures*, *Space*, *Nature*, *Architecture*, and *Journeys*.
   - Every theme uses a 100% distinct procedural visual algorithm—all color-swap duplicate themes have been consolidated into **4–5 interactive Colour Palettes per theme** (`ThemePalette`) selectable directly on each theme card and inside Cinema Mode.
   - Every background can be individually toggled **ON/OFF** to curate the active auto-director rotation pool.
-- **Independent lyric controls**: “Lyric animations” controls the 20 phrase choreographies; “Current word styles” controls 18 composable accents: the ten new styles plus restored Classic Capsule, Ticket, Grid, Ring, Contours, Emblem, Focus, and Progress effects. Word accents require sourced word timestamps with matching display tokens; line-only lyrics never invent word timing. Both off renders steady text; animation alone uses a secondary colour for sung words without word embellishments. Reduced motion keeps text steady. Font, animation and word-style selection windows are saved on this device, including empty animation/style pools. Enabled choices rotate; previews use a separate sample canvas and do not change playback or preferences. Theme palettes are nested under their theme; selecting one turns off automatic palette rotation.
-- **Auto lyric colours**: themes use the active theme palette; video uses several distinct light colours extracted from album artwork, varied per line. Monochrome artwork retains tonal variants; unavailable/CORS-blocked art uses a deterministic multi-colour fallback. Light video text and a dark shadow preserve readability.
-- **20 Lyric Animation Styles**:
-  - **20 lyric animations** organized into four families: **Signature** (*Ship, Fisheye, Visual, Fisheye Visual*), **Spatial** (*Orbit, Cascade, Prism, Scatter*), **Kinetic** (*Surge, Elastic, Echo, Halo, Ribbon*), and **Editorial** (*Reel, Hinge, Fable, Carnival, Broadside, Portal, Mosaic*).
-  - Each style features dedicated 3D-projected plane orientation, spring physics, vector framing plates, semantic lyric emblems, and individual **ON/OFF** toggles.
-- **Background-Adaptive Sequential Lyric Colour Engine**:
+- **Persistent letter choreography**: 12 distinct animations with 8 visible current-word accents. Latin and other independent graphemes move smoothly throughout the line, including after a word is sung. Hindi, Malayalam, Tamil, Arabic and other shaping-dependent scripts keep intact word runs. Romanized Latin text can animate by letter. Both motion controls off keeps the lyric steady.
+- **Adaptive album colours**: pale colours extracted from the artwork are used for unread text and line-synced lyrics. Sung words cycle through more saturated, contrast-checked colours from the same artwork. Theme mode continues to follow the active theme palette; unavailable artwork has a deterministic fallback.
+- **Selection windows and previews**: independently enable animations, word styles, theme transitions and lyric transitions. All-off transition windows produce cuts. Previews use a separate sample canvas without changing playback. Old lookalike IDs migrate to the closest retained effect; deliberately empty selections remain empty. Settings are stored on this device.
+- **Word-sync colour timing**:
   - **Base Line Colour**: Every lyric line first renders in a single uniform, WCAG-verified base colour adapted to the active theme palette background (`baseColor`).
-  - **Slow Songs (Letter-by-Letter Fill)**: When word-synced timing is available on slow-to-mid tempo songs, letters change colour **one by one (`letter` pace)** as each syllable/letter is sung (`sungColor`).
-  - **Fast-Paced Songs (Word-by-Word Fill)**: When word-synced timing is available on fast songs (`BPM >= 122` or rapid word cadence), whole words change colour **one by one (`word` pace)** as each word is sung.
+  - **Slow Songs (Letter-by-Letter Fill)**: When word-synced timing is available on slow-to-mid tempo songs, a smooth colour sweep interpolates inside each sourced word span; it does not claim letter-level timestamps. Connected glyphs remain a single shaped run.
+  - **Fast-Paced Songs (Word-by-Word Fill)**: When word-synced timing is available on fast songs (`BPM >= 112` or rapid word cadence), whole words change colour **one by one (`word` pace)** as each word is sung.
   - **Strict Line-Sync Integrity**: When only line-by-line sync (`timing !== 'sourced'`) is available, LyricFlow **never predicts or fakes word-by-word or letter-by-letter colour changes**—keeping the entire line in a single uniform colour with zero random word colour glitches.
   - **Zero Lyric Holding During Pause or Music Breaks**: Finished lyric lines clear naturally (`computeNaturalLineEnd`) during instrumental solos/interludes and immediately hide while playback is paused.
 - **Transparent Provider & Audio Source Attribution**:
@@ -119,33 +117,15 @@ Inspired by [VoxelWall Live Wallpapers](https://voxelwall.app/wallpapers), all 2
 
 ---
 
-## 3. VoxelVerse Animated Lyric Styles (19 Choreography Modes)
+## 3. Persistent Letter Animation
 
-Inspired by [VoxelVerse (`#verse-styles`)](https://voxelwall.app/verse#verse-styles), LyricFlow implements 19 distinct lyric animation styles across four families:
+The retained animations are Ship, Fisheye, Orbit, Cascade, Scatter, Elastic, Hinge, Carnival, Portal, Broadside, Alternating Sides and Wave. Each has a continuing hold, rather than becoming still after its entry. Alternating Sides uses consecutive cue indices so one line enters from the left and the next from the right. Wave has a travelling phase across letters.
 
-| Family | Style ID | Name | Choreography & Visual Detail |
-| :--- | :--- | :--- | :--- |
-| **Signature** | `ship` | **Ship** | 3D Z-axis camera propulsion with word-by-word depth impulse |
-| **Signature** | `fisheye` | **Fisheye** | Spherical barrel-lens magnification bulging centered words forward |
-| **Signature** | `visual` | **Visual** | Gentle harmonic wave paired with semantic lyric emblems & star icons |
-| **Signature** | `fisheye-visual` | **Fisheye Visual** | Spherical fisheye lens curvature combined with lyric icon emblems |
-| **Spatial** | `orbit` | **Orbit** | Tilted orbital plane with oversized hero words and luminous ring halos |
-| **Spatial** | `cascade` | **Cascade** | Stepped multi-row diagonal waterfall with sculpted 3D depth |
-| **Spatial** | `prism` | **Prism** | Chromatic multi-layer dimensional offset frames and shear |
-| **Spatial** | `scatter` | **Scatter** | Asymmetric word clusters with playful alternating shear angles |
-| **Kinetic** | `surge` | **Surge** | Rising fluid word wave with cresting vertical momentum |
-| **Kinetic** | `elastic` | **Elastic** | Critically-damped spring stretch and settle with bold emphasis |
-| **Kinetic** | `echo` | **Echo** | Receding twin contour echo frames layered behind active words |
-| **Kinetic** | `halo` | **Halo** | Expanding luminous concentric rings around each active word |
-| **Editorial** | `reel` | **Reel** | Rolling vertical tape-reel column motion with pitch rotation |
-| **Editorial** | `hinge` | **Hinge** | Folded architectural word walls with turning perspective planes |
-| **Editorial** | `fable` | **Fable** | Storybook painted words with expressive ornamental corner emblems |
-| **Editorial** | `carnival` | **Carnival** | High-impact kinetic slam with 4-point star-sticker collage accents |
-| **Editorial** | `broadside` | **Broadside** | Tracking editorial typography framed in angled paper-ticket plates |
-| **Editorial** | `portal` | **Portal** | Folding aperture windows and rounded lyric capsules around active words |
-| **Editorial** | `mosaic` | **Mosaic** | Curved typographic arc framed inside modular moving lyric grid cells |
+Grapheme segmentation preserves combining accents. Shaping-dependent scripts keep whole words, protecting joining forms, conjuncts and right-to-left ordering. Letter metrics are cached per cue, font, font-load revision and stage size. The render loop performs no lyric/provider requests.
 
----
+The eight independent word accents are Bloom, Ink Underline, Glass Spotlight, Constellation, Pendulum, Classic Capsule, Classic Contours and Classic Focus. Only sourced, matching word timestamps activate these accents; line-only lyrics do not invent word timing.
+
+Theme transitions: Soft cross-warp, Whip pan, Portal zoom, Refraction rings, Shutter slabs, Scanline shear and Burning seam. Lyric transitions: Soft fade, Rise into view, Alternating side entry, Soft zoom, Turning entrance and Letter curtain. Lyric transitions apply to the incoming cue without delaying its clock, holding the old cue, or rendering a duplicate line. Reduced motion bypasses movement.
 
 ## 4. Audio Reactivity & 64-Band Spectral Pipeline
 
@@ -292,7 +272,7 @@ Set up the shared project using the browser-only [Firebase setup guide](FIREBASE
 │   ├── visualization/cinematic/
 │   │   ├── CinematicStage.tsx                     # Video/Theme compositor, Black Overlay & Cinema Mode Studio Drawer
 │   │   ├── catalog.ts                             # 23 VoxelWall scene templates × 4–5 palettes across 7 categories
-│   │   ├── kineticTypography.ts                   # 20 lyric animations, placements & independent word accents
+│   │   ├── kineticTypography.ts                   # Persistent letter animation, shaped words, placements & word accents
 │   │   ├── cameraRig.ts                           # Smooth bass-threshold camera rig with sensitivity control
 │   │   ├── contrast.ts                            # Real-time backdrop luminance sampler & WCAG contrast guard
 │   │   ├── fonts.ts                               # 25 curated display, editorial, & monospace font packs

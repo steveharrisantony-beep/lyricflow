@@ -10,7 +10,7 @@ import {
 } from 'firebase/firestore';
 import { TEMPLATES, type FontPack, type SceneId } from '../visualization/cinematic/catalog';
 import { FONT_SHOWCASE } from '../visualization/cinematic/fonts';
-import { ALL_PLACEMENT_MODES, LYRIC_MOTIONS, type LyricMotion, type LyricPlacementMode } from '../visualization/cinematic/kineticTypography';
+import { ALL_PLACEMENT_MODES, LYRIC_MOTIONS, normalizeMotionPool, normalizeLyricMotion, type LyricMotion, type LyricPlacementMode } from '../visualization/cinematic/kineticTypography';
 import { CAMERA_VIEWS, type Quality, type CameraMode, type CameraView } from '../visualization/cinematic/CinematicStage';
 import { readDevice, writeDevice, scopedKey } from './deviceStore';
 
@@ -181,18 +181,14 @@ export function sanitizePreferences(raw: Partial<UserPreferencesData> | null | u
   const validScenes = Array.isArray(raw.enabledScenes)
     ? raw.enabledScenes.filter((id): id is SceneId => ALL_SCENE_IDS.includes(id as SceneId)).slice(0, ALL_SCENE_IDS.length)
     : [];
-  const validMotions = Array.isArray(raw.enabledKineticMotions)
-    ? raw.enabledKineticMotions.filter((m): m is LyricMotion => ALL_KINETIC_MOTIONS.includes(m as LyricMotion)).slice(0, ALL_KINETIC_MOTIONS.length)
-    : [];
+  const validMotions=normalizeMotionPool(raw.enabledKineticMotions)||[];
   const validPlacements = Array.isArray(raw.enabledPlacements)
     ? raw.enabledPlacements.filter((p): p is Exclude<LyricPlacementMode, 'auto'> => ALL_PLACEMENT_MODES.includes(p as Exclude<LyricPlacementMode, 'auto'>)).slice(0, ALL_PLACEMENT_MODES.length)
     : [];
   const validFonts = Array.isArray(raw.enabledFonts)
     ? raw.enabledFonts.filter((f): f is FontPack => ALL_FONT_PACKS.includes(f as FontPack)).slice(0, ALL_FONT_PACKS.length)
     : [];
-  const manualKineticMotion = raw.manualKineticMotion && ALL_KINETIC_MOTIONS.includes(raw.manualKineticMotion)
-    ? raw.manualKineticMotion
-    : 'ship';
+  const manualKineticMotion=normalizeLyricMotion(raw.manualKineticMotion)||'ship';
   const manualFont = raw.manualFont && ALL_FONT_PACKS.includes(raw.manualFont)
     ? raw.manualFont
     : 'impact';

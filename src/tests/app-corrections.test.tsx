@@ -214,7 +214,7 @@ it('allows every animation and word style to be disabled and persists empty sele
   for(const summary of ['Animations','Current word styles']){
     const details=[...host.querySelectorAll('details')].find(el=>el.querySelector('summary')?.textContent?.startsWith(summary))!;
     const inputs=[...details.querySelectorAll<HTMLInputElement>('input[role="switch"]')];
-    expect(inputs).toHaveLength(summary==='Animations'?20:18);
+    expect(inputs).toHaveLength(summary==='Animations'?12:8);
     await act(async()=>{for(const input of inputs)input.click();});
     expect(inputs.every(input=>!input.checked)).toBe(true);
   }
@@ -234,4 +234,17 @@ it('previews a disabled option without changing its toggle or saved preferences'
     await act(async()=>document.querySelector<HTMLButtonElement>('button[aria-label="Close preview"]')!.click());
     expect(document.querySelector('.option-preview-dialog')).toBeNull();
   }finally{context.mockRestore();}
+});
+
+
+it('stores independently disabled theme and lyric transitions, including an empty window',async()=>{
+ for(const name of ['Theme transitions','Lyric transitions']){
+  const window=[...host.querySelectorAll('details')].find(el=>el.querySelector('summary')?.textContent?.startsWith(name))!;
+  const inputs=[...window.querySelectorAll<HTMLInputElement>('input[role="switch"]')];
+  expect(inputs).toHaveLength(name==='Theme transitions'?7:6);
+  await act(async()=>{for(const input of inputs)input.click();});
+ }
+ await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App/>));
+ const saved=JSON.parse(localStorage.getItem('lyricflow.extendedSettings.v1')!);
+ expect(saved.enabledThemeTransitions).toEqual([]);expect(saved.enabledLyricTransitions).toEqual([]);
 });

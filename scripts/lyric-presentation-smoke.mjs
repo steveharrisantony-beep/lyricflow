@@ -98,6 +98,17 @@ try{
  await page.waitForFunction(()=>document.querySelector('.option-preview-canvas')?.width>0);
  await page.screenshot({path:`${shots}/theme-palette-preview.png`});
  await page.getByRole('button',{name:'Close preview',exact:true}).dispatchEvent('click');
+ await openWindow('Theme transitions');
+ await page.getByRole('button',{name:'Preview Theme transition · Refraction rings',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('.option-preview-canvas')?.width>0);
+ await page.waitForTimeout(250);await page.screenshot({path:`${shots}/theme-transition.png`});
+ await page.getByRole('button',{name:'Close preview',exact:true}).dispatchEvent('click');
+ await page.getByRole('tab',{name:'Lyrics',exact:true}).click();
+ await openWindow('Lyric transitions');
+ await page.getByRole('button',{name:'Preview Lyric transition · Alternating side entry',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('.option-preview-canvas')?.width>0);
+ await page.waitForTimeout(250);await page.screenshot({path:`${shots}/lyric-transition.png`});
+ await page.getByRole('button',{name:'Close preview',exact:true}).dispatchEvent('click');
  // Exercise the real canvas renderer with every effect on browser Canvas 2D.
  const qa=await page.evaluate(async()=>{
   const [{drawKineticLyrics,LYRIC_MOTIONS},{CURRENT_WORD_STYLES},{buildCues},{analyzeLyricWords},{TEMPLATES},{preloadLyricFonts}]=await Promise.all([
@@ -125,13 +136,17 @@ try{
   }};
   return count;
  });
- assert.equal(qa,360);
- for(const [motion,style] of [['ribbon','halo'],['hinge','brackets'],['cascade','ribbon'],['orbit','sparkle']]){
+ assert.equal(qa,96);
+ await page.evaluate(()=>window.lyricQA.draw('wave','underline',.9));
+ await page.locator('canvas').screenshot({path:`${shots}/wave-early.png`});
+ await page.evaluate(()=>window.lyricQA.draw('wave','underline',3.4));
+ await page.locator('canvas').screenshot({path:`${shots}/wave-late.png`});
+ for(const [motion,style] of [['wave','underline'],['hinge','classic-focus'],['cascade','classic-capsule'],['orbit','sparkle']]){
   await page.evaluate(([motion,style])=>window.lyricQA.draw(motion,style,.45),[motion,style]);
   await page.locator('canvas').screenshot({path:`${shots}/${motion}-${style}.png`});
  }
  assert.deepEqual(errors,[]);
- console.log('PASS browser: 20 animations × 18 styles, isolated previews, saved selection windows, nested palettes, and light/dark layouts at 390/800/1280px.');
+ console.log('PASS browser: 12 letter animations × 8 word styles, isolated previews, saved selection windows, nested palettes, and light/dark layouts at 390/800/1280px.');
 }catch(error){
  console.log({errors,body:(await page.locator('body').innerText()).slice(0,1600)});
  throw error;

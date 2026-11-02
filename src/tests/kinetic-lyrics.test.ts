@@ -38,7 +38,7 @@ describe('single-phrase typography & sequential lyric colour engine',()=>{
   const c=context(),result=drawKineticLyrics({c,scene,cue:cues[0],time:1,mode:'both',w:1000,h:600,intensity:.8,reduced:false,emphasis});
   expect(result.drawn).toBe(4);
   expect(result.fillPace).toBe('line');
-  expect(vi.mocked(c.fillText).mock.calls.map(call=>call[0])).toEqual(['Let','the','thunder','roll']);
+  expect(vi.mocked(c.fillText).mock.calls.map(call=>call[0]).join('')).toBe('Letthethunderroll');
   expect(c.strokeText).not.toHaveBeenCalled();
  });
  it('selects letter-by-letter fill for slow songs and word-by-word fill for fast songs when word-sync data exists',()=>{
@@ -56,7 +56,7 @@ describe('single-phrase typography & sequential lyric colour engine',()=>{
  });
  it('uses one Romanized phrase when that mode is selected',()=>{
   const c=context();drawKineticLyrics({c,scene,cue:{...cues[0],romanized:'Mazha peyyunnu'},time:1,mode:'romanized',w:1000,h:600,intensity:1,reduced:false,emphasis});
-  expect(vi.mocked(c.fillText).mock.calls.map(call=>call[0])).toEqual(['Mazha','peyyunnu']);
+  expect(vi.mocked(c.fillText).mock.calls.map(call=>call[0]).join('')).toBe('Mazhapeyyunnu');
  });
  it('keeps all choreography choices deterministic and uses heavy typefaces',()=>{
   expect(new Set(Array.from({length:120},(_,i)=>lyricMotionFor({...scene,variation:i},'Phrase '+i))).size).toBe(LYRIC_MOTIONS.length);

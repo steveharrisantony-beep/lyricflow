@@ -86,6 +86,8 @@ export interface AlbumArtLyricPalette {
  accentHex: string;
  /** Several distinct, light artwork colours retained for the whole song. */
  colors: string[];
+ /** More saturated, contrast-checked colours for already sung words. */
+ sungColors: string[];
 }
 
 /** Enforce light text over video even for very dark or saturated artwork. */
@@ -99,13 +101,26 @@ export function lightLyricColor(hex:string,minLuminance=.60):string{
  return '#ffffff';
 }
 
+/** Retain album hue and saturation without whitening the sung accent into a pastel. */
+export function vibrantLyricColor(hex:string,background='#07090e'):string{
+ const rgb=hex.replace('#','');
+ const [h,s,l]=rgbToHsl(...[0,2,4].map(i=>parseInt(rgb.slice(i,i+2),16)) as [number,number,number]);
+ const candidate=hslToHex(h,s<.1?s:Math.max(.80,Math.min(.95,s*1.2)),s<.1?Math.max(.56,Math.min(.8,l-.12)):Math.max(.5,Math.min(.62,l-.22)));
+ for(let mix=0;mix<=1;mix+=.04){
+  const value=blendHex(candidate,'#ffffff',mix);
+  if(contrastRatio(background,value)>=4.5)return value;
+ }
+ return '#f8fafc';
+}
+
 /** Stable per-line selection; colours never flicker on successive render frames. */
 export function albumColorsForLine(palette:AlbumArtLyricPalette,lineKey:string){
- let seed=0;
- for(const ch of lineKey)seed=(Math.imul(seed,31)+ch.charCodeAt(0))>>>0;
- const colors=palette.colors.length?palette.colors:[palette.sungColor];
- const sungColor=lightLyricColor(colors[seed%colors.length]);
- return {baseColor:lightLyricColor(blendHex(sungColor,'#ffffff',.78),.88),sungColor};
+ let seed=0;for(const ch of lineKey)seed=(Math.imul(seed,31)+ch.charCodeAt(0))>>>0;
+ const colors=palette.colors.length?palette.colors:[palette.baseColor];
+ const sung=palette.sungColors?.length?palette.sungColors:colors.map(color=>vibrantLyricColor(color));
+ const offset=seed%sung.length;
+ const sungColors=sung.map((_,i)=>sung[(i+offset)%sung.length]);
+ return {baseColor:lightLyricColor(colors[seed%colors.length]),sungColor:sungColors[0],sungColors};
 }
 
 /** Weighted colour buckets keep several hues from the image, rather than only its dominant hue. */
@@ -136,7 +151,8 @@ export function paletteFromArtworkPixels(data:Uint8ClampedArray):AlbumArtLyricPa
   if(!opaque)return null;
   const [h,s]=rgbToHsl(sumR/opaque,sumG/opaque,sumB/opaque);
   const colors=[.78,.84,.9].map(l=>lightLyricColor(hslToHex(h,Math.min(.4,s),l)));
-  return {baseColor:lightLyricColor(blendHex(colors[0],'#ffffff',.78),.88),sungColor:colors[0],accentHex:colors[0],colors};
+  const sungColors=colors.map(color=>vibrantLyricColor(color));
+ return {baseColor:colors[0],sungColor:sungColors[0],accentHex:sungColors[0],colors,sungColors};
  }
  // Monochrome artwork keeps its own hue with light tonal variants.
  const first=selected[0];
@@ -144,7 +160,8 @@ export function paletteFromArtworkPixels(data:Uint8ClampedArray):AlbumArtLyricPa
  if(colors.length===1){
   colors.push(lightLyricColor(hslToHex(first.h,first.s*.55,.84)),lightLyricColor(hslToHex(first.h,first.s*.3,.9)));
  }
- return {baseColor:lightLyricColor(blendHex(colors[0],'#ffffff',.78),.88),sungColor:colors[0],accentHex:colors[0],colors};
+ const sungColors=colors.map(color=>vibrantLyricColor(color));
+ return {baseColor:colors[0],sungColor:sungColors[0],accentHex:sungColors[0],colors,sungColors};
 }
 
 const albumPaletteCache = new Map<string, AlbumArtLyricPalette>();
@@ -210,13 +227,15 @@ export function getDeterministicSongPalette(songSeed: string): AlbumArtLyricPale
  }
  const hue = ((hash >>> 0) % 360) / 360;
  const colors=[0,.16,.42,.67].map(offset=>lightLyricColor(hslToHex(hue+offset,.72,.78)));
- const sungColor = colors[0];
- const baseColor = hslToHex((hue + 0.04) % 1, 0.48, 0.93);
+ const sungColors=colors.map(color=>vibrantLyricColor(color));
+ const sungColor = sungColors[0];
+ const baseColor = colors[0];
  return {
   baseColor,
   sungColor,
   accentHex: sungColor,
   colors,
+  sungColors,
  };
 }
 

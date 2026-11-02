@@ -3,41 +3,15 @@ import {wordEmphasis,type WordEmphasis} from '../../lyrics/wordEmphasis';
 import {hasDistinctRomanized} from '../../romanization/romanize';
 import {byId,resolveThemePalette,TEMPLATES,type DirectedScene,type FontPack} from './catalog';
 import {applySceneFont,getFontLoadRevision,isFontPackLoaded,preloadLyricFonts} from './fonts';
-import {lightLyricColor,paintLyric,readableChromaticInk,readableInk,albumColorsForLine} from './contrast';
+import {lightLyricColor,vibrantLyricColor,paintLyric,readableChromaticInk,readableInk,albumColorsForLine} from './contrast';
 import type {AlbumArtLyricPalette} from './contrast';
 import {currentWordPose,drawCurrentWordAccent,type CurrentWordStyle} from './currentWordStyles';
+import {buildLetterUnits,letterMotionPose,type LetterUnit} from './letterMotion';
+import {chooseLyricTransition,lyricEntryPose,type LyricTransition} from './lyricTransitions';
 import {makeLyricProjection,STILL_CAMERA,type ProjectPoint} from './cameraRig';
 
-/**
- * 20 lyric animation styles (https://voxelwall.app/verse#verse-styles)
- * organized across four families: Signature, Spatial, Kinetic, and Editorial.
- */
-export const LYRIC_MOTIONS=[
- // Signature (4)
- 'ship',
- 'fisheye',
- 'visual',
- 'fisheye-visual',
- // Spatial (4)
- 'orbit',
- 'cascade',
- 'prism',
- 'scatter',
- // Kinetic (5)
- 'surge',
- 'elastic',
- 'echo',
- 'halo',
- 'ribbon',
- // Editorial (7)
- 'reel',
- 'hinge',
- 'fable',
- 'carnival',
- 'broadside',
- 'portal',
- 'mosaic'
-] as const;
+/** A smaller set of distinct, persistent letter choreographies. */
+export const LYRIC_MOTIONS=['ship','fisheye','orbit','cascade','scatter','elastic','hinge','carnival','portal','broadside','alternating','wave'] as const;
 
 export type LyricMotion=typeof LYRIC_MOTIONS[number];
 export type VoxelVerseFamily='signature'|'spatial'|'kinetic'|'editorial';
@@ -86,34 +60,33 @@ export interface VoxelVerseStyleMeta {
 }
 
 export const VOXELVERSE_FAMILIES:readonly {id:VoxelVerseFamily;name:string;count:number}[]=[
- {id:'signature',name:'Signature',count:4},
- {id:'spatial',name:'Spatial',count:4},
- {id:'kinetic',name:'Kinetic',count:5},
- {id:'editorial',name:'Editorial',count:7}
-] as const;
-
+ {id:'signature',name:'Signature',count:2},{id:'spatial',name:'Spatial',count:3},
+ {id:'kinetic',name:'Kinetic',count:3},{id:'editorial',name:'Editorial',count:4}
+];
 export const VOXELVERSE_STYLES:readonly VoxelVerseStyleMeta[]=[
- {id:'ship',name:'Ship',family:'signature',detail:'3D motion · Word by word',featured:true},
- {id:'fisheye',name:'Fisheye',family:'signature',detail:'Fisheye lens · Centered lyrics',featured:true},
- {id:'visual',name:'Visual',family:'signature',detail:'Icons from lyrics · Gentle motion',featured:true},
- {id:'fisheye-visual',name:'Fisheye Visual',family:'signature',detail:'Fisheye lens · Icons from lyrics',featured:true},
- {id:'orbit',name:'Orbit',family:'spatial',detail:'Orbital plane · Oversized words',featured:true},
- {id:'cascade',name:'Cascade',family:'spatial',detail:'Stepped type · Sculpted depth',featured:true},
- {id:'prism',name:'Prism',family:'spatial',detail:'Color extrusion · Dimensional type'},
- {id:'scatter',name:'Scatter',family:'spatial',detail:'Asymmetric clusters · Playful angles'},
- {id:'surge',name:'Surge',family:'kinetic',detail:'Rising word wave · Fluid motion',featured:true},
- {id:'elastic',name:'Elastic',family:'kinetic',detail:'Stretch and settle · Bold emphasis',featured:true},
- {id:'echo',name:'Echo',family:'kinetic',detail:'Receding contours · Layered words'},
- {id:'halo',name:'Halo',family:'kinetic',detail:'Breathing arcs · Floating type'},
- {id:'ribbon',name:'Ribbon',family:'kinetic',detail:'Silk wave · Spiralling rows · Soft unfurl'},
- {id:'reel',name:'Reel',family:'editorial',detail:'Rolling type · Expanding word column',featured:true},
- {id:'hinge',name:'Hinge',family:'editorial',detail:'Folded word walls · Turning perspective'},
- {id:'fable',name:'Fable',family:'editorial',detail:'Painted words · Expressive emblems',featured:true},
- {id:'carnival',name:'Carnival',family:'editorial',detail:'Bold type · Star-sticker collage'},
- {id:'broadside',name:'Broadside',family:'editorial',detail:'Tracking type · Angled paper tickets'},
- {id:'portal',name:'Portal',family:'editorial',detail:'Folding windows · Lyric capsules',featured:true},
- {id:'mosaic',name:'Mosaic',family:'editorial',detail:'Curved type · Moving lyric grids'}
-] as const;
+ {id:'ship',name:'Ship',family:'signature',detail:'Depth glide with a continuing letter drift'},
+ {id:'fisheye',name:'Fisheye',family:'signature',detail:'A breathing lens across individual letters'},
+ {id:'orbit',name:'Orbit',family:'spatial',detail:'Letters float in small orbital paths'},
+ {id:'cascade',name:'Cascade',family:'spatial',detail:'Staggered falling letters with a flowing hold'},
+ {id:'scatter',name:'Scatter',family:'spatial',detail:'Angled letters gather into a living phrase'},
+ {id:'elastic',name:'Elastic',family:'kinetic',detail:'Springing letters with a soft elastic hold'},
+ {id:'wave',name:'Wave',family:'kinetic',detail:'A continuous travelling wave across the letters'},
+ {id:'alternating',name:'Alternating Sides',family:'kinetic',detail:'Consecutive lines enter from opposite sides'},
+ {id:'hinge',name:'Hinge',family:'editorial',detail:'Folded letters with alternating perspective'},
+ {id:'carnival',name:'Carnival',family:'editorial',detail:'Bold rhythmic letter bounce'},
+ {id:'broadside',name:'Broadside',family:'editorial',detail:'Slanted tracking with persistent letter sway'},
+ {id:'portal',name:'Portal',family:'editorial',detail:'Letters expand through a turning portal'}
+];
+const LEGACY_MOTIONS:Record<string,LyricMotion>={visual:'orbit','fisheye-visual':'fisheye',prism:'hinge',surge:'wave',echo:'portal',halo:'orbit',ribbon:'wave',reel:'cascade',fable:'scatter',mosaic:'carnival'};
+export function normalizeLyricMotion(value:unknown):LyricMotion|null{
+ if(typeof value!=='string')return null;
+ return LYRIC_MOTIONS.includes(value as LyricMotion)?value as LyricMotion:LEGACY_MOTIONS[value]||null;
+}
+export function normalizeMotionPool(value:unknown):LyricMotion[]|null{
+ const oldFullPool=[...LYRIC_MOTIONS.filter(id=>id!=='wave'&&id!=='alternating'),...Object.keys(LEGACY_MOTIONS)];
+ if(Array.isArray(value)&&oldFullPool.every(id=>value.includes(id)))return [...LYRIC_MOTIONS];
+ return Array.isArray(value)?[...new Set(value.map(normalizeLyricMotion).filter((id):id is LyricMotion=>id!==null))]:null;
+}
 
 export const VOXELVERSE_STYLE_BY_ID=Object.fromEntries(
  VOXELVERSE_STYLES.map(s=>[s.id,s])
@@ -205,8 +178,7 @@ export function lyricWordHit(cue:LyricCue|null,time:number,emphasis:WordEmphasis
  * NEW LYRIC COLOUR MECHANISM:
  * 1. Computes a single uniform base line colour (`baseColor`) based strictly on the active background.
  * 2. Computes a single high-contrast sung/active fill colour (`sungColor`) based on the active background & accent.
- * 3. When `forceLightText` is true (e.g. overlaid on video with dark overlay), enforces crisp light-themed text
- *    (`#f8fafc` base + high-luminance light accent) so lyrics are always bright and legible over video.
+ * 3. Video uses pale unread ink and saturated sung ink with checked contrast against the dark overlay.
  */
 export function computeBackgroundAdaptiveLyricColors(
  backgroundHex:string,
@@ -219,14 +191,14 @@ export function computeBackgroundAdaptiveLyricColors(
  if(forceLightText){
   const darkVideoBg='#07090e';
   const baseColor=customBaseOverride&&/^#[0-9a-f]{6}$/i.test(customBaseOverride)
-   ?lightLyricColor(customBaseOverride,.88)
+   ?lightLyricColor(customBaseOverride)
    :'#f8fafc';
   const targetAccent=customAccentOverride&&/^#[0-9a-f]{6}$/i.test(customAccentOverride)
    ?customAccentOverride
    :'#72efdd';
-  let sungColor=lightLyricColor(targetAccent);
+  let sungColor=vibrantLyricColor(targetAccent);
   if(sungColor.toLowerCase()===baseColor.toLowerCase()){
-   sungColor='#72efdd';
+   sungColor=vibrantLyricColor('#22d3aa');
   }
   return {baseColor,sungColor,effectiveBgHex:darkVideoBg};
  }
@@ -282,6 +254,8 @@ export interface KineticArgs {
  wordStylesEnabled?:boolean;
  currentWordStyle?:CurrentWordStyle;
  enabledWordStyles?:readonly CurrentWordStyle[];
+ enabledLyricTransitions?:readonly LyricTransition[];
+ cueIndex?:number;
  albumPalette?:AlbumArtLyricPalette;
  enabledMotions?:readonly LyricMotion[];
  enabledPlacements?:readonly Exclude<LyricPlacementMode,'auto'>[];
@@ -312,6 +286,9 @@ export interface KineticResult {
  fillPace?:'letter'|'word'|'line';
  placement?:Exclude<LyricPlacementMode,'auto'>;
  wordStyle?:CurrentWordStyle|'off';
+ glyphs?:number;
+ letterMode?:'letters'|'shaped'|'mixed';
+ lyricTransition?:LyricTransition|'none';
 }
 
 export interface WordPlacement {
@@ -343,7 +320,7 @@ export function buildWordRows(
  const totalPx=widths.reduce((sum,w)=>sum+w,0)+Math.max(0,count-1)*wordGap;
 
  const maxWordsPerRow=
-  motion==='ship'||motion==='orbit'||motion==='cascade'||motion==='reel'||motion==='hinge'?3:
+  motion==='ship'||motion==='orbit'||motion==='cascade'||motion==='hinge'?3:
   count>=7?3:4;
  const maxCharsPerRow=22;
 
@@ -496,11 +473,14 @@ interface CachedCueLayout {
  fit:number;
  size:number;
  joinedText:string;
+ units:LetterUnit[][];
+ unitOffsets:number[];
+ unitCount:number;
 }
 
 let cachedLayout:CachedCueLayout|null=null;
 
-/** One continuous phrase, each word painted on a projected world plane with VoxelVerse choreography. */
+/** A single phrase with cached letter choreography and intact shaped-script fallback. */
 export function drawKineticLyrics({
  c,
  scene,
@@ -515,8 +495,10 @@ export function drawKineticLyrics({
  project=makeLyricProjection(w,h,STILL_CAMERA),
  animated=true,
  wordStylesEnabled=false,
- currentWordStyle='lift',
+ currentWordStyle='bloom',
  enabledWordStyles,
+ enabledLyricTransitions,
+ cueIndex=0,
  albumPalette,
  enabledMotions,
  enabledPlacements,
@@ -547,7 +529,7 @@ export function drawKineticLyrics({
  const activePlacement:Exclude<LyricPlacementMode,'auto'>=duetSide
   ?duetSide
   :resolveCuePlacement(cue,scene,placementMode,enabledPlacements);
- const cueParity=hash(cue.text+'|'+Math.round(cue.time*5))%2;
+ const cueParity=cueIndex%2;
 
  // Proportional font scale factor: ensures lyrics maintain the exact same proportion
  // relative to the stage in both normal view and full screen view.
@@ -568,9 +550,12 @@ export function drawKineticLyrics({
  let fit:number;
  let size:number;
  let joinedText:string;
+ let units:LetterUnit[][];
+ let unitOffsets:number[];
+ let unitCount:number;
 
  if(cachedLayout&&cachedLayout.key===layoutKey&&cachedLayout.cue===cue&&cachedLayout.emphasis===emphasis){
-  ({runs,placements,totalRowsCount,widestRow,fit,size,joinedText}=cachedLayout);
+  ({runs,placements,totalRowsCount,widestRow,fit,size,joinedText,units,unitOffsets,unitCount}=cachedLayout);
  }else{
   runs=lyricRuns(cue,mode,emphasis);
   const duetScale=duetSide?0.78:1;
@@ -600,7 +585,9 @@ export function drawKineticLyrics({
   size=clamp(baseline*maxAllowedFit,effectiveMinFont,Math.min(proportionalMaxFont,maxSafeFont));
   fit=size/Math.max(1,baseline);
   joinedText=runs.map(word=>word.text).join(' ');
-  cachedLayout={key:layoutKey,cue,emphasis,runs,placements,totalRowsCount,widestRow,fit,size,joinedText};
+  units=runs.map(word=>{applySceneFont(c,font,size,word.text);return buildLetterUnits(c,word.text);});
+  unitCount=0;unitOffsets=units.map(parts=>{const offset=unitCount;unitCount+=parts.length;return offset;});
+  cachedLayout={key:layoutKey,cue,emphasis,runs,placements,totalRowsCount,widestRow,fit,size,joinedText,units,unitOffsets,unitCount};
  }
 
  // Never animate inferred timings when romanization changes the token count.
@@ -667,7 +654,10 @@ export function drawKineticLyrics({
    activeColor:sungColor,
    fillPace,
    placement:activePlacement,
-   wordStyle:activeWordStyle
+   wordStyle:activeWordStyle,
+  glyphs:energy>.001?unitCount:runs.length,
+  letterMode:units.every(parts=>parts[0]?.connected)?'shaped':units.some(parts=>parts[0]?.connected)?'mixed':'letters',
+  lyricTransition:energy>.001?(motion==='alternating'?'alternate':chooseLyricTransition(enabledLyricTransitions,cueIndex)||'none'):'none'
   };
  }
 
@@ -712,9 +702,8 @@ export function drawKineticLyrics({
   }
  }
 
- // Phrase-level perspective and continuous camera-plane motion across the 20 styles
+ // Phrase perspective supports the independent, persistent letter choreography
  const yaw=energy*(
-  motion==='ribbon'?0.18*Math.sin(age*.9):
   motion==='orbit'?0.30*Math.sin(progress*Math.PI*2):
   motion==='hinge'?0.38*(0.5-progress):
   motion==='ship'?0.18*Math.sin(progress*Math.PI*2):
@@ -722,18 +711,15 @@ export function drawKineticLyrics({
   motion==='broadside'?0.14*Math.sin(progress*Math.PI-0.4):0
  );
  const pitch=energy*(
-  motion==='ribbon'?0.13*Math.cos(age*.8):
-  motion==='surge'?0.22*(1-progress):
-  motion==='reel'?0.15*Math.sin(progress*Math.PI-0.5):
+  motion==='wave'?0.06*Math.sin(age):
   motion==='cascade'?0.08:
   motion==='ship'?-0.05*Math.cos(progress*Math.PI):0
  );
  const roll=energy*(
-  motion==='ribbon'?0.045*Math.sin(age*.7):
   motion==='scatter'?0.075*Math.sin(progress*Math.PI*2):
   motion==='carnival'?-0.045*Math.cos(progress*Math.PI):
   motion==='broadside'?0.045:
-  motion==='mosaic'?-0.035*Math.sin(progress*Math.PI):0
+  0
  );
  const lineZ=energy*(
   motion==='ship'?0.65*(progress-0.35):
@@ -749,7 +735,7 @@ export function drawKineticLyrics({
   return project(xx*cr-yy*sr,xx*sr+yy*cr,zz*cp+y*sp+lineZ);
  };
 
- const rowSpacingWorld=(size*1.38)/pixelsPerWorld;
+ const rowSpacingWorld=(size*(motion==='wave'?1.60:1.45))/pixelsPerWorld;
  let drawn=0,highlights=0;
  applySceneFont(c,font,size,joinedText);
 
@@ -785,25 +771,7 @@ export function drawKineticLyrics({
   const isSpokenEnd=hasWordSync?time>=word.end:false;
   const isActive=hasWordSync?(time>=word.start&&time<word.end):false;
 
-  // Line choreography follows the phrase clock, independent of the current-word layer.
-  const entryDelay=Math.min(.24,word.index*.035);
-  const enter=energy*Math.exp(-age*5.2);
-  const stagger=energy*Math.exp(-Math.max(0,age-entryDelay)*6.2);
-  const phase=age*1.65+word.index*.64;
-  const drift=Math.sin(phase)*energy;
-  const lift=Math.sin(progress*Math.PI)*energy;
-
-  const rowSlideDecay=energy*Math.exp(-Math.max(0,age-row*0.06)*7.5);
-  const rowDirection=
-   activePlacement==='left'||activePlacement==='bottom-left'||activePlacement==='top-left'
-    ?(row%2===0?-1:-0.55)
-    :activePlacement==='right'||activePlacement==='bottom-right'
-    ?(row%2===0?1:0.55)
-    :((row+cueParity)%2===0?-1:1);
-  const rowSlideX=rowDirection*rowSlideDecay*0.85;
-  const rowSlideY=
-   (activePlacement==='bottom-right'||activePlacement==='bottom-left'?-0.32:activePlacement==='top-left'?0.32:0)*
-   rowSlideDecay;
+  const rowSlideX=0,rowSlideY=0;
 
   const maxRowShift=((widestRow-rowWidth)*0.5*fit)/pixelsPerWorld;
   const alignShiftX=
@@ -826,92 +794,6 @@ export function drawKineticLyrics({
   let wordShear=0;
   let wordRotation=0;
 
-  switch(motion){
-  case 'ship':
-   x-=stagger*.38;y+=Math.sin(age*.9+row)*.055*energy;
-   z=-stagger*1.15+lift*.32;wordRotation=-stagger*.08;
-   break;
-  case 'fisheye':
-  case 'fisheye-visual': {
-   const radial=Math.hypot(x*.35,y*.45);
-   const bulge=Math.max(0,1-radial*.5);
-   z=(bulge*(.48+.16*Math.sin(age*1.4)))*energy-enter*.55;
-   stretchX=1+bulge*.09*energy;stretchY=1+bulge*.13*energy;
-   y+=Math.sin(x+age)*.08*energy;
-   if(motion==='fisheye-visual')wordRotation=.045*drift;
-   break;
-  }
-  case 'visual':
-   y+=drift*.13-stagger*.28;z=Math.cos(phase)*.14*energy;
-   wordRotation=.035*drift;
-   break;
-  case 'orbit': {
-   const theta=row*.65+age*.8;
-   x+=Math.cos(theta)*.22*energy;y+=Math.sin(theta)*.15*energy;
-   z=Math.sin(theta+word.index*.3)*.3*energy-stagger*.55;
-   wordRotation=.035*Math.sin(theta)*energy;break;
-  }
-  case 'cascade':
-   x+=(row-(totalRows-1)*.5)*.24*energy-stagger*.45;
-   y-=stagger*.65;y+=Math.sin(age*1.2+row)*.06*energy;
-   z=-stagger*.35;wordRotation=-stagger*.12;break;
-  case 'prism':
-   z=Math.sin(age*1.3+row)*.27*energy-enter*.7;
-   wordShear=.09*Math.sin(phase*.7)*energy;x+=stagger*.24;
-   break;
-  case 'scatter': {
-   const sign=word.index%2===0?1:-1;
-   x+=sign*stagger*.42;y+=sign*(stagger*.32+.06*energy);
-   wordRotation=sign*(stagger*.23+.035*energy*Math.sin(age));
-   z=-stagger*.48;break;
-  }
-  case 'surge':
-   y+=drift*.24-stagger*.55;z=Math.cos(phase)*.25*energy;
-   stretchY=1+Math.sin(phase)*.06*energy;break;
-  case 'elastic': {
-   const spring=Math.exp(-Math.max(0,age-entryDelay)*4)*Math.sin(Math.max(0,age-entryDelay)*13)*energy;
-   stretchX=1+spring*.18;stretchY=1-spring*.14;
-   y+=spring*.25;z=-stagger*.3;break;
-  }
-  case 'echo':
-   z=-stagger*.95+Math.sin(age*.75+row)*.24*energy;
-   x-=stagger*.28;stretchX=1+enter*.08;stretchY=1+enter*.08;
-   break;
-  case 'halo':
-   y+=Math.sin(age*1.1+row)*.13*energy;z=lift*.3-enter*.5;
-   stretchX=1+Math.sin(age*1.4)*.025*energy;stretchY=stretchX;break;
-  case 'ribbon':
-   y+=Math.sin(x*.9-age*1.9)*.24*energy-stagger*.35;
-   z=Math.cos(x*.9-age*1.9)*.3*energy;
-   wordRotation=Math.cos(x*.9-age*1.9)*.075*energy;
-   wordShear=Math.sin(phase)*.035*energy;break;
-  case 'reel':
-   y+=(.5-progress)*.42*energy-stagger*.5;
-   stretchY=1-stagger*.16;wordRotation=stagger*.1;
-   z=-stagger*.4;break;
-  case 'hinge':
-   wordShear=(row%2===0?1:-1)*(.05*energy+stagger*.24);
-   stretchX=1-stagger*.24;z=-stagger*.75;
-   y+=Math.sin(age*.8+row)*.05*energy;break;
-  case 'fable':
-   y+=Math.sin(phase*.7)*.16*energy-stagger*.3;
-   wordRotation=.055*drift-stagger*.1;z=lift*.15;break;
-  case 'carnival':
-   stretchX=1+enter*.16;stretchY=1+enter*.18;
-   wordRotation=(word.index%2===0?1:-1)*(stagger*.18+.025*energy);
-   y+=Math.sin(phase*1.1)*.08*energy;z=enter*.4;break;
-  case 'broadside':
-   x-=stagger*.85;wordShear=-.055*energy+enter*.15;
-   wordRotation=.025*Math.sin(age+row)*energy;
-   z=-stagger*.25;break;
-  case 'portal':
-   z=-stagger*1.25;stretchX=1-stagger*.17;stretchY=1-stagger*.17;
-   y+=Math.sin(age*.9)*.075*energy;wordRotation=stagger*.08;break;
-  case 'mosaic':
-   y+=Math.cos(x*.7+age*1.1)*.15*energy;
-   x+=(row%2===0?-1:1)*stagger*.28;
-   wordRotation=Math.sin(phase*.55)*.035*energy;z=-stagger*.35;break;
-  }
   if(activeWordStyle!=='off'&&isActive){
    const pose=currentWordPose(activeWordStyle,wordProgress,styleEnergy);
    y+=pose.y*size/pixelsPerWorld;
@@ -924,7 +806,7 @@ export function drawKineticLyrics({
   stretchX=clamp(stretchX,0.82,maxStretchX);
   stretchY=clamp(stretchY,0.82,maxStretchY);
 
-  const anchor=energy*(motion==='surge'?-0.12:motion==='hinge'?0.10:motion==='cascade'?-0.06:0);
+  const anchor=energy*(motion==='hinge'?0.10:motion==='cascade'?-0.06:0);
   const a=point(x,y+anchor,z);
   const b=point(x+1,y+anchor,z);
   const d=point(x,y+anchor+1,z);
@@ -938,8 +820,8 @@ export function drawKineticLyrics({
    const aa=scaleX*stretchX,bb=scaleXY*stretchX,cc=scaleYX+wordShear*scaleX,dd=scaleY*stretchY;
    const mA=aa*cos+cc*sin,mB=bb*cos+dd*sin,mC=cc*cos-aa*sin,mD=dd*cos-bb*sin;
    const measuredW=width*fit;
-   const localHalfW=measuredW*0.56+size*.14+8;
-   const localHalfH=size*0.64+6;
+   const localHalfW=measuredW*0.56+size*(energy>.01?.38:.14)+8;
+   const localHalfH=size*(energy>.01?1.02:.64)+6;
    const halfExtentX=Math.abs(mA)*localHalfW+Math.abs(mC)*localHalfH;
    const halfExtentY=Math.abs(mB)*localHalfW+Math.abs(mD)*localHalfH;
 
@@ -995,6 +877,12 @@ export function drawKineticLyrics({
   if(scaledMinY<boundTop)shiftY=boundTop-scaledMinY;
   else if(scaledMaxY>boundBottom)shiftY=boundBottom-scaledMaxY;
 
+  const entry=lyricEntryPose(energy>.001?(motion==='alternating'?'alternate':chooseLyricTransition(enabledLyricTransitions,cueIndex)):null,age,w,h,cueIndex);
+  c.save();
+  if(entry.reveal<1){c.beginPath();c.rect(0,0,w*entry.reveal,h);c.clip();}
+  c.globalAlpha*=entry.alpha;
+  const entryA=entry.scale*Math.cos(entry.rotation),entryB=entry.scale*Math.sin(entry.rotation);
+  c.transform(entryA,entryB,-entryB,entryA,w*.5+entry.x-entryA*w*.5+entryB*h*.5,h*.5+entry.y-entryB*w*.5-entryA*h*.5);
   for(const pw of preparedWords){
    const {item,wordProgress,isSpokenStart,isSpokenEnd,isActive,measuredW,mA,mB,mC,mD,screenX,screenY}=pw;
    const {word}=item;
@@ -1013,28 +901,27 @@ export function drawKineticLyrics({
    c.textBaseline='middle';
    applySceneFont(c,font,size,word.text);
 
+   const candidateSung=lineColors?.sungColors?.[(word.index+(duetSide==='right'?1:0))%lineColors.sungColors.length];
+   const wordSungColor=candidateSung?(forceLightText?candidateSung:readableChromaticInk(theme.background,candidateSung)):sungColor;
    if(activeWordStyle!=='off'&&isActive){
-    drawCurrentWordAccent(c,activeWordStyle,measuredW,size,wordProgress,sungColor,styleEnergy,word.text);
+    drawCurrentWordAccent(c,activeWordStyle,measuredW,size,wordProgress,wordSungColor,styleEnergy,word.text);
    }
 
-   paintWordWithSequentialColor(
-    c,
-    word.text,
-    measuredW*1.08,
-    hasWordSync&&(animated||wordStylesEnabled),
-    fillPace,
-    wordProgress,
-    isSpokenStart,
-    isSpokenEnd,
-    baseColor,
-    sungColor,
-    effectiveBgHex
-   );
+   const parts=energy>.001?units[word.index]:[{text:word.text,center:0,width:measuredW,index:0,count:1,connected:true}];
+   for(const part of parts){
+    const pose=letterMotionPose(motion,age,unitOffsets[word.index]+part.index,unitCount,energy,part.connected);
+    c.save();
+    c.transform(pose.scaleX*Math.cos(pose.rotation),pose.scaleX*Math.sin(pose.rotation),pose.shear-Math.sin(pose.rotation),pose.scaleY*Math.cos(pose.rotation),part.center+pose.x*size,pose.y*size);
+    const letterProgress=part.connected?wordProgress:clamp(wordProgress*part.count-part.index);
+    paintWordWithSequentialColor(c,part.text,Math.max(1,part.width*1.12),hasWordSync&&(animated||wordStylesEnabled),fillPace,letterProgress,isSpokenStart,isSpokenEnd,baseColor,wordSungColor,effectiveBgHex);
+    c.restore();
+   }
 
    c.restore();
    drawn++;
    if(word.importance>0)highlights++;
   }
+  c.restore();
  }
  return {
   motion,
@@ -1048,6 +935,9 @@ export function drawKineticLyrics({
   activeColor:sungColor,
   fillPace,
   placement:activePlacement,
-  wordStyle:activeWordStyle
+  wordStyle:activeWordStyle,
+  glyphs:energy>.001?unitCount:runs.length,
+  letterMode:units.every(parts=>parts[0]?.connected)?'shaped':units.some(parts=>parts[0]?.connected)?'mixed':'letters',
+  lyricTransition:energy>.001?(motion==='alternating'?'alternate':chooseLyricTransition(enabledLyricTransitions,cueIndex)||'none'):'none'
  };
 }
