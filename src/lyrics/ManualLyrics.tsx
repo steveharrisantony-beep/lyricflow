@@ -21,7 +21,7 @@ import {
   resolveThemePalette,
   type SceneId,
 } from "../visualization/cinematic/catalog";
-import type { AlbumArtLyricPalette } from "../visualization/cinematic/contrast";
+import { albumColorsForLine, type AlbumArtLyricPalette } from "../visualization/cinematic/contrast";
 import {
   computeBackgroundAdaptiveLyricColors,
   resolveLyricFillPace,
@@ -773,10 +773,8 @@ export default function ManualLyrics({
       (lyricColorMode === "album" ||
         (lyricColorMode === "auto" && isVideoBackground))
     ) {
-      return {
-        baseLineColor: albumArtPalette.baseColor,
-        sungAccentColor: albumArtPalette.sungColor,
-      };
+      const colors=albumColorsForLine(albumArtPalette,`${current?.time||0}|${current?.text||''}`);
+      return {baseLineColor:colors.baseColor,sungAccentColor:colors.sungColor};
     }
     const scheduledScene =
       storyboard.find((s) => lyricTime >= s.start && lyricTime < s.end)?.id ||
@@ -797,11 +795,13 @@ export default function ManualLyrics({
       palette.foreground,
       palette.accent,
       customOverride,
+      isVideoBackground,
     );
     return { baseLineColor: baseColor, sungAccentColor: sungColor };
   }, [
     lyricColorMode,
     albumArtPalette,
+    current,
     isVideoBackground,
     storyboard,
     lyricTime,

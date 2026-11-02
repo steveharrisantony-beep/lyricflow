@@ -54,7 +54,7 @@ export function setLyricBackdrop(c:CanvasRenderingContext2D,pixels:ImageData|nul
  else backdrops.delete(c);
 }
 /** Sample the scene beneath the text. Keep solid typography free of stroked outlines. */
-export function paintLyric(c:CanvasRenderingContext2D,text:string,x:number,y:number,maxWidth:number,preferred:string,surface?:string){
+export function paintLyric(c:CanvasRenderingContext2D,text:string,x:number,y:number,maxWidth:number,preferred:string,surface?:string,fill?:CanvasGradient){
  const backdrop=backdrops.get(c),m=c.getTransform();
  if(!surface&&backdrop){
   const width=Math.min(maxWidth,c.measureText(text).width);
@@ -75,7 +75,7 @@ export function paintLyric(c:CanvasRenderingContext2D,text:string,x:number,y:num
  c.shadowColor=luminance(ink)<.25?'rgba(255,250,242,.28)':'rgba(0,0,0,.62)';
  c.shadowBlur=3;
  c.shadowOffsetY=1.5;
- c.fillStyle=ink;
+ c.fillStyle=fill||ink;
  c.fillText(text,x,y,maxWidth);
  c.restore();
 }
@@ -84,6 +84,67 @@ export interface AlbumArtLyricPalette {
  baseColor: string;
  sungColor: string;
  accentHex: string;
+ /** Several distinct, light artwork colours retained for the whole song. */
+ colors: string[];
+}
+
+/** Enforce light text over video even for very dark or saturated artwork. */
+export function lightLyricColor(hex:string,minLuminance=.60):string{
+ if(!/^#[a-f0-9]{6}$/i.test(hex))return '#f8fafc';
+ if(luminance(hex)>=minLuminance)return hex;
+ for(let mix=.08;mix<=1.001;mix+=.08){
+  const candidate=blendHex(hex,'#ffffff',Math.min(1,mix));
+  if(luminance(candidate)>=minLuminance)return candidate;
+ }
+ return '#ffffff';
+}
+
+/** Stable per-line selection; colours never flicker on successive render frames. */
+export function albumColorsForLine(palette:AlbumArtLyricPalette,lineKey:string){
+ let seed=0;
+ for(const ch of lineKey)seed=(Math.imul(seed,31)+ch.charCodeAt(0))>>>0;
+ const colors=palette.colors.length?palette.colors:[palette.sungColor];
+ const sungColor=lightLyricColor(colors[seed%colors.length]);
+ return {baseColor:lightLyricColor(blendHex(sungColor,'#ffffff',.78),.88),sungColor};
+}
+
+/** Weighted colour buckets keep several hues from the image, rather than only its dominant hue. */
+export function paletteFromArtworkPixels(data:Uint8ClampedArray):AlbumArtLyricPalette|null{
+ const buckets=new Map<string,{r:number;g:number;b:number;count:number;saturation:number}>();
+ let opaque=0,sumR=0,sumG=0,sumB=0;
+ for(let i=0;i<data.length;i+=4){
+  const r=data[i],g=data[i+1],b=data[i+2];
+  if(data[i+3]<128)continue;
+  opaque++;sumR+=r;sumG+=g;sumB+=b;
+  const [h,s,l]=rgbToHsl(r,g,b);
+  // Keep neutral artwork too: it should yield silver/cream, not an invented bright hue.
+  if(l<.045||l>.97)continue;
+  const key=s<.12?'neutral':String(Math.floor(h*24));
+  const bucket=buckets.get(key)||{r:0,g:0,b:0,count:0,saturation:0};
+  bucket.r+=r;bucket.g+=g;bucket.b+=b;bucket.count++;bucket.saturation+=s;
+  buckets.set(key,bucket);
+ }
+ const ranked=[...buckets.values()].sort((a,b)=>b.count*(.4+b.saturation/b.count)-a.count*(.4+a.saturation/a.count));
+ const selected:{h:number;s:number;color:string}[]=[];
+ for(const bucket of ranked){
+  const [h,s,l]=rgbToHsl(bucket.r/bucket.count,bucket.g/bucket.count,bucket.b/bucket.count);
+  if(selected.some(c=>Math.min(Math.abs(c.h-h),1-Math.abs(c.h-h))<.09&&Math.abs(c.s-s)<.2))continue;
+  selected.push({h,s,color:lightLyricColor(hslToHex(h,Math.min(.8,s),Math.max(.77,l)))});
+  if(selected.length===5)break;
+ }
+ if(!selected.length){
+  if(!opaque)return null;
+  const [h,s]=rgbToHsl(sumR/opaque,sumG/opaque,sumB/opaque);
+  const colors=[.78,.84,.9].map(l=>lightLyricColor(hslToHex(h,Math.min(.4,s),l)));
+  return {baseColor:lightLyricColor(blendHex(colors[0],'#ffffff',.78),.88),sungColor:colors[0],accentHex:colors[0],colors};
+ }
+ // Monochrome artwork keeps its own hue with light tonal variants.
+ const first=selected[0];
+ const colors=selected.map(c=>c.color);
+ if(colors.length===1){
+  colors.push(lightLyricColor(hslToHex(first.h,first.s*.55,.84)),lightLyricColor(hslToHex(first.h,first.s*.3,.9)));
+ }
+ return {baseColor:lightLyricColor(blendHex(colors[0],'#ffffff',.78),.88),sungColor:colors[0],accentHex:colors[0],colors};
 }
 
 const albumPaletteCache = new Map<string, AlbumArtLyricPalette>();
@@ -148,12 +209,14 @@ export function getDeterministicSongPalette(songSeed: string): AlbumArtLyricPale
   hash = Math.imul(hash, 16777619);
  }
  const hue = ((hash >>> 0) % 360) / 360;
- const sungColor = hslToHex(hue, 0.88, 0.68);
+ const colors=[0,.16,.42,.67].map(offset=>lightLyricColor(hslToHex(hue+offset,.72,.78)));
+ const sungColor = colors[0];
  const baseColor = hslToHex((hue + 0.04) % 1, 0.48, 0.93);
  return {
   baseColor,
   sungColor,
   accentHex: sungColor,
+  colors,
  };
 }
 
@@ -200,63 +263,7 @@ export async function extractAlbumArtPalette(
      ctx.drawImage(img, 0, 0, size, size);
      const data = ctx.getImageData(0, 0, size, size).data;
 
-     // Bucket colors (quantize to 32 levels per channel) and score by vibrancy + frequency
-     const buckets = new Map<string, { r: number; g: number; b: number; count: number; satSum: number }>();
-     for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      const a = data[i + 3];
-      if (a < 128) continue;
-      const brightness = (r + g + b) / 3;
-      if (brightness < 28 || brightness > 235) continue;
-      const [, sat] = rgbToHsl(r, g, b);
-      if (sat < 0.15) continue;
-
-      const qr = Math.round(r / 32) * 32;
-      const qg = Math.round(g / 32) * 32;
-      const qb = Math.round(b / 32) * 32;
-      const key = `${qr},${qg},${qb}`;
-      const prev = buckets.get(key);
-      if (prev) {
-       prev.r += r;
-       prev.g += g;
-       prev.b += b;
-       prev.count++;
-       prev.satSum += sat;
-      } else {
-       buckets.set(key, { r, g, b, count: 1, satSum: sat });
-      }
-     }
-
-     let bestBucket: { r: number; g: number; b: number; count: number; satSum: number } | null = null;
-     let bestScore = -1;
-     for (const b of buckets.values()) {
-      const avgSat = b.satSum / b.count;
-      const score = b.count * (0.45 + avgSat * 1.35);
-      if (score > bestScore) {
-       bestScore = score;
-       bestBucket = b;
-      }
-     }
-
-     if (!bestBucket) {
-      resolve(fallback);
-      return;
-     }
-
-     const avgR = Math.round(bestBucket.r / bestBucket.count);
-     const avgG = Math.round(bestBucket.g / bestBucket.count);
-     const avgB = Math.round(bestBucket.b / bestBucket.count);
-     const [h, s] = rgbToHsl(avgR, avgG, avgB);
-     const vibrantSat = Math.max(0.76, Math.min(0.95, s * 1.25));
-     const sungColor = hslToHex(h, vibrantSat, 0.68);
-     const baseColor = hslToHex(h, Math.max(0.38, vibrantSat * 0.55), 0.93);
-     resolve({
-      baseColor,
-      sungColor,
-      accentHex: sungColor,
-     });
+     resolve(paletteFromArtworkPixels(data)||fallback);
     } catch {
      resolve(fallback);
     }

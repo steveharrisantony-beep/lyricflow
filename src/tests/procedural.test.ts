@@ -29,9 +29,9 @@ describe('VoxelWall 2D scene & VoxelVerse lyric style registries',()=>{
   }
   expect(MOTION_SCENES).toHaveLength(21);
  });
- it('provides all 19 VoxelVerse lyric animation styles across 4 families',()=>{
-  expect(LYRIC_MOTIONS).toHaveLength(19);
-  expect(VOXELVERSE_STYLES).toHaveLength(19);
+ it('provides all 20 lyric animation styles across 4 families',()=>{
+  expect(LYRIC_MOTIONS).toHaveLength(20);
+  expect(VOXELVERSE_STYLES).toHaveLength(20);
   expect(VOXELVERSE_FAMILIES.map(f=>f.id)).toEqual(['signature','spatial','kinetic','editorial']);
   for(const id of AUDIO_ONLY_SCENES){
    expect(byId[id].accent).toMatch(/^#[0-9a-f]{6}$/i);

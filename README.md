@@ -36,7 +36,7 @@ The application and its existing Express backend run inside the APK. No external
 [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Tunai-0511/lyricflow?file=README.md)
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Tunai-0511/lyricflow?quickstart=1)
 
-**LyricFlow** is a studio-grade, real-time audio-reactive music visualizer and synchronized kinetic lyric stage. It combines **23 genuinely distinct VoxelWall-inspired 2D music-reactive live wallpapers** (each equipped with **4–5 selectable colour palettes**) across seven curated visual families with **19 VoxelVerse animated lyric choreography styles**, **Stash multi-catalog online streaming**, **Apple Music syllable/word-synced TTML & line-synced LRC engines**, **offline Indic-to-Latin phonetic romanization**, and **Firebase Authentication & Cloud Firestore profile synchronization**.
+**LyricFlow** is a studio-grade, real-time audio-reactive music visualizer and synchronized kinetic lyric stage. It combines **23 genuinely distinct VoxelWall-inspired 2D music-reactive live wallpapers** (each equipped with **4–5 selectable colour palettes**) across seven curated visual families with **20 animated lyric choreography styles**, **Stash multi-catalog online streaming**, **Apple Music syllable/word-synced TTML & line-synced LRC engines**, **offline Indic-to-Latin phonetic romanization**, and **Firebase Authentication & Cloud Firestore profile synchronization**.
 
 > **Maintenance Policy:** This `README.md` is the canonical technical reference for LyricFlow and is continuously updated alongside every architectural, visual, audio, and lyric-engine update.
 
@@ -65,8 +65,10 @@ The application and its existing Express backend run inside the APK. No external
   - Pure, high-FPS 2D procedural canvas and spectral-geometry wallpapers organized into **7 VoxelWall categories**: *Flow*, *Contours*, *Sculptures*, *Space*, *Nature*, *Architecture*, and *Journeys*.
   - Every theme uses a 100% distinct procedural visual algorithm—all color-swap duplicate themes have been consolidated into **4–5 interactive Colour Palettes per theme** (`ThemePalette`) selectable directly on each theme card and inside Cinema Mode.
   - Every background can be individually toggled **ON/OFF** to curate the active auto-director rotation pool.
-- **19 VoxelVerse Lyric Animation Styles (`https://voxelwall.app/verse#verse-styles`)**:
-  - Full support for all **19 VoxelVerse text styles** organized into four families: **Signature** (*Ship, Fisheye, Visual, Fisheye Visual*), **Spatial** (*Orbit, Cascade, Prism, Scatter*), **Kinetic** (*Surge, Elastic, Echo, Halo*), and **Editorial** (*Reel, Hinge, Fable, Carnival, Broadside, Portal, Mosaic*).
+- **Independent lyric controls**: “Lyric animations” controls the 20 phrase choreographies; “Current word styles” controls 10 composable accents (Silk Lift, Bloom, Ink Underline, Orbit Halo, Satin Ribbon, Glass Spotlight, Constellation, Focus Brackets, Pendulum, Ripple). Word accents require sourced word timestamps with matching display tokens; line-only lyrics never invent word timing. Both off renders steady text; animation alone uses a secondary colour for sung words without word embellishments. Reduced motion keeps text steady. Word style selection/toggle are saved on this device.
+- **Auto lyric colours**: themes use the active theme palette; video uses several distinct light colours extracted from album artwork, varied per line. Monochrome artwork retains tonal variants; unavailable/CORS-blocked art uses a deterministic multi-colour fallback. Light video text and a dark shadow preserve readability.
+- **20 Lyric Animation Styles**:
+  - **20 lyric animations** organized into four families: **Signature** (*Ship, Fisheye, Visual, Fisheye Visual*), **Spatial** (*Orbit, Cascade, Prism, Scatter*), **Kinetic** (*Surge, Elastic, Echo, Halo, Ribbon*), and **Editorial** (*Reel, Hinge, Fable, Carnival, Broadside, Portal, Mosaic*).
   - Each style features dedicated 3D-projected plane orientation, spring physics, vector framing plates, semantic lyric emblems, and individual **ON/OFF** toggles.
 - **Background-Adaptive Sequential Lyric Colour Engine**:
   - **Base Line Colour**: Every lyric line first renders in a single uniform, WCAG-verified base colour adapted to the active theme palette background (`baseColor`).
@@ -290,7 +292,7 @@ Set up the shared project using the browser-only [Firebase setup guide](FIREBASE
 │   ├── visualization/cinematic/
 │   │   ├── CinematicStage.tsx                     # Video/Theme compositor, Black Overlay & Cinema Mode Studio Drawer
 │   │   ├── catalog.ts                             # 23 VoxelWall scene templates × 4–5 palettes across 7 categories
-│   │   ├── kineticTypography.ts                   # 19 VoxelVerse styles, 9 spatial placements & sequential colour fill
+│   │   ├── kineticTypography.ts                   # 20 lyric animations, placements & independent word accents
 │   │   ├── cameraRig.ts                           # Smooth bass-threshold camera rig with sensitivity control
 │   │   ├── contrast.ts                            # Real-time backdrop luminance sampler & WCAG contrast guard
 │   │   ├── fonts.ts                               # 25 curated display, editorial, & monospace font packs

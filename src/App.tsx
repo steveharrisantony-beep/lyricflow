@@ -91,6 +91,7 @@ import {
   fontLabel,
   preloadLyricFonts,
 } from "./visualization/cinematic/fonts";
+import {CURRENT_WORD_STYLES,type CurrentWordStyle} from "./visualization/cinematic/currentWordStyles";
 import {
   ALL_PLACEMENT_MODES,
   LYRIC_PLACEMENT_MODES,
@@ -276,6 +277,10 @@ export default function App({ user = null }: { user?: User | null }) {
   const [enabledPlacements, setEnabledPlacements] = useState<
     Exclude<LyricPlacementMode, "auto">[]
   >(initialPrefs.enabledPlacements || [...ALL_PLACEMENT_MODES]);
+  const [wordStylesEnabled, setWordStylesEnabled] = useState(initialExtended.wordStylesEnabled !== false);
+  const [currentWordStyle, setCurrentWordStyle] = useState<CurrentWordStyle>(() =>
+    CURRENT_WORD_STYLES.find(style => style.id === initialExtended.currentWordStyle)?.id || "lift",
+  );
   // Two separate placement sets: Video Background (default 'bottom-right' / Right Bottom) vs Built-in Themes (default 'center' / Centre Stage)
   const [videoPlacementMode, setVideoPlacementMode] =
     useState<LyricPlacementMode>(() => {
@@ -415,7 +420,7 @@ export default function App({ user = null }: { user?: User | null }) {
     useState<number>(0);
 
   const [albumArtPalette, setAlbumArtPalette] =
-    useState<AlbumArtLyricPalette | null>(null);
+    useState<{key:string;palette:AlbumArtLyricPalette} | null>(null);
 
   // Shared lyric display, available engine options, subtitle tracks, spatial placement & color controls
   const [lyricEngineOption, setLyricEngineOption] =
@@ -697,6 +702,8 @@ export default function App({ user = null }: { user?: User | null }) {
         "lyricflow.extendedSettings.v1",
         JSON.stringify({
           themeMode,
+          wordStylesEnabled,
+          currentWordStyle,
           showFps,
           videoFitMode,
           lyricFontScale,
@@ -712,6 +719,8 @@ export default function App({ user = null }: { user?: User | null }) {
     } catch {}
   }, [
     themeMode,
+    wordStylesEnabled,
+    currentWordStyle,
     showFps,
     videoFitMode,
     lyricFontScale,
@@ -1396,14 +1405,14 @@ export default function App({ user = null }: { user?: User | null }) {
     }
     let cancelled = false;
     void extractAlbumArtPalette(artworkUrl, songSeed).then((pal) => {
-      if (!cancelled) setAlbumArtPalette(pal);
+      if (!cancelled) setAlbumArtPalette({key:songSeed,palette:pal});
     });
     return () => {
       cancelled = true;
     };
   }, [localTrack?.artwork, stageYoutubeVideoId, songSeed]);
 
-  const effectiveAlbumArtPalette = albumArtPalette || defaultSongPalette;
+  const effectiveAlbumArtPalette = albumArtPalette?.key === songSeed ? albumArtPalette.palette : defaultSongPalette;
 
   const useAlbumArtColors = Boolean(
     effectiveAlbumArtPalette &&
@@ -1560,6 +1569,9 @@ export default function App({ user = null }: { user?: User | null }) {
                 autoScenes={autoScenes}
                 cameraMode="Front"
                 spatialTypography={spatialTypography}
+                wordStylesEnabled={wordStylesEnabled}
+                currentWordStyle={currentWordStyle}
+                albumLyricPalette={useAlbumArtColors ? effectiveAlbumArtPalette : undefined}
                 motionBlur={motionBlur}
                 enabledScenes={enabledScenes}
                 enabledKineticMotions={effectiveKineticMotions}
@@ -2220,6 +2232,7 @@ export default function App({ user = null }: { user?: User | null }) {
                     Animation
                     <select
                       aria-label="Lyric animation"
+                      disabled={!spatialTypography}
                       value={autoKineticMotion ? "auto" : manualKineticMotion}
                       onChange={(e) => {
                         setAutoKineticMotion(e.target.value === "auto");
@@ -2236,10 +2249,29 @@ export default function App({ user = null }: { user?: User | null }) {
                     </select>
                   </label>
                   <SwitchSetting
-                    label="3D lyric choreography"
+                    label="Lyric animations"
                     checked={spatialTypography}
                     onChange={setSpatialTypography}
                   />
+                  <SwitchSetting
+                    label="Current word styles"
+                    checked={wordStylesEnabled}
+                    onChange={setWordStylesEnabled}
+                  />
+                  <label className="field-row">
+                    Current word style
+                    <select
+                      aria-label="Current word style"
+                      disabled={!wordStylesEnabled}
+                      value={currentWordStyle}
+                      onChange={(e) => setCurrentWordStyle(e.target.value as CurrentWordStyle)}
+                    >
+                      {CURRENT_WORD_STYLES.map((style) => (
+                        <option key={style.id} value={style.id}>{style.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="muted">Current word styles apply only to word-synced lyrics.</p>
                   <details className="disclosure">
                     <summary>Enabled fonts & animations</summary>
                     <div className="selection-list">

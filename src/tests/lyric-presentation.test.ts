@@ -1,0 +1,124 @@
+import {describe,it,expect,vi} from 'vitest';
+import {drawKineticLyrics,LYRIC_MOTIONS,type KineticArgs} from '../visualization/cinematic/kineticTypography';
+import {CURRENT_WORD_STYLES} from '../visualization/cinematic/currentWordStyles';
+import {albumColorsForLine,contrastRatio,getDeterministicSongPalette,luminance,paletteFromArtworkPixels} from '../visualization/cinematic/contrast';
+import {TEMPLATES,type DirectedScene} from '../visualization/cinematic/catalog';
+import {buildCues} from '../lyrics/lyricTimeline';
+import {analyzeLyricWords} from '../lyrics/wordEmphasis';
+
+const [cue]=buildCues([{time:0,text:'Carry the light home',words:[
+ {text:'Carry',start:0,end:1,timing:'sourced'}, {text:'the',start:1,end:1.5,timing:'sourced'},
+ {text:'light',start:1.5,end:2.5,timing:'sourced'},{text:'home',start:2.5,end:3.5,timing:'sourced'}
+]}],[]);
+const scene:DirectedScene={...TEMPLATES[0],start:0,end:12,variation:0,section:0,reason:'fixture'};
+function context(){
+ const paints:{text:string;color:unknown}[]=[];
+ const c={font:'800 50px sans-serif',fillStyle:'',canvas:{width:1000,height:600},save:vi.fn(),restore:vi.fn(),transform:vi.fn(),
+  fillText(text:string){paints.push({text,color:this.fillStyle});},
+  beginPath:vi.fn(),moveTo:vi.fn(),lineTo:vi.fn(),bezierCurveTo:vi.fn(),closePath:vi.fn(),
+  arc:vi.fn(),ellipse:vi.fn(),roundRect:vi.fn(),stroke:vi.fn(),fill:vi.fn(),
+  getTransform:()=>({a:1,b:0,c:0,d:1,e:0,f:0}),
+  measureText(text:string){return {width:text.length*parseFloat(this.font.match(/([\d.]+)px/)?.[1]||'50')*.56};}
+ };
+ return {c:c as unknown as CanvasRenderingContext2D,paints};
+}
+function render(overrides:Partial<KineticArgs>={}){
+ const {c,paints}=context();
+ const result=drawKineticLyrics({c,scene,cue,time:.5,mode:'original',w:1000,h:600,intensity:1,reduced:false,
+  emphasis:analyzeLyricWords([cue]),enabledFonts:['impact'],placementMode:'center',fillPaceMode:'word',...overrides});
+ return {c,paints,result,transforms:vi.mocked(c.transform).mock.calls};
+}
+
+describe('independent phrase animation and word styles',()=>{
+ it('keeps both-off text and geometry steady, including an otherwise moving camera',()=>{
+  const overrides={animated:false,wordStylesEnabled:false,project:()=>({x:999,y:222,visible:true})};
+  const a=render({...overrides,time:.2}),b=render({...overrides,time:2});
+  expect(a.transforms).toEqual(b.transforms);
+  expect(a.paints).toEqual(b.paints);
+  expect(new Set(a.paints.map(p=>p.color)).size).toBe(1);
+  expect(a.result.wordStyle).toBe('off');
+ });
+ it('uses only secondary colour for sung words when the word layer is off',()=>{
+  const a=render({animated:true,wordStylesEnabled:false,time:.5,fillPaceMode:'letter'});
+  expect(a.result.fillPace).toBe('word');
+  expect(a.paints.map(p=>p.text)).toEqual(['Carry','the','light','home']);
+  expect(a.paints[0].color).toBe(a.result.activeColor);
+  expect(a.paints.slice(1).every(p=>p.color===a.result.baseColor)).toBe(true);
+  expect(a.c.beginPath).not.toHaveBeenCalled();
+  expect(a.transforms).not.toEqual(render({animated:true,wordStylesEnabled:false,time:1.9}).transforms);
+ });
+ it('can apply word styles without phrase animation and keeps reduced motion steady',()=>{
+  const styled=render({animated:false,wordStylesEnabled:true,currentWordStyle:'lift'});
+  const plain=render({animated:false,wordStylesEnabled:false});
+  expect(styled.transforms).not.toEqual(plain.transforms);
+  const a=render({animated:true,wordStylesEnabled:true,reduced:true,time:.2});
+  const b=render({animated:true,wordStylesEnabled:true,reduced:true,time:.8});
+  expect(a.transforms).toEqual(b.transforms);
+  expect(a.c.beginPath).not.toHaveBeenCalled();
+ });
+ it('does not invent word accents for line timing or mismatched romanization',()=>{
+  const lineOnly=render({cue:{...cue,timing:'estimated'},wordStylesEnabled:true,currentWordStyle:'halo'});
+  expect(lineOnly.result.wordStyle).toBe('off');expect(lineOnly.result.fillPace).toBe('line');
+  const mismatched=render({cue:{...cue,romanized:'One extra romanized token here'},mode:'romanized',wordStylesEnabled:true});
+  expect(mismatched.result.wordStyle).toBe('off');expect(mismatched.result.fillPace).toBe('line');
+ });
+ it('paints a shaped Indic word once while its colour sweeps across the glyphs',()=>{
+  const {c,paints}=context();
+  c.createLinearGradient=vi.fn(()=>({addColorStop:vi.fn()}) as unknown as CanvasGradient);
+  const [indic]=buildCues([{time:0,text:'മഴക്കാലം',words:[{text:'മഴക്കാലം',start:0,end:2,timing:'sourced'}]}],[]);
+  render({c,cue:indic,wordStylesEnabled:true,fillPaceMode:'letter'});
+  expect(paints.map(p=>p.text)).toEqual(['മഴക്കാലം']);
+  expect(c.createLinearGradient).toHaveBeenCalledOnce();
+ });
+ it('renders all 200 animation/style combinations without duplicating the lyric phrase',()=>{
+  expect(LYRIC_MOTIONS).toHaveLength(20);expect(CURRENT_WORD_STYLES).toHaveLength(10);
+  for(const motion of LYRIC_MOTIONS)for(const style of CURRENT_WORD_STYLES){
+   for(const [w,h] of [[360,203],[800,1280],[1920,1080]]){
+    const output=render({w,h,enabledMotions:[motion],currentWordStyle:style.id,wordStylesEnabled:true});
+    expect(output.result.drawn,`${motion}/${style.id}`).toBe(4);
+    expect(output.paints.map(p=>p.text)).toEqual(['Carry','the','light','home']);
+    expect(output.transforms.flat().every(Number.isFinite)).toBe(true);
+   }
+  }
+ });
+ it('gives every phrase choreography its own motion and keeps every word visible through entries and endings',()=>{
+  const poses=new Set<string>();
+  for(const motion of LYRIC_MOTIONS){
+   poses.add(JSON.stringify(render({enabledMotions:[motion],time:.4}).transforms));
+   for(const time of [0,.05,.4,1,3.4])expect(render({enabledMotions:[motion],time}).result.drawn).toBe(4);
+  }
+  expect(poses.size).toBe(20);
+ });
+});
+
+describe('artwork and theme lyric colours',()=>{
+ const pixels=new Uint8ClampedArray(Array.from({length:90},(_,i)=>i<30?[205,35,65,255]:i<60?[20,125,200,255]:[35,170,90,255]).flat());
+ it('retains several hues from the actual artwork and chooses stable light colours across lines',()=>{
+  const palette=paletteFromArtworkPixels(pixels)!;
+  expect(palette.colors.length).toBeGreaterThanOrEqual(3);
+  expect(palette.colors.every(color=>luminance(color)>=.6)).toBe(true);
+  const colors=new Set(Array.from({length:20},(_,i)=>albumColorsForLine(palette,`${i}|line`).sungColor));
+  expect(colors.size).toBeGreaterThan(1);
+  expect(albumColorsForLine(palette,'same cue')).toEqual(albumColorsForLine(palette,'same cue'));
+ });
+ it('keeps video text light even for dark custom colours and falls back deterministically without artwork',()=>{
+  for(const color of ['#010203','#880000','#1100aa']){
+   const output=render({forceLightText:true,customAccentColor:color,customBaseColor:color});
+   expect(luminance(output.result.baseColor!)).toBeGreaterThanOrEqual(.88);
+   expect(luminance(output.result.activeColor!)).toBeGreaterThanOrEqual(.6);
+  }
+  const palette=getDeterministicSongPalette('artwork unavailable');
+  expect(palette.colors.length).toBeGreaterThan(1);
+  expect(getDeterministicSongPalette('artwork unavailable')).toEqual(palette);
+  expect(paletteFromArtworkPixels(new Uint8ClampedArray(16))).toBeNull();
+  expect(paletteFromArtworkPixels(new Uint8ClampedArray([0,0,0,255,255,255,255,255]))?.colors).toHaveLength(3);
+ });
+ it('follows the selected theme palette in auto mode with readable light/dark polarity',()=>{
+  for(const palette of TEMPLATES[0].palettes){
+   const output=render({paletteId:palette.id});
+   expect(contrastRatio(output.result.baseColor!,palette.background)).toBeGreaterThanOrEqual(4.5);
+   expect(contrastRatio(output.result.activeColor!,palette.background)).toBeGreaterThanOrEqual(3);
+  }
+  expect(render({paletteId:'silk-waves'}).result.activeColor).not.toBe(render({paletteId:'cyan-tide'}).result.activeColor);
+ });
+});

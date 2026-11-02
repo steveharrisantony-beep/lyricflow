@@ -191,3 +191,21 @@ it('lets a personal automatic video-sync choice override a published fixed delay
   expect(host.textContent).toContain('Automatic video sync active');
  }finally{draw.mockRestore();}
 });
+
+it('keeps animation and current-word style switches independent and restores both after remount',async()=>{
+  const switchFor=(text:string)=>[...host.querySelectorAll<HTMLLabelElement>('label')].find(label=>label.textContent===text)?.querySelector<HTMLInputElement>('input')!;
+  const animation=switchFor('Lyric animations'),styles=switchFor('Current word styles');
+  expect(animation.checked).toBe(true);expect(styles.checked).toBe(true);
+  const motionSelect=host.querySelector<HTMLSelectElement>('[aria-label="Lyric animation"]')!;
+  const styleSelect=host.querySelector<HTMLSelectElement>('[aria-label="Current word style"]')!;
+  expect(motionSelect.options.length).toBe(21);expect(styleSelect.options.length).toBe(10);
+  await act(async()=>{styleSelect.value='ripple';styleSelect.dispatchEvent(new Event('change',{bubbles:true}));});
+  await act(async()=>animation.click());
+  expect(motionSelect.disabled).toBe(true);expect(styles.checked).toBe(true);expect(styleSelect.disabled).toBe(false);
+  await act(async()=>styles.click());
+  expect(styleSelect.disabled).toBe(true);expect(animation.checked).toBe(false);
+  await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App/>));
+  expect(switchFor('Lyric animations').checked).toBe(false);
+  expect(switchFor('Current word styles').checked).toBe(false);
+  expect(host.querySelector<HTMLSelectElement>('[aria-label="Current word style"]')!.value).toBe('ripple');
+});

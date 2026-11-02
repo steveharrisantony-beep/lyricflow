@@ -1,4 +1,6 @@
 import {videoSyncTarget} from '../../audio/videoTiming';
+import type {AlbumArtLyricPalette} from './contrast';
+import type {CurrentWordStyle} from './currentWordStyles';
 import {setLyricBackdrop} from './contrast';
 import {drawMotionGraphics,MOTION_SCENES} from './procedural/MotionGraphics';
 import {drawSceneTransition,transitionProgress,sceneEntryPose,TRANSITION_SECONDS} from './transitions';
@@ -25,7 +27,11 @@ export type VideoFitMode='default'|'stretch';
 export interface CinematicProps{
  quality:Quality;intensity:number;speed:number;reducedMotion:boolean;
  demo:boolean;paused:boolean;autoScenes:boolean;cameraMode?:CameraMode;manualScene:SceneId;
- spatialTypography:boolean;narrativeObjects?:boolean;motionBlur:number;
+ spatialTypography:boolean;
+ wordStylesEnabled?:boolean;
+ currentWordStyle?:CurrentWordStyle;
+ albumLyricPalette?:AlbumArtLyricPalette;
+ narrativeObjects?:boolean;motionBlur:number;
  enabledScenes?:readonly SceneId[];
  enabledKineticMotions?:readonly LyricMotion[];
  enabledPlacements?:readonly Exclude<LyricPlacementMode,'auto'>[];
@@ -430,6 +436,9 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      emphasis:snapshot.emphasis,
      project,
      animated:config.spatialTypography,
+     wordStylesEnabled:config.wordStylesEnabled,
+     currentWordStyle:config.currentWordStyle,
+     albumPalette:config.albumLyricPalette,
      enabledMotions:config.enabledKineticMotions,
      enabledPlacements:activeEnabledPlacements,
      enabledFonts:config.enabledFonts,
@@ -460,6 +469,9 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
       emphasis:snapshot.emphasis,
       project,
       animated:config.spatialTypography,
+     wordStylesEnabled:config.wordStylesEnabled,
+     currentWordStyle:config.currentWordStyle,
+     albumPalette:config.albumLyricPalette,
       enabledMotions:config.enabledKineticMotions,
       enabledPlacements:activeEnabledPlacements,
       enabledFonts:config.enabledFonts,
@@ -483,18 +495,24 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      setData('lyricHighlights',String(result.highlights+rightResult.highlights));
      setData('lyricFont',result.drawn>0?result.font:rightResult.font);
      setData('lyricFillPace',result.fillPace||'line');
+     setData('lyricWordStyle',result.wordStyle||'off');
+     setData('lyricBaseColor',result.baseColor||'');
+     setData('lyricActiveColor',result.activeColor||'');
     }else{
      setData('lyricLayout',config.spatialTypography?result.motion:'classic');
      setData('lyricPlacement',isDuet?'duet-split':(result.placement||'center'));
      setData('lyricText',result.text);setData('lyricWords',String(result.words));setData('lyricDraws',String(result.drawn));
      setData('lyricHighlights',String(result.highlights));setData('lyricFont',result.font);
      setData('lyricFillPace',result.fillPace||'line');
+     setData('lyricWordStyle',result.wordStyle||'off');
+     setData('lyricBaseColor',result.baseColor||'');
+     setData('lyricActiveColor',result.activeColor||'');
     }
    }else{
     if(!snapshot.cues.length&&!useYtVideoBg&&!config.hideStageLyrics){
      drawInstrumentalMark(textCtx,scene,w,h,measured?.loudness??fake);
     }
-    setData('lyricLayout','none');setData('lyricText','');setData('lyricWords','0');setData('lyricDraws','0');
+    setData('lyricWordStyle','off');setData('lyricLayout','none');setData('lyricText','');setData('lyricWords','0');setData('lyricDraws','0');
    }
    textCtx.restore();
    setData('lyricClock',lyricClock.toFixed(3));
