@@ -303,9 +303,21 @@ it('applies independent pixel minimum and maximum sizes even when overall scalin
  const fontSize=(output:ReturnType<typeof render>)=>Number(output.c.font.match(/([\d.]+)px/)?.[1]);
  expect(fontSize(render({minFontSize:24,maxFontSize:42,fontScale:1.8,animated:false}))).toBeLessThanOrEqual(42);
  const short={...cue,text:'Hi',romanized:'',words:[],timing:'estimated' as const};
- const raised=fontSize(render({cue:short,w:360,h:203,minFontSize:60,maxFontSize:90,fontScale:.5,animated:false}));
+ // Give this independent font-limit check enough vertical room; a smaller placement box may shrink it.
+ const raised=fontSize(render({cue:short,w:360,h:203,minFontSize:60,maxFontSize:90,fontScale:.5,animated:false,layout:{maxHeight:100}}));
  expect(raised).toBeGreaterThanOrEqual(60);expect(raised).toBeLessThanOrEqual(90);
  const low=fontSize(render({cue:short,minFontSize:24,maxFontSize:40,fontScale:1,animated:false}));
  const high=fontSize(render({cue:short,minFontSize:24,maxFontSize:90,fontScale:1,animated:false}));
  expect(high).toBeGreaterThan(low);expect(low).toBeLessThanOrEqual(40);expect(high).toBeLessThanOrEqual(90);
+});
+
+it('reflows long lyrics into fewer larger rows when the placement box gets wider',()=>{
+ const long={...cue,text:'Let all the stars above the quiet city carry this long line safely home tonight',romanized:'',words:[],timing:'estimated' as const};
+ const emphasis=analyzeLyricWords([long]);
+ const narrow=render({cue:long,emphasis,animated:false,layout:{maxWidth:25,maxHeight:30}});
+ const wide=render({cue:long,emphasis,animated:false,layout:{maxWidth:75,maxHeight:30}});
+ expect(wide.result.rows!).toBeLessThan(narrow.result.rows!);
+ const size=(output:ReturnType<typeof render>)=>Number(output.c.font.match(/([\d.]+)px/)?.[1]);
+ expect(size(wide)).toBeGreaterThan(size(narrow));
+ expect(wide.result.drawn).toBe(long.text.split(' ').length);
 });

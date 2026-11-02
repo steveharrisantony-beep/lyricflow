@@ -1,3 +1,4 @@
+import {resolveLyricBox,type LyricLayoutSettings} from '../../lyrics/lyricLayout';
 import type {LyricCue} from '../../lyrics/lyricTimeline';
 import {lyricFontBounds} from '../../lyrics/fontSizing';
 import {wordEmphasis,type WordEmphasis} from '../../lyrics/wordEmphasis';
@@ -288,6 +289,7 @@ export interface KineticArgs {
  minFontSize?:number;
  maxFontSize?:number;
  fontScale?:number;
+ layout?:Partial<LyricLayoutSettings>;
  forceLightText?:boolean;
  placementMode?:LyricPlacementMode;
  duetSide?:'left'|'right';
@@ -332,7 +334,8 @@ export function buildWordRows(
  widths:number[],
  space:number,
  motion:LyricMotion,
- maxRowWidthPx=Infinity
+ maxRowWidthPx=Infinity,
+ wrapToWidth=false
 ):WordPlacement[]{
  const count=runs.length;
  if(count===0)return [];
@@ -340,7 +343,7 @@ export function buildWordRows(
  const totalChars=runs.reduce((sum,r)=>sum+r.text.length,0)+Math.max(0,count-1);
  const totalPx=widths.reduce((sum,w)=>sum+w,0)+Math.max(0,count-1)*wordGap;
 
- const maxWordsPerRow=
+ const maxWordsPerRow=wrapToWidth?Infinity:
   motion==='ship'||motion==='orbit'||motion==='cascade'||motion==='hinge'?3:
   count>=7?3:4;
  const maxCharsPerRow=22;
@@ -355,7 +358,7 @@ export function buildWordRows(
 
  const targetRows=Math.min(count,Math.min(6,Math.max(rowsByWords,rowsByChars,rowsByPx)));
  const targetRowPx=totalPx/Math.max(1,targetRows);
- const rowLimitPx=Number.isFinite(maxRowWidthPx)&&maxRowWidthPx>0
+ const rowLimitPx=wrapToWidth?maxRowWidthPx:Number.isFinite(maxRowWidthPx)&&maxRowWidthPx>0
   ?Math.max(targetRowPx,maxRowWidthPx)
   :Infinity;
 
@@ -370,7 +373,7 @@ export function buildWordRows(
   const maxForThisRow=Math.max(maxWordsPerRow,Math.ceil(remainingWords/remainingRows));
   const exceedsWidth=currentRow.length>0&&addedPx>rowLimitPx;
   const exceedsCount=currentRow.length>=maxForThisRow;
-  if((exceedsWidth||exceedsCount)&&nonEmpty.length<5){
+  if((exceedsWidth||exceedsCount)&&(wrapToWidth||nonEmpty.length<5)){
    nonEmpty.push(currentRow);
    currentRow=[i];
    currentRowPx=w;
@@ -534,6 +537,7 @@ export function drawKineticLyrics({
  minFontSize=26,
  maxFontSize=88,
  fontScale,
+ layout,
  forceLightText=false,
  placementMode='auto',
  duetSide
@@ -553,13 +557,13 @@ export function drawKineticLyrics({
  const activePlacement:Exclude<LyricPlacementMode,'auto'>=duetSide
   ?duetSide
   :resolveCuePlacement(cue,scene,placementMode,enabledPlacements);
- const cueParity=cueIndex%2;
+ const box=resolveLyricBox(w,h,activePlacement,layout,cueIndex,duetSide);
 
  // Keep a responsive preferred size inside two independent CSS-pixel bounds.
  const scaleFactor=clamp(typeof fontScale==='number'&&Number.isFinite(fontScale)?fontScale:1,.45,2);
  const {min:minimumFont,max:maximumFont}=lyricFontBounds(minFontSize,maxFontSize);
  const fontRev=getFontLoadRevision();
- const layoutKey=`${cue.time}|${cue.end}|${cue.text}|${cue.romanized}|${cue.words.length}|${mode}|${font}|${fontRev}|${w}|${h}|${scaleFactor.toFixed(3)}|${minimumFont}|${maximumFont}|${motion}|${activePlacement}|${duetSide||''}|${wordAnimationsEnabled}|${wordStylesEnabled}`;
+ const layoutKey=`${cue.time}|${cue.end}|${cue.text}|${cue.romanized}|${cue.words.length}|${mode}|${font}|${fontRev}|${w}|${h}|${scaleFactor.toFixed(3)}|${minimumFont}|${maximumFont}|${motion}|${activePlacement}|${box.width}|${box.height}|${duetSide||''}|${wordAnimationsEnabled}|${wordStylesEnabled}`;
 
  let runs:LyricRun[];
  let placements:WordPlacement[];
@@ -585,23 +589,30 @@ export function drawKineticLyrics({
    return c.measureText(word.text).width;
   });
 
-  const maxBoxFraction=duetSide
-   ?0.38
-   :activePlacement==='bottom-right'||activePlacement==='bottom-left'||activePlacement==='top-left'
-   ?0.62
-   :0.74;
-  placements=buildWordRows(runs,widths,space,motion,w*maxBoxFraction);
+  // Reflow at the fitted size rather than shrinking a tall, permanently fixed stack.
+  // Search only on cue/layout changes; the resulting rows and letter metrics are cached.
+  const availWidth=box.width*.94;
+  const rowHeight=motion==='wave'?1.60:1.45;
+  const preferredSize=Math.min(maximumFont,baseline*1.15);
+  const rowsAt=(candidate:number)=>buildWordRows(runs,widths,space,motion,availWidth*baseline/Math.max(1,candidate),true);
+  const fits=(candidate:number)=>{
+   const rows=rowsAt(candidate);
+   return (rows[0]?.totalRows||1)*candidate*rowHeight<=box.height&&
+    rows.every(row=>row.rowWidth*candidate/baseline<=availWidth);
+  };
+  let lo=9,hi=preferredSize;
+  if(fits(hi))lo=hi;
+  else for(let attempt=0;attempt<10;attempt++){
+   const mid=(lo+hi)/2;
+   if(fits(mid))lo=mid;else hi=mid;
+  }
+  size=Math.max(9,Math.floor(lo));
+  fit=1;
+  // Measure at the final font size so row alignment remains exact after reflow.
+  const fittedWidths=runs.map(word=>{applySceneFont(c,font,size,word.text);return c.measureText(word.text).width;});
+  placements=buildWordRows(runs,fittedWidths,space*size/baseline,motion,availWidth,true);
   totalRowsCount=placements[0]?.totalRows||1;
   widestRow=placements.reduce((m,p)=>Math.max(m,p.rowWidth),1);
-  const availWidth=w*(duetSide?0.41:maxBoxFraction+0.04);
-  const availHeight=h*0.66;
-  const widthFit=availWidth/Math.max(1,widestRow);
-  const heightFit=availHeight/Math.max(1,totalRowsCount*baseline*1.38);
-  const maxAllowedFit=Math.min(1.15,widthFit,heightFit);
-  const maxSafeFont=Math.max(9,baseline*maxAllowedFit);
-  const effectiveMinFont=Math.min(minimumFont,maxSafeFont);
-  size=clamp(baseline*maxAllowedFit,effectiveMinFont,Math.min(maximumFont,maxSafeFont));
-  fit=size/Math.max(1,baseline);
   joinedText=runs.map(word=>word.text).join(' ');
   units=runs.map(word=>{applySceneFont(c,font,size,word.text);return buildLetterUnits(c,word.text);});
   unitCount=0;unitOffsets=units.map(parts=>{const offset=unitCount;unitCount+=parts.length;return offset;});
@@ -686,46 +697,6 @@ export function drawKineticLyrics({
  }
 
 
- const stageHalfSpanX=(w*0.18)/pixelsPerWorld;
- const stageHalfSpanY=(h*0.16)/pixelsPerWorld;
- let stageOffsetX=0;
- let stageOffsetY=0;
- if(duetSide==='left'){
-  stageOffsetX=-(w*0.23)/pixelsPerWorld;
- }else if(duetSide==='right'){
-  stageOffsetX=(w*0.23)/pixelsPerWorld;
- }else{
-  switch(activePlacement){
-   case 'left':
-    stageOffsetX=-stageHalfSpanX*0.80;
-    break;
-   case 'right':
-    stageOffsetX=stageHalfSpanX*0.80;
-    break;
-   case 'bottom-right':
-    stageOffsetX=stageHalfSpanX*0.72;
-    stageOffsetY=-stageHalfSpanY*0.86;
-    break;
-   case 'bottom-left':
-    stageOffsetX=-stageHalfSpanX*0.72;
-    stageOffsetY=-stageHalfSpanY*0.84;
-    break;
-   case 'top-left':
-    stageOffsetX=-stageHalfSpanX*0.70;
-    stageOffsetY=stageHalfSpanY*0.78;
-    break;
-   case 'alternating':
-    stageOffsetX=(cueParity===0?-1:1)*stageHalfSpanX*0.58;
-    stageOffsetY=(cueParity===0?0.20:-0.28)*stageHalfSpanY;
-    break;
-   case 'diagonal':
-    stageOffsetX=(cueParity===0?-0.32:0.32)*stageHalfSpanX;
-    break;
-   default:
-    break;
-  }
- }
-
  // Phrase perspective supports the independent, persistent letter choreography
  const yaw=energy*(
   motion==='orbit'?0.08*Math.sin(age*.7):
@@ -797,20 +768,12 @@ export function drawKineticLyrics({
 
   const rowSlideX=0,rowSlideY=0;
 
-  const maxRowShift=((widestRow-rowWidth)*0.5*fit)/pixelsPerWorld;
-  const alignShiftX=
-   activePlacement==='left'||activePlacement==='bottom-left'||activePlacement==='top-left'
-    ?-maxRowShift
-    :activePlacement==='right'||activePlacement==='bottom-right'
-    ?maxRowShift
-    :activePlacement==='diagonal'
-    ?(row-(totalRows-1)*0.5)*0.34
-    :activePlacement==='alternating'
-    ?((row+cueParity)%2===0?-0.22:0.22)
-    :0;
-
-  const baseRowY=((totalRows-1)*0.5-row)*rowSpacingWorld+stageOffsetY+rowSlideY;
-  let x=(rowX*fit)*(1+phraseTracking(motion,age,energy))/pixelsPerWorld+stageOffsetX+alignShiftX+rowSlideX;
+  const tracking=1+phraseTracking(motion,age,energy);
+  const maxRowShift=((widestRow-rowWidth)*0.5*fit*tracking)/pixelsPerWorld;
+  const alignShiftX=activePlacement==='diagonal'?(row-(totalRows-1)*.5)*.34:
+   box.align==='left'?-maxRowShift:box.align==='right'?maxRowShift:0;
+  const baseRowY=((totalRows-1)*0.5-row)*rowSpacingWorld+rowSlideY;
+  let x=(rowX*fit)*tracking/pixelsPerWorld+alignShiftX+rowSlideX;
   let y=baseRowY;
   let z=0;
   let stretchX=1;
@@ -869,17 +832,15 @@ export function drawKineticLyrics({
 
  // Guarantee that the entire rendered phrase stays strictly inside its safe screen bounds (never cut off or overlapping duet sides)
  if(preparedWords.length>0){
-  const padX=Math.max(12,w*0.035);
-  const padY=Math.max(12,h*0.055);
-  const boundLeft=duetSide==='right'?w*0.515:padX;
-  const boundRight=duetSide==='left'?w*0.485:w-padX;
-  const boundTop=padY;
-  const boundBottom=h-padY;
+  const boundLeft=box.x;
+  const boundRight=box.x+box.width;
+  const boundTop=box.y;
+  const boundBottom=box.y+box.height;
   // Reserve room for the banner pan before fitting, so it cannot clip on side placements.
   const panReserve=motion==='curtain-sweep'?Math.min((boundRight-boundLeft)*.08,w*.035)*Math.min(1,energy):0;
   const fitLeft=boundLeft+panReserve,fitRight=boundRight-panReserve;
-  const maxAllowedW=Math.max(40,fitRight-fitLeft);
-  const maxAllowedH=Math.max(40,boundBottom-boundTop);
+  const maxAllowedW=Math.max(1,fitRight-fitLeft);
+  const maxAllowedH=Math.max(1,boundBottom-boundTop);
   const bboxW=Math.max(1,maxScreenX-minScreenX);
   const bboxH=Math.max(1,maxScreenY-minScreenY);
   const clampScale=Math.min(1,maxAllowedW/bboxW,maxAllowedH/bboxH);
@@ -890,13 +851,8 @@ export function drawKineticLyrics({
   const scaledMinY=centerY+(minScreenY-centerY)*clampScale;
   const scaledMaxY=centerY+(maxScreenY-centerY)*clampScale;
 
-  let shiftX=0;
-  if(scaledMinX<fitLeft)shiftX=fitLeft-scaledMinX;
-  else if(scaledMaxX>fitRight)shiftX=fitRight-scaledMaxX;
-
-  let shiftY=0;
-  if(scaledMinY<boundTop)shiftY=boundTop-scaledMinY;
-  else if(scaledMaxY>boundBottom)shiftY=boundBottom-scaledMaxY;
+  const shiftX=box.align==='left'?fitLeft-scaledMinX:box.align==='right'?fitRight-scaledMaxX:(fitLeft+fitRight)/2-centerX;
+  const shiftY=box.vertical==='top'?boundTop-scaledMinY:box.vertical==='bottom'?boundBottom-scaledMaxY:(boundTop+boundBottom)/2-centerY;
 
   const linePose=lineMotionPose(motion,age,motionDuration,cueIndex,w,energy);
   c.save();

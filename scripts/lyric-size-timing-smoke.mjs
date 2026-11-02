@@ -48,7 +48,7 @@ try{
   };
   let checks=0;
   for(const [w,h] of [[360,203],[800,1280],[1920,1080]])for(const [minFontSize,maxFontSize] of [[16,32],[48,64],[64,130]])for(const fontScale of [.5,1.8]){
-   canvas.width=w;canvas.height=h;draw(short,2,{minFontSize,maxFontSize,fontScale,animated:false});
+   canvas.width=w;canvas.height=h;draw(short,2,{minFontSize,maxFontSize,fontScale,animated:false,layout:{maxHeight:100}});
    if(paints.some(p=>p.size<minFontSize-.01||p.size>maxFontSize+.01))throw Error(`Font limits were not enforced: ${w}/${minFontSize}/${maxFontSize}/${fontScale}`);
    checks++;
   }

@@ -378,3 +378,18 @@ it('adjusts font-size limits independently of the overall slider and restores th
  await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App/>));
  expect(input('Lyrics font size scale').value).toBe('150');expect(input('Maximum lyric font size').value).toBe('40');expect(input('Minimum lyric font size').value).toBe('40');
 });
+
+it('saves independent lyric padding and placement-box controls without changing font limits',async()=>{
+ const controls={'Horizontal lyrics padding':7,'Vertical lyrics padding':0,'Maximum lyrics width':45,'Maximum lyrics height':25};
+ const input=(label:string)=>host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+ for(const [label,value] of Object.entries(controls))await act(async()=>{
+  const control=input(label);expect(control).not.toBeNull();
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(control,String(value));
+  control.dispatchEvent(new Event('input',{bubbles:true}));control.dispatchEvent(new Event('change',{bubbles:true}));
+ });
+ const saved=JSON.parse(localStorage.getItem('lyricflow.extendedSettings.v1')!);
+ expect(saved.lyricLayout).toEqual({horizontalPadding:7,verticalPadding:0,maxWidth:45,maxHeight:25});
+ await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App/>));
+ for(const [label,value] of Object.entries(controls))expect(input(label).value).toBe(String(value));
+ expect(input('Minimum lyric font size').value).toBe('26');expect(input('Maximum lyric font size').value).toBe('88');
+});

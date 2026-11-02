@@ -1,3 +1,4 @@
+import {normalizeLyricLayout,type LyricLayoutSettings} from './lyrics/lyricLayout';
 import {
   AudioLines,
   LogOut,
@@ -405,6 +406,9 @@ export default function App({ user = null }: { user?: User | null }) {
   const [lyricMaxFontSize, setLyricMaxFontSize] = useState<number>(
     initialPrefs.lyricMaxFontSize,
   );
+  const [lyricLayout, setLyricLayout] = useState<LyricLayoutSettings>(() =>
+    normalizeLyricLayout(initialExtended.lyricLayout as Partial<LyricLayoutSettings>),
+  );
   const [lyricFontScale, setLyricFontScale] = useState<number>(() => {
     const saved = Number(initialExtended.lyricFontScale);
     if (Number.isFinite(saved) && saved >= 0.5 && saved <= 1.8) return saved;
@@ -728,6 +732,7 @@ export default function App({ user = null }: { user?: User | null }) {
           showFps,
           videoFitMode,
           lyricFontScale,
+          lyricLayout,
           videoPlacementMode,
           enabledVideoPlacements,
           themePlacementMode,
@@ -751,6 +756,7 @@ export default function App({ user = null }: { user?: User | null }) {
     showFps,
     videoFitMode,
     lyricFontScale,
+    lyricLayout,
     videoPlacementMode,
     enabledVideoPlacements,
     themePlacementMode,
@@ -1615,6 +1621,7 @@ export default function App({ user = null }: { user?: User | null }) {
                 lyricMinFontSize={lyricMinFontSize}
                 lyricMaxFontSize={lyricMaxFontSize}
                 lyricFontScale={lyricFontScale}
+                lyricLayout={lyricLayout}
                 lyricPlacementMode={lyricPlacementMode}
                 videoOverlayOpacity={videoOverlayOpacity}
                 videoFitMode={videoFitMode}
@@ -2083,6 +2090,15 @@ export default function App({ user = null }: { user?: User | null }) {
                       </div>
                     </details>
                   ))}
+                  <RangeSetting label="Horizontal lyrics padding" value={lyricLayout.horizontalPadding} max={25}
+                    onChange={value=>setLyricLayout(prev=>({...prev,horizontalPadding:value}))}/>
+                  <RangeSetting label="Vertical lyrics padding" value={lyricLayout.verticalPadding} max={25}
+                    onChange={value=>setLyricLayout(prev=>({...prev,verticalPadding:value}))}/>
+                  <RangeSetting label="Maximum lyrics width" value={lyricLayout.maxWidth} min={20}
+                    onChange={value=>setLyricLayout(prev=>({...prev,maxWidth:value}))}/>
+                  <RangeSetting label="Maximum lyrics height" value={lyricLayout.maxHeight} min={10}
+                    onChange={value=>setLyricLayout(prev=>({...prev,maxHeight:value}))}/>
+                  <p className="muted">Percent of the screen. Long lines shrink to fit this area.</p>
                 </SettingGroup>
                 <SettingGroup title="Fonts & motion">
                   <SwitchSetting label="Lyric animations" checked={spatialTypography} onChange={setSpatialTypography}/>
@@ -2436,7 +2452,7 @@ export default function App({ user = null }: { user?: User | null }) {
             ),
           }}
         </SettingsPanel>
-        {optionPreview && <OptionPreview spec={optionPreview} onClose={closeOptionPreview} reducedMotion={reducedMotion}/>}
+        {optionPreview && <OptionPreview spec={optionPreview} onClose={closeOptionPreview} reducedMotion={reducedMotion} lyricLayout={lyricLayout}/>}
       </main>
       <AudioSourceHub
         ref={audioHubRef}

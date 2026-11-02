@@ -11,7 +11,11 @@ sheet. Fullscreen reuses the same player and settings.
   saving and optional submission for developer approval.
 - **Background:** theme/video mode, video preference, opacity and fit, enabled
   themes, palettes, randomization and duration.
-- **Lyrics:** placement, fonts, size, colour, animation and romanization.
+- **Lyrics:** placement, independent horizontal/vertical padding, maximum text
+  width/height, fonts, size, colour, animation and romanization. Left/right
+  placements align every row to that side; Center Stage centers every row.
+  Padding and box limits use screen percentages and are saved on the device.
+  Long lines shrink to fit the box, even below the font minimum when necessary.
 - **Render Engine:** quality, camera shake, sensitivity, intensity, blur and speed.
 - **Others:** system/light/dark appearance, account connections, FPS and updates.
 

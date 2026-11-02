@@ -1,3 +1,4 @@
+import type {LyricLayoutSettings} from '../lyrics/lyricLayout';
 import {useEffect,useId,useRef,type ReactNode} from 'react';
 import {createPortal} from 'react-dom';
 import {Eye,X} from 'lucide-react';
@@ -29,7 +30,7 @@ const [sampleCue]=buildCues([{time:0,text:'Let the music move you',words:[
 ]}],[]);
 const emphasis=analyzeLyricWords([sampleCue]);
 
-export default function OptionPreview({spec,onClose,reducedMotion=false}:{spec:OptionPreviewSpec;onClose:()=>void;reducedMotion?:boolean}){
+export default function OptionPreview({spec,onClose,reducedMotion=false,lyricLayout}:{spec:OptionPreviewSpec;onClose:()=>void;reducedMotion?:boolean;lyricLayout?:LyricLayoutSettings}){
  const canvas=useRef<HTMLCanvasElement>(null),dialog=useRef<HTMLDivElement>(null);
  const title=useId();
  useEffect(()=>{
@@ -70,13 +71,13 @@ export default function OptionPreview({spec,onClose,reducedMotion=false}:{spec:O
     drawSceneTransition(c,previous,w,h,Math.min(1,(time%2.2)/.8),spec.themeTransition);
    }
    drawKineticLyrics({c,scene:{...scene,start:0,end:5,variation:0,section:0,reason:'Preview'},cue:sampleCue,time,mode:'original',w,h,intensity:.85,reduced:reducedMotion,emphasis,
-    enabledFonts:[font],enabledMotions:[spec.motion||'wave'],animated:Boolean(spec.motion||spec.placement),
+    layout:lyricLayout,enabledFonts:[font],enabledMotions:[spec.motion||'wave'],animated:Boolean(spec.motion||spec.placement),
     wordStylesEnabled:Boolean(spec.wordStyle),currentWordStyle:spec.wordStyle,paletteId:spec.paletteId,placementMode:spec.placement||'center',wordAnimationsEnabled:Boolean(spec.wordAnimation),enabledWordAnimations:spec.wordAnimation?[spec.wordAnimation]:[],cueIndex:0,forceLightText:spec.video,fillPaceMode:'word'});
    if(!reducedMotion)raf=requestAnimationFrame(frame);
   };
   raf=requestAnimationFrame(frame);
   return()=>{disposed=true;cancelAnimationFrame(raf);art.reset();};
- },[spec,reducedMotion]);
+ },[spec,reducedMotion,lyricLayout]);
  return createPortal(<div className="option-preview-scrim" onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
   <div ref={dialog} className="option-preview-dialog glass" role="dialog" aria-modal="true" aria-labelledby={title}>
    <div className="option-preview-heading"><h2 id={title}>{spec.label}</h2><button className="icon-button" type="button" aria-label="Close preview" onClick={onClose}><X size={20}/></button></div>

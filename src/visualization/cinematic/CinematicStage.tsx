@@ -1,3 +1,4 @@
+import type {LyricLayoutSettings} from '../../lyrics/lyricLayout';
 import {chooseThemeTransition} from './themeTransitions';
 import type {CurrentWordAnimation} from './currentWordAnimations';
 import type {Transition} from './catalog';
@@ -58,6 +59,7 @@ export interface CinematicProps{
  lyricMinFontSize?:number;
  lyricMaxFontSize?:number;
  lyricFontScale?:number;
+ lyricLayout?:LyricLayoutSettings;
  lyricPlacementMode?:LyricPlacementMode;
  videoPlacementMode?:LyricPlacementMode;
  themePlacementMode?:LyricPlacementMode;
@@ -463,6 +465,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      minFontSize:config.lyricMinFontSize,
      maxFontSize:config.lyricMaxFontSize,
      fontScale:config.lyricFontScale,
+     layout:config.lyricLayout,
      forceLightText:useYtVideoBg,
      placementMode:activePlacementMode,
      duetSide:primaryDuetSide
@@ -500,6 +503,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
       minFontSize:config.lyricMinFontSize,
       maxFontSize:config.lyricMaxFontSize,
       fontScale:config.lyricFontScale,
+      layout:config.lyricLayout,
       forceLightText:useYtVideoBg,
       placementMode:activePlacementMode,
       duetSide:secondaryDuetSide
