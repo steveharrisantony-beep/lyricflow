@@ -636,6 +636,9 @@ export function drawKineticLyrics({
  const activeWordStyle=wordStylesEnabled&&hasWordSync&&selectedWordStyle?selectedWordStyle:'off';
  const animationPool=enabledWordAnimations??['lift'];
  const activeWordAnimation=wordAnimationsEnabled&&hasWordSync&&animationPool.length?animationPool[hash(`${cue.time}|${cue.text}`)%animationPool.length]:'off';
+ // Reserve the full word-animation excursion for every word, including inactive
+ // ones. Fitting to the current pulse makes the entire phrase resize on each beat.
+ const wordAnimationEnvelope=currentWordAnimationPose(activeWordAnimation,.5,wordAnimationEnergy);
  // Progressive glow is part of Orbit, including when Lift and Zoom are disabled.
  const orbitGlowEnergy=activeWordStyle==='orbit'&&!reduced?clamp(intensity,0,1.25):0;
  const wordLettersActive=(activeWordAnimation!=='off'&&wordAnimationEnergy>.001)||orbitGlowEnergy>.001;
@@ -782,15 +785,27 @@ export function drawKineticLyrics({
    const measuredW=width*fit;
    const parts=renderLetters?units[word.index]:[{text:word.text,center:0,width:measuredW,index:0,count:1,connected:true}];
    const bounds={...inkBounds[word.index]};
+   const fittingBounds={...inkBounds[word.index]};
    const glyphs:PreparedGlyph[]=parts.map(part=>{
     const pose=letterMotionPose(motion,age,unitOffsets[word.index]+part.index,unitCount,energy,part.connected,motionDuration,cueIndex);
     const wordPose=currentWordAnimationPose(isActive?activeWordAnimation:'off',wordProgress,wordAnimationEnergy,part.index,part.count);
     const ga=pose.scaleX*Math.cos(pose.rotation),gb=pose.scaleX*Math.sin(pose.rotation),gc=pose.shear-Math.sin(pose.rotation),gd=pose.scaleY*Math.cos(pose.rotation);
     const matrix:[number,number,number,number,number,number]=[ga*wordPose.scale,gb*wordPose.scale,gc*wordPose.scale,gd*wordPose.scale,
      part.center*(1+pose.tracking)+pose.x*size+gc*wordPose.y*size,pose.y*size+gd*wordPose.y*size];
+    const ink=renderLetters?unitInkBounds[word.index][part.index]:inkBounds[word.index];
+    // Keep the accent on the actual moving ink, while phrase fitting uses the
+    // same neutral/maximum envelope throughout each word and at word handovers.
+    const baseX=part.center*(1+pose.tracking)+pose.x*size,baseY=pose.y*size;
+    for(const x of [ink.left,ink.right])for(const y of [ink.top,ink.bottom]){
+     const px=ga*x+gc*y,py=gb*x+gd*y;
+     const x0=baseX+px,y0=baseY+py;
+     const x1=baseX+px*wordAnimationEnvelope.scale+gc*wordAnimationEnvelope.y*size;
+     const y1=baseY+py*wordAnimationEnvelope.scale+gd*wordAnimationEnvelope.y*size;
+     fittingBounds.left=Math.min(fittingBounds.left,x0,x1);fittingBounds.right=Math.max(fittingBounds.right,x0,x1);
+     fittingBounds.top=Math.min(fittingBounds.top,y0,y1);fittingBounds.bottom=Math.max(fittingBounds.bottom,y0,y1);
+    }
     // The accent encloses the actual moving glyphs, including diacritics, Lift and Zoom.
     if(activeWordStyle!=='off'){
-     const ink=renderLetters?unitInkBounds[word.index][part.index]:inkBounds[word.index];
      for(const x of [ink.left,ink.right])for(const y of [ink.top,ink.bottom]){
       const px=matrix[0]*x+matrix[2]*y+matrix[4],py=matrix[1]*x+matrix[3]*y+matrix[5];
       bounds.left=Math.min(bounds.left,px);bounds.right=Math.max(bounds.right,px);bounds.top=Math.min(bounds.top,py);bounds.bottom=Math.max(bounds.bottom,py);
@@ -798,9 +813,9 @@ export function drawKineticLyrics({
     }
     return {part,pose,matrix};
    });
-   const accent=activeWordStyle==='off'?bounds:wordAccentBounds(bounds,size,activeWordStyle);
-   const localHalfW=Math.max(measuredW*0.56+size*(energy>.01?.38:wordLettersActive?.24:.14)+8,activeWordStyle==='off'?0:Math.max(Math.abs(accent.left),Math.abs(accent.right))+size*.10);
-   const localHalfH=Math.max(size*(energy>.01?1.02:wordLettersActive?.90:.64)+6,activeWordStyle==='off'?0:Math.max(Math.abs(accent.top),Math.abs(accent.bottom))+size*.10);
+   const accent=activeWordStyle==='off'?fittingBounds:wordAccentBounds(fittingBounds,size,activeWordStyle);
+   const localHalfW=Math.max(measuredW*0.56+size*(energy>.01?.38:wordLettersActive?.24:.14)+8,Math.max(Math.abs(accent.left),Math.abs(accent.right))+size*.10);
+   const localHalfH=Math.max(size*(energy>.01?1.02:wordLettersActive?.90:.64)+6,Math.max(Math.abs(accent.top),Math.abs(accent.bottom))+size*.10);
    const halfExtentX=Math.abs(mA)*localHalfW+Math.abs(mC)*localHalfH;
    const halfExtentY=Math.abs(mB)*localHalfW+Math.abs(mD)*localHalfH;
 

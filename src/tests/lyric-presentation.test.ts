@@ -36,6 +36,25 @@ function render(overrides:Partial<KineticArgs>={}){
 }
 
 describe('independent phrase animation and word styles',()=>{
+ it.each(['lift','zoom'] as const)('keeps the whole phrase steady while %s moves from word to word',animation=>{
+  const text="Wait I think I hate her I'm not that evolved I'm sorry she's missing it";
+  const [line]=buildCues([{time:0,text,words:text.split(' ').map((text,index)=>({text,start:index*.22,end:(index+1)*.22,timing:'sourced' as const}))}],[]);
+  const emphasis=analyzeLyricWords([line]);
+  const frames=Array.from({length:97},(_,i)=>render({cue:line,emphasis,time:i/30+.001,w:1616,h:1080,
+   animated:false,wordStylesEnabled:true,currentWordStyle:'orbit',wordAnimationsEnabled:true,enabledWordAnimations:[animation],
+   enabledFonts:['rounded'],placementMode:'bottom-left'}));
+  // The first transform positions the line; the second positions the first word.
+  // Word-local letter transforms still animate, but must never resize the phrase.
+  const outer=frames.map(frame=>frame.transforms[1]);
+  for(const matrix of outer)expect(matrix).toEqual(outer[0]);
+  expect(frames[5].transforms).not.toEqual(frames[10].transforms);
+  // Seeking and an intervening duet draw must not change a cue's fitted size.
+  render({cue,duetSide:'right'});
+  const replay=render({cue:line,emphasis,time:.001,w:1616,h:1080,animated:false,
+   wordStylesEnabled:true,currentWordStyle:'orbit',wordAnimationsEnabled:true,enabledWordAnimations:[animation],
+   enabledFonts:['rounded'],placementMode:'bottom-left'});
+  expect(replay.transforms[1]).toEqual(outer[0]);
+ });
  it('gives each replacement a fresh duet colour even with matching album and custom colours',()=>{
   const duet=buildCues([{time:0,end:4,text:'First'},{time:1,end:7,text:'Second'},{time:4.4,end:9,text:'Third'}],[]);
   const mono={baseColor:'#ffffff',sungColor:'#ffffff',accentHex:'#ffffff',colors:['#ffffff'],sungColors:['#ffffff']};
