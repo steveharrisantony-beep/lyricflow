@@ -258,7 +258,7 @@ select:disabled {
 }
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 378px;
+  grid-template-columns: minmax(0, 1fr) clamp(420px, 34vw, 580px);
   gap: 28px;
   align-items: start;
 }
@@ -1488,8 +1488,10 @@ summary > span {
   left: 50%;
   transform: translateX(-50%);
   width: min(680px, calc(100% - 36px));
-  max-height: 65dvh;
+  max-height: min(82dvh, calc(100dvh - 88px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
   overflow: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: 16px;
   margin: 0;
   transition:
     opacity 0.25s,
@@ -1538,7 +1540,7 @@ summary > span {
   top: 12px;
   bottom: 12px;
   right: 12px;
-  width: min(430px, calc(100% - 24px));
+  width: min(680px, calc(100% - 24px));
   max-height: none;
 }
 .performance-mode .settings-close {
@@ -1555,7 +1557,7 @@ summary > span {
   }
   .workspace {
     gap: 20px;
-    grid-template-columns: minmax(0, 1fr) 350px;
+    grid-template-columns: minmax(0, 1fr) 420px;
   }
   .spotify-player-card {
     grid-template-columns: 1fr;
@@ -1598,7 +1600,7 @@ summary > span {
     top: 16px;
     bottom: 16px;
     right: 16px;
-    width: min(430px, calc(100% - 32px));
+    width: min(680px, calc(100% - 32px));
     max-height: none;
   }
   .settings-close {
@@ -1813,7 +1815,7 @@ summary > span {
   .performance-mode .player-section {
     width: calc(100% - 20px);
     bottom: max(10px, env(safe-area-inset-bottom));
-    max-height: 58dvh;
+    max-height: min(82dvh, calc(100dvh - 88px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
   }
   .fullscreen-toolbar {
     top: max(12px, env(safe-area-inset-top));
@@ -1848,10 +1850,33 @@ summary > span {
   .performance-mode .spotify-seek-block {
     grid-row: 2;
   }
-  .performance-mode .yt-player-actions-bar,
-  .performance-mode .player-background-row,
-  .performance-mode .volume-label {
-    display: none;
+}
+/* On phones and short viewports, scroll the entire sheet so its heading and
+   section tabs do not take up the available editing space. */
+@media (max-width: 620px), (max-height: 540px) {
+  .settings-panel {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scroll-padding-block: 16px;
+    scrollbar-width: thin;
+  }
+  .settings-heading,
+  .settings-nav {
+    position: static;
+  }
+  .settings-nav {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .settings-nav button {
+    min-height: 56px;
+    padding: 7px 4px;
+    gap: 5px;
+    font-size: 10px;
+  }
+  .settings-pages {
+    flex: 0 0 auto;
+    overflow: visible;
+    min-height: auto;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1898,7 +1923,7 @@ summary > span {
 }
 @media (min-width: 1101px) {
   .settings-panel {
-    max-height: calc(100dvh - 124px);
+    max-height: calc(100dvh - 48px);
   }
 }
 /* Give native selects the full row so longer theme/font names stay readable. */

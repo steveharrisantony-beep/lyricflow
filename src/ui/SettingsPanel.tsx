@@ -128,6 +128,11 @@ export default function SettingsPanel({
   const modal = open && (compact || fullscreen);
   useEffect(() => {
     panel.current?.querySelectorAll<HTMLDetailsElement>('details[open]').forEach(details => { details.open = false; });
+    if (panel.current) {
+      panel.current.scrollTop = 0;
+      const pages = panel.current.querySelector<HTMLElement>('.settings-pages');
+      if (pages) pages.scrollTop = 0;
+    }
   }, [open, page]);
   useEffect(() => {
     if (!modal) return;
