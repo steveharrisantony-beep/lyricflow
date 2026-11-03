@@ -250,7 +250,7 @@ it('allows every animation and word style to be disabled and persists empty sele
   for(const summary of ['Animations','Current word styles']){
     const details=[...host.querySelectorAll('details')].find(el=>el.querySelector('summary')?.textContent?.startsWith(summary))!;
     const inputs=[...details.querySelectorAll<HTMLInputElement>('input[role="switch"]')];
-    expect(inputs).toHaveLength(summary==='Animations'?25:5);
+    expect(inputs).toHaveLength(summary==='Animations'?25:4);
     await act(async()=>{for(const input of inputs)input.click();});
     expect(inputs.every(input=>!input.checked)).toBe(true);
   }

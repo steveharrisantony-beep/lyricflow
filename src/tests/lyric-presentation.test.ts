@@ -1,6 +1,6 @@
 import {describe,it,expect,vi} from 'vitest';
 import {drawKineticLyrics,LYRIC_MOTIONS,ORIGINAL_LYRIC_MOTIONS,VOXELVERSE_STYLES,VOXELVERSE_FAMILIES,normalizeMotionPool,type KineticArgs} from '../visualization/cinematic/kineticTypography';
-import {CURRENT_WORD_STYLES,drawCurrentWordAccent,normalizeWordStylePool} from '../visualization/cinematic/currentWordStyles';
+import {CURRENT_WORD_STYLES,drawCurrentWordAccent,measureWordInkBounds,wordHighlightInk,normalizeWordStylePool} from '../visualization/cinematic/currentWordStyles';
 import {albumColorsForLine,contrastRatio,getDeterministicSongPalette,luminance,paletteFromArtworkPixels} from '../visualization/cinematic/contrast';
 import {TEMPLATES,type DirectedScene} from '../visualization/cinematic/catalog';
 import {cloudPreferencesPayload,DEFAULT_USER_PREFERENCES} from '../firebase/firebaseClient';
@@ -22,7 +22,7 @@ function context(){
  const c={font:'800 50px sans-serif',fillStyle:'',shadowBlur:0,globalAlpha:1,canvas:{width:1000,height:600},save:vi.fn(),restore:vi.fn(),transform:vi.fn(),
   fillText(text:string){paints.push({text,color:this.fillStyle,blur:this.shadowBlur});},
   clip:vi.fn(),beginPath:vi.fn(),moveTo:vi.fn(),lineTo:vi.fn(),bezierCurveTo:vi.fn(),closePath:vi.fn(),
-  rect:vi.fn(),fillRect:vi.fn(),strokeRect:vi.fn(),arc:vi.fn(),ellipse:vi.fn(),roundRect:vi.fn(),stroke:vi.fn(),fill:vi.fn(),
+  setLineDash:vi.fn(),rect:vi.fn(),fillRect:vi.fn(),strokeRect:vi.fn(),arc:vi.fn(),ellipse:vi.fn(),roundRect:vi.fn(),stroke:vi.fn(),fill:vi.fn(),
   getTransform:()=>({a:1,b:0,c:0,d:1,e:0,f:0}),
   measureText(text:string){return {width:text.length*parseFloat(this.font.match(/([\d.]+)px/)?.[1]||'50')*.56};}
  };
@@ -90,12 +90,11 @@ describe('independent phrase animation and word styles',()=>{
   expect(a.c.stroke).not.toHaveBeenCalled();
   expect(a.transforms).not.toEqual(render({animated:true,wordStylesEnabled:false,time:1.9}).transforms);
  });
- it('keeps static word accents and reduced-motion glyph geometry still',()=>{
+ it('keeps word placement steady while accents animate and reduced-motion glyphs stay still',()=>{
   for(const style of CURRENT_WORD_STYLES){
    const a=render({animated:false,wordStylesEnabled:true,currentWordStyle:style.id,time:.2});
    const b=render({animated:false,wordStylesEnabled:true,currentWordStyle:style.id,time:.8});
    expect(a.transforms).toEqual(b.transforms);
-   for(const method of ['stroke','roundRect','ellipse','moveTo','lineTo'] as const)expect(vi.mocked(a.c[method]).mock.calls).toEqual(vi.mocked(b.c[method]).mock.calls);
   }
   const a=render({wordStylesEnabled:true,wordAnimationsEnabled:true,reduced:true,time:.2});
   const b=render({wordStylesEnabled:true,wordAnimationsEnabled:true,reduced:true,time:.8});
@@ -117,12 +116,12 @@ describe('independent phrase animation and word styles',()=>{
   const {c,paints}=context();
   c.createLinearGradient=vi.fn(()=>({addColorStop:vi.fn()}) as unknown as CanvasGradient);
   const [indic]=buildCues([{time:0,text:'മഴക്കാലം',words:[{text:'മഴക്കാലം',start:0,end:2,timing:'sourced'}]}],[]);
-  render({c,cue:indic,wordStylesEnabled:true,fillPaceMode:'letter'});
+  render({c,cue:indic,wordStylesEnabled:true,currentWordStyle:'ribbon',fillPaceMode:'letter'});
   expect(paints.map(p=>p.text)).toEqual(['മഴക്കാലം']);
   expect(c.createLinearGradient).toHaveBeenCalledOnce();
  });
- it('renders all 125 animation/style combinations without duplicating the lyric phrase',()=>{
-  expect(LYRIC_MOTIONS).toHaveLength(25);expect(CURRENT_WORD_STYLES).toHaveLength(5);
+ it('renders all 100 animation/style combinations without duplicating the lyric phrase',()=>{
+  expect(LYRIC_MOTIONS).toHaveLength(25);expect(CURRENT_WORD_STYLES).toHaveLength(4);
   for(const motion of LYRIC_MOTIONS)for(const style of CURRENT_WORD_STYLES){
    for(const [w,h] of [[360,203],[800,1280],[1920,1080]]){
     const output=render({w,h,enabledMotions:[motion],currentWordStyle:style.id,wordStylesEnabled:true});
@@ -237,7 +236,7 @@ describe('integrated choreography, shaped-script fallback and theme transitions'
  });
  it('migrates removed lookalikes and preserves deliberately empty pools',()=>{
   expect(normalizeMotionPool(['ribbon','surge','wave'])).toEqual(['wave']);
-  expect(normalizeWordStylePool(['halo','classic-ring'])).toEqual(['halo']);
+  expect(normalizeWordStylePool(['halo','classic-ring'])).toEqual(['orbit']);
   expect(normalizeMotionPool([])).toEqual([]);expect(normalizeWordStylePool([])).toEqual([]);
  });
  it('uses pale unread ink and one vibrant accent for every sung word in the line',()=>{
@@ -256,15 +255,67 @@ describe('integrated choreography, shaped-script fallback and theme transitions'
  });
 });
 
-it('offers exactly five static styles with identical geometry at every point in a word',()=>{
- expect(CURRENT_WORD_STYLES).toHaveLength(5);
- for(const style of CURRENT_WORD_STYLES){
+describe('full-word highlights and source-clock decoration',()=>{
+ it('removes Double Underline and migrates old halo selections to Orbit',()=>{
+  expect(CURRENT_WORD_STYLES.map(style=>style.id)).toEqual(['classic-capsule','ribbon','orbit','classic-focus']);
+  expect(normalizeWordStylePool(['underline','classic-progress','halo','classic-ring','ribbon'])).toEqual(['orbit','ribbon']);
+  expect(normalizeWordStylePool([])).toEqual([]);
+ });
+ it('covers tall ascenders, descenders and side bearings instead of assuming a centred em box',()=>{
+  const c=context().c;
+  c.measureText=vi.fn(()=>({width:160,actualBoundingBoxAscent:58,actualBoundingBoxDescent:15,actualBoundingBoxLeft:83,actualBoundingBoxRight:85}) as TextMetrics);
+  const bounds=measureWordInkBounds(c,'Ág',160,60);
+  expect(bounds).toEqual({left:-83,right:85,top:-58,bottom:15});
+  for(const style of ['classic-focus','classic-capsule','ribbon'] as const){
+   const target=context().c;drawCurrentWordAccent(target,style,160,60,1,'#55bbff',{bounds});
+   const [x,y,w,h]=vi.mocked(target.roundRect).mock.calls[0];
+   expect(x).toBeLessThan(bounds.left);expect(y).toBeLessThan(bounds.top);
+   expect(x+w).toBeGreaterThan(bounds.right);expect(y+h).toBeGreaterThan(bounds.bottom);
+   expect(target.fillStyle).toBe('#55bbff');
+  }
+ });
+ it('travels around the capsule outline and moves the orbit while respecting reduced motion',()=>{
+  const offsets:number[]=[];
+  for(const time of [.1,.8]){
+   const c=context().c;c.stroke=vi.fn(()=>offsets.push(c.lineDashOffset));
+   drawCurrentWordAccent(c,'classic-capsule',160,60,.5,'#55bbff',{time});
+  }
+  expect(offsets[1]).not.toBe(offsets[3]);
   const a=context().c,b=context().c;
-  drawCurrentWordAccent(a,style.id,160,60,.1,'#55bbff');drawCurrentWordAccent(b,style.id,160,60,.8,'#55bbff');
-  for(const method of ['stroke','fill','roundRect','ellipse','moveTo','lineTo'] as const)expect(vi.mocked(a[method]).mock.calls).toEqual(vi.mocked(b[method]).mock.calls);
- }
+  drawCurrentWordAccent(a,'orbit',160,60,.5,'#55bbff',{time:.1});
+  drawCurrentWordAccent(b,'orbit',160,60,.5,'#55bbff',{time:.8});
+  expect(vi.mocked(a.ellipse).mock.calls).not.toEqual(vi.mocked(b.ellipse).mock.calls);
+  for(const style of ['classic-capsule','orbit'] as const){
+   const a=context().c,b=context().c;
+   drawCurrentWordAccent(a,style,160,60,.5,'#55bbff',{time:.1,reduced:true});
+   drawCurrentWordAccent(b,style,160,60,.5,'#55bbff',{time:.8,reduced:true});
+   for(const method of ['ellipse','arc','setLineDash'] as const)expect(vi.mocked(a[method]).mock.calls).toEqual(vi.mocked(b[method]).mock.calls);
+   expect(a.lineDashOffset).toBe(b.lineDashOffset);
+  }
+ });
+ it('uses the same letter edge for the full-height marker and forces progressive fill at fast tempos',()=>{
+  const widths:number[]=[];
+  for(const revealX of [-40,45]){
+   const c=context().c;
+   drawCurrentWordAccent(c,'ribbon',160,60,.5,'#55bbff',{bounds:{left:-80,right:80,top:-58,bottom:15},revealX});
+   const [x,y,w,h]=vi.mocked(c.rect).mock.calls[0];
+   expect(x+w).toBeCloseTo(revealX);expect(y).toBeLessThan(-58);expect(y+h).toBeGreaterThan(15);widths.push(w);
+  }
+  expect(widths[1]).toBeGreaterThan(widths[0]);
+  expect(render({currentWordStyle:'ribbon',wordStylesEnabled:true,bpm:160,fillPaceMode:'word'}).result.fillPace).toBe('letter');
+ });
+ it('uses contrasting ink over a highlight in the completed lyric colour',()=>{
+  for(const template of TEMPLATES)for(const palette of template.palettes){
+   expect(contrastRatio(wordHighlightInk(palette.accent),palette.accent)).toBeGreaterThanOrEqual(4.5);
+  }
+  for(const style of ['classic-capsule','classic-focus'] as const){
+   const output=render({animated:false,time:.5,currentWordStyle:style,wordStylesEnabled:true});
+   expect(output.paints[0].color).toBe(wordHighlightInk(output.result.activeColor!));
+   expect(output.paints[1].color).toBe(output.result.baseColor);
+  }
+ });
 });
-it('keeps Lift, Glow and Zoom independent from static styles and restricts them to sourced words',()=>{
+it('keeps Lift, Glow and Zoom independent from word styles and restricts them to sourced words',()=>{
  expect(CURRENT_WORD_ANIMATIONS.map(item=>item.id)).toEqual(['lift','glow','zoom']);
  const lift=currentWordAnimationPose('lift',.5,1),glow=currentWordAnimationPose('glow',.5,1),zoom=currentWordAnimationPose('zoom',.5,1);
  expect(lift.y).toBeLessThan(-.15);expect(lift.scale).toBe(1);expect(lift.glow).toBe(0);

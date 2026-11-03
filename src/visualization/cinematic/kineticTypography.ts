@@ -7,7 +7,7 @@ import {byId,resolveThemePalette,TEMPLATES,type DirectedScene,type FontPack} fro
 import {applySceneFont,getFontLoadRevision,isFontPackLoaded,preloadLyricFonts} from './fonts';
 import {lightLyricColor,vibrantLyricColor,paintLyric,readableChromaticInk,readableInk,albumColorsForLine} from './contrast';
 import type {AlbumArtLyricPalette,TextGlow} from './contrast';
-import {drawCurrentWordAccent,type CurrentWordStyle} from './currentWordStyles';
+import {drawCurrentWordAccent,measureWordInkBounds,wordAccentBounds,wordHighlightInk,type WordInkBounds,type CurrentWordStyle} from './currentWordStyles';
 import {currentWordAnimationPose,type CurrentWordAnimation} from './currentWordAnimations';
 import {buildLetterUnits,choreographyDuration,choreographyPhase,letterMotionPose,lineMotionPose,phraseTracking,type LetterUnit} from './letterMotion';
 import {lyricCameraTransform,makeLyricProjection,STILL_CAMERA,type CameraFrame,type ProjectPoint} from './cameraRig';
@@ -442,7 +442,8 @@ function paintWordWithSequentialColor(
  baseColor:string,
  sungColor:string,
  backgroundHex:string,
- glow?:TextGlow
+ glow?:TextGlow,
+ sungSurface?:string
 ){
  if(!hasWordSync||fillPace==='line'){
   paintLyric(c,wordText,0,0,maxWidth,baseColor,backgroundHex,undefined,glow);
@@ -450,7 +451,7 @@ function paintWordWithSequentialColor(
  }
  if(fillPace==='word'){
   const col=isSpokenStart?sungColor:baseColor;
-  paintLyric(c,wordText,0,0,maxWidth,col,backgroundHex,undefined,glow);
+  paintLyric(c,wordText,0,0,maxWidth,col,isSpokenStart?sungSurface||backgroundHex:backgroundHex,undefined,glow);
   return;
  }
  // Slow song: letter-by-letter color transition as each letter is said
@@ -459,13 +460,13 @@ function paintWordWithSequentialColor(
   return;
  }
  if(isSpokenEnd||wordProgress>=1){
-  paintLyric(c,wordText,0,0,maxWidth,sungColor,backgroundHex,undefined,glow);
+  paintLyric(c,wordText,0,0,maxWidth,sungColor,sungSurface||backgroundHex,undefined,glow);
   return;
  }
  // Paint the shaped word once. A colour sweep preserves Indic conjuncts, kerning,
  // and ligatures instead of splitting the glyph run into individual code points.
  if(typeof c.createLinearGradient!=='function'){
-  paintLyric(c,wordText,0,0,maxWidth,wordProgress>=.5?sungColor:baseColor,backgroundHex,undefined,glow);
+  paintLyric(c,wordText,0,0,maxWidth,wordProgress>=.5?sungColor:baseColor,wordProgress>=.5?sungSurface||backgroundHex:backgroundHex,undefined,glow);
   return;
  }
  const width=Math.min(maxWidth,c.measureText(wordText).width);
@@ -500,6 +501,8 @@ interface CachedCueLayout {
  size:number;
  joinedText:string;
  units:LetterUnit[][];
+ inkBounds:WordInkBounds[];
+ unitInkBounds:WordInkBounds[][];
  unitOffsets:number[];
  unitCount:number;
 }
@@ -575,11 +578,13 @@ export function drawKineticLyrics({
  let size:number;
  let joinedText:string;
  let units:LetterUnit[][];
+ let inkBounds:WordInkBounds[];
+ let unitInkBounds:WordInkBounds[][];
  let unitOffsets:number[];
  let unitCount:number;
 
  if(cachedLayout&&cachedLayout.key===layoutKey&&cachedLayout.cue===cue&&cachedLayout.emphasis===emphasis){
-  ({runs,placements,totalRowsCount,widestRow,fit,size,joinedText,units,unitOffsets,unitCount}=cachedLayout);
+  ({runs,placements,totalRowsCount,widestRow,fit,size,joinedText,units,inkBounds,unitInkBounds,unitOffsets,unitCount}=cachedLayout);
  }else{
   runs=lyricRuns(cue,mode,emphasis);
   const duetScale=duetSide?0.78:1;
@@ -617,8 +622,10 @@ export function drawKineticLyrics({
   widestRow=placements.reduce((m,p)=>Math.max(m,p.rowWidth),1);
   joinedText=runs.map(word=>word.text).join(' ');
   units=runs.map(word=>{applySceneFont(c,font,size,word.text);return buildLetterUnits(c,word.text);});
+  inkBounds=runs.map(word=>{applySceneFont(c,font,size,word.text);return measureWordInkBounds(c,word.text,c.measureText(word.text).width,size);});
+  unitInkBounds=units.map((parts,index)=>{applySceneFont(c,font,size,runs[index].text);return parts.map(part=>measureWordInkBounds(c,part.text,part.width,size));});
   unitCount=0;unitOffsets=units.map(parts=>{const offset=unitCount;unitCount+=parts.length;return offset;});
-  cachedLayout={key:layoutKey,cue,emphasis,runs,placements,totalRowsCount,widestRow,fit,size,joinedText,units,unitOffsets,unitCount};
+  cachedLayout={key:layoutKey,cue,emphasis,runs,placements,totalRowsCount,widestRow,fit,size,joinedText,units,inkBounds,unitInkBounds,unitOffsets,unitCount};
  }
 
  // Never animate inferred timings when romanization changes the token count.
@@ -672,7 +679,7 @@ export function drawKineticLyrics({
   effectiveBaseOverride
  );
  const fillPace:'letter'|'word'|'line'=hasWordSync
-  ?(activeWordStyle!=='off'||activeWordAnimation!=='off')?resolveLyricFillPace(runs,bpm,fillPaceMode):'word'
+  ?activeWordStyle==='ribbon'?'letter':(activeWordStyle!=='off'||activeWordAnimation!=='off')?resolveLyricFillPace(runs,bpm,fillPaceMode):'word'
   :'line';
 
  // If this side of a dual-singer duet has finished its line before the other singer finishes,
@@ -736,6 +743,12 @@ export function drawKineticLyrics({
  let drawn=0,highlights=0;
  applySceneFont(c,font,size,joinedText);
 
+ interface PreparedGlyph {
+  part:LetterUnit;
+  pose:ReturnType<typeof letterMotionPose>;
+  wordPose:ReturnType<typeof currentWordAnimationPose>;
+  matrix:[number,number,number,number,number,number];
+ }
  interface PreparedWordDraw {
   item:WordPlacement;
   wordProgress:number;
@@ -743,6 +756,8 @@ export function drawKineticLyrics({
   isSpokenEnd:boolean;
   isActive:boolean;
   measuredW:number;
+  glyphs:PreparedGlyph[];
+  bounds:WordInkBounds;
   mA:number;
   mB:number;
   mC:number;
@@ -803,8 +818,27 @@ export function drawKineticLyrics({
    const aa=scaleX*stretchX,bb=scaleXY*stretchX,cc=scaleYX+wordShear*scaleX,dd=scaleY*stretchY;
    const mA=aa*cos+cc*sin,mB=bb*cos+dd*sin,mC=cc*cos-aa*sin,mD=dd*cos-bb*sin;
    const measuredW=width*fit;
-   const localHalfW=measuredW*0.56+size*(energy>.01?.38:wordLettersActive?.24:.14)+8;
-   const localHalfH=size*(energy>.01?1.02:wordLettersActive?.90:.64)+6;
+   const parts=renderLetters?units[word.index]:[{text:word.text,center:0,width:measuredW,index:0,count:1,connected:true}];
+   const bounds={...inkBounds[word.index]};
+   const glyphs:PreparedGlyph[]=parts.map(part=>{
+    const pose=letterMotionPose(motion,age,unitOffsets[word.index]+part.index,unitCount,energy,part.connected,motionDuration,cueIndex);
+    const wordPose=currentWordAnimationPose(isActive?activeWordAnimation:'off',wordProgress,wordAnimationEnergy,part.index,part.count);
+    const ga=pose.scaleX*Math.cos(pose.rotation),gb=pose.scaleX*Math.sin(pose.rotation),gc=pose.shear-Math.sin(pose.rotation),gd=pose.scaleY*Math.cos(pose.rotation);
+    const matrix:[number,number,number,number,number,number]=[ga*wordPose.scale,gb*wordPose.scale,gc*wordPose.scale,gd*wordPose.scale,
+     part.center*(1+pose.tracking)+pose.x*size+gc*wordPose.y*size,pose.y*size+gd*wordPose.y*size];
+    // The accent encloses the actual moving glyphs, including diacritics, Lift and Zoom.
+    if(activeWordStyle!=='off'){
+     const ink=renderLetters?unitInkBounds[word.index][part.index]:inkBounds[word.index];
+     for(const x of [ink.left,ink.right])for(const y of [ink.top,ink.bottom]){
+      const px=matrix[0]*x+matrix[2]*y+matrix[4],py=matrix[1]*x+matrix[3]*y+matrix[5];
+      bounds.left=Math.min(bounds.left,px);bounds.right=Math.max(bounds.right,px);bounds.top=Math.min(bounds.top,py);bounds.bottom=Math.max(bounds.bottom,py);
+     }
+    }
+    return {part,pose,wordPose,matrix};
+   });
+   const accent=activeWordStyle==='off'?bounds:wordAccentBounds(bounds,size,activeWordStyle);
+   const localHalfW=Math.max(measuredW*0.56+size*(energy>.01?.38:wordLettersActive?.24:.14)+8,activeWordStyle==='off'?0:Math.max(Math.abs(accent.left),Math.abs(accent.right))+size*.10);
+   const localHalfH=Math.max(size*(energy>.01?1.02:wordLettersActive?.90:.64)+6,activeWordStyle==='off'?0:Math.max(Math.abs(accent.top),Math.abs(accent.bottom))+size*.10);
    const halfExtentX=Math.abs(mA)*localHalfW+Math.abs(mC)*localHalfH;
    const halfExtentY=Math.abs(mB)*localHalfW+Math.abs(mD)*localHalfH;
 
@@ -820,6 +854,8 @@ export function drawKineticLyrics({
     isSpokenEnd,
     isActive,
     measuredW,
+    glyphs,
+    bounds,
     mA,
     mB,
     mC,
@@ -869,7 +905,7 @@ export function drawKineticLyrics({
   c.transform(1,0,0,1,lineX,0);
   if(linePose.scale!==undefined){const scale=linePose.scale;c.transform(scale,0,0,scale,(centerX+shiftX)*(1-scale),(centerY+shiftY)*(1-scale));}
   for(const pw of preparedWords){
-   const {item,wordProgress,isSpokenStart,isSpokenEnd,isActive,measuredW,mA,mB,mC,mD,screenX,screenY}=pw;
+   const {item,wordProgress,isSpokenStart,isSpokenEnd,isActive,measuredW,glyphs,bounds,mA,mB,mC,mD,screenX,screenY}=pw;
    const {word}=item;
    const finalX=centerX+(screenX-centerX)*clampScale+shiftX;
    const finalY=centerY+(screenY-centerY)*clampScale+shiftY;
@@ -889,18 +925,23 @@ export function drawKineticLyrics({
    // Every sung word in this cue shares its contrast-adjusted line accent.
    if(activeWordStyle!=='off'&&isActive){
     c.save();c.globalAlpha*=letterMotionPose(motion,age,unitOffsets[word.index],unitCount,energy,true,motionDuration,cueIndex).alpha;
-    drawCurrentWordAccent(c,activeWordStyle,measuredW,size,wordProgress,sungColor);c.restore();
+    let revealX=-measuredW/2+measuredW*wordProgress;
+    if(renderLetters&&glyphs.length>1){
+     const index=Math.min(glyphs.length-1,Math.floor(wordProgress*glyphs.length)),glyph=glyphs[index];
+     const fraction=clamp(wordProgress*glyphs.length-index),x=glyph.part.width*(fraction-.5);
+     revealX=glyph.matrix[0]*x+glyph.matrix[4];
+    }
+    drawCurrentWordAccent(c,activeWordStyle,measuredW,size,wordProgress,sungColor,{bounds,revealX,time:Math.max(0,time-word.start),reduced:reduced||intensity<=.001});c.restore();
    }
 
-   const parts=renderLetters?units[word.index]:[{text:word.text,center:0,width:measuredW,index:0,count:1,connected:true}];
-   for(const part of parts){
-    const pose=letterMotionPose(motion,age,unitOffsets[word.index]+part.index,unitCount,energy,part.connected,motionDuration,cueIndex);
-    const wordPose=currentWordAnimationPose(isActive?activeWordAnimation:'off',wordProgress,wordAnimationEnergy,part.index,part.count);
+   const filledWord=isActive&&(activeWordStyle==='classic-capsule'||activeWordStyle==='classic-focus');
+   const markedWord=isActive&&activeWordStyle==='ribbon';
+   const highlightInk=wordHighlightInk(sungColor);
+   for(const {part,pose,wordPose,matrix} of glyphs){
     const glyphGlow=wordPose.glow>.001?{color:sungColor,blur:Math.min(28,size*wordPose.glow)}:undefined;
     c.save();
     c.globalAlpha*=pose.alpha;
-    c.transform(pose.scaleX*Math.cos(pose.rotation),pose.scaleX*Math.sin(pose.rotation),pose.shear-Math.sin(pose.rotation),pose.scaleY*Math.cos(pose.rotation),part.center*(1+pose.tracking)+pose.x*size,pose.y*size);
-    if(wordPose.y!==0||wordPose.scale!==1)c.transform(wordPose.scale,0,0,wordPose.scale,0,wordPose.y*size);
+    c.transform(...matrix);
     if(pose.reveal<1){c.beginPath();c.rect(-part.width*.65,-size*.68,Math.max(1,part.width*1.3),size*1.4*pose.reveal);c.clip();}
     if(pose.revealX<1){
      const left=-part.width*.65,width=Math.max(1,part.width*1.3),shown=width*pose.revealX;
@@ -908,7 +949,8 @@ export function drawKineticLyrics({
     }
     if(pose.iris<1){c.beginPath();c.ellipse(0,0,Math.max(.01,part.width*.7*pose.iris),Math.max(.01,size*.75*pose.iris),0,0,Math.PI*2);c.clip();}
     const letterProgress=part.connected?wordProgress:clamp(wordProgress*part.count-part.index);
-    paintWordWithSequentialColor(c,part.text,Math.max(1,part.width*1.12),hasWordSync&&(lineAnimationsActive||activeWordStyle!=='off'||activeWordAnimation!=='off'),fillPace,letterProgress,isSpokenStart,isSpokenEnd,baseColor,sungColor,effectiveBgHex,glyphGlow);
+    paintWordWithSequentialColor(c,part.text,Math.max(1,part.width*1.12),hasWordSync&&(lineAnimationsActive||activeWordStyle!=='off'||activeWordAnimation!=='off'),filledWord?'word':fillPace,letterProgress,isSpokenStart,isSpokenEnd,
+     filledWord?highlightInk:baseColor,filledWord||markedWord?highlightInk:sungColor,filledWord?sungColor:effectiveBgHex,glyphGlow,markedWord?sungColor:undefined);
     c.restore();
    }
 

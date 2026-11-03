@@ -11,7 +11,7 @@ Node.js/Express backend on Android.
   audio-reactive flowers; Color Riot uses light pastel palettes.
 - **Automatic rotation:** one enabled theme stays fixed; multiple themes rotate.
   Select multiple palettes per theme to rotate those too, with adjustable duration.
-- **25 lyric animations**, five static current-word styles, and separate
+- **25 lyric animations**, four current-word styles with animated highlights, and separate
   **Lift, Glow and Zoom** effects. Letters flow smoothly while connected scripts
   such as Hindi remain shaped. Word effects require word-synced lyrics.
 - **Flexible lyrics:** original/romanized display, manual import and editing,
