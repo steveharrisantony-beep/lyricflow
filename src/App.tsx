@@ -1,3 +1,4 @@
+import {isSyncedLyricsSource,lyricProviderName,normalizeLyricSource} from './lyrics/sourceLabels';
 import {selectYouTubeBackgroundCandidate} from './music/videoMatching';
 import {selectedPaletteIds,togglePaletteSelection,enableAllPaletteSelections,enableAllPalettesForTheme,type ThemePaletteSelections} from './visualization/cinematic/themeSelection';
 import {normalizeLyricLayout,type LyricLayoutSettings} from './lyrics/lyricLayout';
@@ -967,6 +968,7 @@ export default function App({ user = null }: { user?: User | null }) {
   function saveMappedLyrics(lyrics:Omit<IncomingLyrics,'token'>,selection:LyricsSelection|null,delay=0){
     const text=lyrics.original||lyrics.plain||'';
     if(!text.trim()||!lyricsFix.context)return;
+    lyrics={...lyrics,source:normalizeLyricSource(lyrics.source,lyrics.sourceUrl)};
     pendingLyricsSelection.current=null;
     discardSongCorrections(uid,lyricsFix.context.identity,['lyrics','delay'],selection?correctionKey(lyricsFix.context):'');
     privateLyrics.save(text);
@@ -985,7 +987,7 @@ export default function App({ user = null }: { user?: User | null }) {
     const pending=pendingLyricsSelection.current;
     if(pending?.key===recordingKey){
       const engine=pending.selection.engine,source=lyrics.source+' '+(lyrics.sourceUrl||'');
-      if(!(engine==='apple'?/apple/i.test(source):engine==='lrclib'?/lrc/i.test(source):/youtube|subtitle/i.test(source))){
+      if(!(engine==='apple'?isSyncedLyricsSource(lyrics.source,lyrics.sourceUrl):engine==='lrclib'?lyricProviderName(lyrics.source,lyrics.sourceUrl)==='LRCLIB':/youtube|subtitle/i.test(source))){
         if(!pending.selection.lrclibId)setIncoming({...lyrics,token:++incomingRevision.current});
         return;
       }
@@ -1583,7 +1585,7 @@ export default function App({ user = null }: { user?: User | null }) {
     ?incoming?.title||localTrack?.title||"Untitled lyrics"
     :lyricsLoading?"Loading…":"Not found";
   const currentLyricsLibrary=hasLoadedLyrics
-    ?describeLyricProvider(activeLyrics.name,/<\d+:/.test(activeLyrics.original),Boolean(activeLyrics.original.trim()),true).providerName
+    ?describeLyricProvider(activeLyrics.name,/<\d+:/.test(activeLyrics.original),Boolean(activeLyrics.original.trim()),true,activeLyrics.url).providerName
     :"";
   const currentVideoMetadata=selectedVideoMetadata&&extractYouTubeVideoId(selectedVideoMetadata)===stageYoutubeVideoId
     ?selectedVideoMetadata:matchedVideoCandidate;

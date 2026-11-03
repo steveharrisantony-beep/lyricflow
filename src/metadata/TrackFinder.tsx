@@ -1,3 +1,4 @@
+import {lyricProviderName,normalizeLyricSource} from '../lyrics/sourceLabels';
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {IncomingLyrics} from '../lyrics/ManualLyrics';
 export type FoundLyrics=Omit<IncomingLyrics,'token'>;
@@ -409,8 +410,8 @@ export default function TrackFinder({
     setBusy(true);
     updateStatus(
       overrideBracketFilter
-        ? `Searching Apple Library & LRCLIB with exact query "${searchTrack.title}" (bracket filter overridden)…`
-        : `Searching Apple Library & LRCLIB for "${searchTrack.title}"…`,
+        ? `Searching lrc.red / Binimum / Paxsenix & LRCLIB with exact query "${searchTrack.title}" (bracket filter overridden)…`
+        : `Searching lrc.red / Binimum / Paxsenix & LRCLIB for "${searchTrack.title}"…`,
     );
     setCandidates([]);
     automaticRequest.current?.abort();
@@ -449,22 +450,20 @@ export default function TrackFinder({
           title: appleDirect.title || appleCands[0]?.title || searchTrack.title,
           artist: appleDirect.artist || appleCands[0]?.artist || searchTrack.artist,
         },
-          `Loaded ${appleDirect.source} (${hasTimed ? (appleDirect.hasWordSync ? "Word timestamps" : "Line timestamps") : "Plain lyrics"}). ${combinedCandidates.length} Apple Library & LRCLIB candidate(s) listed below.`,
+          `Loaded ${appleDirect.source} (${hasTimed ? (appleDirect.hasWordSync ? "Word timestamps" : "Line timestamps") : "Plain lyrics"}). ${combinedCandidates.length} lrc.red / Binimum / Paxsenix & LRCLIB candidate(s) listed below.`,
         );
       } else if (appleCands.length > 0 && appleCands[0].syncedLyrics) {
         const topApple = appleCands[0];
         publishLyrics({
           original: topApple.syncedLyrics!,
           romanized: "",
-          source: topApple.hasWordSync
-            ? "Apple Library · Word-Synced TTML"
-            : "Apple Library · Synced",
+          source: normalizeLyricSource(topApple.sourceLabel||'Synced lyrics',topApple.url),
           sourceUrl: topApple.url,
           hasWordSync: Boolean(topApple.hasWordSync),
           title: topApple.title || searchTrack.title,
           artist: topApple.artist || searchTrack.artist,
         },
-          `Loaded Apple Library lyrics for "${topApple.title}". ${combinedCandidates.length} candidate(s) listed below.`,
+          `Loaded ${lyricProviderName(topApple.sourceLabel||'',topApple.url)||'synced'} lyrics for "${topApple.title}". ${combinedCandidates.length} candidate(s) listed below.`,
         );
       } else if (lrcCands.length > 0 && (lrcCands[0].syncedLyrics || lrcCands[0].plainLyrics)) {
         const topLrc = lrcCands[0];
@@ -486,7 +485,7 @@ export default function TrackFinder({
       } else if (finished) {
         updateStatus(
           combinedCandidates.length
-            ? `${combinedCandidates.length} candidate(s) found across Apple Library & LRCLIB. Select a version below.`
+            ? `${combinedCandidates.length} candidate(s) found across lrc.red / Binimum / Paxsenix & LRCLIB. Select a version below.`
             : "No matching candidates found; paste custom LRC in the editor below.",
         );
       }
@@ -685,7 +684,7 @@ export default function TrackFinder({
               <div className="candidate-heading">
                 Alternative recordings ({candidates.length}){" "}
                 <small>
-                  Apple Library &amp; LRCLIB results — choose if the auto-loaded
+                  Synced lyric sources and LRCLIB results — choose if the auto-loaded
                   lyrics do not match
                 </small>
               </div>
@@ -702,9 +701,7 @@ export default function TrackFinder({
                       {Math.round(c.confidence * 100)}% match
                     </small>
                     <small>
-                      {c.provider === "apple"
-                        ? "[Apple Library] "
-                        : "[LRC Library] "}
+                      {`[${lyricProviderName(c.sourceLabel||'',c.url)||(c.provider==='apple'?'Synced lyrics':'LRCLIB')}] `}
                       {c.instrumental
                         ? "Instrumental"
                         : c.hasWordSync

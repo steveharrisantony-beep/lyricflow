@@ -6,7 +6,7 @@ import {resolveStashLyricsChain} from '../lyrics/providers';
 const track={title:'Original rain',artist:'Test Artist',album:'',duration:200,source:'provider' as const,confidence:1,provider:'jiosaavn' as const};
 const lrc='[00:01.00]LRC first line\n[00:05.00]LRC next line';
 const appleLrc='[00:01.00]<00:01.00>Apple <00:02.00>first\n[00:05.00]<00:05.00>Apple <00:06.00>next';
-const appleResult={lrc:appleLrc,source:'Apple Library · Word-Synced',hasWordSync:true,title:track.title,artist:track.artist};
+const appleResult={lrc:appleLrc,source:'lrc.red · Word-Synced',sourceUrl:'https://lrc.red/s/TEST00000001.ttml',hasWordSync:true,title:track.title,artist:track.artist};
 function fixture(successAttempt=Infinity,first?:Promise<Response>){
  const started=Date.now(),attempts:number[]=[];
  const http=vi.fn(async(input:RequestInfo|URL)=>{
@@ -79,7 +79,7 @@ it('publishes early LRC lyrics while Apple retries, then upgrades to Apple',asyn
  await vi.advanceTimersByTimeAsync(1000);
  expect(progress.mock.calls.at(-1)?.[0].source).toContain('LRC Library');
  await vi.advanceTimersByTimeAsync(2000);
- expect(progress.mock.calls.at(-1)?.[0].source).toContain('Apple');
+ expect(progress.mock.calls.at(-1)?.[0].source).toContain('lrc.red');
  expect((await pending)?.original).toBe(appleLrc);
 });
 
@@ -89,7 +89,7 @@ it('uses temporary LRC even with Apple selected, but honours an explicit LRC sel
  await vi.advanceTimersByTimeAsync(0);
  expect(progress.mock.calls[0][0].source).toContain('LRC Library');
  await vi.advanceTimersByTimeAsync(3000);
- expect((await pending)?.source).toContain('Apple');expect(attempts).toHaveLength(3);
+ expect((await pending)?.source).toContain('lrc.red');expect(attempts).toHaveLength(3);
  const nextProgress=vi.fn();
  const next=resolveStashLyricsChain(track,undefined,'lrclib',0,undefined,nextProgress);
  await vi.advanceTimersByTimeAsync(3000);

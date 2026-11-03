@@ -1,3 +1,4 @@
+import {normalizeLyricSource} from './sourceLabels';
 import {backendOrigin} from '../network/backend';
 import { providerRequest } from '../network/request';
 import {getYouTubeRequestHeaders} from '../music/youtubeAuth';
@@ -460,7 +461,7 @@ async function fetchAppleMusicWordSyncedLyricsOnce(
               lrc: parsed.lrc,
               romanizedLrc: parsed.romanizedLrc,
               hasWordSync: parsed.hasWordSync,
-              source: data.source || 'Apple Music · Word-Synced TTML',
+              source: normalizeLyricSource(data.source || 'Synced lyrics · Word-Synced TTML',data.sourceUrl),
               sourceUrl: data.sourceUrl,
               title: data.title,
               artist: data.artist,
@@ -471,7 +472,7 @@ async function fetchAppleMusicWordSyncedLyricsOnce(
           return {
             lrc: data.lrc,
             hasWordSync: Boolean(data.hasWordSync || data.lrc.includes('<')),
-            source: data.source || 'Stash · Synced Lyrics',
+            source: normalizeLyricSource(data.source || 'Synced lyrics',data.sourceUrl),
             sourceUrl: data.sourceUrl,
             title: data.title,
             artist: data.artist,
@@ -483,7 +484,7 @@ async function fetchAppleMusicWordSyncedLyricsOnce(
             lrc: '',
             plain: data.plain.trim(),
             hasWordSync: false,
-            source: data.source || 'YouTube Music · InnerTube Lyrics',
+            source: normalizeLyricSource(data.source || 'YouTube Music · InnerTube Lyrics',data.sourceUrl),
             sourceUrl: data.sourceUrl,
             title: data.title,
             artist: data.artist,
@@ -499,7 +500,6 @@ async function fetchAppleMusicWordSyncedLyricsOnce(
   let appleTrackName = title;
   let appleArtistName = artist;
   let appleDuration = track.duration || 0;
-  let appleTrackViewUrl = '';
 
   // Step 2: Canonicalize track against Apple Music / iTunes catalog and rank against full raw video title
   try {
@@ -549,7 +549,6 @@ async function fetchAppleMusicWordSyncedLyricsOnce(
         if (Number(best.trackTimeMillis) > 0) {
           appleDuration = Math.round(Number(best.trackTimeMillis) / 1000);
         }
-        appleTrackViewUrl = String(best.trackViewUrl || '');
       } else if (results.length > 0 && !rawOverride) {
         // iTunes returned candidates, but none matched the cleaned title — abort so wrong lyrics aren't fetched
         return null;
@@ -583,8 +582,8 @@ async function fetchAppleMusicWordSyncedLyricsOnce(
             lrc: parsed.lrc,
             romanizedLrc: parsed.romanizedLrc,
             hasWordSync: parsed.hasWordSync,
-            source: parsed.hasWordSync ? 'Apple Music · Word-Synced TTML' : 'Apple Music · Timed Lyrics',
-            sourceUrl: appleTrackViewUrl || undefined,
+            source: parsed.hasWordSync ? 'Boidu · Word-Synced TTML' : 'Boidu · Timed Lyrics',
+            sourceUrl: url,
             title: appleTrackName,
             artist: appleArtistName || undefined,
           };
@@ -596,8 +595,8 @@ async function fetchAppleMusicWordSyncedLyricsOnce(
           return {
             lrc: parsed.lrc,
             hasWordSync: parsed.hasWordSync,
-            source: parsed.hasWordSync ? 'Apple Music · Word-Synced' : 'Apple Music · Synced',
-            sourceUrl: appleTrackViewUrl || undefined,
+            source: parsed.hasWordSync ? 'Boidu · Word-Synced' : 'Boidu · Synced',
+            sourceUrl: url,
             title: appleTrackName,
             artist: appleArtistName || undefined,
           };
@@ -647,7 +646,9 @@ export async function fetchAppleMusicCandidates(
             ttml?: string;
             lrc?: string;
             source?: string;
+            sourceLabel?: string;
             sourceUrl?: string;
+            url?: string;
             confidence?: number;
           }>;
         };
@@ -667,12 +668,15 @@ export async function fetchAppleMusicCandidates(
             hasWordSync = item.lrc.includes('<');
           }
           if (!syncedLyrics) continue;
+          const sourceUrl=item.sourceUrl||item.url||'';
+          const sourceLabel=normalizeLyricSource(item.sourceLabel||item.source||'Synced lyrics',sourceUrl);
           const cleanItemTitle = (item.title || title).replace(/\s*\[Apple Library\]$/i, '').trim();
           out.push({
             id: Number.isSafeInteger(item.id) ? item.id : 900_000_000 + out.length + 1,
             title: cleanItemTitle || title,
             artist: item.artist || artist,
-            album: item.album ? `${item.album} · Apple Library` : 'Apple Library',
+            album: item.album || track.album || '',
+            sourceLabel,
             duration: Number(item.duration) || Math.round(track.duration || 0),
             confidence: typeof item.confidence === 'number' ? item.confidence : 0.92,
             hasSynced: true,
@@ -680,7 +684,7 @@ export async function fetchAppleMusicCandidates(
             instrumental: false,
             syncedLyrics,
             provider: 'apple',
-            url: item.sourceUrl || 'https://music.apple.com',
+            url: sourceUrl,
           });
         }
         if (out.length > 0) return out;
@@ -697,8 +701,9 @@ export async function fetchAppleMusicCandidates(
       {
         id: 900_000_001,
         title: track.title.trim(),
-        artist: track.artist.trim() || 'Apple Music',
-        album: `${track.album || 'Single'} · Apple Library`,
+        artist: single.artist || track.artist.trim() || 'Unknown artist',
+        album: track.album || '',
+        sourceLabel: normalizeLyricSource(single.source,single.sourceUrl),
         duration: Math.round(track.duration || 0),
         confidence: 0.94,
         hasSynced: true,
@@ -706,7 +711,7 @@ export async function fetchAppleMusicCandidates(
         instrumental: false,
         syncedLyrics: single.lrc,
         provider: 'apple',
-        url: single.sourceUrl || 'https://music.apple.com',
+        url: single.sourceUrl || '',
       },
     ];
   }

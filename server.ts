@@ -1414,7 +1414,7 @@ const SERVER_STOPWORDS = new Set([
 
 /**
  * Post-search candidate scorer on the backend:
- * After retrieving multiple options from Apple Library / lrc.red / iTunes / LRCLIB,
+ * After retrieving multiple options from lrc.red / Binimum / iTunes / LRCLIB,
  * matches the candidate's title, artist (author), and album against the full raw song title
  * and returns the match score (-1 if the candidate song title does not match).
  */
@@ -1703,9 +1703,9 @@ async function fetchIsrcWordSyncedTtml(
   // Step 3: Fetch TTML XML from lrc.red and Binimum (Stash IsrcTtmlLyricsSource.kt)
   for (const cand of isrcCandidates.slice(0, 4)) {
     const ttmlProviders = [
-      { name: 'Apple Music · Word-Synced TTML (lrc.red)', url: `https://lrc.red/s/${cand.isrc}.ttml` },
+      { name: 'lrc.red · Word-Synced TTML', url: `https://lrc.red/s/${cand.isrc}.ttml` },
       {
-        name: 'Apple Music · Word-Synced TTML (Binimum)',
+        name: 'Binimum · Word-Synced TTML',
         url: `https://lyrics-storage.binimum.org/${cand.isrc}.ttml`,
       },
     ];
@@ -1843,8 +1843,8 @@ async function fetchItunesPaxsenixLyrics(
             appleTrackViewUrl: trackViewUrl || undefined,
             lyrics: {
               ttml: body,
-              source: 'Apple Music · Word-Synced TTML (Paxsenix)',
-              sourceUrl: trackViewUrl || undefined,
+              source: 'Paxsenix · Word-Synced TTML',
+              sourceUrl: endpoint.url,
               title: matchedTitle,
               artist: matchedArtist || undefined,
               hasWordSync: body.includes('<span'),
@@ -1859,8 +1859,8 @@ async function fetchItunesPaxsenixLyrics(
               appleTrackViewUrl: trackViewUrl || undefined,
               lyrics: {
                 ttml: embeddedTtml,
-                source: 'Apple Music · Word-Synced TTML (Paxsenix)',
-                sourceUrl: trackViewUrl || undefined,
+                source: 'Paxsenix · Word-Synced TTML',
+                sourceUrl: endpoint.url,
                 title: matchedTitle,
                 artist: matchedArtist || undefined,
                 hasWordSync: embeddedTtml.includes('<span'),
@@ -2430,7 +2430,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
     }
   };
 
-  // Apple Music candidate search for Manual Search in TrackFinder.tsx
+  // Synced-source candidate search for Manual Search in TrackFinder.tsx
   const handleAppleCandidates = async (req: Request, res: Response) => {
     const rawTitle = String(req.query.title || '').trim();
     const rawArtist = String(req.query.artist || '').trim();
@@ -2470,13 +2470,13 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
         candidates.push({
           id: -1001,
           title: rawTitle,
-          artist: rawArtist || 'Apple Music',
-          album: 'Apple Music Word-Synced TTML',
+          artist: isrcMatch.artist || rawArtist || 'Unknown artist',
+          album: '',
           duration: duration || 200,
           instrumental: false,
           hasSynced: true,
           hasWordSync: true,
-          url: isrcMatch.sourceUrl || 'https://music.apple.com',
+          url: isrcMatch.sourceUrl || '',
           confidence: 0.98,
           ttml: isrcMatch.ttml,
           sourceLabel: isrcMatch.source,
@@ -2508,10 +2508,10 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
             const artistName = String(item.artistName || rawArtist);
             const albumName = String(item.collectionName || '');
             const dur = Math.round(Number(item.trackTimeMillis || 0) / 1000);
-            const viewUrl = String(item.trackViewUrl || 'https://music.apple.com');
+            const lyricsUrl = `https://lyrics.paxsenix.org/apple-music/lyrics?id=${encodeURIComponent(songId)}&ttml=true`;
             try {
               const paxRes = await fetch(
-                `https://lyrics.paxsenix.org/apple-music/lyrics?id=${encodeURIComponent(songId)}&ttml=true`,
+                lyricsUrl,
                 {
                   headers: { 'User-Agent': STASH_ANDROID_UA },
                   signal: AbortSignal.timeout(4500),
@@ -2529,17 +2529,17 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
               if (ttml.includes('<p')) {
                 candidates.push({
                   id: -(Number(songId) || 2000 + idx),
-                  title: `${trackName} [Apple Library]`,
+                  title: trackName,
                   artist: artistName,
                   album: albumName,
                   duration: dur,
                   instrumental: false,
                   hasSynced: true,
                   hasWordSync: ttml.includes('<span'),
-                  url: viewUrl,
+                  url: lyricsUrl,
                   confidence: Math.max(0.75, 0.95 - idx * 0.04),
                   ttml,
-                  sourceLabel: 'Apple Music · Word-Synced TTML (Paxsenix)',
+                  sourceLabel: 'Paxsenix · Word-Synced TTML',
                 });
               }
             } catch {
@@ -2641,7 +2641,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
         return;
       }
 
-      // 1. Word-synced Apple Music TTML via ISRC (lrc.red & Binimum)
+      // 1. Word-synced TTML via ISRC (lrc.red & Binimum)
       const isrcTtml = await fetchIsrcWordSyncedTtml(
         title,
         artist,
@@ -2657,7 +2657,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
         return;
       }
 
-      // 2. Apple Music TTML via iTunes Song ID + Paxsenix
+      // 2. Paxsenix TTML matched through the iTunes catalogue
       const paxResult = await fetchItunesPaxsenixLyrics(
         title,
         artist,
@@ -2674,7 +2674,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       }
 
       if (requestedSource === 'apple') {
-        res.status(404).json({ detail: 'No Apple Music word-synced lyrics found for this song.' });
+        res.status(404).json({ detail: 'No matching lyrics found from lrc.red, Binimum or Paxsenix for this song.' });
         return;
       }
 

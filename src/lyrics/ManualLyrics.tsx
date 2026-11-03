@@ -1,3 +1,4 @@
+import {lyricProviderName,normalizeLyricSource} from './sourceLabels';
 import {selectedPaletteIds,type ThemePaletteSelections} from '../visualization/cinematic/themeSelection';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -187,14 +188,14 @@ export function describeLyricProvider(
   hasWordSync: boolean,
   hasTimedLines: boolean,
   hasPlainText: boolean,
+  sourceUrl = '',
 ): LyricProviderBadgeInfo {
-  const raw = (source || "").trim();
+  const raw = normalizeLyricSource(source,sourceUrl);
+  const actualProvider=lyricProviderName(source,sourceUrl);
   let providerName = "Automatic Provider";
-  if (/lyricflow\s*engine/i.test(raw)) providerName = "LyricFlow Engine";
+  if (actualProvider) providerName=actualProvider==='LRCLIB'?'LRC Library':actualProvider;
+  else if (/lyricflow\s*engine/i.test(raw)) providerName = "LyricFlow Engine";
   else if (/youtube\s*subtitles/i.test(raw)) providerName = "YouTube Subtitles";
-  else if (/apple\s*library/i.test(raw)) providerName = "Apple Library";
-  else if (/apple\s*music|itunes|paxsenix|lrc\.red|binimum/i.test(raw))
-    providerName = "Apple Music";
   else if (/musixmatch/i.test(raw)) providerName = "MusixMatch";
   else if (/lrclib|lrc\s*library/i.test(raw)) providerName = "LRC Library";
   else if (/kugou/i.test(raw)) providerName = "KuGou";
@@ -223,7 +224,7 @@ export function describeLyricProvider(
     providerName,
     syncMode,
     detail:
-      raw || "LyricFlow Engine (YouTube Subtitles + Apple Library Word-Sync)",
+      raw || "LyricFlow Engine (YouTube subtitles + synced lyric sources)",
   };
 }
 
@@ -396,7 +397,7 @@ export default function ManualLyrics({
     useState<LyricFillPaceMode>("letter");
   const [offset, setOffset] = useState(0);
   const genre = "";
-  const [source, setSource] = useState("Automatic (Apple Music / LRCLIB)");
+  const [source, setSource] = useState("Automatic lyric sources");
   const [sourceUrl, setSourceUrl] = useState("");
   const [corrected, setCorrected] = useState(false);
   const [message, setMessage] = useState("");
@@ -513,10 +514,10 @@ export default function ManualLyrics({
       ? ""
       : incoming.romanized || romanizeText(incoming.original).text;
     setRoman(nextRoman);
-    setSource(incoming.source);
+    setSource(normalizeLyricSource(incoming.source,incoming.sourceUrl));
     setSourceUrl(incoming.sourceUrl || "");
     setCorrected(false);
-    setMessage(`Auto-loaded from ${incoming.source}.`);
+    setMessage(`Auto-loaded from ${normalizeLyricSource(incoming.source,incoming.sourceUrl)}.`);
   }, [incoming?.token]);
 
   // Upgrade non-Latin lyrics with haroldalan/spotify-karaoke Google phonetic romanization (dt=rm)
@@ -556,7 +557,7 @@ export default function ManualLyrics({
       if (converted.lrc) {
         setRaw(converted.lrc);
         setPlain("");
-        setSource("Custom Apple TTML Override");
+        setSource("Custom TTML Override");
         if (converted.romanizedLrc) setRoman(converted.romanizedLrc);
         else if (autoRoman && !corrected)
           setRoman(romanizeText(converted.lrc).text);
@@ -772,8 +773,9 @@ export default function ManualLyrics({
         hasWordTags,
         lines.length > 0,
         Boolean(plain.trim()),
+        sourceUrl,
       ),
-    [source, hasWordTags, lines.length, plain],
+    [source, sourceUrl, hasWordTags, lines.length, plain],
   );
   const audioSourceInfo = useMemo(
     () => describeAudioSource(track, trackLoaded),

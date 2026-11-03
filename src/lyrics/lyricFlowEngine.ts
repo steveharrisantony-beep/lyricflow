@@ -1,3 +1,4 @@
+import {SYNCED_LYRIC_SOURCES_LABEL} from './sourceLabels';
 import { parseLRC, type TimedLine, type TimedWord } from './lrc';
 
 export type LyricEngineOption = 'lyricflow' | 'apple' | 'lrclib' | 'youtube';
@@ -15,14 +16,14 @@ export const LYRIC_ENGINE_OPTIONS: readonly {
     shortLabel: 'LyricFlow Engine',
     badge: 'Hybrid Word-Sync',
     description:
-      'Aligns Apple Music word-by-word sync timestamps onto YouTube video subtitles & SponsorBlock music timeline',
+      'Aligns lyrics from lrc.red, Binimum or Paxsenix with YouTube subtitles and the video timeline',
   },
   {
     id: 'apple',
-    label: 'Apple Library',
-    shortLabel: 'Apple Library',
+    label: SYNCED_LYRIC_SOURCES_LABEL,
+    shortLabel: 'Synced sources',
     badge: 'Word-by-Word TTML',
-    description: 'Direct Apple Music word-by-word & syllable-synced lyrics',
+    description: 'Timed lyrics from lrc.red, Binimum and Paxsenix, with a Boidu fallback',
   },
   {
     id: 'lrclib',

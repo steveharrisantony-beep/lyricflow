@@ -1,3 +1,4 @@
+import {normalizeLyricSource} from '../lyrics/sourceLabels';
 import { useEffect, useRef, useState } from "react";
 import type { User } from "./firebaseClient";
 import type { useCorrection } from "./useCorrection";
@@ -369,7 +370,7 @@ export default function CorrectionControls({
             Use default video
           </button>
         </div>
-        {mappedLyrics && <p>Lyrics file: {mappedLyrics.sourceFile.name}</p>}
+        {mappedLyrics && <p>Lyrics file: {normalizeLyricSource(mappedLyrics.sourceFile.name,mappedLyrics.sourceFile.url)}</p>}
         <p>
           A verified account is required to submit. Custom lyrics text is kept
           private.

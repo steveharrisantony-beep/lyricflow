@@ -43,10 +43,11 @@ Choosing another lyrics file or video replaces the previous choice for that song
 changing lyrics also clears timing fixes tied to the old file. Explicit lyric
 choices are restored from the saved copy, including after mapping backup import.
 
-Apple lyrics lookup makes up to three attempts, with a 1-second wait before the
-second and a 2-second wait before the third. LRC Library lyrics can display while
-Apple is loading. In automatic or Apple mode, a successful Apple result takes
-over after the currently displayed line finishes, without restarting playback.
+The lrc.red / Binimum / Paxsenix lyrics lookup makes up to three attempts, with a
+1-second wait before the second and a 2-second wait before the third. LRC Library
+lyrics can display while those sources are loading. In automatic or synced-source
+mode, a successful result takes over after the current line finishes, without
+restarting playback.
 The same handoff applies to manual searches; changing songs or choosing a version
 cancels pending work. Saved source-file choices and explicit LRC selection keep
 priority.

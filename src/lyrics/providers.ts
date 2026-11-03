@@ -1,3 +1,4 @@
+import {normalizeLyricSource} from './sourceLabels';
 import {providerRequest} from '../network/request';
 import {
  extractYouTubeVideoId,
@@ -69,10 +70,11 @@ export const lrclibProvider:LyricProvider={
  }
 };
 export async function retrievePermittedLyrics(candidate:TrackCandidate, signal?:AbortSignal){
- if(!Number.isSafeInteger(candidate.id)||candidate.id<=0)throw new Error('Invalid lyrics ID');
+ if(!Number.isSafeInteger(candidate.id)||(candidate.id<=0&&candidate.provider!=='apple'))throw new Error('Invalid lyrics ID');
  signal?.throwIfAborted();
  const cleanCandTitle=candidate.title.replace(/\s*\[Apple Library\]$/i,'').trim()||candidate.title;
- if(candidate.syncedLyrics&&hasValidLrcTimestamps(candidate.syncedLyrics))return {synced:candidate.syncedLyrics,plain:'',source:candidate.provider==='apple'?(candidate.hasWordSync?'Apple Library · Word-Synced':'Apple Library · Synced'):(candidate.hasWordSync?'LRCLIB · Word-Synced':'LRCLIB'),sourceUrl:candidate.url,title:cleanCandTitle,artist:candidate.artist,license:'Rights supplied by user'};
+ if(candidate.syncedLyrics&&hasValidLrcTimestamps(candidate.syncedLyrics))return {synced:candidate.syncedLyrics,plain:'',source:candidate.provider==='apple'?normalizeLyricSource(candidate.sourceLabel||'Synced lyrics',candidate.url):(candidate.hasWordSync?'LRCLIB · Word-Synced':'LRCLIB'),sourceUrl:candidate.url,title:cleanCandTitle,artist:candidate.artist,license:'Rights supplied by user'};
+ if(candidate.provider==='apple')throw Error('The selected source has no usable timed lyrics.');
  const response=await providerRequest('https://lrclib.net/api/get/'+candidate.id,signal);
  if(!response.ok)throw new Error('Lyrics provider returned HTTP '+response.status);
  const data:unknown=await response.json();
@@ -188,11 +190,11 @@ async function resolveFromLrcLibrary(
  * (only options that are actually available for the current song are included in `availableEngines`):
  * 1. `lyricflow` (LyricFlow Engine):
  *    - Collects creator-uploaded YouTube video subtitles (line-by-line synced to the actual video) AND
- *      Apple Library data (word-by-word sync), compares the two, and shifts/warps the
- *      Apple Music word-by-word timestamps onto the YouTube video timeline!
- *    - If Apple Library is not found, automatically falls back to YouTube Subtitles or LRC Library.
- * 2. `apple` (Apple Library):
- *    - Direct Apple Music word-by-word TTML / syllable sync.
+ *      lrc.red / Binimum / Paxsenix data (word-by-word sync), compares the two, and shifts/warps the
+ *      provider word-by-word timestamps onto the YouTube video timeline!
+ *    - If synced-source lyrics are not found, automatically falls back to YouTube Subtitles or LRC Library.
+ * 2. `apple` (synced sources; legacy saved engine ID):
+ *    - Direct lrc.red / Binimum / Paxsenix TTML / syllable sync.
  * 3. `lrclib` (LRC Library):
  *    - Direct LRCLIB timed LRC matched by cleaned title, post-search artist/album match, and duration.
  * 4. `youtube` (YouTube Subtitles):
@@ -276,7 +278,7 @@ export async function resolveStashLyricsChain(
     return {
      original:topApple.syncedLyrics,
      romanized:'',
-     source:topApple.hasWordSync?'LyricFlow Engine · Apple Library (Word-Synced)':'LyricFlow Engine · Apple Library (Synced)',
+     source:`LyricFlow Engine · ${normalizeLyricSource(topApple.sourceLabel||'Synced lyrics',topApple.url)}`,
      sourceUrl:topApple.url,
      title:topApple.title,
      artist:topApple.artist,
@@ -354,13 +356,13 @@ function combineLibraryLyrics(appleRes:AppleLyricResult|null,lrcRes:StashResolve
   };
  }
 
- // OPTION 2: APPLE LIBRARY
+ // OPTION 2: SYNCED LYRIC SOURCES
  if(effectiveEngine==='apple'&&hasApple&&appleRes){
   return {
    original:appleRes.lrc,
    romanized:appleRes.romanizedLrc||'',
    plain:appleRes.plain,
-   source:appleRes.source||'Apple Library · Word-Synced',
+   source:normalizeLyricSource(appleRes.source||'Synced lyrics',appleRes.sourceUrl),
    sourceUrl:appleRes.sourceUrl,
    title:appleRes.title,
    artist:appleRes.artist,
@@ -373,7 +375,7 @@ function combineLibraryLyrics(appleRes:AppleLyricResult|null,lrcRes:StashResolve
  }
 
  // OPTION 1: LYRICFLOW ENGINE
- // 1a. Apple Library found -> align with best matching creator-uploaded YouTube subtitle track (or SponsorBlock offset)
+ // 1a. Synced-source lyrics found -> align with best matching creator-uploaded YouTube subtitle track (or SponsorBlock offset)
  if(hasApple&&appleRes&&appleRes.lrc){
   // Pick the subtitle track that yields the best alignment with Apple lyrics (or user-selected track)
   let bestSubLrc=alignmentYoutubeLrc;
@@ -404,10 +406,10 @@ function combineLibraryLyrics(appleRes:AppleLyricResult|null,lrcRes:StashResolve
     :'';
   const sourceLabel=
    bestSubLrc&&bestAligned.syncMethod!=='direct-apple'
-    ?`LyricFlow Engine · Apple Word-Sync + YT Subtitles${offsetNote}`
+    ?`LyricFlow Engine · ${normalizeLyricSource(appleRes.source,appleRes.sourceUrl)} + YouTube Subtitles${offsetNote}`
     :bestAligned.syncMethod==='sponsorblock-offset'
-    ?`LyricFlow Engine · Apple Word-Sync + SponsorBlock${offsetNote}`
-    :`LyricFlow Engine · ${appleRes.source}`;
+    ?`LyricFlow Engine · ${normalizeLyricSource(appleRes.source,appleRes.sourceUrl)} + SponsorBlock${offsetNote}`
+    :`LyricFlow Engine · ${normalizeLyricSource(appleRes.source,appleRes.sourceUrl)}`;
   return {
    original:bestAligned.lrc,
    romanized:bestAligned.romanizedLrc,
@@ -423,7 +425,7 @@ function combineLibraryLyrics(appleRes:AppleLyricResult|null,lrcRes:StashResolve
   };
  }
 
- // 1b. If Apple Library is not found, fall back to LRC Library + YouTube Subtitles alignment (when both exist)
+ // 1b. If synced-source lyrics are not found, fall back to LRC Library + YouTube Subtitles alignment (when both exist)
  if(hasLrclib&&lrcRes&&lrcRes.original&&hasYoutube&&alignmentYoutubeLrc){
   const aligned=alignAppleWordSyncWithYouTubeSubtitles(
    lrcRes.original,
@@ -453,7 +455,7 @@ function combineLibraryLyrics(appleRes:AppleLyricResult|null,lrcRes:StashResolve
   };
  }
 
- // 1d. If Apple Library is not found and LRC Library exists, show LRC Library
+ // 1d. If synced-source lyrics are not found and LRC Library exists, show LRC Library
  if(hasLrclib&&lrcRes){
   return {
    ...lrcRes,
@@ -464,7 +466,7 @@ function combineLibraryLyrics(appleRes:AppleLyricResult|null,lrcRes:StashResolve
   };
  }
 
- // 1c. If Apple Library is not found and creator-uploaded YouTube Subtitles exist, show YouTube Subtitles
+ // 1c. If synced-source lyrics are not found and creator-uploaded YouTube Subtitles exist, show YouTube Subtitles
  if(hasYoutube&&ytSubRes&&activeYoutubeLrc){
   return {
    original:activeYoutubeLrc,

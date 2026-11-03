@@ -108,9 +108,9 @@ describe('automatic lyric recording matching & Apple Music TTML word-sync',()=>{
  });
  it('identifies lyrics provider and audio source clearly for the lyric panel UI',()=>{
   expect(describeLyricProvider('Apple Music · Word-Synced TTML (lrc.red)',true,true,false)).toEqual({
-   providerName:'Apple Music',
+   providerName:'lrc.red',
    syncMode:'Word-Synced TTML',
-   detail:'Apple Music · Word-Synced TTML (lrc.red)'
+   detail:'lrc.red · Word-Synced TTML'
   });
   expect(describeLyricProvider('MusixMatch · Synced LRC',false,true,false).providerName).toBe('MusixMatch');
   expect(describeLyricProvider('Local File · LRC (track.lrc)',false,true,false).providerName).toBe('Local File');
