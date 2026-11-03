@@ -59,7 +59,7 @@ it('ranks official artist video (Maroon 5 - Maps) #1 and official lyric video #2
   video(22,'Maroon 5 - Maps (Official Video)',{artist:'Music Love',duration:200,videoType:'UGC',viewCount:2_000}),
   video(23,'Maroon 5 - Maps (Lyric Video)',{artist:'Maroon 5',duration:189,videoType:'UGC',viewCount:515_200_000}),
   video(24,'Maroon 5 - Maps (Audio)',{artist:'Maroon 5',duration:190,videoType:'ATV',viewCount:140_000_000}),
-  video(25,'Maroon 5 - Maps',{artist:'Maroon 5',duration:209,videoType:'UGC',viewCount:540_000_000}),
+  video(25,'Maroon 5 - Maps',{artist:'Maroon 5',duration:209,videoType:'OMV',metadataSource:'ytmusic',viewCount:540_000_000}),
  ];
  const ranked=rankYouTubeBackgroundCandidates(candidates,mapsTrack,'music');
  expect(ranked[0].id).toBe('yt_00000000025');
@@ -98,7 +98,7 @@ const boomShaka={title:'Boom Shaka',artist:'KR$NA, Dhanda Nyoliwala',duration:21
 const boomTitle='Boom Shaka (Official Music Video) | KR$NA | Dhanda Nyoliwala';
 it('chooses the KRSNA upload in the Boom Shaka screenshot over the BeatVibe copy',()=>{
  const copy=video(50,boomTitle,{artist:'BeatVibe Studio',duration:219,viewCount:980_300,videoType:'OMV'});
- const official=video(51,boomTitle,{artist:'KRSNA',duration:219,viewCount:151_700_000});
+ const official=video(51,boomTitle,{artist:'KRSNA',channelVerified:true,duration:219,viewCount:151_700_000});
  expect(rankYouTubeBackgroundCandidates([copy,official],boomShaka)[0].id).toBe(official.id);
  // Popularity and an inferred OMV flag cannot promote an unrelated publisher
  // above a matching artist, even when that artist's view count is unavailable.
@@ -106,14 +106,14 @@ it('chooses the KRSNA upload in the Boom Shaka screenshot over the BeatVibe copy
 });
 it('recognizes either credited artist and keeps fan channels separate from the uploader identity',()=>{
  for(const uploader of ['KRSNA','KR$NA Official','Dhanda Nyoliwala','DhandaNyoliwalaVEVO']){
-  const artistVideo=video(53,boomTitle,{artist:uploader,duration:219});
+  const artistVideo=video(53,boomTitle,{artist:uploader,channelVerified:true,duration:219});
   const fanVideo=video(52,boomTitle,{artist:'KRSNA Fans',duration:219,viewCount:1e9,videoType:'OMV'});
   expect(rankYouTubeBackgroundCandidates([fanVideo,artistVideo],boomShaka)[0].id,uploader).toBe(artistVideo.id);
  }
 });
 it('prefers an artist lyric upload to a popular unaffiliated music reupload',()=>{
  const copy=video(54,boomTitle,{artist:'BeatVibe Studio',duration:219,viewCount:10e6});
- const lyric=video(55,'Boom Shaka Official Lyrics | KR$NA | Dhanda Nyoliwala',{artist:'KRSNA',duration:219,viewCount:100});
+ const lyric=video(55,'Boom Shaka Official Lyrics | KR$NA | Dhanda Nyoliwala',{artist:'KRSNA',channelVerified:true,duration:219,viewCount:100});
  expect(rankYouTubeBackgroundCandidates([copy,lyric],boomShaka)[0].id).toBe(lyric.id);
 });
 it('automatically discovers the artist upload through a shorter title search and merges repeated metadata',async()=>{
@@ -121,14 +121,14 @@ it('automatically discovers the artist upload through a shorter title search and
  vi.stubGlobal('fetch',vi.fn(async(input:string)=>{
   const q=new URL(input).searchParams.get('q')||'';queries.push(q);
   const copy=video(56,boomTitle,{artist:'BeatVibe Studio',duration:219,viewCount:980_300,videoType:'OMV'});
-  const official=video(57,boomTitle,{artist:'KRSNA',duration:219,viewCount:151_700_000});
+  const official=video(57,boomTitle,{artist:'KRSNA',channelVerified:true,duration:219,viewCount:151_700_000});
   const incomplete={...official,artist:'YouTube',duration:0,viewCount:undefined};
   return new Response(JSON.stringify({data:q==='Boom Shaka official music video'?[official]:[copy,incomplete]}));
  }));
  const result=await findYouTubeBackgrounds(boomShaka,'music','https://resolver.example');
  expect(queries).toContain('Boom Shaka official music video');expect(queries).toContain('Boom Shaka');
  expect(result.candidateCount).toBe(2);
- expect(result.videos[0]).toMatchObject({id:'yt_00000000057',artist:'KRSNA',duration:219,viewCount:151_700_000});
+ expect(result.videos[0]).toMatchObject({id:'yt_00000000057',artist:'KRSNA',channelVerified:true,duration:219,viewCount:151_700_000});
  expect(result.usedLyricalFallback).toBe(false);
 });
 it('ranks Guppy Cinemas and Reetha Records 5.6M official release #1 for Kunjikkavil Meghame ahead of 11K 2:45 Gowtham_2010 clip',()=>{

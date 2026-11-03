@@ -427,3 +427,15 @@ it('hides YouTube title and controls inside the visualizer via controls=0, verti
 });
 
 
+
+it('rejects pasted static-image/audio links in the manual background picker',async()=>{
+ const {default:Picker}=await import('../music/YouTubeBackgroundPicker');
+ vi.spyOn(globalThis,'fetch').mockResolvedValue(new Response(JSON.stringify({data:[{id:'yt_abcdefghijk',youtubeVideoId:'abcdefghijk',title:'Song Official Audio',artist:'Author - Topic',album:'Audio Track',duration:200,provider:'resolver',sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk',videoType:'ATV',visualContent:'static'}]})));
+ await act(async()=>root.render(<Picker track={{title:'Song',artist:'Author',album:'',duration:200,source:'manual',confidence:1}} activeVideoId={null} preference="music" onPreferenceChange={()=>{}} onChoose={()=>{}}/>));
+ await act(async()=>Array.from(host.querySelectorAll('button')).find(b=>b.textContent?.includes('Search online'))!.click());
+ const input=host.querySelector<HTMLInputElement>('input[aria-label="Custom YouTube video search"]')!;
+ await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'https://www.youtube.com/watch?v=abcdefghijk');input.dispatchEvent(new Event('input',{bubbles:true}));});
+ await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+ expect(host.querySelector('.video-candidate')).toBeNull();
+ expect(host.textContent).toContain('No videos found');
+});

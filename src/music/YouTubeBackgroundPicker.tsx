@@ -111,7 +111,7 @@ export default function YouTubeBackgroundPicker({
           sourceUrl: effectiveQuery,
         });
         if (directId && rawResults.length === 1) {
-          ranked = rawResults;
+          ranked = rawResults.filter(isYouTubeBackgroundVideo);
         } else {
           const strictRanked = rankYouTubeBackgroundCandidates(
             rawResults,
@@ -121,22 +121,9 @@ export default function YouTubeBackgroundPicker({
           const strictIds = new Set(
             strictRanked.map((s) => extractYouTubeVideoId(s)).filter(Boolean),
           );
-          const customRanked = rankYouTubeBackgroundCandidates(
-            rawResults.filter((s) => {
-              const id = extractYouTubeVideoId(s);
-              return Boolean(id && !strictIds.has(id));
-            }),
-            {
-              title: effectiveQuery,
-              artist: "",
-              album: track.album,
-              duration: 0,
-            },
-            preference,
-          );
-          const customIds = new Set(
-            customRanked.map((s) => extractYouTubeVideoId(s)).filter(Boolean),
-          );
+          // A custom query may deliberately find another recording. Show it as
+          // a manual choice using the same video-suitability rules, without
+          // inventing a second automatic ranking with zeroed artist/duration.
           const queryWords = effectiveQuery
             .normalize("NFKC")
             .toLowerCase()
@@ -147,7 +134,7 @@ export default function YouTubeBackgroundPicker({
           const extra = rawResults
             .filter((song) => {
               const id = extractYouTubeVideoId(song);
-              if (!id || strictIds.has(id) || customIds.has(id)) return false;
+              if (!id || strictIds.has(id)) return false;
               if (
                 !isYouTubeBackgroundVideo(song) ||
                 (preference === "lyrics" && !isLyricalVideo(song))
@@ -175,7 +162,7 @@ export default function YouTubeBackgroundPicker({
               return true;
             })
             .sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
-          ranked = [...strictRanked, ...customRanked, ...extra].slice(0, 15);
+          ranked = [...strictRanked, ...extra].slice(0, 15);
         }
       }
       if (controller.signal.aborted) return;

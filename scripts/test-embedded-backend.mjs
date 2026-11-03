@@ -102,7 +102,7 @@ try {
   assert.equal(topicItem.videoType, 'ATV');
   assert.equal(topicItem.artist, 'Hanumankind - Topic');
   assert.equal(topicItem.album, 'Audio Track');
-  assert.equal(omvItem.videoType, 'OMV');
+  assert.equal(omvItem.videoType, 'UGC'); // Title inference cannot establish the actual video type.
   const resolved = await (await request('/music/resolve/saavn_fixture')).json();
   assert.equal(resolved.format, 'audio');
   const audio = await request('/music' + resolved.streamPath, {Range: 'bytes=0-3'});

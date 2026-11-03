@@ -1,10 +1,12 @@
+import {selectYouTubeBackgroundCandidate} from './videoMatching';
 import {isLyricalVideo,rankYouTubeBackgroundCandidates,searchStashCatalog,type SongResult} from './providers';
 import {extractYouTubeVideoId} from '../metadata/trackInfo';
 
 /** Pool artist-qualified and title-only searches before choosing the best recording. */
 export async function findYouTubeBackgrounds(track:{title:string;artist:string;album?:string;provider?:string;duration:number},preference:'music'|'lyrics',base:string,signal?:AbortSignal){
  const cleanTitle=track.title.replace(/\([^)]*\)|\[[^\]]*\]/g,' ').replace(/\s+/g,' ').trim()||track.title.trim();
- const prefix=`${cleanTitle} ${track.artist}`.trim();
+ const primaryArtist=track.artist.split(/[,;]|\s+(?:&|x|and|with|feat\.?|featuring|ft\.?)\s+/i)[0];
+ const prefix=`${cleanTitle} ${primaryArtist}`.trim();
  const suffixes=preference==='music'?['music video','lyrics video']:['lyrics video','lyrical video'];
  const queries=suffixes.map(suffix=>`${prefix} ${suffix}`.trim());
  // Long multi-artist credits can hide the artist's upload in search. Include
@@ -32,9 +34,12 @@ export async function findYouTubeBackgrounds(track:{title:string;artist:string;a
   byId.set(id,{...fallback,...primary,artist:primary.artist||fallback.artist,
    duration:primary.duration||fallback.duration,
    viewCount:Math.max(previous.viewCount||0,song.viewCount||0)||undefined,
-   videoType:primary.videoType||fallback.videoType});
+   videoType:previous.videoType==='ATV'||song.videoType==='ATV'?'ATV':previous.videoType==='OMV'||song.videoType==='OMV'?'OMV':primary.videoType||fallback.videoType,
+   channelId:primary.channelId||fallback.channelId,channelVerified:previous.channelVerified||song.channelVerified,
+   artistCredits:[...new Set([...(previous.artistCredits||[]),...(song.artistCredits||[])])],
+   visualContent:previous.visualContent==='static'||song.visualContent==='static'?'static':primary.visualContent||fallback.visualContent});
  }
  const candidates=[...byId.values()];
  const videos=rankYouTubeBackgroundCandidates(candidates,track,preference);
- return {videos,candidateCount:candidates.length,usedLyricalFallback:preference==='music'&&Boolean(videos[0]&&isLyricalVideo(videos[0]))};
+ return {videos,automaticVideoId:selectYouTubeBackgroundCandidate(videos,track,preference),candidateCount:candidates.length,usedLyricalFallback:preference==='music'&&Boolean(videos[0]&&isLyricalVideo(videos[0]))};
 }

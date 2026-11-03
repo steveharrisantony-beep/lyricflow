@@ -1,3 +1,4 @@
+import {selectYouTubeBackgroundCandidate} from './music/videoMatching';
 import {selectedPaletteIds,togglePaletteSelection,enableAllPaletteSelections,enableAllPalettesForTheme,type ThemePaletteSelections} from './visualization/cinematic/themeSelection';
 import {normalizeLyricLayout,type LyricLayoutSettings} from './lyrics/lyricLayout';
 import {
@@ -1225,14 +1226,9 @@ export default function App({ user = null }: { user?: User | null }) {
           return Boolean(id && !rejectedBgVideoIds.includes(id));
         })
       : [];
-  const autoYoutubeVideoId =
-    autoVideoMatch.key === videoSearchKey
-      ? filteredAutoVideos.length > 0
-        ? extractYouTubeVideoId(filteredAutoVideos[0])
-        : autoVideoMatch.id && !rejectedBgVideoIds.includes(autoVideoMatch.id)
-          ? autoVideoMatch.id
-          : null
-      : null;
+  const autoYoutubeVideoId = autoVideoMatch.key===videoSearchKey&&localTrack
+    ? selectYouTubeBackgroundCandidate(filteredAutoVideos,localTrack,preferredVideoType)
+    : null;
   const videoSearchPending =
     Boolean(manualVideoSearchKey === recordingKey && manualVideoSearchKey) ||
     Boolean(
@@ -1286,10 +1282,9 @@ export default function App({ user = null }: { user?: User | null }) {
       base,
       controller.signal,
     )
-      .then(({ videos, candidateCount }) => {
+      .then(({ videos, candidateCount, automaticVideoId }) => {
         if (controller.signal.aborted) return;
-        const bestId =
-          videos.length > 0 ? extractYouTubeVideoId(videos[0]) : null;
+        const bestId = automaticVideoId;
         setAutoVideoMatch({
           key: videoSearchKey,
           id: bestId || null,
