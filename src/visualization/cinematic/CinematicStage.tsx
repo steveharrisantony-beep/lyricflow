@@ -71,6 +71,7 @@ export interface CinematicProps{
  videoDelaySeconds?:number;
  youtubeBackgroundMode?:YouTubeBackgroundMode;
  hideStageLyrics?:boolean;
+ hideVideo?:boolean;
  playbackTime?:number;
  hasSeparateAudioStream?:boolean;
  playerVolume?:number;
@@ -599,7 +600,8 @@ export default function CinematicStage(props:CinematicProps){
  const [ytVideoEnded,setYtVideoEnded]=useState<boolean>(false);
  const nativePolicy=useNativePlaybackPolicy(Boolean(props.externalPlayer));
 
- const ytId=props.youtubeVideoId||null;
+ // A background-only player can be removed; the main audio player must keep running.
+ const ytId=props.hideVideo&&props.hasSeparateAudioStream?null:props.youtubeVideoId||null;
  const mountedVideoId=ytId;
  const playbackKey=[props.recordingKey,ytId,Boolean(props.hasSeparateAudioStream),ytAuth.useNoCookieDomain,ytAuth.reloadNonce,errorRetryNonce].join('|');
  const [playingVideoKey,setPlayingVideoKey]=useState('');
@@ -614,7 +616,7 @@ export default function CinematicStage(props:CinematicProps){
  const syncTarget=videoSyncTarget(props.playbackTime??0,props.videoDelaySeconds,Boolean(props.hasSeparateAudioStream));
  const pastVideoDuration=Boolean(props.hasSeparateAudioStream&&ytVideoDuration>15&&syncTarget.time>=ytVideoDuration-0.35);
  const videoEndedEarly=Boolean(props.hasSeparateAudioStream&&(ytVideoEnded||pastVideoDuration));
- const showThemes=!ytId||props.youtubeBackgroundMode==='theme'||Boolean(props.videoSearchPending)||Boolean(props.advertisementPlaying)||!nativePolicy.allowed||Boolean(playbackError)||playingVideoKey!==playbackKey||syncTarget.waiting||videoEndedEarly;
+ const showThemes=Boolean(props.hideVideo)||!ytId||props.youtubeBackgroundMode==='theme'||Boolean(props.videoSearchPending)||Boolean(props.advertisementPlaying)||!nativePolicy.allowed||Boolean(playbackError)||playingVideoKey!==playbackKey||syncTarget.waiting||videoEndedEarly;
  const [themeExitPending,setThemeExitPending]=useState(true);
  useEffect(()=>{
   if(showThemes){setThemeExitPending(true);return;}
@@ -992,7 +994,7 @@ export default function CinematicStage(props:CinematicProps){
  return <div className="cinematic-stack" ref={host} data-background-state={showThemes?'themes':'video'} data-video-ready={playingVideoKey===playbackKey?'yes':'no'} data-video-fit={fitMode}>
   {activeEmbedVid&&nativePolicy.allowed&&(
    <div ref={ytWrapRef} className="youtube-stage-backdrop" data-layer="video" data-video-fit={fitMode}
-    style={{position:'absolute',inset:0,width:'100%',height:'100%',overflow:'hidden',zIndex:0,background:'#04070f',pointerEvents:allowIframePointer?'auto':'none'}}>
+    style={{position:'absolute',inset:0,width:'100%',height:'100%',overflow:'hidden',zIndex:0,background:'#04070f',opacity:props.hideVideo?0:1,pointerEvents:allowIframePointer?'auto':'none'}}>
     <iframe ref={ytIframeRef}
      key={`yt-${props.recordingKey||''}-${mountedVideoId||ytId}-${ytAuth.reloadNonce}-${ytAuth.useNoCookieDomain?'nc':'std'}-${errorRetryNonce}-${props.hasSeparateAudioStream?'muted':'audio'}`}
      src={embedSrc} title="YouTube video background" referrerPolicy="strict-origin-when-cross-origin"

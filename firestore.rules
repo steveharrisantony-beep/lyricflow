@@ -222,6 +222,8 @@ service cloud.firestore {
       let l = m.get('lyrics', null);
       let v = m.get('video', null);
       return validIdentity(m.identity) &&
+        (!('hideLyrics' in m) || m.hideLyrics is bool) &&
+        (!('hideVideo' in m) || m.hideVideo is bool) &&
         (l == null || (l is map && l.keys().hasOnly(['sourceFile','selection','delaySeconds']) &&
           validLyricsSource(l.sourceFile, l.sourceFile.revision) && (l.selection == null || validSelection(l.selection)) &&
           l.delaySeconds is number && l.delaySeconds >= -30 && l.delaySeconds <= 30)) &&
@@ -232,7 +234,7 @@ service cloud.firestore {
     match /profiles/{uid}/songMappings/{id} {
       allow read, delete: if profileOwner(uid);
       allow create, update: if profileOwner(uid) && id.matches('^r4_[a-f0-9]{16}$') &&
-        request.resource.data.keys().hasOnly(['identity','lyrics','video','updatedAt']) && validSongMapping(request.resource.data) && request.resource.data.updatedAt == request.time;
+        request.resource.data.keys().hasOnly(['identity','lyrics','video','hideLyrics','hideVideo','updatedAt']) && validSongMapping(request.resource.data) && request.resource.data.updatedAt == request.time;
     }
     match /songMappings/{id} {
       allow get: if true;
@@ -264,3 +266,4 @@ service cloud.firestore {
     }
   }
 }
+

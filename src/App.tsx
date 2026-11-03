@@ -1205,6 +1205,11 @@ export default function App({ user = null }: { user?: User | null }) {
 
   // Find a background for the current recording; stale results never carry into another song.
   useEffect(() => {
+    if(songMapping.hideVideo){
+      setAutoVideoMatch(previous=>previous.key===videoSearchKey?{...previous,pending:false}:
+        {key:videoSearchKey,id:null,pending:false,videos:[],candidateCount:0});
+      return;
+    }
     if (
       !localTrack ||
       isAdPlaying ||
@@ -1272,6 +1277,7 @@ export default function App({ user = null }: { user?: User | null }) {
     localTrack?.provider,
     localTrack?.isAd,
     isAdPlaying,
+    songMapping.hideVideo,
     hasSeparateAudioStream,
     preferredVideoType,
   ]);
@@ -1422,7 +1428,7 @@ export default function App({ user = null }: { user?: User | null }) {
         ? autoYoutubeVideoId
         : null);
 
-  const effectiveYoutubeBackgroundMode: YouTubeBackgroundMode = isAdPlaying
+  const effectiveYoutubeBackgroundMode: YouTubeBackgroundMode = isAdPlaying||songMapping.hideVideo
     ? "theme"
     : youtubeBackgroundMode;
 
@@ -1441,7 +1447,7 @@ export default function App({ user = null }: { user?: User | null }) {
         isLyricVideoTrack(localTrack)),
   );
   const shouldHideStageLyrics = Boolean(
-    isAdPlaying || (autoHideYoutubeLyrics && isActiveVideoLyrical),
+    songMapping.hideLyrics || isAdPlaying || (autoHideYoutubeLyrics && isActiveVideoLyrical),
   );
 
   // Extract per-song Album Art colour palette so YouTube video backgrounds (and 'album' colour mode)
@@ -1494,7 +1500,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const autoVideoSync = useVideoAutoSync(
     backgroundSyncKey,
     stageYoutubeVideoId,
-    hasSeparateAudioStream && !isAdPlaying,
+    hasSeparateAudioStream && !isAdPlaying && !songMapping.hideVideo,
     activeLyrics.recordingKey === recordingKey
       ? activeLyrics.original
       : incoming?.original || "",
@@ -1694,6 +1700,7 @@ export default function App({ user = null }: { user?: User | null }) {
                 youtubeVideoId={stageYoutubeVideoId}
                 videoDelaySeconds={videoDelaySeconds}
                 youtubeBackgroundMode={effectiveYoutubeBackgroundMode}
+                hideVideo={songMapping.hideVideo}
                 hideStageLyrics={shouldHideStageLyrics}
                 recordingKey={recordingKey}
                 externalPlayer={
@@ -1931,6 +1938,8 @@ export default function App({ user = null }: { user?: User | null }) {
                 )}
                 <details className="disclosure lyrics-mapping-section">
                   <summary>Lyrics mapping</summary>
+                  <SwitchSetting label="Hide lyrics for this song" checked={songMapping.hideLyrics} disabled={!localTrack}
+                    onChange={hidden=>songMapping.savePart('hideLyrics',hidden)}/>
                   <div
                     ref={setMappingTarget}
                     className="mapping-lyrics-controls"
@@ -1938,6 +1947,8 @@ export default function App({ user = null }: { user?: User | null }) {
                 </details>
                 <details className="disclosure video-mapping-section">
                   <summary>Video mapping</summary>
+                  <SwitchSetting label="Hide video for this song" checked={songMapping.hideVideo} disabled={!localTrack}
+                    onChange={hidden=>songMapping.savePart('hideVideo',hidden)}/>
                   <CorrectionControls
                     key={"corrections-" + recordingKey}
                     saveRef={videoCorrectionSaveRef}

@@ -65,6 +65,12 @@ try {
   await no(setDoc(doc(admin,`approvedCorrections/${correction.recordingKey}_video_recording`),{...video,youtubeVideoId:'invalid',active:true,revision:2,updatedAt:serverTimestamp()}));
   const mapping = {identity,lyrics:{sourceFile:correction.lyricsSource,selection:{engine:'lrclib',lrclibId:12,subtitleTrackId:null},delaySeconds:-1.25},video:{youtubeVideoId:'abcdefghijk',delaySeconds:2.5},updatedAt:serverTimestamp()};
   await yes(setDoc(doc(alice,'profiles/alice/songMappings/r4_0123456789abcdef'),mapping));
+  const hiddenMapping={identity,hideLyrics:true,hideVideo:false,updatedAt:serverTimestamp()};
+  await yes(setDoc(doc(alice,'profiles/alice/songMappings/r4_fedcba9876543210'),hiddenMapping));
+  await yes(setDoc(doc(alice,'profiles/alice/songMappings/r4_fedcba9876543210'),{hideLyrics:false,hideVideo:true,updatedAt:serverTimestamp()},{merge:true}));
+  await no(setDoc(doc(alice,'profiles/alice/songMappings/r4_fedcba9876543210'),{...hiddenMapping,hideVideo:'true'}));
+  await no(setDoc(doc(bob,'profiles/alice/songMappings/r4_fedcba9876543210'),hiddenMapping));
+  await no(setDoc(doc(admin,'songMappings/r4_fedcba9876543210'),{...hiddenMapping,active:true,revision:1}));
   await no(getDoc(doc(bob,'profiles/alice/songMappings/r4_0123456789abcdef')));
   await no(setDoc(doc(alice,'songMappings/r4_0123456789abcdef'),{...mapping,active:true,revision:1}));
   await yes(setDoc(doc(admin,'songMappings/r4_0123456789abcdef'),{...mapping,active:true,revision:1}));
@@ -72,3 +78,4 @@ try {
   await no(setDoc(doc(admin,'songMappings/r4_0123456789abcdef'),{...mapping,video:{youtubeVideoId:'bad',delaySeconds:2},active:true,revision:2}));
   console.log(`${checks} Firestore permission and validation checks passed.`);
 } finally { await env.cleanup(); }
+

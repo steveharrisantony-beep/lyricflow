@@ -19,6 +19,24 @@ beforeEach(()=>{localStorage.clear();setDeviceScope();setRomanizationMasterEnabl
 afterEach(()=>vi.restoreAllMocks());
 
 describe('separate data backups',()=>{
+ it('round-trips both song visibility choices, including explicit false and mappings without sources',()=>{
+  writeDevice(scopedKey('songMappings',null),{
+   [ctx.recordingKey]:{identity:ctx.identity,hideLyrics:true,hideVideo:false},
+   r4_0000000000000000:{identity:{...ctx.identity,title:'Other song'},hideLyrics:false,hideVideo:true},
+  });
+  const imported=parseBackup(JSON.stringify(createBackup('song-mappings',null)),'song-mappings');
+  restoreBackup(imported,'accountB');
+  const saved=JSON.parse(localStorage.getItem(scopedKey('songMappings','accountB'))!);
+  expect(saved[ctx.recordingKey]).toMatchObject({hideLyrics:true,hideVideo:false,dirty:['hideLyrics','hideVideo']});
+  expect(saved.r4_0000000000000000).toMatchObject({hideLyrics:false,hideVideo:true});
+  if(imported.kind!=='song-mappings')throw Error('Wrong fixture');
+  delete imported.data.mappings[ctx.recordingKey].hideLyrics;
+  delete imported.data.mappings[ctx.recordingKey].hideVideo;
+  restoreBackup(imported,'accountB');
+  expect(JSON.parse(localStorage.getItem(scopedKey('songMappings','accountB'))!)[ctx.recordingKey]).toMatchObject({hideLyrics:true,hideVideo:false});
+  const bad=JSON.parse(JSON.stringify(imported));bad.data.mappings[ctx.recordingKey].hideVideo='false';
+  expect(()=>parseBackup(JSON.stringify(bad),'song-mappings')).toThrow('invalid data');
+ });
  it('round-trips preferences, multiple palettes, empty effect pools and Romanization without account credentials',()=>{
   const theme=TEMPLATES[0];
   saveLocalPreferences({...DEFAULT_USER_PREFERENCES,intensity:42,themePalettes:{[theme.id]:theme.palettes.slice(0,2).map(p=>p.id)}},'accountA');

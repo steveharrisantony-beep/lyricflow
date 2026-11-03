@@ -1,7 +1,7 @@
 import {loadLocalPreferences,sanitizePreferences,type UserPreferencesData} from '../firebase/firebaseClient';
 import {readDevice,scopedKey} from '../firebase/deviceStore';
 import {correctionKey,validCorrection,type Correction,type CorrectionContext,type RecordingIdentity} from '../firebase/correctionModel';
-import {validSongMapping,type SongMapping} from '../firebase/songMappings';
+import {SONG_MAPPING_FIELDS,validSongMapping,type SongMapping} from '../firebase/songMappings';
 import {ALL_FONT_PACKS} from '../firebase/firebaseClient';
 import {normalizeLyricLayout,type LyricLayoutSettings} from '../lyrics/lyricLayout';
 import {ALL_ROMANIZATION_LANGUAGE_CODES,getEnabledRomanizationLanguages,getRomanizationMasterEnabled,type RomanizationLanguageCode} from '../romanization/romanize';
@@ -98,6 +98,7 @@ function parseMappings(value:unknown):SongMappingsBackupData{
  for(const [id,value] of entries){
   recordingId(id);
   const v=record(value),i=identity(v.identity),candidate:Record<string,unknown>={identity:i};
+  for(const field of ['hideLyrics','hideVideo'] as const)if(v[field]!==undefined)candidate[field]=v[field];
   if(v.lyrics!==undefined){const l=record(v.lyrics);candidate.lyrics={sourceFile:sourceReference(l.sourceFile),selection:selection(l.selection),delaySeconds:l.delaySeconds};}
   if(v.video!==undefined){const video=record(v.video);candidate.video={youtubeVideoId:video.youtubeVideoId,delaySeconds:video.delaySeconds};}
   const checked=validSongMapping(candidate,i);if(!checked)throw invalid();
@@ -159,7 +160,7 @@ export function restoreBackup(backup:Backup,uid:string|null){
  const corrections=readDevice<Record<string,{value:Correction;dirty:boolean;removed?:boolean}>>(correctionsKey,{});
  const custom=readDevice<Record<string,CustomLyrics&{dirty:boolean}>>(customKey,{});
  for(const [id,value] of Object.entries(backup.data.mappings)){
-  const fields=(['lyrics','video'] as const).filter(field=>value[field]);
+  const fields=SONG_MAPPING_FIELDS.filter(field=>value[field]!==undefined);
   mappings[id]={...mappings[id],...value,dirty:uid?[...new Set([...(mappings[id]?.dirty||[]),...fields])]:[]};
  }
  for(const value of backup.data.corrections)corrections[correctionKey(value)]={value,dirty:Boolean(uid)};

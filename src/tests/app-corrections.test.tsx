@@ -57,6 +57,37 @@ it('offers separate data transfers in Others and applies imported settings immed
  expect(document.documentElement.dataset.theme).toBe('light');
  expect(JSON.parse(localStorage.getItem('lyricflow.extendedSettings.v1')!)).toMatchObject({themeMode:'light',enabledWordStyles:[],enabledWordAnimations:[],themeDurationSeconds:11});
 });
+
+it('saves visibility in the respective song mapping sections and restores it per recording',async()=>{
+ const stage=await import('../visualization/cinematic/CinematicStage');
+ const probe=vi.spyOn(stage,'default').mockImplementation(props=><div data-testid="visibility-stage"
+  data-hide-lyrics={String(Boolean(props.hideStageLyrics))} data-hide-video={String(Boolean(props.hideVideo))} data-mode={props.youtubeBackgroundMode}/>);
+ const flag=(label:string)=>host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+ const output=()=>host.querySelector('[data-testid="visibility-stage"]')!;
+ try{
+  expect(flag('Hide lyrics for this song').disabled).toBe(true);
+  await act(async()=>click('Load JioSaavn fixture'));
+  expect(flag('Hide lyrics for this song').closest('.lyrics-mapping-section')).not.toBeNull();
+  expect(flag('Hide video for this song').closest('.video-mapping-section')).not.toBeNull();
+  await act(async()=>{flag('Hide lyrics for this song').click();flag('Hide video for this song').click();});
+  expect(output().getAttribute('data-hide-lyrics')).toBe('true');
+  expect(output().getAttribute('data-hide-video')).toBe('true');
+  expect(output().getAttribute('data-mode')).toBe('theme');
+  expect(localStorage.getItem('lyricflow.v3.guest.songMappings')).toContain('"hideLyrics":true');
+  await act(async()=>click('Load next JioSaavn fixture'));
+  expect(flag('Hide lyrics for this song').checked).toBe(false);
+  expect(flag('Hide video for this song').checked).toBe(false);
+  expect(output().getAttribute('data-hide-lyrics')).toBe('false');
+  expect(output().getAttribute('data-hide-video')).toBe('false');
+  await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App/>));
+  await act(async()=>click('Load JioSaavn fixture'));
+  expect(flag('Hide lyrics for this song').checked).toBe(true);
+  expect(flag('Hide video for this song').checked).toBe(true);
+  await act(async()=>{flag('Hide lyrics for this song').click();flag('Hide video for this song').click();});
+  const mappings=JSON.parse(localStorage.getItem('lyricflow.v3.guest.songMappings')!);
+  expect(Object.values(mappings)).toContainEqual(expect.objectContaining({hideLyrics:false,hideVideo:false}));
+ }finally{probe.mockRestore();}
+});
 beforeEach(async () => {
   localStorage.clear();
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

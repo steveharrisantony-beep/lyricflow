@@ -24,6 +24,26 @@ it('stores separate file and video references with signed delays for the same so
   const mapping={identity:context.identity,lyrics:{sourceFile:{name:'Lyrics file',url:'https://lrclib.net/api/get/12',revision:'l3_0123456789abcdef'},selection:{engine:'lrclib',lrclibId:12,subtitleTrackId:null},delaySeconds:1.5},video:{youtubeVideoId:'abcdefghijk',delaySeconds:-2.25}};
   expect(validSongMapping(mapping,context.identity)).toMatchObject({lyrics:{sourceFile:{url:'https://lrclib.net/api/get/12'},delaySeconds:1.5},video:{youtubeVideoId:'abcdefghijk',delaySeconds:-2.25}});
 });
+it('accepts personal visibility-only mappings and preserves explicit false flags',()=>{
+ const identity=correctionContext({title:'Song',artist:'Author',album:'',duration:200,source:'manual',confidence:1},'lyrics')!.identity;
+ expect(validSongMapping({identity,hideLyrics:true,hideVideo:false},identity)).toEqual({identity,hideLyrics:true,hideVideo:false});
+ expect(validSongMapping({identity,hideLyrics:'true'},identity)).toBeNull();
+ expect(validSongMapping({identity,hideVideo:1},identity)).toBeNull();
+});
+it('hides a background-only video and keeps a hidden primary YouTube player running for audio',async()=>{
+ await act(async()=>root.render(<CinematicStage {...base} hideVideo/>));
+ expect(host.querySelector('iframe')).toBeNull();
+ expect(host.querySelector('.cinematic-stack')?.getAttribute('data-background-state')).toBe('themes');
+ await act(async()=>root.render(<CinematicStage {...base} hasSeparateAudioStream={false}/>));
+ const frame=host.querySelector('iframe')!,send=vi.spyOn(frame.contentWindow!,'postMessage');
+ await act(async()=>root.render(<CinematicStage {...base} hasSeparateAudioStream={false} hideVideo youtubeBackgroundMode="theme"/>));
+ expect(host.querySelector('iframe')).toBe(frame);
+ expect(host.querySelector<HTMLElement>('.youtube-stage-backdrop')?.style.opacity).toBe('0');
+ expect(send.mock.calls.some(args=>JSON.parse(String(args[0])).func==='pauseVideo')).toBe(false);
+ await act(async()=>root.render(<CinematicStage {...base} hasSeparateAudioStream={false}/>));
+ expect(host.querySelector('iframe')).toBe(frame);
+ expect(host.querySelector<HTMLElement>('.youtube-stage-backdrop')?.style.opacity).toBe('1');
+});
 it('delays or advances only the muted background; its clock and end never control the music',async()=>{
   const clock=vi.fn(),ended=vi.fn();
   await act(async()=>root.render(<CinematicStage {...base} onYoutubeTimeUpdate={clock} onYoutubeEnded={ended}/>));

@@ -33,6 +33,10 @@ Settings imports apply immediately. Mapping imports merge into the current
 guest/account data and update matching entries. Android uses the system Save
 dialog; the browser downloads a JSON file.
 
+Song Mapping includes **Hide lyrics for this song** and **Hide video for this song**
+in their respective sections. These personal choices are saved per recording and
+included in mapping backups. Hidden videos use a theme while audio continues.
+
 ## Android app
 
 The APK includes the app and its backend, so no external server hosting is needed.

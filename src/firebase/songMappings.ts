@@ -7,8 +7,10 @@ import type { TrackInfo } from '../metadata/trackInfo';
 
 export interface SongLyricsMapping { sourceFile: LyricsSourceReference; selection: LyricsSelection | null; delaySeconds: number; }
 export interface SongVideoMapping { youtubeVideoId: string; delaySeconds: number|null; }
-export interface SongMapping { identity: RecordingIdentity; lyrics?: SongLyricsMapping; video?: SongVideoMapping; }
-type Entry = SongMapping & { dirty?: ('lyrics' | 'video')[] };
+export interface SongMapping { identity: RecordingIdentity; lyrics?: SongLyricsMapping; video?: SongVideoMapping; hideLyrics?: boolean; hideVideo?: boolean; }
+export const SONG_MAPPING_FIELDS=['lyrics','video','hideLyrics','hideVideo'] as const;
+type SongMappingField=typeof SONG_MAPPING_FIELDS[number];
+type Entry = SongMapping & { dirty?: SongMappingField[] };
 type Cache = Record<string, Entry>;
 const PUBLIC = 'lyricflow.v4.publishedSongMappings';
 const EVENT = 'lyricflow:songMappings';
@@ -18,6 +20,9 @@ export function validSongMapping(raw: unknown, identity: RecordingIdentity): Son
   const r = raw as SongMapping;
   if (!r.identity || !sameSong(r.identity, identity)) return null;
   const result: SongMapping = { identity };
+  for(const field of ['hideLyrics','hideVideo'] as const){
+    if(r[field]!==undefined){if(typeof r[field]!=='boolean')return null;result[field]=r[field];}
+  }
   if (r.lyrics) {
     const l = r.lyrics, f = l.sourceFile;
     if (!f || typeof f.name !== 'string' || f.name.length > 256 || typeof f.url !== 'string' || f.url.length > 2048 || !/^l3_[a-f0-9]{16}$/.test(f.revision) || !Number.isFinite(l.delaySeconds) || Math.abs(l.delaySeconds) > 30) return null;
@@ -44,7 +49,7 @@ async function flush(uid: string, id: string) {
   const key = scopedKey('songMappings', uid), entry = readDevice<Cache>(key, {})[id];
   for (const field of entry?.dirty || []) {
     const value = entry[field];
-    await setDoc(doc(db, 'profiles', uid, 'songMappings', id), { identity: entry.identity, [field]: value || deleteField(), updatedAt: serverTimestamp() }, { merge: true });
+    await setDoc(doc(db, 'profiles', uid, 'songMappings', id), { identity: entry.identity, [field]: value ?? deleteField(), updatedAt: serverTimestamp() }, { merge: true });
     const latest = readDevice<Cache>(key, {})[id];
     if (latest && JSON.stringify(latest[field]) === JSON.stringify(value)) cacheWrite(key, id, { ...latest, dirty: latest.dirty?.filter(f => f !== field) });
   }
@@ -81,23 +86,28 @@ export function useSongMapping(track: TrackInfo | null, uid: string | null) {
     return () => { window.removeEventListener(EVENT, emit); window.removeEventListener('online', retry); stops.forEach(fn => fn()); };
   }, [context, id, uid, key]);
   const personal = state.id === id ? state.personal : null, approved = state.id === id ? state.approved : null;
-  const savePart = (field: 'lyrics' | 'video', value: SongLyricsMapping | SongVideoMapping | null) => {
+  const savePart = <K extends SongMappingField>(field: K, value: NonNullable<SongMapping[K]> | null) => {
     if (!context) return;
     try {
       const entry = readDevice<Cache>(key, {})[id] || { identity: context.identity };
       if (JSON.stringify(entry[field]) === JSON.stringify(value ?? undefined)) return;
-      const next = { ...entry, identity: context.identity, [field]: value || undefined, dirty: uid ? [...new Set([...(entry.dirty || []), field])] : [] };
+      const next = { ...entry, identity: context.identity, [field]: value ?? undefined, dirty: uid ? [...new Set([...(entry.dirty || []), field])] : [] };
       const checked = validSongMapping(next, context.identity); if (!checked) throw new Error('Invalid song mapping');
       cacheWrite(key, id, { ...checked, dirty: next.dirty });
       if (uid) void flush(uid, id).catch(() => setError('Song mapping saved on device · waiting for sync'));
     } catch { setError('Song mapping could not be saved. Check device storage.'); }
   };
-  return { lyrics: approved?.lyrics || personal?.lyrics || null, video: approved?.video || personal?.video || null, personal, approved, savePart, error };
+  return { lyrics: approved?.lyrics || personal?.lyrics || null, video: approved?.video || personal?.video || null,
+    hideLyrics:personal?.hideLyrics??false,hideVideo:personal?.hideVideo??false,personal, approved, savePart, error };
 }
 
 export function importGuestSongMappings(uid: string) {
   const guest = readDevice<Cache>(scopedKey('songMappings', null), {});
   const key = scopedKey('songMappings', uid), account = readDevice<Cache>(key, {});
-  for (const [id, entry] of Object.entries(guest)) account[id] = { ...entry, dirty: ['lyrics','video'] };
+  for (const [id, entry] of Object.entries(guest)) {
+    const merged={...account[id],...entry};
+    account[id]={...merged,dirty:SONG_MAPPING_FIELDS.filter(field=>merged[field]!==undefined)};
+  }
   writeDevice(key, account); notify(); retrySongMappings(uid);
 }
+
