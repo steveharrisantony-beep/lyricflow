@@ -29,6 +29,16 @@ with `YOUTUBE_REGION` in the embedded/backend environment.
   video-suitability checks. Latest saved personal mappings continue to override
   automatic discovery.
 
+## Mapping picker
+
+The Lyrics/Music video preference is in Song Mapping. Automatic selection uses
+the recording and release checks above. The preloaded/manual picker retains the
+complete pool of video results independently of the automatic shortlist, rejects
+known static/audio uploads, and sorts every available choice by descending views.
+Its status distinguishes total search results from videos available to choose;
+there is no hidden 15-result display cap. Full YouTube titles are retained when
+the YouTube Music catalogue supplies a shorter title, including lyric-video labels.
+
 ## Video-only backgrounds
 
 Topic/art tracks, official audio, album/cover art, known static-image uploads,

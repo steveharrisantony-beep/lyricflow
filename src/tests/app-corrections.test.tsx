@@ -254,6 +254,8 @@ it('finds a music or lyrical YouTube background for JioSaavn and saves both sour
   await act(async () => click('Show preloaded videos'));
   expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Test artist music video', 'resolver', '', expect.any(AbortSignal));
   const select = host.querySelector<HTMLSelectElement>('select[aria-label="Preferred YouTube background"]')!;
+  expect(select.closest('[role="tabpanel"]')?.id).toBe('settings-page-mapping');
+  expect(host.querySelector('#settings-page-background select[aria-label="Preferred YouTube background"]')).toBeNull();
   await act(async () => { select.value = 'lyrics'; select.dispatchEvent(new Event('change',{bubbles:true})); });
   await act(async () => click('Show preloaded videos'));
   expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Test artist lyrics video', 'resolver', '', expect.any(AbortSignal));

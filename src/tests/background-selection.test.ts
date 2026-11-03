@@ -141,3 +141,20 @@ it('ranks Guppy Cinemas and Reetha Records 5.6M official release #1 for Kunjikka
  const ranked=rankYouTubeBackgroundCandidates(candidates,kunjiTrack,'music');
  expect(ranked[0].id).toBe('yt_00000000061');
 });
+
+it('retains all safe preloaded choices instead of exposing only the four strict automatic matches',async()=>{
+ const all=Array.from({length:59},(_,i)=>video(i+100,i<4?'Original rain Test Artist Lyrics':'Original rain',{artist:i<4?'Test Artist':'Other creator',viewCount:i*1000}));
+ const audio=video(200,'Original rain Official Audio',{viewCount:1e9});
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({data:[...all,audio]}))));
+ const result=await findYouTubeBackgrounds(track,'lyrics','https://resolver.example');
+ expect(result.candidateCount).toBe(60);expect(result.videos).toHaveLength(4);expect(result.candidates).toHaveLength(59);
+ expect(result.candidates[0].id).toBe(all[58].id);expect(result.candidates.some(v=>v.id===audio.id)).toBe(false);
+});
+it('finds an official lyrical release using neutral title/artist discovery as well as lyric-suffixed queries',async()=>{
+ const queries:string[]=[];
+ const release=video(300,'Original rain',{videoTitle:'Original rain Official Lyric Video',artist:'Test Artist',channelId:'UCartist',channelVerified:true,viewCount:18e6,metadataSource:'ytmusic',videoType:'OMV',artistCredits:['Test Artist']});
+ vi.stubGlobal('fetch',vi.fn(async(input:string)=>{const q=new URL(input).searchParams.get('q')||'';queries.push(q);return new Response(JSON.stringify({data:q==='Original rain Test Artist'?[release]:[]}));}));
+ const result=await findYouTubeBackgrounds(track,'lyrics','https://resolver.example');
+ expect(queries).toContain('Original rain Test Artist');expect(queries).toContain('Original rain official lyric video');
+ expect(result.automaticVideoId).toBe(release.youtubeVideoId);expect(result.candidates).toContainEqual(expect.objectContaining({videoTitle:release.videoTitle}));
+});

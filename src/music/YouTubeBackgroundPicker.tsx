@@ -1,14 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
-import {
-  formatViewCount,
-  isUnwantedVideoVariant,
-  isYouTubeBackgroundVideo,
-  isLyricalVideo,
-  rankYouTubeBackgroundCandidates,
-  searchStashCatalog,
-  type SongResult,
-} from "./providers";
+import {formatViewCount,isLyricalVideo,searchStashCatalog,type SongResult} from './providers';
+import {sortYouTubeVideoChoicesByViews} from './videoMatching';
 import { extractYouTubeVideoId, type TrackInfo } from "../metadata/trackInfo";
 import type { YouTubeBackgroundMode } from "../visualization/cinematic/CinematicStage";
 import { findYouTubeBackgrounds } from "./backgroundVideos";
@@ -45,13 +38,12 @@ export default function YouTubeBackgroundPicker({
   const [searchOnlineOpen, setSearchOnlineOpen] = useState(false);
   useEffect(() => {
     if (!showCached || !cachedCandidates) return;
-    setResults(cachedCandidates.slice(0, 15));
+    const available=sortYouTubeVideoChoicesByViews(cachedCandidates);
+    setResults(available);
     setMessage(
       automaticSearchPending
         ? "Finding video candidates…"
-        : cachedCandidates.length
-          ? `${cachedCandidateCount || cachedCandidates.length} candidates compared.`
-          : "No suitable video candidates were found. Search again with a different query.",
+        : `${cachedCandidateCount ?? cachedCandidates.length} search results · ${available.length} videos available · sorted by views.${available.length?"":" Search again with a different query."}`,
     );
   }, [
     showCached,
@@ -97,81 +89,18 @@ export default function YouTubeBackgroundPicker({
             base,
             controller.signal,
           );
-      let ranked = search?.videos;
-      if (!ranked) {
-        const rawResults = await searchStashCatalog(
-          effectiveQuery,
-          "resolver",
-          base,
-          controller.signal,
-        );
-        const directId = extractYouTubeVideoId({
-          id: effectiveQuery,
-          provider: "resolver",
-          sourceUrl: effectiveQuery,
-        });
-        if (directId && rawResults.length === 1) {
-          ranked = rawResults.filter(isYouTubeBackgroundVideo);
-        } else {
-          const strictRanked = rankYouTubeBackgroundCandidates(
-            rawResults,
-            track,
-            preference,
-          );
-          const strictIds = new Set(
-            strictRanked.map((s) => extractYouTubeVideoId(s)).filter(Boolean),
-          );
-          // A custom query may deliberately find another recording. Show it as
-          // a manual choice using the same video-suitability rules, without
-          // inventing a second automatic ranking with zeroed artist/duration.
-          const queryWords = effectiveQuery
-            .normalize("NFKC")
-            .toLowerCase()
-            .replace(/[^\p{L}\p{N}]+/gu, " ")
-            .trim()
-            .split(/\s+/)
-            .filter((w) => w.length > 1);
-          const extra = rawResults
-            .filter((song) => {
-              const id = extractYouTubeVideoId(song);
-              if (!id || strictIds.has(id)) return false;
-              if (
-                !isYouTubeBackgroundVideo(song) ||
-                (preference === "lyrics" && !isLyricalVideo(song))
-              )
-                return false;
-              if (
-                isUnwantedVideoVariant(song.title, effectiveQuery, song.artist)
-              )
-                return false;
-              if (queryWords.length > 0) {
-                const songWords = new Set(
-                  song.title
-                    .normalize("NFKC")
-                    .toLowerCase()
-                    .replace(/[^\p{L}\p{N}]+/gu, " ")
-                    .trim()
-                    .split(/\s+/)
-                    .filter(Boolean),
-                );
-                const matchRatio =
-                  queryWords.filter((w) => songWords.has(w)).length /
-                  queryWords.length;
-                if (matchRatio < 0.75) return false;
-              }
-              return true;
-            })
-            .sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
-          ranked = [...strictRanked, ...extra].slice(0, 15);
-        }
+      let found=search?.candidates;
+      let compared=search?.candidateCount||0;
+      if(!found){
+        found=await searchStashCatalog(effectiveQuery,'resolver',base,controller.signal);
+        compared=found.length;
       }
-      if (controller.signal.aborted) return;
-      setResults(ranked);
-      setMessage(
-        ranked.length
-          ? `Compared ${search?.candidateCount || ranked.length} candidates by title, artist, views, duration and video type.${search?.usedLyricalFallback ? " No suitable music video found; showing lyrical videos." : ""} Adjust video delay if it has an intro.`
-          : "No videos found. Sign in to YouTube above, retry, or paste a YouTube video link directly.",
-      );
+      if(controller.signal.aborted)return;
+      const videos=sortYouTubeVideoChoicesByViews(found);
+      setResults(videos);
+      setMessage(videos.length
+        ?`${compared} search results · ${videos.length} videos available · sorted by views. Choose a video below.`
+        :`No videos found. ${compared} search results checked; static images and audio uploads are excluded. Try another query or paste a video link.`);
     } catch (error) {
       if (!controller.signal.aborted)
         setMessage(
@@ -273,13 +202,13 @@ export default function YouTubeBackgroundPicker({
                 referrerPolicy="no-referrer"
               />
               <div className="candidate-meta">
-                <strong>{song.title}</strong>
+                <strong>{song.videoTitle || song.title}</strong>
                 <small>
                   {song.artist} ·{" "}
                   {song.duration
                     ? `${Math.floor(song.duration / 60)}:${String(Math.round(song.duration % 60)).padStart(2, "0")}`
                     : "Duration unknown"}
-                  {viewsLabel ? ` · ${viewsLabel}` : ""}
+                  {viewsLabel ? ` · ${viewsLabel}` : " · Views unavailable"} · {isLyricalVideo(song) ? "Lyrics video" : "Video"}
                 </small>
               </div>
               <button

@@ -258,6 +258,7 @@ export default function App({ user = null }: { user?: User | null }) {
     id: string | null;
     pending: boolean;
     videos: SongResult[];
+    candidates?: SongResult[];
     candidateCount: number;
   }>({ key: "", id: null, pending: false, videos: [], candidateCount: 0 });
   const [manualVideoSearchKey, setManualVideoSearchKey] = useState("");
@@ -1228,6 +1229,9 @@ export default function App({ user = null }: { user?: User | null }) {
           return Boolean(id && !rejectedBgVideoIds.includes(id));
         })
       : [];
+  const preloadedVideoChoices=useMemo(()=>autoVideoMatch.key===videoSearchKey
+    ?(autoVideoMatch.candidates||autoVideoMatch.videos).filter(v=>{const id=extractYouTubeVideoId(v);return id&&!rejectedBgVideoIds.includes(id);})
+    :[],[autoVideoMatch,videoSearchKey,rejectedBgVideoIds]);
   const autoYoutubeVideoId = autoVideoMatch.key===videoSearchKey&&localTrack
     ? selectYouTubeBackgroundCandidate(filteredAutoVideos,localTrack,preferredVideoType)
     : null;
@@ -1284,7 +1288,7 @@ export default function App({ user = null }: { user?: User | null }) {
       base,
       controller.signal,
     )
-      .then(({ videos, candidateCount, automaticVideoId }) => {
+      .then(({ videos, candidates, candidateCount, automaticVideoId }) => {
         if (controller.signal.aborted) return;
         const bestId = automaticVideoId;
         setAutoVideoMatch({
@@ -1292,6 +1296,7 @@ export default function App({ user = null }: { user?: User | null }) {
           id: bestId || null,
           pending: false,
           videos,
+          candidates,
           candidateCount,
         });
       })
@@ -1475,7 +1480,7 @@ export default function App({ user = null }: { user?: User | null }) {
   );
 
   const matchedVideoCandidate =
-    autoVideoMatch.videos.find(
+    (autoVideoMatch.candidates||autoVideoMatch.videos).find(
       (v) => extractYouTubeVideoId(v) === stageYoutubeVideoId,
     ) || null;
   const isActiveVideoLyrical = Boolean(
@@ -1917,6 +1922,21 @@ export default function App({ user = null }: { user?: User | null }) {
                     className="mapping-lyrics-controls"
                   />
                 </details>
+                <label className="field-row">
+                  Video preference
+                  <select
+                    aria-label="Preferred YouTube background"
+                    value={preferredVideoType}
+                    onChange={(e) =>
+                      setPreferredVideoType(
+                        e.target.value as "music" | "lyrics",
+                      )
+                    }
+                  >
+                    <option value="music">Music video</option>
+                    <option value="lyrics">Lyrical video</option>
+                  </select>
+                </label>
                 <details className="disclosure video-mapping-section">
                   <summary>Video mapping</summary>
                   <SwitchSetting label="Hide video for this song" checked={songMapping.hideVideo} disabled={!localTrack}
@@ -1962,7 +1982,7 @@ export default function App({ user = null }: { user?: User | null }) {
                           track={localTrack}
                           activeVideoId={activeYoutubeVideoId}
                           preference={preferredVideoType}
-                          cachedCandidates={filteredAutoVideos}
+                          cachedCandidates={preloadedVideoChoices}
                           cachedCandidateCount={
                             autoVideoMatch.key === videoSearchKey
                               ? autoVideoMatch.candidateCount
@@ -2025,21 +2045,6 @@ export default function App({ user = null }: { user?: User | null }) {
             background: (
               <>
                 <SettingGroup title="Background">
-                  <label className="field-row">
-                    Video preference
-                    <select
-                      aria-label="Preferred YouTube background"
-                      value={preferredVideoType}
-                      onChange={(e) =>
-                        setPreferredVideoType(
-                          e.target.value as "music" | "lyrics",
-                        )
-                      }
-                    >
-                      <option value="music">Music video</option>
-                      <option value="lyrics">Lyrical video</option>
-                    </select>
-                  </label>
                   <RangeSetting
                     label="Video dimming"
                     value={Math.round(videoOverlayOpacity * 100)}

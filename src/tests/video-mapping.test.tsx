@@ -439,3 +439,14 @@ it('rejects pasted static-image/audio links in the manual background picker',asy
  expect(host.querySelector('.video-candidate')).toBeNull();
  expect(host.textContent).toContain('No videos found');
 });
+
+it('shows all 59 preloaded videos ordered by views, including choices outside the automatic lyrical shortlist',async()=>{
+ const {default:Picker}=await import('../music/YouTubeBackgroundPicker');
+ const providers=await import('../music/providers');const search=vi.spyOn(providers,'searchStashCatalog');
+ const choices=Array.from({length:59},(_,i)=>({id:'yt_'+String(i).padStart(11,'0'),youtubeVideoId:String(i).padStart(11,'0'),title:'Song '+i,artist:'Uploader '+i,album:'',duration:200,viewCount:i===0?undefined:i*1000,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v='+String(i).padStart(11,'0')}));
+ await act(async()=>root.render(<Picker track={{title:'Song',artist:'Artist',album:'',duration:200,source:'manual',confidence:1}} activeVideoId={null} preference="lyrics" onChoose={()=>{}} cachedCandidates={choices} cachedCandidateCount={59}/>));
+ await act(async()=>Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Show preloaded videos')!.click());
+ const rows=Array.from(host.querySelectorAll('.video-candidate'));
+ expect(rows).toHaveLength(59);expect(rows[0].querySelector('strong')?.textContent).toBe('Song 58');expect(rows.at(-1)?.querySelector('strong')?.textContent).toBe('Song 0');
+ expect(host.textContent).toContain('59 search results · 59 videos available · sorted by views');expect(search).not.toHaveBeenCalled();
+});

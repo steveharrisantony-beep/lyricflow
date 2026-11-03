@@ -22,6 +22,7 @@ interface TrackMetadata {
   rawId: string;
   provider: 'ytmusic' | 'soundcloud' | 'jiosaavn' | 'audius' | 'youtube';
   title: string;
+  videoTitle?: string;
   artist: string;
   album: string;
   duration: number;
@@ -2870,7 +2871,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
           id: t.id,
           provider: t.provider === 'youtube' ? 'resolver' : t.provider,
           title: t.title,
-          videoTitle: t.title,
+          videoTitle: t.videoTitle || t.title,
           artist: t.artist,
           album: t.album,
           duration: t.duration,
@@ -3059,7 +3060,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
           id: meta.id,
           provider: meta.provider === 'youtube' ? 'resolver' : meta.provider,
           title: meta.title,
-          videoTitle: meta.title,
+          videoTitle: meta.videoTitle || meta.title,
           artist: meta.artist,
           album: meta.album,
           duration: meta.duration,

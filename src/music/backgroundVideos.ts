@@ -1,4 +1,4 @@
-import {selectYouTubeBackgroundCandidate} from './videoMatching';
+import {selectYouTubeBackgroundCandidate,sortYouTubeVideoChoicesByViews} from './videoMatching';
 import {isLyricalVideo,rankYouTubeBackgroundCandidates,searchStashCatalog,type SongResult} from './providers';
 import {extractYouTubeVideoId} from '../metadata/trackInfo';
 
@@ -19,6 +19,12 @@ export async function findYouTubeBackgrounds(track:{title:string;artist:string;a
    queries.push(preference==='music'?`${cleanTitle} ${cleanAlbum}`:`${cleanTitle} ${cleanAlbum} lyrics`);
   }
  }
+ // Neutral queries also find official lyric releases whose catalogue title
+ // omits the lyric suffix or whose credits differ from the uploader name.
+ if(preference==='lyrics'){
+  queries.push(prefix,`${cleanTitle} official lyric video`);
+  if(track.album&&track.album.trim().toLowerCase()!==cleanTitle.toLowerCase())queries.push(`${cleanTitle} ${track.album}`);
+ }
  const uniqueQueries=[...new Set(queries)];
  const batches=await Promise.all(uniqueQueries.map(q=>searchStashCatalog(q,'resolver',base,signal).catch(error=>{if(signal?.aborted)throw error;return [];})));
  signal?.throwIfAborted();
@@ -31,8 +37,11 @@ export async function findYouTubeBackgrounds(track:{title:string;artist:string;a
   // Keep useful uploader/view metadata even when an earlier search returned
   // the same ID with generic or incomplete details.
   const [primary,fallback]=!hasChannel(previous)&&hasChannel(song)?[song,previous]:[previous,song];
+  const titles=[previous.videoTitle,song.videoTitle,...[previous,song].filter(v=>v.metadataSource==='innertube'||v.metadataSource==='mirror').map(v=>v.title)].filter((title):title is string=>Boolean(title));
+  titles.sort((a,b)=>Number(/\blyric(?:s|al)?\b/i.test(b))-Number(/\blyric(?:s|al)?\b/i.test(a))||b.length-a.length||a.localeCompare(b));
   byId.set(id,{...fallback,...primary,artist:primary.artist||fallback.artist,
    duration:primary.duration||fallback.duration,
+   videoTitle:titles[0]||primary.title,
    viewCount:Math.max(previous.viewCount||0,song.viewCount||0)||undefined,
    videoType:previous.videoType==='ATV'||song.videoType==='ATV'?'ATV':previous.videoType==='OMV'||song.videoType==='OMV'?'OMV':primary.videoType||fallback.videoType,
    channelId:primary.channelId||fallback.channelId,channelVerified:previous.channelVerified||song.channelVerified,
@@ -41,5 +50,5 @@ export async function findYouTubeBackgrounds(track:{title:string;artist:string;a
  }
  const candidates=[...byId.values()];
  const videos=rankYouTubeBackgroundCandidates(candidates,track,preference);
- return {videos,automaticVideoId:selectYouTubeBackgroundCandidate(videos,track,preference),candidateCount:candidates.length,usedLyricalFallback:preference==='music'&&Boolean(videos[0]&&isLyricalVideo(videos[0]))};
+ return {videos,candidates:sortYouTubeVideoChoicesByViews(candidates),automaticVideoId:selectYouTubeBackgroundCandidate(videos,track,preference),candidateCount:candidates.length,usedLyricalFallback:preference==='music'&&Boolean(videos[0]&&isLyricalVideo(videos[0]))};
 }

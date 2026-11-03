@@ -54,3 +54,18 @@ it('does not treat an unverified artist display name as an authoritative uploade
 it('does not auto-select a first result when duration and recording evidence are missing',()=>{
  expect(selectYouTubeBackgroundCandidate([video(1,0,{duration:0,viewCount:undefined}),video(2,0,{duration:0,viewCount:undefined})],track)).toBe(null);
 });
+
+it('recognizes a lyric release from its full video title when the catalogue title is shortened',()=>{
+ const release=video(1,18e6,{title:'Ocean Road',videoTitle:'Example Artist - Ocean Road (Official Lyric Video)',artist:'Sony Music India',channelId:'UCpublisher',channelVerified:true,metadataSource:'ytmusic',videoType:'OMV',artistCredits:['Example Artist']});
+ expect(selectYouTubeBackgroundCandidate([release],track,'lyrics')).toBe(release.youtubeVideoId);
+});
+it('prefers verified artist or label lyrical releases over more popular third-party lyric copies',()=>{
+ const copy=video(1,1e9,{title:'Example Artist - Ocean Road Lyrics',artist:'Fan Lyrics'});
+ const release=video(2,79700,{title:'Ocean Road Official Lyric Video | Example Artist',artist:'Sony Music India',channelId:'UCpublisher',channelVerified:true});
+ expect(selectYouTubeBackgroundCandidate([copy,release],track,'lyrics')).toBe(release.youtubeVideoId);
+ expect(selectYouTubeBackgroundCandidate([release,copy],track,'lyrics')).toBe(release.youtubeVideoId);
+});
+it('matches a joined title spelling while retaining recording checks',()=>{
+ const release=video(1,18e6,{title:'Example Artist - OceanRoad (Official Lyric Video)'});
+ expect(selectYouTubeBackgroundCandidate([release],track,'lyrics')).toBe(release.youtubeVideoId);
+});

@@ -43,3 +43,14 @@ it('deduplicates in-flight searches, isolates accounts, and retries empty/error 
 it('parses K/M counts and full numeric player statistics',()=>{
  expect(youtubeViews('79.7K views')).toBe(79700);expect(youtubeViews('18M views')).toBe(18e6);expect(youtubeViews('18000000')).toBe(18e6);expect(youtubeViews('1.8 crore views')).toBe(18e6);
 });
+
+it('keeps the complete YouTube title when YouTube Music returns a shorter catalogue title',()=>{
+ const music=video({title:'Ocean Road',metadataSource:'ytmusic',videoType:'OMV',artistCredits:['Example Artist']});
+ const web=video({title:'Example Artist - Ocean Road (Official Lyric Video)',artist:'Sony Music India',metadataSource:'innertube',channelId:'UCpublisher',channelVerified:true,viewCount:18e6});
+ for(const batch of [[music,web],[web,music]]){
+  const [merged]=mergeVideoMetadata([batch]);
+  expect(merged.title).toBe('Ocean Road');
+  expect(merged.videoTitle).toBe(web.title);
+  expect(merged.artist).toBe('Sony Music India');
+ }
+});

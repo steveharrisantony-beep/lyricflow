@@ -3,7 +3,7 @@
  * src/music/videoMatching.ts; this module never downloads audio or video.
  */
 export interface UnofficialVideo {
- id:string;title:string;artist:string;album:string;duration:number;sourceUrl:string;
+ id:string;title:string;videoTitle?:string;artist:string;album:string;duration:number;sourceUrl:string;
  rawId:string;provider:'youtube';artwork?:string;viewCount?:number;
  videoType?:'ATV'|'OMV'|'UGC';channelId?:string;channelVerified?:boolean;
  artistCredits?:string[];visualContent?:'motion'|'static'|'unknown';
@@ -80,7 +80,9 @@ export function mergeVideoMetadata<T extends Omit<UnofficialVideo,'provider'>>(b
   const primary=next.metadataSource==='ytmusic'&&prior.metadataSource!=='ytmusic'?next:prior;
   const other=primary===next?prior:next;
   const staticVideo=prior.videoType==='ATV'||next.videoType==='ATV'||prior.visualContent==='static'||next.visualContent==='static';
-  byId.set(next.rawId,{...other,...primary,duration:primary.duration||other.duration,
+  const titles=[prior.videoTitle,next.videoTitle,...[prior,next].filter(v=>v.metadataSource==='innertube'||v.metadataSource==='mirror').map(v=>v.title)].filter((title):title is string=>Boolean(title));
+  titles.sort((a,b)=>Number(/\blyric(?:s|al)?\b/i.test(b))-Number(/\blyric(?:s|al)?\b/i.test(a))||b.length-a.length||a.localeCompare(b));
+  byId.set(next.rawId,{...other,...primary,videoTitle:titles[0]||primary.title,duration:primary.duration||other.duration,
    artist:(other.metadataSource==='innertube'||other.metadataSource==='mirror')&&other.artist&&other.artist!=='YouTube'?other.artist:primary.artist&&primary.artist!=='YouTube'?primary.artist:other.artist,
    channelId:(other.metadataSource==='innertube'||other.metadataSource==='mirror')?other.channelId||primary.channelId:primary.channelId||other.channelId,channelVerified:prior.channelVerified||next.channelVerified,
    artistCredits:[...new Set([...(prior.artistCredits||[]),...(next.artistCredits||[])])],
