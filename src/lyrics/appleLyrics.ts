@@ -1,4 +1,5 @@
 import {normalizeLyricSource} from './sourceLabels';
+import {lyricsQuality} from './lyricsQuality';
 import {backendOrigin} from '../network/backend';
 import { providerRequest } from '../network/request';
 import {getYouTubeRequestHeaders} from '../music/youtubeAuth';
@@ -366,29 +367,36 @@ export async function fetchYouTubeSubtitlesForTrack(
  *    - Creator-uploaded YouTube Subtitles
  * 2. Falls back to direct client-side lookup if running in offline/test mode.
  */
-/** Retry an empty Apple lookup twice; the delays start after each failed attempt. */
+/** Keep line/plain lyrics usable while retrying for the preferred word timestamps. */
 export async function fetchAppleMusicWordSyncedLyrics(
   track: TrackInfo,
   signal?: AbortSignal,
   requestedSource: 'all' | 'apple' | 'lrclib' | 'youtube' = 'all',
-  rawOverride = false
+  rawOverride = false,
+  onProgress?: (result:AppleLyricResult)=>void
 ): Promise<AppleLyricResult | null> {
   if (requestedSource !== 'apple') {
     return fetchAppleMusicWordSyncedLyricsOnce(track, signal, requestedSource, rawOverride);
   }
   if (track.title.trim().length < 2) return null;
+  let best:AppleLyricResult|null=null;
   for (const delay of [0, 1000, 2000]) {
     signal?.throwIfAborted();
     if (delay) await waitForAppleRetry(delay, signal);
     try {
-      const result = await fetchAppleMusicWordSyncedLyricsOnce(track, signal, requestedSource, rawOverride);
+      const result = await fetchAppleMusicWordSyncedLyricsOnce(track, signal, requestedSource, rawOverride, delay>0);
       signal?.throwIfAborted();
-      if (result && (result.lrc.trim() || result.plain?.trim())) return result;
+      if (result && lyricsQuality(result.lrc||result.plain,result.hasWordSync)>0) {
+        if(!best||lyricsQuality(result.lrc||result.plain,result.hasWordSync)>=lyricsQuality(best.lrc||best.plain,best.hasWordSync)){
+          best=result;onProgress?.(result);
+        }
+        if(lyricsQuality(best.lrc||best.plain,best.hasWordSync)===3)return best;
+      }
     } catch (error) {
       if (signal?.aborted) throw error;
     }
   }
-  return null;
+  return best;
 }
 
 function waitForAppleRetry(delay: number, signal?: AbortSignal): Promise<void> {
@@ -411,7 +419,8 @@ async function fetchAppleMusicWordSyncedLyricsOnce(
   track: TrackInfo,
   signal?: AbortSignal,
   requestedSource: 'all' | 'apple' | 'lrclib' | 'youtube' = 'all',
-  rawOverride = false
+  rawOverride = false,
+  refresh = false
 ): Promise<AppleLyricResult | null> {
   const isYt = !rawOverride && (isYouTubeAudioTrack(track));
   const artistHint = (track.channelHint || track.artist || '').trim();
@@ -436,10 +445,12 @@ async function fetchAppleMusicWordSyncedLyricsOnce(
       });
       if (isYt) params.set('isYouTube', '1');
       if (rawOverride) params.set('rawOverride', '1');
+      if (refresh) params.set('refresh', '1');
       if (isYt && track.youtubeVideoId && !rawOverride) params.set('videoId', track.youtubeVideoId);
       const serverUrl = `${backendOrigin()}/music/lyrics?${params.toString()}`;
       const res = await fetch(serverUrl, {
         headers: { Accept: 'application/json' },
+        cache:'no-store',
         signal,
       });
       if (res.ok) {
@@ -616,7 +627,8 @@ async function fetchAppleMusicWordSyncedLyricsOnce(
 export async function fetchAppleMusicCandidates(
   track: TrackInfo,
   signal?: AbortSignal,
-  rawOverride = true
+  rawOverride = true,
+  allowSingleFallback = true
 ): Promise<TrackCandidate[]> {
   const title = rawOverride ? track.title.trim() : cleanLyricMetadata(track.title.trim());
   const artist = rawOverride ? track.artist.trim() : cleanLyricMetadata(track.artist.trim());
@@ -633,6 +645,7 @@ export async function fetchAppleMusicCandidates(
       if (rawOverride) params.set('rawOverride', '1');
       const res = await fetch(`${backendOrigin()}/music/apple-candidates?${params.toString()}`, {
         headers: { Accept: 'application/json' },
+        cache:'no-store',
         signal,
       });
       if (res.ok) {
@@ -671,6 +684,9 @@ export async function fetchAppleMusicCandidates(
           const sourceUrl=item.sourceUrl||item.url||'';
           const sourceLabel=normalizeLyricSource(item.sourceLabel||item.source||'Synced lyrics',sourceUrl);
           const cleanItemTitle = (item.title || title).replace(/\s*\[Apple Library\]$/i, '').trim();
+          const confidence=scoreCandidateAgainstRawMetadata({title:cleanItemTitle,artist:item.artist||artist,album:item.album||'',duration:Number(item.duration)||track.duration,hasWordSync,hasSynced:true},
+            {cleanTitle:title,rawTitle:(isYouTubeAudioTrack(track)?track.videoTitle:undefined)||title,artistHint:track.channelHint||track.artist,albumHint:'',duration:track.duration,isYouTube:isYouTubeAudioTrack(track)});
+          if(!rawOverride&&confidence<.45)continue;
           out.push({
             id: Number.isSafeInteger(item.id) ? item.id : 900_000_000 + out.length + 1,
             title: cleanItemTitle || title,
@@ -678,7 +694,7 @@ export async function fetchAppleMusicCandidates(
             album: item.album || track.album || '',
             sourceLabel,
             duration: Number(item.duration) || Math.round(track.duration || 0),
-            confidence: typeof item.confidence === 'number' ? item.confidence : 0.92,
+            confidence: rawOverride?(typeof item.confidence === 'number'?item.confidence:0.92):confidence,
             hasSynced: true,
             hasWordSync,
             instrumental: false,
@@ -687,7 +703,7 @@ export async function fetchAppleMusicCandidates(
             url: sourceUrl,
           });
         }
-        if (out.length > 0) return out;
+        if (out.length > 0) return out.sort((a,b)=>lyricsQuality(b.syncedLyrics,b.hasWordSync)-lyricsQuality(a.syncedLyrics,a.hasWordSync)||b.confidence-a.confidence);
       }
     } catch (err) {
       if (signal?.aborted) throw err;
@@ -695,6 +711,7 @@ export async function fetchAppleMusicCandidates(
   }
 
   // Fallback: single Apple lookup wrapped as a selectable candidate
+  if(!allowSingleFallback)return [];
   const single = await fetchAppleMusicWordSyncedLyrics(track, signal, 'apple', rawOverride).catch(() => null);
   if (single && single.lrc && hasValidLrcTimestamps(single.lrc)) {
     return [

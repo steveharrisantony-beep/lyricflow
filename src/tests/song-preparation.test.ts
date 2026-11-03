@@ -16,9 +16,10 @@ it('shares queue and foreground work, then restores prepared lyrics across music
  vi.mocked(resolveStashLyricsChain).mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
  const queued=prepareSongLyrics(track,null,{engine:'lyricflow'});
  const foreground=prepareSongLyrics(track,null,{engine:'lyricflow'});
- await vi.waitFor(()=>expect(resolveStashLyricsChain).toHaveBeenCalledOnce());finish(result);
- expect(await queued).toEqual(result);expect(await foreground).toEqual(result);
- expect(await prepareSongLyrics({...track,provider:'local'},null,{engine:'lyricflow'})).toEqual(result);
+ const wordResult={...result,original:'[00:01]<00:01>Prepared <00:02>words',hasWordSync:true};
+ await vi.waitFor(()=>expect(resolveStashLyricsChain).toHaveBeenCalledOnce());finish(wordResult);
+ expect(await queued).toEqual(wordResult);expect(await foreground).toEqual(wordResult);
+ expect(await prepareSongLyrics({...track,provider:'local'},null,{engine:'lyricflow'})).toEqual(wordResult);
  expect(resolveStashLyricsChain).toHaveBeenCalledOnce();expect(localStorage.length).toBe(0);
 });
 it('tries the saved link, saved service, then automatic sources and never overwrites the saved mapping',async()=>{
@@ -50,5 +51,34 @@ it('aborts pending work when its final consumer leaves and ignores results for e
  controller.abort();await expect(request).rejects.toMatchObject({name:'AbortError'});expect(signal?.aborted).toBe(true);
  temporarySongs.clear();finish(result);await Promise.resolve();
  expect(temporarySongs.size).toBe(0);
+});
+
+it('shows a cached line fallback instantly while sharing a fresh word-sync upgrade',async()=>{
+ vi.mocked(resolveStashLyricsChain).mockResolvedValueOnce(result);
+ await prepareSongLyrics(track,null,{engine:'lyricflow'});
+ let finish!:(value:StashResolvedLyrics)=>void;
+ vi.mocked(resolveStashLyricsChain).mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+ const progress=vi.fn();
+ const foreground=prepareSongLyrics(track,null,{engine:'lyricflow'},undefined,progress);
+ const duplicate=prepareSongLyrics(track,null,{engine:'lyricflow'});
+ expect(progress).toHaveBeenCalledWith(result);
+ await vi.waitFor(()=>expect(resolveStashLyricsChain).toHaveBeenCalledTimes(2));
+ const words={...result,original:'[00:01]<00:01>Prepared <00:02>words',hasWordSync:true};finish(words);
+ expect(await foreground).toEqual(words);expect(await duplicate).toEqual(words);
+ expect(await prepareSongLyrics(track,null,{engine:'lyricflow'})).toEqual(words);
+ expect(resolveStashLyricsChain).toHaveBeenCalledTimes(2);
+});
+
+it('keeps the cached line fallback if a fresh upgrade lookup fails to find any lyrics',async()=>{
+ vi.mocked(resolveStashLyricsChain).mockResolvedValueOnce(result).mockResolvedValueOnce(null);
+ await prepareSongLyrics(track,null,{engine:'lyricflow'});
+ expect(await prepareSongLyrics(track,null,{engine:'lyricflow'})).toEqual(result);
+});
+
+it('reuses an explicitly selected line-synced source without automatic upgrades',async()=>{
+ vi.mocked(resolveStashLyricsChain).mockResolvedValue(result);
+ await prepareSongLyrics(track,null,{engine:'lrclib'});
+ expect(await prepareSongLyrics(track,null,{engine:'lrclib'})).toEqual(result);
+ expect(resolveStashLyricsChain).toHaveBeenCalledOnce();
 });
 

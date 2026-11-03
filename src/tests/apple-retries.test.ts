@@ -7,7 +7,7 @@ const track={title:'Original rain',artist:'Test Artist',album:'',duration:200,so
 const lrc='[00:01.00]LRC first line\n[00:05.00]LRC next line';
 const appleLrc='[00:01.00]<00:01.00>Apple <00:02.00>first\n[00:05.00]<00:05.00>Apple <00:06.00>next';
 const appleResult={lrc:appleLrc,source:'lrc.red · Word-Synced',sourceUrl:'https://lrc.red/s/TEST00000001.ttml',hasWordSync:true,title:track.title,artist:track.artist};
-function fixture(successAttempt=Infinity,first?:Promise<Response>){
+function fixture(successAttempt=Infinity,first?:Promise<Response>,candidates:unknown[]=[]){
  const started=Date.now(),attempts:number[]=[];
  const http=vi.fn(async(input:RequestInfo|URL)=>{
   const url=new URL(String(input));
@@ -16,6 +16,7 @@ function fixture(successAttempt=Infinity,first?:Promise<Response>){
    if(attempts.length===1&&first)return first;
    return attempts.length===successAttempt?Response.json(appleResult):new Response('',{status:404});
   }
+  if(url.pathname==='/music/apple-candidates')return Response.json({candidates});
   if(url.hostname==='itunes.apple.com')return Response.json({results:[]});
   if(url.hostname==='lyrics-api.boidu.dev')return new Response('',{status:404});
   if(url.hostname==='lrclib.net')return Response.json({id:1,trackName:track.title,artistName:track.artist,duration:200,instrumental:false,syncedLyrics:lrc});
@@ -104,4 +105,36 @@ it('keeps LRC lyrics after all Apple attempts fail',async()=>{
  expect((await pending)?.original).toBe(lrc);
  expect(attempts).toHaveLength(3);
  expect(progress.mock.calls.every(([result])=>result.original===lrc)).toBe(true);
+});
+
+it('retries cached line lyrics with a fresh request and upgrades them to word timestamps',async()=>{
+ const cached={lrc,hasWordSync:false,source:'Paxsenix · Synced'};
+ const {attempts,http}=fixture(2,Promise.resolve(Response.json(cached)));
+ const progress=vi.fn();
+ const pending=fetchAppleMusicWordSyncedLyrics(track,undefined,'apple',false,progress);
+ await vi.advanceTimersByTimeAsync(0);
+ expect(progress.mock.calls[0][0]).toMatchObject(cached);
+ await vi.advanceTimersByTimeAsync(1000);
+ expect((await pending)?.lrc).toBe(appleLrc);expect(attempts).toEqual([0,1000]);
+ const requests=http.mock.calls.map(([url])=>new URL(String(url))).filter(url=>url.pathname==='/music/lyrics');
+ expect(requests[1].searchParams.get('refresh')).toBe('1');
+ expect(progress.mock.calls.at(-1)?.[0].hasWordSync).toBe(true);
+});
+
+it('retains usable line lyrics when all fresh word-sync attempts fail',async()=>{
+ fixture(Infinity,Promise.resolve(Response.json({lrc,hasWordSync:false,source:'Paxsenix'})));
+ const pending=fetchAppleMusicWordSyncedLyrics(track,undefined,'apple');
+ await vi.advanceTimersByTimeAsync(3000);
+ expect(await pending).toMatchObject({lrc,hasWordSync:false});
+});
+
+it('automatically checks the manual candidate discovery path even after LRCLIB supplies lines',async()=>{
+ const ttml='<tt><body><p begin="1s" end="3s"><span begin="1s" end="2s">Preferred </span><span begin="2s" end="3s">words</span></p></body></tt>';
+ const {http}=fixture(Infinity,undefined,[{id:-1001,title:track.title,artist:track.artist,duration:200,ttml,sourceLabel:'lrc.red · Word-Synced TTML',url:'https://lrc.red/s/TEST00000001.ttml'}]);
+ const progress=vi.fn(),pending=resolveStashLyricsChain(track,undefined,'lyricflow',0,undefined,progress);
+ await vi.advanceTimersByTimeAsync(0);expect(progress.mock.calls[0][0].original).toBe(lrc);
+ await vi.advanceTimersByTimeAsync(3000);
+ expect(await pending).toMatchObject({hasWordSync:true,sourceUrl:'https://lrc.red/s/TEST00000001.ttml'});
+ expect(progress.mock.calls.at(-1)?.[0].hasWordSync).toBe(true);
+ expect(http.mock.calls.filter(([url])=>new URL(String(url)).pathname==='/music/apple-candidates')).toHaveLength(1);
 });

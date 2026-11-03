@@ -1,5 +1,6 @@
 import {normalizeLyricSource} from './sourceLabels';
 import {providerRequest} from '../network/request';
+import {lyricsQuality} from './lyricsQuality';
 import {
  extractYouTubeVideoId,
  isYouTubeAudioTrack,
@@ -234,13 +235,27 @@ export async function resolveStashLyricsChain(
   if(result)onProgress(result);
  };
  await Promise.all([
-  (cleaned.title.trim().length>=2?fetchAppleMusicWordSyncedLyrics(cleaned,signal,'apple'):Promise.resolve(null)).catch(()=>null).then(result=>{appleRes=result;publish();}),
+  (cleaned.title.trim().length>=2?fetchAppleMusicWordSyncedLyrics(cleaned,signal,'apple',false,result=>{appleRes=result;publish();}):Promise.resolve(null)).catch(()=>null).then(result=>{appleRes=result;publish();}),
   (cleaned.title.trim().length>=2?resolveFromLrcLibrary(cleaned,signal):Promise.resolve(null)).catch(()=>null).then(result=>{lrcRes=result;publish();}),
   (ytVideoId?fetchYouTubeSubtitlesForTrack(ytVideoId,signal):Promise.resolve(null)).catch(()=>null).then(result=>{ytSubRes=result;publish();})
  ]);
  signal?.throwIfAborted();
- const resolved=combineLibraryLyrics(appleRes,lrcRes,ytSubRes,engineOption,leadingNonMusicOffsetSec,selectedSubtitleTrackId);
- if(resolved)return resolved;
+ let resolved=combineLibraryLyrics(appleRes,lrcRes,ytSubRes,engineOption,leadingNonMusicOffsetSec,selectedSubtitleTrackId);
+ const artistHint=cleanLyricMetadata((track.channelHint||track.artist||'').trim());
+ const fallbackTrack:TrackInfo={...cleaned,title:cleaned.title.trim(),videoTitle:cleaned.videoTitle||cleaned.title.trim(),artist:cleaned.artist.trim()||artistHint,album:''};
+ let wordCandidates:TrackCandidate[]|undefined;
+ // Discover the same word-synced candidates as manual search, even with a usable line fallback.
+ if(engineOption!=='lrclib'&&(!resolved||!resolved.hasWordSync)&&cleaned.title.trim().length>=2){
+  wordCandidates=await fetchAppleMusicCandidates(fallbackTrack,signal,false,false).catch(()=>[]);
+  signal?.throwIfAborted();
+  const preferred=wordCandidates.find(c=>lyricsQuality(c.syncedLyrics,c.hasWordSync)===3);
+  if(preferred?.syncedLyrics){
+   appleRes={lrc:preferred.syncedLyrics,hasWordSync:true,source:normalizeLyricSource(preferred.sourceLabel||'Synced lyrics',preferred.url),sourceUrl:preferred.url,title:preferred.title,artist:preferred.artist};
+   publish();
+   resolved=combineLibraryLyrics(appleRes,lrcRes,ytSubRes,engineOption,leadingNonMusicOffsetSec,selectedSubtitleTrackId);
+  }
+ }
+ if(resolved)return wordCandidates?.length?{...resolved,candidates:[...wordCandidates,...resolved.candidates]}:resolved;
  const candidates:TrackCandidate[]=[],subtitleTracks:YouTubeSubtitleTrackItem[]=[];
 
  // 1e. Additional server-side fallback (Musixmatch / KuGou) and candidate search fallback when neither Apple, LRCLIB, nor YouTube Subtitles matched
@@ -262,16 +277,8 @@ export async function resolveStashLyricsChain(
      subtitleTracks
     };
    }
-   const artistHint=cleanLyricMetadata((track.channelHint||track.artist||'').trim());
-   const fallbackTrack:TrackInfo={
-    ...cleaned,
-    title:cleaned.title.trim(),
-    videoTitle:cleaned.videoTitle||cleaned.title.trim(),
-    artist:cleaned.artist.trim()||artistHint,
-    album:''
-   };
    const [appleCands,lrcCands]=await Promise.all([
-    fetchAppleMusicCandidates(fallbackTrack,signal,false).catch(()=>[]),
+    wordCandidates?Promise.resolve(wordCandidates):fetchAppleMusicCandidates(fallbackTrack,signal,false,false).catch(()=>[]),
     (artistHint&&!cleaned.artist.trim()?lrclibProvider.search(fallbackTrack,signal,false):Promise.resolve([])).catch(()=>[])
    ]);
    const topApple=appleCands.find(c=>c.syncedLyrics&&hasValidLrcTimestamps(c.syncedLyrics));
@@ -355,6 +362,12 @@ function combineLibraryLyrics(appleRes:AppleLyricResult|null,lrcRes:StashResolve
    subtitleTracks,
    selectedSubtitleTrackId:chosenSubTrack?.id
   };
+ }
+
+ // Never let a slower line/plain response replace available word timestamps.
+ if(hasApple&&hasLrclib&&lrcRes&&lyricsQuality(lrcRes.original||lrcRes.plain,lrcRes.hasWordSync)>
+  lyricsQuality(appleRes?.lrc||appleRes?.plain,appleRes?.hasWordSync)){
+  appleRes=null;
  }
 
  // OPTION 2: SYNCED LYRIC SOURCES

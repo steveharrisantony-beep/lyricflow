@@ -6,6 +6,7 @@ import {resolveStashLyricsChain,retrievePermittedLyrics,lrclibProvider,type Stas
 import {convertTtmlToEnhancedLrc,convertStructuredAppleJsonToLrc} from '../lyrics/appleLyrics';
 import type {LyricEngineOption} from '../lyrics/lyricFlowEngine';
 import {lyricProviderName,normalizeLyricSource} from '../lyrics/sourceLabels';
+import {lyricsQuality} from '../lyrics/lyricsQuality';
 import {providerRequest} from '../network/request';
 import {backendOrigin} from '../network/backend';
 import {findYouTubeBackgrounds} from '../music/backgroundVideos';
@@ -48,6 +49,10 @@ function shared<T>(id:string,entry:TemporarySong,signal:AbortSignal|undefined,st
  });
 }
 function lyricsKey(options:LyricsPreparationOptions){return JSON.stringify([options.engine,options.selection,options.source,options.subtitleId,options.leadingOffset||0]);}
+export function preparedLyricsNeedWordSync(value:StashResolvedLyrics,options:LyricsPreparationOptions){
+ return (options.engine==='lyricflow'||options.engine==='apple')&&!options.source&&!options.selection&&
+  lyricsQuality(value.original||value.plain,value.hasWordSync)<3;
+}
 export function peekPreparedLyrics(track:TrackInfo|null,uid:string|null,options:LyricsPreparationOptions){
  const entry=localSongData(track,uid).session;
  return entry?.lyrics?.key===lyricsKey(options)?entry.lyrics.value:null;
@@ -100,9 +105,16 @@ export function prepareSongLyrics(track:TrackInfo,uid:string|null,options:Lyrics
  if(!entry||local.mapping?.hideLyrics||isAdvertisementTrack(track))return Promise.resolve(null);
  const key=lyricsKey(options),id=`${uid}:${entry.id}:lyrics:${entry.generation}:${key}`;
  const active=work.has(id);
- if(!active&&entry.lyrics?.key===key)return Promise.resolve(entry.lyrics.value);
+ const cached=entry.lyrics?.key===key?entry.lyrics.value:null;
+ if(!active&&cached&&!preparedLyricsNeedWordSync(cached,{...options,source:options.source||local.mapping?.lyrics?.sourceFile}))return Promise.resolve(cached);
+ if(cached)progress?.(cached);
  return shared(id,entry,signal,async(request,publish)=>{
   let result:StashResolvedLyrics|null=null;
+  let best=cached;
+  const prefer=(value:StashResolvedLyrics)=>{
+   if(!best||lyricsQuality(value.original||value.plain,value.hasWordSync)>=lyricsQuality(best.original||best.plain,best.hasWordSync))best=value;
+   return best;
+  };
   const source=options.source||local.mapping?.lyrics?.sourceFile;
   const text=local.text;
   if(text&&(!source||lyricFingerprint(text,source.url)===source.revision))result=resolvedText(text,source?.name||'Custom lyrics',source?.url||'',track);
@@ -114,8 +126,9 @@ export function prepareSongLyrics(track:TrackInfo,uid:string|null,options:Lyrics
    if(found)result=resolvedText(found.synced||found.plain,found.source,found.sourceUrl,track);
   }
   if(!result&&(source||selectedId))result=await savedSource(track,{...options,source},request).catch(error=>{if(request.aborted)throw error;return null;});
-  if(!result)result=await resolveStashLyricsChain(track,request,options.engine,options.leadingOffset,options.subtitleId,value=>publish(source?{...value,mappingRevision:source.revision}:value));
+  if(!result)result=await resolveStashLyricsChain(track,request,options.engine,options.leadingOffset,options.subtitleId,value=>publish(prefer(source?{...value,mappingRevision:source.revision}:value)));
   request.throwIfAborted();
+  if(!source)result=result?prefer(result):best;
   if(result){if(source)result={...result,mappingRevision:source.revision};entry.lyrics={key,value:result};}return result;
  },value=>{if(value)progress?.(value);});
 }

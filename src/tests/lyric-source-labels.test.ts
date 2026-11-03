@@ -50,3 +50,16 @@ it('names the combined source selector accurately while retaining saved engine c
  expect(option.label).toBe('lrc.red / Binimum / Paxsenix');
  for(const value of [option.label,option.shortLabel,option.description])expect(value).not.toMatch(/apple/i);
 });
+
+it('ranks word-synced candidates first while rejecting other songs during automatic lookup',async()=>{
+ const url='https://lrc.red/s/TEST00000001.ttml';
+ const candidate={title:track.title,artist:track.artist,duration:200,sourceLabel:'lrc.red',url};
+ vi.spyOn(globalThis,'fetch').mockResolvedValue(Response.json({candidates:[
+  {...candidate,id:1,lrc:'[00:01]Line-only version'},
+  {...candidate,id:2,title:'Completely different melody',ttml},
+  {...candidate,id:3,ttml},
+ ]}));
+ const found=await fetchAppleMusicCandidates(track,undefined,false,false);
+ expect(found.map(value=>value.id)).toEqual([3,1]);
+ expect(found[0].hasWordSync).toBe(true);
+});

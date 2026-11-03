@@ -15,6 +15,8 @@ Node.js/Express backend on Android.
   **Lift and Zoom** effects. **Orbit** combines its trails and satellites with progressive
   letter glow. Letters flow smoothly while connected scripts
   such as Hindi remain shaped. Word effects require word-synced lyrics.
+- **Preferred word sync:** cached line lyrics appear immediately while automatic search
+  retries fresh sources for word timestamps; upgrades wait until the current line ends.
 - **Flexible lyrics:** original/romanized display, manual import and editing,
   source reselection, adaptive theme/album colours, independent font-size limits,
   placement, horizontal/vertical padding and maximum text width/height.

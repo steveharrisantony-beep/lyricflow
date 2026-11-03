@@ -90,12 +90,15 @@ function setTrackMetaCache(key: string, meta: TrackMetadata) {
   trackMetaCache.set(key, meta);
 }
 
-function setLyricsCache(key: string, data: ServerLyricsResponse) {
+function setLyricsCache(key: string, data: ServerLyricsResponse):ServerLyricsResponse {
+  const previous=lyricsCache.get(key);
+  if(previous&&Date.now()-previous.createdAt<30*60_000&&previous.data.hasWordSync&&!data.hasWordSync)return previous.data;
   if (lyricsCache.size >= MAX_CACHE_SIZE) {
     const oldestKey = lyricsCache.keys().next().value;
     if (oldestKey) lyricsCache.delete(oldestKey);
   }
   lyricsCache.set(key, { data, createdAt: Date.now() });
+  return data;
 }
 
 function decodeHtmlEntities(text: string): string {
@@ -2400,6 +2403,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
 
   // Synced-source candidate search for Manual Search in TrackFinder.tsx
   const handleAppleCandidates = async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control','no-store');
     const rawTitle = String(req.query.title || '').trim();
     const rawArtist = String(req.query.artist || '').trim();
     const duration = Number(req.query.duration || 0);
@@ -2536,7 +2540,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
     res.once('close',disconnect);
     try{
       const result=await fetchYouTubeSubtitlesLrc(videoId,auth,controller.signal);
-      if(result){setLyricsCache(cacheKey,result);res.json(result);}
+      if(result){res.json(setLyricsCache(cacheKey,result));}
       else res.status(404).json({code:'no-captions',detail:'This video does not expose a caption track. Import a subtitle file or choose another lyric source.'});
     }catch(error){
       if(controller.signal.aborted)return;
@@ -2546,6 +2550,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
   };
 
   const handleLyrics = async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control','no-store');
     const rawTitle = String(req.query.title || '').trim();
     const rawArtist = String(req.query.artist || '').trim();
     const duration = Number(req.query.duration || 0);
@@ -2573,7 +2578,8 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
     const captionScope=videoId?createHash('sha256').update((captionAuth.accessToken||'')+'|'+(captionAuth.cookie||'')).digest('hex').slice(0,20):'';
     const cacheKey = `${requestedSource}|${rawOverride ? 'raw' : isYouTube ? 'yt' : 'std'}|${title.toLowerCase()}|${artist.toLowerCase()}|${Math.round(duration)}|${videoId}|${captionScope}`;
     const cached = lyricsCache.get(cacheKey);
-    if (cached && Date.now() - cached.createdAt < 30 * 60_000) {
+    const refresh=req.query.refresh==='1'||req.query.refresh==='true';
+    if (!refresh && cached && Date.now() - cached.createdAt < 30 * 60_000) {
       res.json(cached.data);
       return;
     }
@@ -2582,8 +2588,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       if (requestedSource === 'youtube' && videoId) {
         const ytSub = await fetchYouTubeSubtitlesLrc(videoId,extractRequestYouTubeAuth(req));
         if (ytSub) {
-          setLyricsCache(cacheKey, ytSub);
-          res.json(ytSub);
+          res.json(setLyricsCache(cacheKey, ytSub));
           return;
         }
         res.status(404).json({ detail: 'No accessible YouTube subtitles available for this video.' });
@@ -2601,8 +2606,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
           rawOverride
         );
         if (lrclibOnly) {
-          setLyricsCache(cacheKey, lrclibOnly);
-          res.json(lrclibOnly);
+          res.json(setLyricsCache(cacheKey, lrclibOnly));
           return;
         }
         res.status(404).json({ detail: 'No matching LRC Library recording found.' });
@@ -2616,7 +2620,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
         else if(requestedSource==='paxsenix')result=(await fetchItunesPaxsenixLyrics(title,artist,duration,isYouTube,rawTitle,rawArtist,rawOverride)).lyrics||null;
         else if(requestedSource==='musixmatch')result=await fetchMusixmatchServerLyrics(title,artist);
         else result=await fetchKugouSyncedLrc(title,artist,duration,isYouTube);
-        if(result){setLyricsCache(cacheKey,result);res.json(result);}
+        if(result){res.json(setLyricsCache(cacheKey,result));}
         else res.status(404).json({detail:'No matching lyrics available from the mapped source.'});
         return;
       }
@@ -2632,8 +2636,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
         rawOverride
       );
       if (isrcTtml) {
-        setLyricsCache(cacheKey, isrcTtml);
-        res.json(isrcTtml);
+        res.json(setLyricsCache(cacheKey, isrcTtml));
         return;
       }
 
@@ -2648,8 +2651,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
         rawOverride
       );
       if (paxResult.lyrics) {
-        setLyricsCache(cacheKey, paxResult.lyrics);
-        res.json(paxResult.lyrics);
+        res.json(setLyricsCache(cacheKey, paxResult.lyrics));
         return;
       }
 
@@ -2672,24 +2674,21 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
         if (paxResult.appleTrackViewUrl && !lrclibResult.sourceUrl) {
           lrclibResult.sourceUrl = paxResult.appleTrackViewUrl;
         }
-        setLyricsCache(cacheKey, lrclibResult);
-        res.json(lrclibResult);
+        res.json(setLyricsCache(cacheKey, lrclibResult));
         return;
       }
 
       // 4. MusixMatch synced / word-synced lyrics (strictly unscrambled)
       const mmResult = await fetchMusixmatchServerLyrics(title, artist);
       if (mmResult) {
-        setLyricsCache(cacheKey, mmResult);
-        res.json(mmResult);
+        res.json(setLyricsCache(cacheKey, mmResult));
         return;
       }
 
       // 5. KuGou Synced LRC
       const kugouResult = await fetchKugouSyncedLrc(title, artist, duration, isYouTube);
       if (kugouResult) {
-        setLyricsCache(cacheKey, kugouResult);
-        res.json(kugouResult);
+        res.json(setLyricsCache(cacheKey, kugouResult));
         return;
       }
 
@@ -2697,14 +2696,12 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       if (videoId) {
         const ytSub = await fetchYouTubeSubtitlesLrc(videoId,extractRequestYouTubeAuth(req));
         if (ytSub) {
-          setLyricsCache(cacheKey, ytSub);
-          res.json(ytSub);
+          res.json(setLyricsCache(cacheKey, ytSub));
           return;
         }
         const innerTubeResult = await fetchInnerTubePlainLyrics(videoId);
         if (innerTubeResult) {
-          setLyricsCache(cacheKey, innerTubeResult);
-          res.json(innerTubeResult);
+          res.json(setLyricsCache(cacheKey, innerTubeResult));
           return;
         }
       }
