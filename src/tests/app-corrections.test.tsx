@@ -189,12 +189,13 @@ beforeEach(async () => {
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
 it('keeps guest mode available and activates cloud sign-in from bundled Firebase configuration', async () => {
+  const firebaseAppletConfig = (await import('../../firebase-applet-config.json')).default;
   const { firebaseConfig, firebaseDatabaseId, isFirebaseConfigured } = await import('../firebase/firebaseClient');
   expect(isFirebaseConfigured).toBe(true);
-  expect(firebaseConfig.projectId).toBe('scientific-airway-0tgzl');
+  expect(firebaseConfig.projectId).toBe(firebaseAppletConfig.projectId);
   expect(firebaseConfig.apiKey).toBeTruthy();
   expect(firebaseConfig.appId).toBeTruthy();
-  expect(firebaseDatabaseId).toBe('ai-studio-lyricsflowandroi-a57168a1-9300-40d9-a267-84c162ce5d3d');
+  expect(firebaseDatabaseId).toBe(firebaseAppletConfig.firestoreDatabaseId);
   await act(async () => click('Sign in / sync'));
   expect(host.textContent).toContain('Guest · saved on this device');
   expect(host.textContent).toContain('Keep your settings across devices');
