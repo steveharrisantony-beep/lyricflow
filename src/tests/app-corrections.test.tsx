@@ -188,7 +188,7 @@ beforeEach(async () => {
   await act(async () => root.render(<App />));
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
-it('keeps guest mode available and activates cloud sign-in from bundled Firebase configuration', async () => {
+it('keeps guest mode available, shows only Google sign-in, and syncs previous guest settings and mapped data on sign-in', async () => {
   const firebaseAppletConfig = (await import('../../firebase-applet-config.json')).default;
   const { firebaseConfig, firebaseDatabaseId, isFirebaseConfigured } = await import('../firebase/firebaseClient');
   expect(isFirebaseConfigured).toBe(true);
@@ -199,8 +199,37 @@ it('keeps guest mode available and activates cloud sign-in from bundled Firebase
   await act(async () => click('Sign in / sync'));
   expect(host.textContent).toContain('Guest · saved on this device');
   expect(host.textContent).toContain('Keep your settings across devices');
-  expect(host.querySelector('input[type="email"]')).not.toBeNull();
-  expect(host.querySelector('input[type="password"]')).not.toBeNull();
+  expect([...host.querySelectorAll('button')].some(b => b.textContent === 'Sign in with Google')).toBe(true);
+  expect(host.querySelector('input[type="email"]')).toBeNull();
+  expect(host.querySelector('input[type="password"]')).toBeNull();
+  expect([...host.querySelectorAll('button')].some(b => b.textContent === 'Create account')).toBe(false);
+
+  // Customize guest settings and save a song mapping before signing in
+  const slider = [...host.querySelectorAll('label')].find(label => label.textContent?.includes('Visual intensity'))?.querySelector<HTMLInputElement>('input')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(slider, '64');
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await act(async () => click('Load JioSaavn fixture'));
+  await act(async () => click('Edit or import lyrics'));
+  const area = host.querySelector<HTMLTextAreaElement>('textarea')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(area, '[00:01]Guest mapped lyrics');
+    area.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Increase lyric delay 0.5s"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('button.save-song-button')!.click());
+
+  // Sign in as accountA and verify previous guest settings and mapped data are migrated and staged for Firebase sync
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  const user = { uid: 'accountA', email: 'a@example.com', emailVerified: true, providerData: [] } as never;
+  await act(async () => root.render(<App user={user} />));
+  expect(JSON.parse(localStorage.getItem('lyricflow.v3.user:accountA.preferences') || 'null')?.intensity).toBe(64);
+  expect(JSON.parse(localStorage.getItem('lyricflow.v3.user:accountA.preferencesPending') || 'null')?.intensity).toBe(64);
+  expect(localStorage.getItem('lyricflow.v3.user:accountA.songMappings')).toContain('"delaySeconds":0.5');
+  expect(localStorage.getItem('lyricflow.v3.user:accountA.customLyrics')).toContain('Guest mapped lyrics');
+  expect(localStorage.getItem('lyricflow.v3.user:accountA.corrections')).toContain('"delaySeconds":0.5');
 });
 it('stores manual-lyrics delay on device and restores it after remount', async () => {
   await act(async () => click('Load fixture audio'));

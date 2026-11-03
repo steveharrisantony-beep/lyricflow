@@ -1,7 +1,7 @@
 import {normalizePaletteSelections,type ThemePaletteSelections} from '../visualization/cinematic/themeSelection';
 import { initializeApp } from 'firebase/app';
 import {
-  getAuth, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword,
+  getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification,
   signOut, onAuthStateChanged, linkWithCredential, EmailAuthProvider, connectAuthEmulator, type User,
 } from 'firebase/auth';
@@ -51,8 +51,17 @@ export { onAuthStateChanged, type User };
 export const isNativeApp = () => Boolean((window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.());
 export async function signInWithGoogle() {
   if (!auth) throw new Error('Cloud sync is not configured yet. Your device settings still work.');
-  if (isNativeApp()) throw new Error('Use email sign-in in the Android app. Native Google sign-in has not been configured.');
-  return (await signInWithPopup(auth, new GoogleAuthProvider())).user;
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  try {
+    return (await signInWithPopup(auth, provider)).user;
+  } catch (error) {
+    if (isNativeApp()) {
+      await signInWithRedirect(auth, provider);
+      return null;
+    }
+    throw error;
+  }
 }
 export async function emailSignIn(email: string, password: string, create = false) {
   if (!auth) throw new Error('Cloud sync is not configured yet.');
@@ -238,8 +247,9 @@ export function sanitizePreferences(raw: (Partial<Omit<UserPreferencesData,'them
 
 
 export function loadLocalPreferences(uid: string | null = null): UserPreferencesData {
-  const legacy = uid ? null : readDevice<Partial<UserPreferencesData> | null>(LEGACY_PREFS_KEY, null);
-  return sanitizePreferences(readDevice(scopedKey('preferences', uid), legacy));
+  const legacy = readDevice<Partial<UserPreferencesData> | null>(LEGACY_PREFS_KEY, null);
+  const fallback = uid ? readDevice<Partial<UserPreferencesData> | null>(scopedKey('preferences', null), legacy) : legacy;
+  return sanitizePreferences(readDevice(scopedKey('preferences', uid), fallback));
 }
 export function saveLocalPreferences(prefs: UserPreferencesData, uid: string | null = null): void {
   writeDevice(scopedKey('preferences', uid), sanitizePreferences(prefs));
@@ -294,10 +304,13 @@ export function watchCloudPreferences(user: User, next: (prefs: UserPreferencesD
       saveLocalPreferences(prefs, user.uid);
       next(prefs);
     } else if (!snapshot.metadata.fromCache) {
-      next(loadLocalPreferences(user.uid));
+      const local = loadLocalPreferences(user.uid);
+      next(local);
+      void saveCloudPreferences(user, local).catch(() => status('Saved on device · cloud sync needs attention'));
     }
     status(snapshot.metadata.hasPendingWrites ? 'Saved on device · waiting to sync'
       : snapshot.metadata.fromCache ? 'Offline · using saved settings' : 'Account settings synced');
   }, () => status('Saved on device · cloud sync unavailable'));
 }
+
 

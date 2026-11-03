@@ -77,8 +77,16 @@ export async function submitCorrection(user: User | null, correction: Correction
   });
 }
 export function importGuestCorrections(uid: string) {
-  const entries = Object.values(readDevice<Cache>(personalKey(null), {}));
-  for (const entry of entries) if (!entry.removed) void savePersonalCorrection(uid, entry.value).catch(() => {});
+  const entries = Object.values(readDevice<Cache>(personalKey(null), {})).filter(entry => !entry.removed);
+  if (!entries.length) return;
+  const key = personalKey(uid), account = readDevice<Cache>(key, {});
+  for (const entry of entries) {
+    const value = validCorrection(entry.value, entry.value);
+    if (value) account[correctionKey(value)] = { value, dirty: true, imported: true };
+  }
+  writeDevice(key, account);
+  window.dispatchEvent(new Event(EVENT));
+  void retryAccountCorrections(uid).catch(() => {});
 }
 export async function retryAccountCorrections(uid:string,importsOnly=false){
   await Promise.all(Object.values(readDevice<Cache>(personalKey(uid),{})).filter(entry=>entry.dirty&&(!importsOnly||entry.imported)).map(entry=>flushPersonalCorrection(uid,entry.value)));

@@ -123,15 +123,14 @@ import {
   correctionKey,
   type LyricsSelection,
 } from "./firebase/correctionModel";
-import { discardSongCorrections, importGuestCorrections } from "./firebase/correctionStore";
+import { discardSongCorrections } from "./firebase/correctionStore";
 import { scopedKey, writeDevice } from "./firebase/deviceStore";
+import { syncGuestDataToAccount } from "./firebase/songDatabaseSync";
 import {
-  importGuestSongMappings,
   useSongMapping,
 } from "./firebase/songMappings";
 import { useCorrection } from "./firebase/useCorrection";
 import {
-  importGuestCustomLyrics,
   legacySongDelay,
   usePrivateLyrics,
 } from "./firebase/usePrivateLyrics";
@@ -155,7 +154,10 @@ const choices = TEMPLATES;
 type ThemeMode = "system" | "dark" | "light";
 export default function App({ user = null }: { user?: User | null }) {
   const uid = user?.uid || null;
-  const [initialPrefs] = useState(() => loadLocalPreferences(uid));
+  const [initialPrefs] = useState(() => {
+    if (uid) syncGuestDataToAccount(uid);
+    return loadLocalPreferences(uid);
+  });
   const [syncStatus, setSyncStatus] = useState(
     user ? "Connecting account sync…" : "Guest · saved on this device",
   );
@@ -2558,24 +2560,6 @@ export default function App({ user = null }: { user?: User | null }) {
                     <AccountControls
                       user={user}
                       syncStatus={syncStatus}
-                      onImportGuest={() => {
-                        try {
-                          remotePreferences.current = "";
-                          applyPreferences(loadLocalPreferences(null));
-                          if (uid) {
-                            importGuestCorrections(uid);
-                            importGuestCustomLyrics(uid);
-                            importGuestSongMappings(uid);
-                          }
-                          setSyncStatus(
-                            "Guest settings and fixes imported into this account",
-                          );
-                        } catch {
-                          setSyncStatus(
-                            "Import could not finish · device storage is full or blocked",
-                          );
-                        }
-                      }}
                     />
                   </div>
                   <div className="account-row">
