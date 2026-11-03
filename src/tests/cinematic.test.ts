@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {TEMPLATES,AUDIO_ONLY_SCENES,VOXELWALL_CATEGORIES,buildCinematicSchedule,sceneAt,byId,resolveThemePalette} from '../visualization/cinematic/catalog';
+import {TEMPLATES,AUDIO_ONLY_SCENES,VOXELWALL_CATEGORIES,buildCinematicSchedule,sceneAt,resolveThemePalette} from '../visualization/cinematic/catalog';
 import {buildCues} from '../lyrics/lyricTimeline';
 import {analyzeSections} from '../lyrics/sceneDirector';
 import {fontLabel,FONT_SHOWCASE,fontSpec} from '../visualization/cinematic/fonts';
@@ -62,9 +62,16 @@ describe('VoxelWall cinematic scene catalog',()=>{
    expect(previous).not.toContain(directed[i].id);
   }
  });
- it('selects appropriate mood candidates',()=>{
-  const directed=buildCinematicSchedule(sections,cues,'Ballad','water-song');
-  expect(byId[directed[0].id].moods).toContain('water');
+ it('randomizes all enabled themes without genre or mood weighting, visiting each before repeats',()=>{
+  const selected=TEMPLATES.slice(0,5).map(t=>t.id);
+  const lines=Array.from({length:30},(_,i)=>({time:i*3,text:'Original demo line '+i}));
+  const cues=buildCues(lines,[]);
+  const water=analyzeSections(lines,'Ballad'),fire=water.map(section=>({...section,mood:'fire' as const,energy:1}));
+  const a=buildCinematicSchedule(water,cues,'Ballad','fair-shuffle',selected,1);
+  const b=buildCinematicSchedule(fire,cues,'EDM','fair-shuffle',selected,1);
+  expect(a.map(s=>s.id)).toEqual(b.map(s=>s.id));
+  for(let i=0;i<a.length;i+=selected.length)expect(new Set(a.slice(i,i+selected.length).map(s=>s.id))).toEqual(new Set(selected));
+  expect(a.every((s,i)=>!i||s.id!==a[i-1].id)).toBe(true);
  });
  it('supports seeking without animating through missing sections',()=>{
   const directed=buildCinematicSchedule(sections,cues,'','seek-test');

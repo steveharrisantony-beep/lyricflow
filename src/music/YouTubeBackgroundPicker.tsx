@@ -27,7 +27,7 @@ export default function YouTubeBackgroundPicker({
   activeVideoId: string | null;
   preference: "music" | "lyrics";
   onPreferenceChange?: (value: "music" | "lyrics") => void;
-  onChoose: (id: string) => void;
+  onChoose: (id: string, candidate?: SongResult) => void;
   backgroundMode?: YouTubeBackgroundMode;
   onBackgroundModeChange?: (mode: YouTubeBackgroundMode) => void;
   onSearchingChange?: (searching: boolean) => void;
@@ -299,7 +299,7 @@ export default function YouTubeBackgroundPicker({
                 type="button"
                 className="upload-button"
                 onClick={() => {
-                  onChoose(id);
+                  onChoose(id,song);
                   setShowCached(false);
                   setResults([]);
                   setMessage(

@@ -273,8 +273,10 @@ export const SUPPORTED_ROMANIZATION_LANGUAGES: readonly SupportedRomanizationLan
 export const ALL_ROMANIZATION_LANGUAGE_CODES: readonly Exclude<LanguageCode, 'en' | 'unknown'>[] =
   SUPPORTED_ROMANIZATION_LANGUAGES.map(l => l.code);
 
+export const DEFAULT_ROMANIZATION_LANGUAGE_CODES=ALL_ROMANIZATION_LANGUAGE_CODES.filter(code=>!(['ja','ko','zh','ru','ar','he','th'] as readonly string[]).includes(code));
+
 let romanizationMasterEnabled = true;
-let enabledRomanizationLangSet = new Set<string>(ALL_ROMANIZATION_LANGUAGE_CODES);
+let enabledRomanizationLangSet = new Set<string>(DEFAULT_ROMANIZATION_LANGUAGE_CODES);
 
 try {
   if (typeof localStorage !== 'undefined') {

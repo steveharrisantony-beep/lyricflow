@@ -71,14 +71,14 @@ export interface DisplayPreferences {
   preferredVideoType: 'music' | 'lyrics';
   scene: SceneId; reducedMotion: boolean; youtubeBackgroundMode: 'video' | 'theme';
   videoOverlayOpacity: number; autoHideYoutubeLyrics: boolean; playerVolume: number; sponsorBlockEnabled: boolean;
-  lyricPlacementMode: 'auto' | 'alternating' | 'left' | 'right' | 'bottom-right' | 'bottom-left' | 'top-left' | 'diagonal' | 'center';
+  lyricPlacementMode: 'auto' | 'left' | 'right' | 'bottom-right' | 'bottom-left' | 'top-left' | 'diagonal' | 'center';
   lyricColorMode: 'auto' | 'album' | 'cyan' | 'rose' | 'gold' | 'emerald' | 'violet' | 'coral' | 'white';
   lyricFillPaceMode: 'auto' | 'letter' | 'word'; lyricDisplayMode: 'original' | 'romanized' | 'both';
 }
 export const DEFAULT_DISPLAY_PREFERENCES: DisplayPreferences = {
-  preferredVideoType: 'music', scene: 'holographic-tide', reducedMotion: false, youtubeBackgroundMode: 'video', videoOverlayOpacity: .45,
-  autoHideYoutubeLyrics: false, playerVolume: 85, sponsorBlockEnabled: true, lyricPlacementMode: 'auto',
-  lyricColorMode: 'auto', lyricFillPaceMode: 'auto', lyricDisplayMode: 'both',
+  preferredVideoType: 'music', scene: 'holographic-tide', reducedMotion: false, youtubeBackgroundMode: 'video', videoOverlayOpacity: 0,
+  autoHideYoutubeLyrics: false, playerVolume: 100, sponsorBlockEnabled: true, lyricPlacementMode: 'auto',
+  lyricColorMode: 'auto', lyricFillPaceMode: 'letter', lyricDisplayMode: 'both',
 };
 export interface UserPreferencesData {
   display: DisplayPreferences;
@@ -128,11 +128,11 @@ export const ALL_CAMERA_VIEWS: CameraView[] = [...CAMERA_VIEWS];
 
 export const DEFAULT_USER_PREFERENCES: UserPreferencesData = {
   display: { ...DEFAULT_DISPLAY_PREFERENCES },
-  intensity: 65,
-  speed: 55,
+  intensity: 100,
+  speed: 30,
   sensitivity: 50,
-  spectrumGain: 35,
-  motionBlur: 30,
+  spectrumGain: 40,
+  motionBlur: 80,
   quality: 'Balanced',
   autoScenes: true,
   spatialTypography: true,
@@ -142,15 +142,15 @@ export const DEFAULT_USER_PREFERENCES: UserPreferencesData = {
   autoKineticMotion: true,
   manualKineticMotion: 'ship',
   enabledKineticMotions: [...ALL_KINETIC_MOTIONS],
-  enabledPlacements: [...ALL_PLACEMENT_MODES],
+  enabledPlacements: ['center'],
   autoFonts: true,
   manualFont: 'impact',
   enabledFonts: [...ALL_FONT_PACKS],
   enabledCameraViews: ['Front'],
   cameraShakeEnabled: true,
   cameraShakeSensitivity: 50,
-  lyricMinFontSize: 26,
-  lyricMaxFontSize: 88,
+  lyricMinFontSize: 30,
+  lyricMaxFontSize: 100,
   themePalettes: {},
 };
 
@@ -167,13 +167,13 @@ function sanitizeDisplay(raw: Partial<DisplayPreferences> | null | undefined): D
     scene: oneOf(r.scene, ALL_SCENE_IDS, DEFAULT_DISPLAY_PREFERENCES.scene),
     reducedMotion: typeof r.reducedMotion === 'boolean' ? r.reducedMotion : false,
     youtubeBackgroundMode: oneOf(r.youtubeBackgroundMode, ['video', 'theme'], 'video'),
-    videoOverlayOpacity: clampNum(r.videoOverlayOpacity, 0, 1, .45),
+    videoOverlayOpacity: clampNum(r.videoOverlayOpacity, 0, 1, DEFAULT_DISPLAY_PREFERENCES.videoOverlayOpacity),
     autoHideYoutubeLyrics: typeof r.autoHideYoutubeLyrics === 'boolean' ? r.autoHideYoutubeLyrics : false,
-    playerVolume: clampNum(r.playerVolume, 0, 100, 85),
+    playerVolume: clampNum(r.playerVolume, 0, 100, DEFAULT_DISPLAY_PREFERENCES.playerVolume),
     sponsorBlockEnabled: typeof r.sponsorBlockEnabled === 'boolean' ? r.sponsorBlockEnabled : true,
-    lyricPlacementMode: oneOf(r.lyricPlacementMode, ['auto','alternating','left','right','bottom-right','bottom-left','top-left','diagonal','center'], 'auto'),
+    lyricPlacementMode: oneOf(r.lyricPlacementMode, ['auto','left','right','bottom-right','bottom-left','top-left','diagonal','center'], 'auto'),
     lyricColorMode: oneOf(r.lyricColorMode, ['auto','album','cyan','rose','gold','emerald','violet','coral','white'], 'auto'),
-    lyricFillPaceMode: oneOf(r.lyricFillPaceMode, ['auto','letter','word'], 'auto'),
+    lyricFillPaceMode: oneOf(r.lyricFillPaceMode, ['auto','letter','word'], DEFAULT_DISPLAY_PREFERENCES.lyricFillPaceMode),
     lyricDisplayMode: oneOf(r.lyricDisplayMode, ['original','romanized','both'], 'both'),
   };
 }
@@ -217,7 +217,7 @@ export function sanitizePreferences(raw: (Partial<Omit<UserPreferencesData,'them
     autoKineticMotion: typeof raw.autoKineticMotion === 'boolean' ? raw.autoKineticMotion : true,
     manualKineticMotion,
     enabledKineticMotions: validMotions.length > 0 ? validMotions : [...ALL_KINETIC_MOTIONS],
-    enabledPlacements: validPlacements.length > 0 ? validPlacements : [...ALL_PLACEMENT_MODES],
+    enabledPlacements: validPlacements.length > 0 ? validPlacements : ['center'],
     autoFonts: typeof raw.autoFonts === 'boolean' ? raw.autoFonts : true,
     manualFont,
     enabledFonts: validFonts.length > 0 ? validFonts : [...ALL_FONT_PACKS],

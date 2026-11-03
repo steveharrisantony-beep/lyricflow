@@ -11,9 +11,13 @@ vi.mock('../audio/LocalPlayer', () => ({ default: (props: { onTrackChange: (trac
 </div> }));
 vi.mock('../music/providers', async importOriginal => ({
   ...await importOriginal<typeof import('../music/providers')>(),
-  searchStashCatalog: vi.fn().mockImplementation(async query=>[{id:'yt_abcdefghijk',title:'Original test song '+(query.includes('lyric')?'Official Lyrics Video':'Official Music Video'),artist:'Test artist',album:'Studio',duration:200,provider:'resolver',sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk',youtubeVideoId:'abcdefghijk'}]),
+  searchStashCatalog: vi.fn().mockImplementation(async query=>[{id:'yt_abcdefghijk',title:'Original test song '+(query.includes('lyric')?'Official Lyrics Video':'Official Music Video'),artist:'Test artist',viewCount:5432100,album:'Studio',duration:200,provider:'resolver',sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk',youtubeVideoId:'abcdefghijk'}]),
 }));
-vi.mock('../metadata/TrackFinder', () => ({ default: () => null }));
+vi.mock('../metadata/TrackFinder', () => ({ default: (props:{onLyricsFound:(value:Omit<import('../lyrics/ManualLyrics').IncomingLyrics,'token'>)=>void;onStatusChange?:(message:string)=>void}) => <>
+ <button onClick={()=>props.onStatusChange?.('Searching synced lyrics…')}>Fixture lyrics loading</button>
+ <button onClick={()=>props.onStatusChange?.('No automatic lyrics found.')}>Fixture lyrics missing</button>
+ <button onClick={()=>props.onLyricsFound({original:'[00:01]Original fixture lyrics',romanized:'',source:'LRCLIB · Synced',title:'Matched lyrics title',artist:'Matched artist'})}>Fixture lyrics ready</button>
+</> }));
 import App from '../App';
 import {LYRIC_MOTIONS,ORIGINAL_LYRIC_MOTIONS,VOXELVERSE_STYLES} from '../visualization/cinematic/kineticTypography';
 import { searchStashCatalog } from '../music/providers';
@@ -120,7 +124,7 @@ it('stages an account edit before the first cloud snapshot or debounce, without 
   });
   const pending = JSON.parse(localStorage.getItem('lyricflow.v3.user:accountA.preferencesPending') || 'null');
   expect(pending?.intensity).toBe(80);
-  expect(JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!).intensity).toBe(65);
+  expect(JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!).intensity).toBe(100);
 });
 
 it('finds a music or lyrical YouTube background for JioSaavn and saves both source mappings without changing audio', async () => {
@@ -393,7 +397,7 @@ it('saves independent lyric padding and placement-box controls without changing 
  expect(saved.lyricLayout).toEqual({horizontalPadding:7,verticalPadding:0,maxWidth:45,maxHeight:25});
  await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App/>));
  for(const [label,value] of Object.entries(controls))expect(input(label).value).toBe(String(value));
- expect(input('Minimum lyric font size').value).toBe('26');expect(input('Maximum lyric font size').value).toBe('88');
+ expect(input('Minimum lyric font size').value).toBe('30');expect(input('Maximum lyric font size').value).toBe('100');
 });
 
 it('requests External Player audio only after Start and stops it when notification access is revoked',async()=>{
@@ -455,3 +459,52 @@ it('provides options to enable all colour palettes alongside enable all themes',
  expect(prefs.themePalettes['pixel-garden']).toContain('botanical-mint');
 });
 
+
+
+it('opens Song Mapping first and resets expanded disclosures when settings reopen',async()=>{
+ const open=()=>host.querySelector<HTMLButtonElement>('.settings-trigger')!.click();
+ await act(async()=>open());
+ expect(host.querySelector('#settings-tab-mapping')?.getAttribute('aria-selected')).toBe('true');
+ expect(host.querySelectorAll('#app-settings details[open]')).toHaveLength(0);
+ await act(async()=>click('Lyrics'));
+ const details=host.querySelector<HTMLDetailsElement>('#settings-page-lyrics details')!;details.open=true;
+ host.querySelector<HTMLDetailsElement>('.lyrics-mapping-section')!.open=true;
+ host.querySelector<HTMLDetailsElement>('.video-mapping-section')!.open=true;
+ await act(async()=>host.querySelector<HTMLButtonElement>('.settings-close')!.click());
+ await act(async()=>open());
+ expect(host.querySelector('#settings-tab-mapping')?.getAttribute('aria-selected')).toBe('true');
+ expect(host.querySelectorAll('#app-settings details[open]')).toHaveLength(0);
+ const preview=host.querySelector('.song-lyrics-mapping details')!;
+ const timing=[...host.querySelectorAll('.song-lyrics-mapping h3')].find(h=>h.textContent==='Lyrics timing fix')!;
+ expect(preview.compareDocumentPosition(timing)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+it('starts with the requested video, placement, lyric, rendering and language defaults',()=>{
+ const input=(label:string)=>host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+ const expected={'Video dimming':0,'Theme duration without lyrics':6,'Horizontal lyrics padding':0,'Vertical lyrics padding':10,'Maximum lyrics width':60,'Maximum lyrics height':50,'Lyrics font size scale':100,'Minimum lyric font size':30,'Maximum lyric font size':100,'Bass threshold sensitivity':50,'Visual intensity':100,'Audio sensitivity':50,'Motion blur':80,'Animation speed':30,'Spectrum gain':40};
+ for(const [label,value] of Object.entries(expected))expect(input(label)?.value,label).toBe(String(value));
+ expect([...host.querySelectorAll('button')].find(b=>b.textContent==='Fill')?.getAttribute('aria-pressed')).toBe('true');
+ expect(host.querySelector<HTMLSelectElement>('[aria-label="Lyric fill pace"]')?.value).toBe('letter');
+ expect(input('Show FPS on visualizer').checked).toBe(true);
+ expect(JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!).display.playerVolume).toBe(100);
+ const enabled=(kind:string)=>[...host.querySelectorAll<HTMLInputElement>(`input[aria-label^="${kind} · "]`)].filter(i=>i.checked).map(i=>i.getAttribute('aria-label'));
+ expect(enabled('Video')).toEqual(['Video · Left Stage Sweep','Video · Right Stage Sweep','Video · Bottom-Right Cinema','Video · Bottom-Left Editorial']);
+ expect(enabled('Theme')).toEqual(['Theme · Center Stage']);
+ expect(host.textContent).not.toContain('Alternating Left ↔ Right');
+ expect([...host.querySelectorAll('label')].some(l=>/^Genre/.test(l.textContent?.trim()||''))).toBe(false);
+ for(const language of ['Japanese','Korean','Chinese','Russian / Cyrillic','Arabic','Hebrew','Thai'])expect(host.querySelector(`[aria-label="Romanize ${language}"]`)?.getAttribute('aria-checked'),language).toBe('false');
+});
+it('shows loading or not found until actual lyrics load, then includes their source library',async()=>{
+ const summary=()=>host.querySelector('#settings-page-mapping .current-song')!;
+ await act(async()=>click('Load fixture audio'));
+ expect(summary().textContent).not.toContain('Original test song');
+ await act(async()=>click('Fixture lyrics loading'));expect(summary().querySelector('strong')?.textContent).toBe('Loading…');
+ await act(async()=>click('Fixture lyrics missing'));expect(summary().querySelector('strong')?.textContent).toBe('Not found');
+ await act(async()=>click('Fixture lyrics ready'));
+ expect(summary().querySelector('strong')?.textContent).toBe('Matched lyrics title');
+ expect(summary().textContent).toContain('LRC Library');
+});
+it('includes the selected video channel and view count beside its title',async()=>{
+ await act(async()=>{click('Load JioSaavn fixture');await new Promise(r=>setTimeout(r,750));});
+ const video=host.querySelectorAll('#settings-page-mapping .current-song')[1];
+ expect(video.textContent).toContain('Official Music Video');expect(video.textContent).toContain('Test artist');expect(video.textContent).toContain('5.4M views');
+});

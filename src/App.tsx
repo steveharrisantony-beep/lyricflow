@@ -50,6 +50,7 @@ import {
 import { clampLyricDelay, formatLyricDelay } from "./lyrics/lyricTiming";
 import ManualLyrics, {
   LYRIC_COLOR_MAP,
+  describeLyricProvider,
   type IncomingLyrics,
   type LyricColorMode,
 } from "./lyrics/ManualLyrics";
@@ -62,7 +63,7 @@ import {
   type TrackInfo,
 } from "./metadata/trackInfo";
 import { findYouTubeBackgrounds } from "./music/backgroundVideos";
-import type { SongResult } from "./music/providers";
+import {formatViewCount,type SongResult} from "./music/providers";
 import { useVideoAutoSync } from "./music/useVideoAutoSync";
 import {
   getEnabledRomanizationLanguages,
@@ -96,6 +97,8 @@ import {
 import {ALL_CURRENT_WORD_STYLE_IDS,CURRENT_WORD_STYLES,normalizeWordStyle,normalizeWordStylePool,type CurrentWordStyle} from "./visualization/cinematic/currentWordStyles";
 import {
   ALL_PLACEMENT_MODES,
+  DEFAULT_VIDEO_PLACEMENTS,
+  DEFAULT_THEME_PLACEMENTS,
   LYRIC_PLACEMENT_MODES,
   VOXELVERSE_STYLES,
   normalizeMotionPool,
@@ -224,16 +227,24 @@ export default function App({ user = null }: { user?: User | null }) {
     }
   }, [resolvedTheme]);
 
-  const [settingsPage, setSettingsPage] = useState<SettingsPage>("background");
+  const [settingsPage, setSettingsPage] = useState<SettingsPage>("mapping");
   const [mappingTarget, setMappingTarget] = useState<HTMLDivElement | null>(
     null,
   );
   const [mappingSearchOpen, setMappingSearchOpen] = useState(false);
+  const [settingsSession,setSettingsSession]=useState(0);
   const [playerOverlayOpen, setPlayerOverlayOpen] = useState(false);
   const [showFps, setShowFps] = useState(
-    () => initialExtended.showFps === true,
+    () => initialExtended.showFps !== false,
   );
   const closeSettings = useCallback(() => setCinemaControlsOpen(false), []);
+  const openSettings = useCallback(() => {
+    setSettingsPage("mapping");
+    setSettingsSession(session=>session+1);
+    setMappingSearchOpen(false);
+    setCustomEditOpen(false);
+    setCinemaControlsOpen(true);
+  }, []);
 
   // Android External Player & Auto-matched YouTube Video state
   const [autoVideoMatch, setAutoVideoMatch] = useState<{
@@ -244,6 +255,7 @@ export default function App({ user = null }: { user?: User | null }) {
     candidateCount: number;
   }>({ key: "", id: null, pending: false, videos: [], candidateCount: 0 });
   const [manualVideoSearchKey, setManualVideoSearchKey] = useState("");
+  const [selectedVideoMetadata,setSelectedVideoMetadata]=useState<SongResult|null>(null);
   const [externalAudioMode, setExternalAudioMode] =
     useState<ExternalAudioCaptureMode>("internal");
   const [externalMedia, setExternalMedia] = useState<ExternalMediaState | null>(
@@ -327,7 +339,7 @@ export default function App({ user = null }: { user?: User | null }) {
       );
       if (valid.length > 0) return valid;
     }
-    return [...ALL_PLACEMENT_MODES];
+    return [...DEFAULT_VIDEO_PLACEMENTS];
   });
   const [themePlacementMode] =
     useState<LyricPlacementMode>(() => {
@@ -347,7 +359,7 @@ export default function App({ user = null }: { user?: User | null }) {
       );
       if (valid.length > 0) return valid;
     }
-    return [...ALL_PLACEMENT_MODES];
+    return [...DEFAULT_THEME_PLACEMENTS];
   });
   // Theme rotation duration in lyric lines and seconds without lyrics
   const [themeDurationLines, setThemeDurationLines] = useState<number>(() => {
@@ -357,7 +369,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const [themeDurationSeconds, setThemeDurationSeconds] = useState<number>(
     () => {
       const n = Number(initialExtended.themeDurationSeconds);
-      return Number.isFinite(n) && n >= 4 && n <= 60 ? Math.round(n) : 12;
+      return Number.isFinite(n) && n >= 4 && n <= 60 ? Math.round(n) : 6;
     },
   );
   // Romanization master toggle & supported languages
@@ -422,7 +434,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const [youtubeBackgroundMode, setYoutubeBackgroundMode] =
     useState<YouTubeBackgroundMode>(initialPrefs.display.youtubeBackgroundMode);
   const [videoFitMode, setVideoFitMode] = useState<VideoFitMode>(() =>
-    initialExtended.videoFitMode === "stretch" ? "stretch" : "default",
+    initialExtended.videoFitMode === "default" ? "default" : "stretch",
   );
   const [videoOverlayOpacity, setVideoOverlayOpacity] = useState<number>(
     initialPrefs.display.videoOverlayOpacity,
@@ -482,6 +494,7 @@ export default function App({ user = null }: { user?: User | null }) {
 
   const [customEditOpen, setCustomEditOpen] = useState(false);
   const [lyricStatusMessage, setLyricStatusMessage] = useState("");
+  const [lyricStatusRecordingKey,setLyricStatusRecordingKey]=useState("");
 
   const [demo, setDemo] = useState(true);
   const [paused, setPaused] = useState(false);
@@ -501,6 +514,7 @@ export default function App({ user = null }: { user?: User | null }) {
     name: "",
     url: "",
     original: "",
+    hasContent: false,
     offset: 0,
   });
   const [fileEpoch, setFileEpoch] = useState(0);
@@ -587,7 +601,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const lyricsKey =
     activeLyrics.recordingKey === recordingKey ? activeLyrics.lyricsKey : "";
   const onLyricContentChange = useCallback(
-    (original: string, sourceUrl: string, sourceName: string, offset = 0) => {
+    (original: string, sourceUrl: string, sourceName: string, offset = 0, hasContent = Boolean(original.trim())) => {
       const nextKey = lyricFingerprint(original, sourceUrl);
       const nextName = sourceName.slice(0, 256);
       setActiveLyrics((prev) =>
@@ -596,11 +610,13 @@ export default function App({ user = null }: { user?: User | null }) {
         prev.name === nextName &&
         prev.url === sourceUrl &&
         prev.original === original &&
+        prev.hasContent === hasContent &&
         prev.offset === offset
           ? prev
           : {
               recordingKey,
               original,
+              hasContent,
               offset,
               lyricsKey: nextKey,
               name: nextName,
@@ -1499,14 +1515,26 @@ export default function App({ user = null }: { user?: User | null }) {
     ? `Manual video delay: ${videoDelaySeconds > 0 ? "+" : ""}${videoDelaySeconds}s`
     : autoVideoSyncStatus;
 
-  const currentLyricsTitle =
-    incoming?.title || localTrack?.title || "No lyrics loaded";
-  const currentVideoTitle =
-    matchedVideoCandidate?.title ||
-    localTrack?.videoTitle ||
-    (stageYoutubeVideoId
-      ? localTrack?.title || stageYoutubeVideoId
-      : "No video selected");
+  const hasLoadedLyrics=activeLyrics.recordingKey===recordingKey&&activeLyrics.hasContent;
+  const lyricsLoading=Boolean(localTrack&&(
+    (localTrack.source!=="manual"&&localTrack.title.trim().length>=2&&lyricStatusRecordingKey!==recordingKey)||
+    (lyricStatusRecordingKey===recordingKey&&/searching|loading|resolving|switching|looking/i.test(lyricStatusMessage))
+  ));
+  const currentLyricsTitle=hasLoadedLyrics
+    ?incoming?.title||localTrack?.title||"Untitled lyrics"
+    :lyricsLoading?"Loading…":"Not found";
+  const currentLyricsLibrary=hasLoadedLyrics
+    ?describeLyricProvider(activeLyrics.name,/<\d+:/.test(activeLyrics.original),Boolean(activeLyrics.original.trim()),true).providerName
+    :"";
+  const currentVideoMetadata=selectedVideoMetadata&&extractYouTubeVideoId(selectedVideoMetadata)===stageYoutubeVideoId
+    ?selectedVideoMetadata:matchedVideoCandidate;
+  const videoIsAudioTrack=Boolean(stageYoutubeVideoId&&extractYouTubeVideoId(localTrack)===stageYoutubeVideoId);
+  const currentVideoTitle=stageYoutubeVideoId
+    ?currentVideoMetadata?.title||(videoIsAudioTrack?localTrack?.videoTitle||localTrack?.title:undefined)||`YouTube video (${stageYoutubeVideoId})`
+    :"No video selected";
+  const currentVideoChannel=currentVideoMetadata?.artist||(videoIsAudioTrack?localTrack?.channelHint||localTrack?.artist:undefined)||"Channel unavailable";
+  const currentVideoViewCount=currentVideoMetadata?.viewCount??(videoIsAudioTrack?localTrack?.viewCount:undefined);
+  const currentVideoViews=currentVideoViewCount===0?"0 views":formatViewCount(currentVideoViewCount)||"Views unavailable";
 
   useEffect(() => {
     if (!localTrack || !lyricsKey) return;
@@ -1588,7 +1616,7 @@ export default function App({ user = null }: { user?: User | null }) {
           className="settings-trigger"
           aria-controls="app-settings"
           aria-expanded={cinemaControlsOpen}
-          onClick={() => setCinemaControlsOpen(true)}
+          onClick={openSettings}
         >
           <SlidersHorizontal size={17} />
           Settings
@@ -1724,18 +1752,10 @@ export default function App({ user = null }: { user?: User | null }) {
                     <button
                       type="button"
                       className="glass"
-                      onClick={() =>
-                        setCinemaControlsOpen((v) => {
-                          const next = !v;
-                          if (next) {
-                            setFullscreenPlayerOpen(false);
-                            setCinemaHudVisible(true);
-                          } else {
-                            revealCinemaHud();
-                          }
-                          return next;
-                        })
-                      }
+                      onClick={() => {
+                        if(cinemaControlsOpen){setCinemaControlsOpen(false);revealCinemaHud();}
+                        else {setFullscreenPlayerOpen(false);setCinemaHudVisible(true);openSettings();}
+                      }}
                       aria-expanded={cinemaControlsOpen}
                       aria-controls="app-settings"
                     >
@@ -1834,15 +1854,16 @@ export default function App({ user = null }: { user?: User | null }) {
             mapping: (
               <>
                 <div className="current-song">
-                  <span>Current lyrics title</span>
+                  <span>Current lyrics title{currentLyricsLibrary&&<> · {currentLyricsLibrary}</>}</span>
                   <strong>{currentLyricsTitle}</strong>
-                  {(incoming?.artist || localTrack?.artist) && (
+                  {hasLoadedLyrics && (incoming?.artist || localTrack?.artist) && (
                     <small>{incoming?.artist || localTrack?.artist}</small>
                   )}
                 </div>
                 <div className="current-song">
                   <span>Current video title</span>
                   <strong>{currentVideoTitle}</strong>
+                  {stageYoutubeVideoId&&<small>{currentVideoChannel} · {currentVideoViews}</small>}
                 </div>
                 {!localTrack && (
                   <p className="empty-note">
@@ -1898,7 +1919,7 @@ export default function App({ user = null }: { user?: User | null }) {
                     className="mapping-lyrics-controls"
                   />
                 </details>
-                <details className="disclosure video-mapping-section" open>
+                <details className="disclosure video-mapping-section">
                   <summary>Video mapping</summary>
                   <CorrectionControls
                     key={"corrections-" + recordingKey}
@@ -1936,7 +1957,7 @@ export default function App({ user = null }: { user?: User | null }) {
                     changeVideoSlot={
                       localTrack && hasSeparateAudioStream && !isAdPlaying ? (
                         <YouTubeBackgroundPicker
-                          key={"video-picker-" + recordingKey}
+                          key={"video-picker-" + recordingKey + "-" + settingsSession}
                           track={localTrack}
                           activeVideoId={activeYoutubeVideoId}
                           preference={preferredVideoType}
@@ -1956,7 +1977,8 @@ export default function App({ user = null }: { user?: User | null }) {
                               searching ? recordingKey : "",
                             )
                           }
-                          onChoose={(id) => {
+                          onChoose={(id, candidate) => {
+                            setSelectedVideoMetadata(candidate||null);
                             saveVideoChoice(
                               id,
                               id === activeYoutubeVideoId && hasManualVideoDelay
@@ -2166,7 +2188,7 @@ export default function App({ user = null }: { user?: User | null }) {
                   <SwitchSetting label="Lyric animations" checked={spatialTypography} onChange={setSpatialTypography}/>
                   <SwitchSetting label="Current word styles" checked={wordStylesEnabled} onChange={setWordStylesEnabled}/>
                   <SwitchSetting label="Current word animations" checked={wordAnimationsEnabled} onChange={setWordAnimationsEnabled}/>
-                  <p className="muted">Styles stay still. Word effects require word-synced lyrics.</p>
+                  <p className="muted">Word effects require word-synced lyrics.</p>
                   <details className="disclosure">
                     <summary>Fonts <span>{enabledFonts.length} / {FONT_SHOWCASE.length}</span></summary>
                     <div className="selection-list">
@@ -2304,7 +2326,7 @@ export default function App({ user = null }: { user?: User | null }) {
                             saveTrackCorrection(value);
                           }}
                           onLyricsFound={acceptLyrics}
-                          onStatusChange={setLyricStatusMessage}
+                          onStatusChange={(message)=>{setLyricStatusMessage(message);setLyricStatusRecordingKey(recordingKey);}}
                         />
                       )}
                     </SettingGroup>

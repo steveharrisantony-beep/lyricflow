@@ -9,7 +9,7 @@ export interface LyricLayoutSettings {
 }
 
 export const DEFAULT_LYRIC_LAYOUT:Readonly<LyricLayoutSettings>={
- horizontalPadding:2,verticalPadding:2,maxWidth:76,maxHeight:40
+ horizontalPadding:0,verticalPadding:10,maxWidth:60,maxHeight:50
 };
 
 export function normalizeLyricLayout(raw?:Partial<LyricLayoutSettings>|null):LyricLayoutSettings{
@@ -23,14 +23,14 @@ export function normalizeLyricLayout(raw?:Partial<LyricLayoutSettings>|null):Lyr
 
 /** Anchor the constrained box to the selected edge; each row shares that alignment. */
 export function resolveLyricBox(w:number,h:number,placement:Exclude<LyricPlacementMode,'auto'>,
- settings?:Partial<LyricLayoutSettings>,cueIndex=0,duetSide?:'left'|'right'){
+ settings?:Partial<LyricLayoutSettings>,_cueIndex=0,duetSide?:'left'|'right'){
  const layout=normalizeLyricLayout(settings);
  const padX=w*layout.horizontalPadding/100,padY=h*layout.verticalPadding/100;
  const left=duetSide==='right'?Math.max(padX,w*.515):padX;
  const right=duetSide==='left'?Math.min(w-padX,w*.485):w-padX;
  const width=Math.min(right-left,w*layout.maxWidth/100);
  const height=Math.min(h-2*padY,h*layout.maxHeight/100);
- const side=duetSide??(placement==='alternating'?(cueIndex%2===0?'left':'right'):placement);
+ const side=duetSide??placement;
  const align=side.includes('left')?'left':side.includes('right')?'right':'center';
  const vertical=placement.startsWith('bottom-')?'bottom':placement.startsWith('top-')?'top':'center';
  const x=align==='left'?left:align==='right'?right-width:(left+right-width)/2;

@@ -12,6 +12,7 @@ export interface TrackInfo {
   videoId?:string;
   videoTitle?:string;
   channelHint?:string;
+  viewCount?:number;
   sponsorblockOffsetSec?:number;
   isAd?:boolean;
 }

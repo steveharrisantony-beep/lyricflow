@@ -127,6 +127,9 @@ export default function SettingsPanel({
   }, []);
   const modal = open && (compact || fullscreen);
   useEffect(() => {
+    panel.current?.querySelectorAll<HTMLDetailsElement>('details[open]').forEach(details => { details.open = false; });
+  }, [open, page]);
+  useEffect(() => {
     if (!modal) return;
     const previous = document.activeElement as HTMLElement | null;
     const oldOverflow = document.body.style.overflow;

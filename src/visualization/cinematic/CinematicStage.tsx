@@ -106,10 +106,10 @@ const sceneForAudio=(
  manual:SceneId,
  auto:boolean,
  enabledScenes?:readonly SceneId[],
- durationSeconds=12,
+ durationSeconds=6,
  seedKey=''
 ):DirectedScene=>{
- const span=Math.max(4,Math.min(120,Number(durationSeconds)||12));
+ const span=Math.max(4,Math.min(120,Number(durationSeconds)||6));
  const index=Math.max(0,Math.floor(time/span));
  const allowed=enabledScenes&&enabledScenes.length>0?AUDIO_ONLY_SCENES.filter(s=>enabledScenes.includes(s)):AUDIO_ONLY_SCENES;
  const basePool=allowed.length>0?[...allowed]:[...AUDIO_ONLY_SCENES];
@@ -304,7 +304,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
    let lyric=getLyricState(time);
    const activeCueNow=(config.audioPaused||config.hideStageLyrics)?null:lyric.cue;
    const directed=(config.autoScenes||config.enabledScenes?.length===1)&&sequence.length>0?sceneAt(sequence,lyric.position):null;
-   const candidateScene=directed??sceneForAudio(time,config.manualScene,config.autoScenes,config.enabledScenes,config.themeDurationSeconds??12,config.recordingKey||'');
+   const candidateScene=directed??sceneForAudio(time,config.manualScene,config.autoScenes,config.enabledScenes,config.themeDurationSeconds??6,config.recordingKey||'');
    const lockHolder=element as unknown as {_lockedCueKey?:string;_lockedScene?:DirectedScene|null};
    let scene:DirectedScene;
    if(!config.autoScenes){
@@ -425,12 +425,12 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
     const activePaletteId=previousPaletteId??resolveScenePaletteId(scene.id);
     const isDuet=Boolean(secondaryCue||activeCue.duetSide);
     const primaryDuetSide=activeCue.duetSide??(secondaryCue?'left':undefined);
-    const activePlacementMode=useYtVideoBg
-     ?(config.videoPlacementMode??config.lyricPlacementMode??'bottom-right')
-     :(config.themePlacementMode??config.lyricPlacementMode??'center');
     const activeEnabledPlacements=useYtVideoBg
      ?(config.enabledVideoPlacements??config.enabledPlacements)
      :(config.enabledThemePlacements??config.enabledPlacements);
+    const activePlacementMode=activeEnabledPlacements?.length?'auto':useYtVideoBg
+     ?(config.videoPlacementMode??config.lyricPlacementMode??'bottom-right')
+     :(config.themePlacementMode??config.lyricPlacementMode??'center');
     const result=drawKineticLyrics({
      c:textCtx,
      scene,
@@ -627,7 +627,7 @@ export default function CinematicStage(props:CinematicProps){
  const transitionMs=props.reducedMotion||props.enabledThemeTransitions?.length===0?0:TRANSITION_SECONDS*1000;
  const mustPauseVideo=(config:CinematicProps,waiting:boolean,endedEarly=false)=>Boolean(config.audioPaused||waiting||endedEarly||(config.hasSeparateAudioStream&&(config.youtubeBackgroundMode==='theme'||config.videoSearchPending||config.advertisementPlaying)));
 
- const blackOverlayOpacity=Math.max(0,Math.min(0.92,props.videoOverlayOpacity??0.45));
+ const blackOverlayOpacity=Math.max(0,Math.min(0.92,props.videoOverlayOpacity??0));
 
  // The previous iframe is removed in the same render as a recording/video change.
  // Keeping its media alive while the next search loads can leak the old song's video/audio.
@@ -640,7 +640,7 @@ export default function CinematicStage(props:CinematicProps){
    sendYouTubeCommand(iframe,'setVolume',[0]);
   }else{
    sendYouTubeCommand(iframe,'unMute');
-   sendYouTubeCommand(iframe,'setVolume',[cur.playerVolume??85]);
+   sendYouTubeCommand(iframe,'setVolume',[cur.playerVolume??100]);
   }
   const target=videoSyncTarget(cur.playbackTime??0,cur.videoDelaySeconds,Boolean(cur.hasSeparateAudioStream));
   const dur=ytDurationRef.current;
@@ -834,7 +834,7 @@ export default function CinematicStage(props:CinematicProps){
     String(Boolean(props.audioPaused)),
     String(Boolean(props.videoSearchPending)),
     String(Boolean(props.advertisementPlaying)),
-    String(props.playerVolume??85)
+    String(props.playerVolume??100)
    ].join('|');
    const controlChanged=controlSig!==lastControlSigRef.current;
    lastVideoMappingRef.current=mapping;
@@ -856,7 +856,7 @@ export default function CinematicStage(props:CinematicProps){
    }else{
     if(controlChanged){
      sendYouTubeCommand(ytIframeRef.current,'unMute');
-     sendYouTubeCommand(ytIframeRef.current,'setVolume',[props.playerVolume??85]);
+     sendYouTubeCommand(ytIframeRef.current,'setVolume',[props.playerVolume??100]);
     }
     if(Math.abs(target.time-lastSyncTimeRef.current)>1.5){
      sendYouTubeCommand(ytIframeRef.current,'seekTo',[target.time,true]);
@@ -937,7 +937,7 @@ export default function CinematicStage(props:CinematicProps){
   ?`${embedHost}/embed/${encodeURIComponent(activeEmbedVid)}?autoplay=0&controls=${controlsParam}&disablekb=${showInteractiveControls?'0':'1'}&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&showinfo=0&enablejsapi=1${props.hasSeparateAudioStream?'&mute=1':''}${originParam}`
   :'';
 
- const fitMode:VideoFitMode=props.videoFitMode||'default';
+ const fitMode:VideoFitMode=props.videoFitMode||'stretch';
  const safeStageW=Math.max(1,stageSize.w);
  const safeStageH=Math.max(1,stageSize.h);
  const stageAspect=safeStageW/safeStageH;

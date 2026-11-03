@@ -90,7 +90,7 @@ describe('single-phrase typography & sequential lyric colour engine',()=>{
   const fullPx=parseFloat(fullFonts[fullFonts.length-1]?.match(/([\d.]+)px/)?.[1]||'0');
   expect(normalPx).toBeGreaterThan(0);
   expect(fullPx).toBeGreaterThan(normalPx);
-  expect(normalPx).toBeGreaterThanOrEqual(26);expect(fullPx).toBeLessThanOrEqual(88);
+  expect(normalPx).toBeGreaterThanOrEqual(30);expect(fullPx).toBeLessThanOrEqual(100);
  });
 });
 describe('music camera and continuity',()=>{

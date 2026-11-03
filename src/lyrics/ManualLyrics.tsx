@@ -326,8 +326,8 @@ export default function ManualLyrics({
   onLyricFillPaceModeChange,
   displayMode: controlledDisplayMode,
   onDisplayModeChange,
-  minFontSize = 26,
-  maxFontSize = 88,
+  minFontSize = 30,
+  maxFontSize = 100,
   fontScale = 1,
   onMinFontSizeChange,
   onMaxFontSizeChange,
@@ -357,6 +357,7 @@ export default function ManualLyrics({
     sourceUrl: string,
     sourceName: string,
     offset?: number,
+    hasContent?: boolean,
   ) => void;
   enabledScenes?: readonly SceneId[];
   activeSceneId?: SceneId;
@@ -392,9 +393,9 @@ export default function ManualLyrics({
   const [internalColorMode, setInternalColorMode] =
     useState<LyricColorMode>("auto");
   const [internalFillPace, setInternalFillPace] =
-    useState<LyricFillPaceMode>("auto");
+    useState<LyricFillPaceMode>("letter");
   const [offset, setOffset] = useState(0);
-  const [genre, setGenre] = setGenreState("");
+  const genre = "";
   const [source, setSource] = useState("Automatic (Apple Music / LRCLIB)");
   const [sourceUrl, setSourceUrl] = useState("");
   const [corrected, setCorrected] = useState(false);
@@ -470,16 +471,12 @@ export default function ManualLyrics({
     onLyricFillPaceModeChange?.(next);
   };
 
-  function setGenreState(initial: string) {
-    return useState(initial);
-  }
-
-  useLayoutEffect(() => {
-    onLyricContentChange?.(raw, sourceUrl, source, offset);
-  }, [raw, sourceUrl, source, offset, onLyricContentChange]);
   const lines = useMemo(() => parseLRC(raw,track?.duration), [raw,track?.duration]);
   const romanLines = useMemo(() => parseLRC(roman,track?.duration), [roman,track?.duration]);
   const language = useMemo(() => detectLanguage(raw || plain), [raw, plain]);
+  useLayoutEffect(() => {
+    onLyricContentChange?.(raw, sourceUrl, source, offset, Boolean(lines.some(line=>line.text.trim()) || plain.trim()));
+  }, [raw, plain, lines, sourceUrl, source, offset, onLyricContentChange]);
   const sections = useMemo(() => analyzeSections(lines, genre), [lines, genre]);
   const lyricCues = useMemo(() => buildCues(lines, romanLines, genre, track?.duration), [lines, romanLines, genre, track?.duration]);
   const cuesByLine = useMemo(() => new Map(lines.filter(line => line.text.trim()).map((line, index) => [line, lyricCues[index]])), [lines, lyricCues]);
@@ -930,204 +927,6 @@ export default function ManualLyrics({
 
   const mappingControls = (
     <div className="song-lyrics-mapping">
-      <h3>Lyrics timing fix</h3>
-      <div
-        className="delay-controls-row"
-        style={{ display: "flex", alignItems: "center", gap: 6 }}
-      >
-        <button
-          type="button"
-          className="upload-button"
-          aria-label="Decrease lyric delay 0.5s"
-          style={{ padding: "6px 10px", minHeight: 34 }}
-          onClick={() => {
-            const next = clampLyricDelay(delay - 0.5);
-            setDelayDraft(String(next));
-            onDelayChange(next);
-          }}
-        >
-          -0.5s
-        </button>
-        <input
-          aria-label="Lyrics delay seconds"
-          type="text"
-          inputMode="text"
-          placeholder="0"
-          value={delayDraft}
-          onChange={(e) => {
-            const val = e.target.value.replace(/−/g, "-");
-            if (!/^[+-]?\d*\.?\d*$/.test(val)) return;
-            setDelayDraft(val);
-            if (val.trim() === "") {
-              onDelayChange(0);
-              return;
-            }
-            if (
-              val !== "-" &&
-              val !== "+" &&
-              val !== "-." &&
-              val !== "+." &&
-              val !== "."
-            ) {
-              const num = Number(val);
-              if (Number.isFinite(num)) onDelayChange(clampLyricDelay(num));
-            }
-          }}
-          onBlur={() => {
-            const normalized = delayDraft.trim().replace(/−/g, "-");
-            if (normalized === "") {
-              setDelayDraft("0");
-              onDelayChange(0);
-              return;
-            }
-            const num = Number(normalized);
-            if (
-              normalized === "-" ||
-              normalized === "+" ||
-              !Number.isFinite(num)
-            ) {
-              setDelayDraft(String(delay));
-            } else {
-              const clamped = clampLyricDelay(num);
-              setDelayDraft(String(clamped));
-              onDelayChange(clamped);
-            }
-          }}
-          style={{ width: 88, textAlign: "center" }}
-        />
-        <button
-          type="button"
-          className="upload-button"
-          aria-label="Increase lyric delay 0.5s"
-          style={{ padding: "6px 10px", minHeight: 34 }}
-          onClick={() => {
-            const next = clampLyricDelay(delay + 0.5);
-            setDelayDraft(String(next));
-            onDelayChange(next);
-          }}
-        >
-          +0.5s
-        </button>
-      </div>
-      <div
-        className="tap-sync-buttons"
-        style={{ display: "flex", gap: 8, marginTop: 8 }}
-      >
-        <button
-          type="button"
-          className="upload-button"
-          aria-pressed={lyricTapAnchor?.kind === "text"}
-          onClick={() => handleLyricTap("text")}
-        >
-          Text seen
-        </button>
-        <button
-          type="button"
-          className="upload-button"
-          aria-pressed={lyricTapAnchor?.kind === "voice"}
-          onClick={() => handleLyricTap("voice")}
-        >
-          Voice heard
-        </button>
-      </div>
-      {changeLyricsSlot}
-      <button
-        type="button"
-        className="text-button"
-        onClick={onToggleCustomEdit}
-        aria-expanded={customEditOpen}
-        disabled={!track}
-      >
-        {customEditOpen ? "Close editor" : "Edit or import lyrics"}
-      </button>
-      {plain && !lines.length && (
-        <div className="plain-lyrics-fallback">
-          <textarea
-            rows={4}
-            readOnly
-            value={plain}
-            aria-label="Untimed lyrics"
-            className="plain-preview"
-          />
-          <button className="upload-button" onClick={estimatePlain}>
-            Create approximate timestamps
-          </button>
-        </div>
-      )}
-
-      {customEditOpen && (
-        <div className="lyrics-editor">
-          <label>
-            Lyrics (LRC / TTML)
-            <textarea
-              rows={7}
-              value={raw}
-              onChange={(e) => updateRaw(e.target.value)}
-              placeholder="[00:12.50]<00:12.50>Word <00:13.00>synced <00:13.50>line"
-            />
-          </label>
-          <label>
-            Romanization (editable)
-            <textarea
-              rows={7}
-              value={roman}
-              onChange={(e) => {
-                setRoman(e.target.value);
-                setCorrected(true);
-              }}
-              placeholder="Auto-generated or corrected Romanized lyrics"
-            />
-          </label>
-          <div className="editor-actions">
-            <input
-              className="visually-hidden"
-              ref={fileRef}
-              type="file"
-              accept=".lrc,.ttml,.xml,.txt,text/plain"
-              aria-label="Import LRC or TTML file"
-              onChange={() => void importLocal()}
-            />
-            <button
-              className="upload-button"
-              onClick={() => fileRef.current?.click()}
-            >
-              Import LRC / TTML
-            </button>
-
-            <button className="upload-button" onClick={autoGenerate}>
-              Romanize locally
-            </button>
-            <button className="upload-button" onClick={saveOverride}>
-              Save lyrics for current song
-            </button>
-            <button
-              className="player-remove"
-              onClick={() => {
-                setRaw("");
-                setRoman("");
-                setPlain("");
-                setSource("Cleared");
-              }}
-            >
-              Clear
-            </button>
-          </div>
-          <label className="rights-check">
-            <input
-              type="checkbox"
-              checked={autoRoman}
-              onChange={(e) => setAutoRoman(e.target.checked)}
-            />
-            Automatically Romanize non-Latin scripts
-          </label>
-        </div>
-      )}
-
-      {message && (
-        <p className="quiet-status" role="status">
-          {message}
-        </p>
-      )}
       <details className="disclosure">
         <summary>Lyrics preview & source</summary>
         {/* Source Attribution Bar: Displays both Lyrics Provider and Audio Source for the active song */}
@@ -1386,6 +1185,205 @@ export default function ManualLyrics({
           )}
         </div>
       </details>
+      <h3>Lyrics timing fix</h3>
+      <div
+        className="delay-controls-row"
+        style={{ display: "flex", alignItems: "center", gap: 6 }}
+      >
+        <button
+          type="button"
+          className="upload-button"
+          aria-label="Decrease lyric delay 0.5s"
+          style={{ padding: "6px 10px", minHeight: 34 }}
+          onClick={() => {
+            const next = clampLyricDelay(delay - 0.5);
+            setDelayDraft(String(next));
+            onDelayChange(next);
+          }}
+        >
+          -0.5s
+        </button>
+        <input
+          aria-label="Lyrics delay seconds"
+          type="text"
+          inputMode="text"
+          placeholder="0"
+          value={delayDraft}
+          onChange={(e) => {
+            const val = e.target.value.replace(/−/g, "-");
+            if (!/^[+-]?\d*\.?\d*$/.test(val)) return;
+            setDelayDraft(val);
+            if (val.trim() === "") {
+              onDelayChange(0);
+              return;
+            }
+            if (
+              val !== "-" &&
+              val !== "+" &&
+              val !== "-." &&
+              val !== "+." &&
+              val !== "."
+            ) {
+              const num = Number(val);
+              if (Number.isFinite(num)) onDelayChange(clampLyricDelay(num));
+            }
+          }}
+          onBlur={() => {
+            const normalized = delayDraft.trim().replace(/−/g, "-");
+            if (normalized === "") {
+              setDelayDraft("0");
+              onDelayChange(0);
+              return;
+            }
+            const num = Number(normalized);
+            if (
+              normalized === "-" ||
+              normalized === "+" ||
+              !Number.isFinite(num)
+            ) {
+              setDelayDraft(String(delay));
+            } else {
+              const clamped = clampLyricDelay(num);
+              setDelayDraft(String(clamped));
+              onDelayChange(clamped);
+            }
+          }}
+          style={{ width: 88, textAlign: "center" }}
+        />
+        <button
+          type="button"
+          className="upload-button"
+          aria-label="Increase lyric delay 0.5s"
+          style={{ padding: "6px 10px", minHeight: 34 }}
+          onClick={() => {
+            const next = clampLyricDelay(delay + 0.5);
+            setDelayDraft(String(next));
+            onDelayChange(next);
+          }}
+        >
+          +0.5s
+        </button>
+      </div>
+      <div
+        className="tap-sync-buttons"
+        style={{ display: "flex", gap: 8, marginTop: 8 }}
+      >
+        <button
+          type="button"
+          className="upload-button"
+          aria-pressed={lyricTapAnchor?.kind === "text"}
+          onClick={() => handleLyricTap("text")}
+        >
+          Text seen
+        </button>
+        <button
+          type="button"
+          className="upload-button"
+          aria-pressed={lyricTapAnchor?.kind === "voice"}
+          onClick={() => handleLyricTap("voice")}
+        >
+          Voice heard
+        </button>
+      </div>
+      {changeLyricsSlot}
+      <button
+        type="button"
+        className="text-button"
+        onClick={onToggleCustomEdit}
+        aria-expanded={customEditOpen}
+        disabled={!track}
+      >
+        {customEditOpen ? "Close editor" : "Edit or import lyrics"}
+      </button>
+      {plain && !lines.length && (
+        <div className="plain-lyrics-fallback">
+          <textarea
+            rows={4}
+            readOnly
+            value={plain}
+            aria-label="Untimed lyrics"
+            className="plain-preview"
+          />
+          <button className="upload-button" onClick={estimatePlain}>
+            Create approximate timestamps
+          </button>
+        </div>
+      )}
+
+      {customEditOpen && (
+        <div className="lyrics-editor">
+          <label>
+            Lyrics (LRC / TTML)
+            <textarea
+              rows={7}
+              value={raw}
+              onChange={(e) => updateRaw(e.target.value)}
+              placeholder="[00:12.50]<00:12.50>Word <00:13.00>synced <00:13.50>line"
+            />
+          </label>
+          <label>
+            Romanization (editable)
+            <textarea
+              rows={7}
+              value={roman}
+              onChange={(e) => {
+                setRoman(e.target.value);
+                setCorrected(true);
+              }}
+              placeholder="Auto-generated or corrected Romanized lyrics"
+            />
+          </label>
+          <div className="editor-actions">
+            <input
+              className="visually-hidden"
+              ref={fileRef}
+              type="file"
+              accept=".lrc,.ttml,.xml,.txt,text/plain"
+              aria-label="Import LRC or TTML file"
+              onChange={() => void importLocal()}
+            />
+            <button
+              className="upload-button"
+              onClick={() => fileRef.current?.click()}
+            >
+              Import LRC / TTML
+            </button>
+
+            <button className="upload-button" onClick={autoGenerate}>
+              Romanize locally
+            </button>
+            <button className="upload-button" onClick={saveOverride}>
+              Save lyrics for current song
+            </button>
+            <button
+              className="player-remove"
+              onClick={() => {
+                setRaw("");
+                setRoman("");
+                setPlain("");
+                setSource("Cleared");
+              }}
+            >
+              Clear
+            </button>
+          </div>
+          <label className="rights-check">
+            <input
+              type="checkbox"
+              checked={autoRoman}
+              onChange={(e) => setAutoRoman(e.target.checked)}
+            />
+            Automatically Romanize non-Latin scripts
+          </label>
+        </div>
+      )}
+
+      {message && (
+        <p className="quiet-status" role="status">
+          {message}
+        </p>
+      )}
+
     </div>
   );
   return (
@@ -1465,24 +1463,7 @@ export default function ManualLyrics({
               onChange={e=>onMaxFontSizeChange?.(Number(e.target.value))}/>
           </label>
           <p className="muted">Limits apply before animation. Long lines shrink further to fit.</p>
-          <label>
-            Genre
-            <select value={genre} onChange={(e) => setGenre(e.target.value)}>
-              <option value="">Auto / unknown</option>
-              {[
-                "Ambient",
-                "Cinematic",
-                "Pop",
-                "EDM",
-                "Rock",
-                "Hip-hop",
-                "Ballad",
-                "Classical",
-              ].map((g) => (
-                <option key={g}>{g}</option>
-              ))}
-            </select>
-          </label>
+
         </div>
 
         <div

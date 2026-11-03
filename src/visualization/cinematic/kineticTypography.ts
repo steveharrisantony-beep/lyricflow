@@ -25,7 +25,6 @@ export type LyricFillPaceMode='auto'|'letter'|'word';
 
 export type LyricPlacementMode=
  |'auto'
- |'alternating'
  |'left'
  |'right'
  |'bottom-right'
@@ -35,7 +34,6 @@ export type LyricPlacementMode=
  |'center';
 
 export const ALL_PLACEMENT_MODES:readonly Exclude<LyricPlacementMode,'auto'>[]=[
- 'alternating',
  'left',
  'right',
  'bottom-right',
@@ -45,9 +43,11 @@ export const ALL_PLACEMENT_MODES:readonly Exclude<LyricPlacementMode,'auto'>[]=[
  'center'
 ] as const;
 
+export const DEFAULT_VIDEO_PLACEMENTS:readonly Exclude<LyricPlacementMode,'auto'>[]=['bottom-left','bottom-right','right','left'];
+export const DEFAULT_THEME_PLACEMENTS:readonly Exclude<LyricPlacementMode,'auto'>[]=['center'];
+
 export const LYRIC_PLACEMENT_MODES:readonly {id:LyricPlacementMode;label:string;detail:string}[]=[
  {id:'auto',label:'Dynamic Stage (Auto)',detail:'Cycles Left, Right, Bottom-Right, Bottom-Left, Diagonal & Center with opposing line entries'},
- {id:'alternating',label:'Alternating Left ↔ Right',detail:'Line 1 enters from Left, Line 2 enters from Right; alternates stage sides'},
  {id:'left',label:'Left Stage Sweep',detail:'Anchored left with staggered left-to-right kinetic entry'},
  {id:'right',label:'Right Stage Sweep',detail:'Anchored right with staggered right-to-left kinetic entry'},
  {id:'bottom-right',label:'Bottom-Right Cinema',detail:'Lower-right cinema placement with rising slide motion'},
@@ -539,8 +539,8 @@ export function drawKineticLyrics({
  customBaseColor,
  bpm=0,
  fillPaceMode='auto',
- minFontSize=26,
- maxFontSize=88,
+ minFontSize=30,
+ maxFontSize=100,
  fontScale,
  layout,
  forceLightText=false,

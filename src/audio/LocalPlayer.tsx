@@ -130,7 +130,7 @@ function LocalPlayer(
   const [active, setActive] = useState(false);
   const [duration, setDuration] = useState(0);
   const [time, setTime] = useState(0);
-  const [volume, setVolume] = useState(preferredVolume ?? 85);
+  const [volume, setVolume] = useState(preferredVolume ?? 100);
   useEffect(() => {
     if (preferredVolume === undefined) return;
     setVolume(preferredVolume);

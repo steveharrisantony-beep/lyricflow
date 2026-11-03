@@ -736,25 +736,14 @@ function stableHash(input:string):number {
  return h>>>0;
 }
 
-function normalizeGenre(value:string){return value.toLowerCase().replace(/[-_]/g,' ').trim()}
-
-function compareCandidates(a:Template,b:Template,plan:ScenePlan,genre:string,recent:readonly SceneId[],seed:number,poolSize=TEMPLATES.length){
- const isFirstSlot=recent.length===0;
- const noRepeatWindow=Math.max(3,Math.min(poolSize-1,18));
- const grade=(t:Template)=>{
-  let score=isFirstSlot?(t.moods.includes(plan.mood)?12:0):(t.moods.includes(plan.mood)?1.2:0);
-  if(isFirstSlot&&genre&&t.genres.some(g=>genre.includes(g)))score+=3;
-  score+=(1-Math.abs(t.baseEnergy-plan.energy))*0.8;
-  if(t.id===recent[recent.length-1])score-=200;
-  if(recent.slice(-3).includes(t.id))score-=140;
-  if(recent.slice(-noRepeatWindow).includes(t.id))score-=65;
-  const usedCount=recent.filter(id=>id===t.id).length;
-  score-=usedCount*18;
-  if(t.family===byId[recent[recent.length-1]]?.family)score-=3;
-  score+=((stableHash(t.id+':'+seed)%10000)/10000)*9.5;
-  return score;
+function randomThemePicker(pool:readonly Template[],songKey:string){
+ let remaining:Template[]=[],previous:SceneId|undefined;
+ return (slot:number)=>{
+  if(!remaining.length)remaining=[...pool];
+  let index=stableHash(`${songKey}:theme:${slot}`)%remaining.length;
+  if(remaining.length>1&&remaining[index].id===previous)index=(index+1)%remaining.length;
+  const chosen=remaining.splice(index,1)[0];previous=chosen.id;return chosen;
  };
- return grade(b)-grade(a);
 }
 
 /** Snap any internal scene boundary that lands inside an active lyric line to the completion of that line (cue.end). */
@@ -773,18 +762,17 @@ function snapBoundaryToLineEnd(t:number,cues:readonly LyricCue[]):number {
 export function buildCinematicSchedule(
  plans:readonly ScenePlan[],
  cues:readonly LyricCue[],
- genre='',
+ _genre='',
  songKey='',
  enabledScenes?:readonly SceneId[],
  themeDurationLines?:number
 ):DirectedScene[]{
  if(!cues.length)return [];
- const g=normalizeGenre(genre);
- const recent:SceneId[]=[];
  const result:DirectedScene[]=[];
  const allowedSet=enabledScenes&&enabledScenes.length>0?new Set(enabledScenes):null;
  const pool=allowedSet?TEMPLATES.filter(t=>allowedSet.has(t.id)):TEMPLATES;
  const activeTemplates=pool.length>0?pool:TEMPLATES;
+ const chooseTheme=randomThemePicker(activeTemplates,songKey);
  const source=plans.length?plans:[{
   start:cues[0].time,end:cues[cues.length-1].end,mood:'abstract',font:'grotesk',
   motion:'drift',camera:'dolly',confidence:.2,palette:0,reason:'fallback',energy:.35
@@ -808,8 +796,7 @@ export function buildCinematicSchedule(
    if(finish>currentStart+0.05){
     const activePlan=source.find(s=>currentStart>=s.start&&currentStart<s.end)||source[0];
     const seed=stableHash(songKey+':lines:'+part+':'+idx);
-    const sorted=[...activeTemplates].sort((a,b)=>compareCandidates(a,b,activePlan,g,recent,seed,activeTemplates.length));
-    const chosen=sorted[0];
+    const chosen=chooseTheme(result.length);
     const variation=seed%5;
     const layout=LAYOUTS[(LAYOUTS.indexOf(chosen.layout)+variation)%LAYOUTS.length];
     const camera=CAMERAS[(CAMERAS.indexOf(chosen.camera)+(seed%3))%CAMERAS.length];
@@ -827,7 +814,6 @@ export function buildCinematicSchedule(
      reason:activePlan.reason,
      paletteId:paletteObj?.id
     });
-    recent.push(chosen.id);
     currentStart=finish;
     part++;
    }
@@ -849,15 +835,13 @@ export function buildCinematicSchedule(
    const finish=part===n-1?rawSectionEnd:Math.min(rawSectionEnd,Math.max(partStart+0.2,snapBoundaryToLineEnd(rawFinish,cues)));
    if(finish<=partStart+0.05)continue;
    const seed=stableHash(songKey+':'+i+':'+part);
-   const sorted=[...activeTemplates].sort((a,b)=>compareCandidates(a,b,section,g,recent,seed,activeTemplates.length));
-   const chosen=sorted[0];
+   const chosen=chooseTheme(result.length);
    const variation=seed%5;
    const layout=LAYOUTS[(LAYOUTS.indexOf(chosen.layout)+variation)%LAYOUTS.length];
    const camera=CAMERAS[(CAMERAS.indexOf(chosen.camera)+(seed%3))%CAMERAS.length];
    const paletteObj=chosen.palettes[seed%chosen.palettes.length];
    result.push({id:chosen.id,start:partStart,end:finish,layout,camera,font:chosen.font,
     transition:chosen.transition,variation,section:i,reason:section.reason,paletteId:paletteObj?.id});
-   recent.push(chosen.id);
    partStart=finish;
   }
   runningStart=rawSectionEnd;

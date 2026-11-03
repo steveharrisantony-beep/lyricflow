@@ -301,7 +301,7 @@ describe('YouTube metadata cleaning & 4-Engine LyricFlow Engine', () => {
     expect(ids).toContain('left');
     expect(ids).toContain('right');
     expect(ids).toContain('bottom-right');
-    expect(ids).toContain('alternating');
+    expect(ids).not.toContain('alternating');
     const [sampleCue] = buildCues([{ time: 12, text: 'Test line' }], []);
     const placement = resolveCuePlacement(
       sampleCue,
