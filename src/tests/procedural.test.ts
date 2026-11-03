@@ -38,5 +38,59 @@ describe('VoxelWall 2D scene & VoxelVerse lyric style registries',()=>{
    expect(byId[id].accent).toMatch(/^#[0-9a-f]{6}$/i);
   }
  });
+ it('zooms Color Riot, roots Pixel Garden below screen, wraps Origami Flight off-screen, and spreads Resonance Plate full-screen',async()=>{
+  const {drawMotionGraphics}=await import('../visualization/cinematic/procedural/MotionGraphics');
+  const {GraphicCompositions}=await import('../visualization/cinematic/procedural/GraphicCompositions');
+  const {NO_AUDIO}=await import('../visualization/cinematic/paint');
+  const w=1000,h=600;
+  const makeCtx=()=>{
+   const scales:[number,number][]=[];
+   const moves:[number,number][]=[];
+   const translates:[number,number][]=[];
+   const strokeRects:[number,number,number,number][]=[];
+   const arcs:[number,number][]=[];
+   const grad={addColorStop:()=>{}};
+   const ctx={
+    save:()=>{},restore:()=>{},clearRect:()=>{},fillRect:()=>{},
+    strokeRect:(x:number,y:number,rw:number,rh:number)=>{strokeRects.push([x,y,rw,rh]);},
+    beginPath:()=>{},closePath:()=>{},fill:()=>{},stroke:()=>{},
+    moveTo:(x:number,y:number)=>{moves.push([x,y]);},
+    lineTo:()=>{},bezierCurveTo:()=>{},quadraticCurveTo:()=>{},
+    arc:(x:number,y:number)=>{arcs.push([x,y]);},
+    ellipse:()=>{},
+    translate:(x:number,y:number)=>{translates.push([x,y]);},
+    rotate:()=>{},
+    scale:(sx:number,sy:number)=>{scales.push([sx,sy]);},
+    createLinearGradient:()=>grad,
+    createRadialGradient:()=>grad,
+    fillStyle:'',strokeStyle:'',lineWidth:1,lineCap:'butt',globalAlpha:1,shadowColor:'',shadowBlur:0,shadowOffsetY:0,
+   } as unknown as CanvasRenderingContext2D;
+   return {ctx,scales,moves,translates,strokeRects,arcs};
+  };
+
+  const riot=makeCtx();
+  new GraphicCompositions().render(riot.ctx,w,h,1,NO_AUDIO,'geometry',0,1,true,false);
+  expect(riot.scales.some(([sx,sy])=>sx>1.4&&sy>1.4)).toBe(true);
+
+  const garden=makeCtx();
+  drawMotionGraphics(garden.ctx,w,h,1,NO_AUDIO,'pixel-garden',1,false);
+  const stemStarts=garden.moves.filter((_,idx)=>idx%3===0);
+  expect(stemStarts.length).toBe(26);
+  expect(stemStarts.every(([,y])=>y>h)).toBe(true);
+
+  const flight=makeCtx();
+  for(let t=0;t<25;t+=.5)drawMotionGraphics(flight.ctx,w,h,t,NO_AUDIO,'origami-flight',1,false);
+  const planeX=flight.translates.map(([x])=>x);
+  expect(Math.min(...planeX)).toBeLessThan(0);
+  expect(Math.max(...planeX)).toBeGreaterThan(w);
+
+  const plate=makeCtx();
+  drawMotionGraphics(plate.ctx,w,h,1,NO_AUDIO,'resonance-plate',1,false);
+  expect(plate.strokeRects).toHaveLength(0);
+  const grainX=plate.arcs.map(([x])=>Math.abs(x));
+  const grainY=plate.arcs.map(([,y])=>Math.abs(y));
+  expect(Math.max(...grainX)).toBeGreaterThan(w*.45);
+  expect(Math.max(...grainY)).toBeGreaterThan(h*.45);
+ });
 });
 

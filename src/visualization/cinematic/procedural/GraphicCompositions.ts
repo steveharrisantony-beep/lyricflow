@@ -275,6 +275,12 @@ export class GraphicCompositions {
 
   const unit=Math.min(w,h),pulse=clamp((this.geometricPulse+p.bass*.10)*intensity);
 
+  c.save();
+  const zoom=1.48;
+  c.translate(w*.5,h*.5);
+  c.scale(zoom,zoom);
+  c.translate(-w*.50,-h*.515);
+
   // Poster-scale constructivist tectonic plates
   c.save();
   c.translate(w*.52,h*.48);
@@ -360,6 +366,7 @@ export class GraphicCompositions {
    }
    c.restore();
   }
+  c.restore();
  }
 }
 

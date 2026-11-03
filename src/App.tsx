@@ -1,4 +1,4 @@
-import {selectedPaletteIds,togglePaletteSelection,type ThemePaletteSelections} from './visualization/cinematic/themeSelection';
+import {selectedPaletteIds,togglePaletteSelection,enableAllPaletteSelections,enableAllPalettesForTheme,type ThemePaletteSelections} from './visualization/cinematic/themeSelection';
 import {normalizeLyricLayout,type LyricLayoutSettings} from './lyrics/lyricLayout';
 import {
   AudioLines,
@@ -2074,19 +2074,36 @@ export default function App({ user = null }: { user?: User | null }) {
                       </span>
                     </summary>
                     <div className="selection-list">
-                      <button
-                        className="text-button"
-                        type="button"
-                        onClick={() => setEnabledScenes([...ALL_SCENE_IDS])}
-                      >
-                        Enable all
-                      </button>
+                      <div className="selection-actions" style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "8px" }}>
+                        <button
+                          className="text-button"
+                          type="button"
+                          onClick={() => setEnabledScenes([...ALL_SCENE_IDS])}
+                        >
+                          Enable all themes
+                        </button>
+                        <button
+                          className="text-button"
+                          type="button"
+                          onClick={() => setThemePalettes(enableAllPaletteSelections())}
+                        >
+                          Enable all colour palettes
+                        </button>
+                      </div>
                       {choices.map((item) => (
                         <div className="theme-selection" key={item.id}>
                           <PreviewSetting label={item.label} checked={enabledScenes.includes(item.id)} onChange={()=>toggleSceneEnabled(item.id)}
                             onPreview={()=>setOptionPreview({label:item.label,scene:item.id,paletteId:selectedPaletteIds(item.id,themePalettes)[0]})}/>
                           <details className="palette-options">
                             <summary>Colour palettes</summary>
+                            <button
+                              className="text-button"
+                              type="button"
+                              style={{ marginBottom: "6px" }}
+                              onClick={() => setThemePalettes((prev) => enableAllPalettesForTheme(item.id, prev))}
+                            >
+                              Enable all palettes
+                            </button>
                             {byId[item.id].palettes.map(palette=>(
                               <PreviewSetting key={palette.id} label={palette.name} accessibleLabel={`${item.label} · ${palette.name}`}
                                 checked={selectedPaletteIds(item.id,themePalettes).includes(palette.id)}

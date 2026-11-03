@@ -38,3 +38,20 @@ export function togglePaletteSelection(id:SceneId,paletteId:string,selections:Th
  if(current.includes(paletteId)&&current.length===1)return selections;
  return {...selections,[id]:current.includes(paletteId)?current.filter(p=>p!==paletteId):[...current,paletteId]};
 }
+
+export function enableAllPaletteSelections(): ThemePaletteSelections {
+ const all: ThemePaletteSelections = {};
+ for (const theme of TEMPLATES) {
+  all[theme.id] = theme.palettes.map(p => p.id);
+ }
+ return all;
+}
+
+export function enableAllPalettesForTheme(id: SceneId, selections?: ThemePaletteSelections): ThemePaletteSelections {
+ if (!byId[id]) return selections || {};
+ return {
+  ...selections,
+  [id]: byId[id].palettes.map(p => p.id),
+ };
+}
+

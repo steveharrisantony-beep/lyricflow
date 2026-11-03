@@ -420,9 +420,9 @@ export function drawMotionGraphics(
   for(let i=0;i<flowers;i++){
    const back=i<flowers/2,layer=back?.66:1;
    const x=w*(.035+((i*.618033989)%1)*.93);
-   const ground=h*(back?.92:1.06);
+   const ground=h*1.06;
    const voice=band(i/(flowers-1));
-   const stem=h*(.18+((i*7)%11)*.014+bass*.14+voice*.13)*layer;
+   const stem=h*(back?.14:0)+h*(.18+((i*7)%11)*.014+bass*.14+voice*.13)*layer;
    const sway=Math.sin(t*.55+i*1.9)*u*(.008+mid*.035)*layer;
    const topX=x+sway,topY=ground-stem;
    c.globalAlpha=back?.48:.94;
@@ -556,8 +556,11 @@ export function drawMotionGraphics(
 
  case 'origami-flight': {
   const flock=14;
+  const margin=Math.max(w*.12,u*.12);
+  const span=w+margin*2;
   for(let i=0;i<flock;i++){
-   const px=w*((.08+i*.068+t*.045)%0.88+0.06);
+   const phase=(((i/flock+t*.045)%1)+1)%1;
+   const px=phase*span-margin;
    const py=h*(.18+((i*29)%64)/100)+Math.sin(t*1.1+i)*u*(.03+mid*.05);
    const wing=u*(.028+bass*.012+band(i/(flock-1))*.018+(i%3)*0.008);
    const flap=Math.sin(t*3.2+i*1.3)*(.25+high*.35);

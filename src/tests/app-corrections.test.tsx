@@ -441,3 +441,17 @@ it('derives automatic theme rotation from the enabled set',async()=>{
  prefs=JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!);
  expect(prefs.enabledScenes).toEqual(['pixel-garden','spectrum-prism']);expect(prefs.autoScenes).toBe(true);
 });
+
+it('provides options to enable all colour palettes alongside enable all themes',async()=>{
+ const enableThemesBtn=[...host.querySelectorAll('button')].find(b=>b.textContent==='Enable all themes');
+ const enablePalettesBtn=[...host.querySelectorAll('button')].find(b=>b.textContent==='Enable all colour palettes');
+ expect(enableThemesBtn).not.toBeUndefined();
+ expect(enablePalettesBtn).not.toBeUndefined();
+ await act(async()=>enablePalettesBtn!.click());
+ const prefs=JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!);
+ expect(Object.keys(prefs.themePalettes).length).toBe(28);
+ expect(prefs.themePalettes['color-riot']).toContain('peach-sorbet');
+ expect(prefs.themePalettes['color-riot']).toContain('lavender-milk');
+ expect(prefs.themePalettes['pixel-garden']).toContain('botanical-mint');
+});
+

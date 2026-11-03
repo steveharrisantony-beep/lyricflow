@@ -1,5 +1,6 @@
 import {expect,it} from 'vitest';
-import {paletteForSection,normalizePaletteSelections,selectedPaletteIds,togglePaletteSelection} from '../visualization/cinematic/themeSelection';
+import {paletteForSection,normalizePaletteSelections,selectedPaletteIds,togglePaletteSelection,enableAllPaletteSelections,enableAllPalettesForTheme} from '../visualization/cinematic/themeSelection';
+import {TEMPLATES,byId} from '../visualization/cinematic/catalog';
 import {sanitizePreferences} from '../firebase/firebaseClient';
 
 it('migrates single palettes and preserves valid multiple selections across preference saves',()=>{
@@ -32,3 +33,12 @@ it('toggles independent palettes while retaining one usable choice',()=>{
  expect(togglePaletteSelection('color-riot','lavender-milk',values)).toBe(values);
  expect(selectedPaletteIds('color-riot',{'color-riot':['removed']})).toEqual(['peach-sorbet']);
 });
+it('enables all colour palettes across all themes or for an individual theme',()=>{
+ const all=enableAllPaletteSelections();
+ for(const theme of TEMPLATES){
+  expect(all[theme.id]).toEqual(theme.palettes.map(p=>p.id));
+ }
+ const single=enableAllPalettesForTheme('pixel-garden',{});
+ expect(single['pixel-garden']).toEqual(byId['pixel-garden'].palettes.map(p=>p.id));
+});
+
