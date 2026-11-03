@@ -336,36 +336,51 @@ describe('full-word highlights and source-clock decoration',()=>{
   }
  });
 });
-it('keeps Lift, Glow and Zoom independent from word styles and restricts them to sourced words',()=>{
- expect(CURRENT_WORD_ANIMATIONS.map(item=>item.id)).toEqual(['lift','glow','zoom']);
- const lift=currentWordAnimationPose('lift',.5,1),glow=currentWordAnimationPose('glow',.5,1),zoom=currentWordAnimationPose('zoom',.5,1);
- expect(lift.y).toBeLessThan(-.15);expect(lift.scale).toBe(1);expect(lift.glow).toBe(0);
- expect(glow.y).toBe(0);expect(glow.scale).toBe(1);expect(glow.glow).toBeGreaterThan(.3);
- expect(zoom.y).toBe(0);expect(zoom.scale).toBeGreaterThan(1.1);expect(zoom.glow).toBe(0);
+it('keeps Lift and Zoom independent from word styles and restricts them to sourced words',()=>{
+ expect(CURRENT_WORD_ANIMATIONS.map(item=>item.id)).toEqual(['lift','zoom']);
+ const lift=currentWordAnimationPose('lift',.5,1),zoom=currentWordAnimationPose('zoom',.5,1);
+ expect(lift.y).toBeLessThan(-.15);expect(lift.scale).toBe(1);
+ expect(zoom.y).toBe(0);expect(zoom.scale).toBeGreaterThan(1.1);
  for(const animation of CURRENT_WORD_ANIMATIONS){
   const options={animated:false,wordStylesEnabled:false,wordAnimationsEnabled:true,enabledWordAnimations:[animation.id]};
   expect(render(options).result.wordAnimation).toBe(animation.id);
   expect(render({...options,cue:{...cue,timing:'estimated'}}).result.wordAnimation).toBe('off');
   expect(render({...options,wordAnimationsEnabled:false}).result.wordAnimation).toBe('off');
-  expect(currentWordAnimationPose(animation.id,0,1)).toEqual({y:0,scale:1,glow:0});
-  expect(currentWordAnimationPose(animation.id,.5,0)).toEqual({y:0,scale:1,glow:0});
+  expect(currentWordAnimationPose(animation.id,0,1)).toEqual({y:0,scale:1});
+  expect(currentWordAnimationPose(animation.id,.5,0)).toEqual({y:0,scale:1});
  }
  expect(render({wordAnimationsEnabled:true,enabledWordAnimations:[]}).result.wordAnimation).toBe('off');
- expect(normalizeWordAnimationPool(['lift','zoom','lift','invalid'])).toEqual(['lift','zoom']);expect(normalizeWordAnimationPool([])).toEqual([]);
+ expect(normalizeWordAnimationPool(['lift','glow','zoom','lift','invalid'])).toEqual(['lift','zoom']);expect(normalizeWordAnimationPool([])).toEqual([]);
 });
 
-it('renders Lift upwards, Zoom larger and Glow on the active word only',()=>{
+it('renders Lift upwards and Zoom larger',()=>{
  const options={animated:false,wordAnimationsEnabled:true,wordStylesEnabled:false,time:.5};
  const plain=render({...options,enabledWordAnimations:[]});
  const lift=render({...options,enabledWordAnimations:['lift']});
  const zoom=render({...options,enabledWordAnimations:['zoom']});
- const glow=render({...options,enabledWordAnimations:['glow']});
  expect(plain.result.glyphs).toBe(4);
  expect(lift.result.glyphs).toBe(17);expect(zoom.result.glyphs).toBe(17);
  expect(lift.transforms.some(matrix=>matrix[5]<0)).toBe(true);
  expect(zoom.transforms.some(matrix=>matrix[0]>1.01&&matrix[3]>1.01)).toBe(true);
- expect(glow.paints[0].blur).toBeGreaterThan(3);
- expect(glow.paints[4].blur).toBe(3);expect(glow.paints.slice(5).every(p=>p.blur===3)).toBe(true);
+});
+
+it('merges progressive glow into Orbit with word animations off and clears it at the word boundary',()=>{
+ const options={animated:false,wordAnimationsEnabled:false,enabledWordAnimations:[],wordStylesEnabled:true,currentWordStyle:'orbit' as const,time:.5};
+ const orbit=render(options);
+ expect(orbit.result.wordAnimation).toBe('off');expect(orbit.result.wordStyle).toBe('orbit');
+ expect(orbit.result.glyphs).toBe(17);
+ expect(orbit.c.ellipse).toHaveBeenCalled();expect(orbit.c.arc).toHaveBeenCalled();
+ expect(orbit.paints[0].blur).toBeGreaterThan(3);
+ expect(orbit.paints[4].blur).toBe(3);expect(orbit.paints.slice(5).every(p=>p.blur===3)).toBe(true);
+ expect(render({...options,time:1}).paints.every(p=>p.blur===3)).toBe(true);
+ for(const overrides of [{wordStylesEnabled:false},{enabledWordStyles:[]},{reduced:true},{intensity:0},{cue:{...cue,timing:'estimated' as const}}]){
+  expect(render({...options,...overrides}).paints.every(p=>p.blur===3)).toBe(true);
+ }
+ for(const animation of CURRENT_WORD_ANIMATIONS){
+  const combined=render({...options,wordAnimationsEnabled:true,enabledWordAnimations:[animation.id]});
+  expect(combined.result.wordAnimation).toBe(animation.id);
+  expect(combined.paints[0].blur).toBeGreaterThan(3);
+ }
 });
 
 it('keeps all-empty effect pools plain even when the master switches are on',()=>{

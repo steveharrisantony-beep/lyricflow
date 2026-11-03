@@ -281,7 +281,7 @@ it('removes lyric transition choices and persists independent word animation swi
  expect(host.textContent).not.toContain('Lyric transitions');
  const wordWindow=[...host.querySelectorAll('details')].find(el=>el.querySelector('summary')?.textContent?.startsWith('Current word animations'))!;
  const wordOptions=[...wordWindow.querySelectorAll<HTMLInputElement>('input[role="switch"]')];
- expect(wordOptions.map(input=>input.getAttribute('aria-label'))).toEqual(['Word animation · Lift','Word animation · Glow','Word animation · Zoom']);
+ expect(wordOptions.map(input=>input.getAttribute('aria-label'))).toEqual(['Word animation · Lift','Word animation · Zoom']);
  const themeWindow=[...host.querySelectorAll('details')].find(el=>el.querySelector('summary')?.textContent?.startsWith('Theme transitions'))!;
  const themes=[...themeWindow.querySelectorAll<HTMLInputElement>('input[role="switch"]')];expect(themes).toHaveLength(7);
  await act(async()=>{for(const input of [...wordOptions,...themes])input.click();});

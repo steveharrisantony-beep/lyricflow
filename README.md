@@ -12,7 +12,8 @@ Node.js/Express backend on Android.
 - **Automatic rotation:** one enabled theme stays fixed; multiple themes rotate.
   Select multiple palettes per theme to rotate those too, with adjustable duration.
 - **25 lyric animations**, four current-word styles with animated highlights, and separate
-  **Lift, Glow and Zoom** effects. Letters flow smoothly while connected scripts
+  **Lift and Zoom** effects. **Orbit** combines its trails and satellites with progressive
+  letter glow. Letters flow smoothly while connected scripts
   such as Hindi remain shaped. Word effects require word-synced lyrics.
 - **Flexible lyrics:** original/romanized display, manual import and editing,
   source reselection, adaptive theme/album colours, independent font-size limits,

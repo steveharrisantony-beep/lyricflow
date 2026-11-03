@@ -4,7 +4,7 @@ import {readableInk} from './contrast';
 export const CURRENT_WORD_STYLES=[
  {id:'classic-capsule',name:'Classic Capsule',detail:'A full-word colour capsule with a travelling outline'},
  {id:'ribbon',name:'Marker Ribbon',detail:'A full-height marker that follows the letter-by-letter colour fill'},
- {id:'orbit',name:'Orbit',detail:'Luminous trails and satellites orbit the entire word'},
+ {id:'orbit',name:'Orbit',detail:'Orbiting trails and satellites with letters that light progressively and hold their glow'},
  {id:'classic-focus',name:'Classic Focus',detail:'A full-word colour plate with precise focus corners'}
 ] as const;
 export type CurrentWordStyle=typeof CURRENT_WORD_STYLES[number]['id'];
@@ -47,6 +47,17 @@ export function wordAccentBounds(ink:WordInkBounds,size:number,style:CurrentWord
  return {left:cx-ex,right:cx+ex,top:cy-ey,bottom:cy+ey};
 }
 export const wordHighlightInk=(color:string)=>readableInk(color);
+
+/** Orbit lights each grapheme in order and holds it until the sourced word ends.
+ * Connected scripts use one shaped unit so their letters stay joined.
+ */
+export function orbitWordGlow(progress:number,energy:number,letterIndex=0,letterCount=1):number{
+ if(progress<=0||progress>=1||energy<=0)return 0;
+ const count=Math.max(1,letterCount),index=Math.max(0,Math.min(count-1,letterIndex));
+ const order=count>1?index/(count-1):0;
+ const attack=Math.max(0,Math.min(1,(progress-order*.78)/.16));
+ return .34*attack*attack*(3-2*attack)*Math.min(1,energy);
+}
 
 interface AccentOptions {
  bounds?:WordInkBounds;

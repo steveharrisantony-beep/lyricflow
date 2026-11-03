@@ -42,7 +42,7 @@ try{
   if(afterColors.size!==1||!afterColors.has(sung.activeColor)||a===b)throw Error('Uniform vibrant line accent or persistent letter motion missing');
   const wordOptions={animated:false,wordStylesEnabled:false,wordAnimationsEnabled:true,enabledWordAnimations:[]};
   draw(.5,wordOptions);const stillWord=canvas.toDataURL();
-  for(const id of ['lift','glow','zoom']){
+  for(const id of ['lift','zoom']){
    const result=draw(.5,{...wordOptions,enabledWordAnimations:[id]});
    if(result.wordAnimation!==id||canvas.toDataURL()===stillWord)throw Error(`Missing word animation: ${id}`);
   }
@@ -60,7 +60,7 @@ try{
     if(!(Math.abs(late[0].scale-baseline[0].scale)<.001&&late[4].scale>baseline[4].scale*1.1))throw Error('Zoom crest did not travel to the final letters');
    }
   }
-  const glowOptions={...wordOptions,enabledWordAnimations:['glow']};
+  const glowOptions={...wordOptions,wordStylesEnabled:true,currentWordStyle:'orbit',wordAnimationsEnabled:false};
   draw(.22,glowOptions);const initialGlow=glyphs.slice(0,5);
   if(!(initialGlow[0].blur>3&&initialGlow[4].blur===3))throw Error('Glow did not start as a letter prefix');
   for(const time of [.5,.8,.96]){
@@ -70,23 +70,24 @@ try{
   if(!glyphs.slice(0,5).every(g=>g.blur>3))throw Error('Final letters did not join the held glow');
   draw(1.001,glowOptions);if(!glyphs.slice(0,5).every(g=>g.blur===3))throw Error('Glow leaked beyond the word boundary');
   const [indicWord]=buildCues([{time:0,text:'संगीत',words:[{text:'संगीत',start:0,end:1,timing:'sourced'}]}],[]);
-  for(const id of ['lift','zoom','glow']){
-   const shaped=draw(.5,{...wordOptions,enabledWordAnimations:[id],cue:indicWord});
+  const wordEffects=[...['lift','zoom'].map(id=>({id,options:{...wordOptions,enabledWordAnimations:[id]}})),{id:'orbit',options:glowOptions}];
+  for(const {id,options} of wordEffects){
+   const shaped=draw(.5,{...options,cue:indicWord});
    if(shaped.glyphs!==1||glyphs.length!==1||glyphs[0].text!=='संगीत')throw Error(`Word effect broke Indic shaping: ${id}`);
-   draw(.2,{...wordOptions,enabledWordAnimations:[id],reduced:true});const still=glyphs.map(g=>[g.x,g.y,g.scale,g.blur]);
-   draw(.8,{...wordOptions,enabledWordAnimations:[id],reduced:true});
+   draw(.2,{...options,reduced:true});const still=glyphs.map(g=>[g.x,g.y,g.scale,g.blur]);
+   draw(.8,{...options,reduced:true});
    if(JSON.stringify(still)!==JSON.stringify(glyphs.map(g=>[g.x,g.y,g.scale,g.blur])))throw Error(`Reduced motion word effect moved: ${id}`);
   }
   let combinations=0;
-  for(const motion of LYRIC_MOTIONS)for(const style of CURRENT_WORD_STYLES)for(const id of ['lift','zoom','glow']){
+  for(const motion of LYRIC_MOTIONS)for(const style of CURRENT_WORD_STYLES)for(const id of ['lift','zoom']){
    const result=draw(1.8,{enabledMotions:[motion],wordStylesEnabled:true,currentWordStyle:style.id,wordAnimationsEnabled:true,enabledWordAnimations:[id]});
    if(result.drawn!==4||glyphs.map(g=>g.text).join('')!=='Carrythelighthome'||glyphs.some(g=>![g.x,g.y,g.scale,g.blur].every(Number.isFinite)))throw Error(`Broken composition ${motion}/${style.id}/${id}`);
    combinations++;
   }
   measureBounds=true;
-  for(const [w,h] of [[360,203],[800,1280],[1920,1080]])for(const placementMode of ['top-left','bottom-right'])for(const id of ['lift','zoom','glow'])for(const time of [.3,.65,.96]){
+  for(const [w,h] of [[360,203],[800,1280],[1920,1080]])for(const placementMode of ['top-left','bottom-right'])for(const {id,options} of wordEffects)for(const time of [.3,.65,.96]){
    canvas.width=w;canvas.height=h;
-   draw(time,{...wordOptions,enabledWordAnimations:[id],placementMode,fontScale:2});
+   draw(time,{...options,placementMode,fontScale:2});
    if(glyphs.some(g=>g.corners.some(p=>p.x<-.5||p.x>w+.5||p.y<-.5||p.y>h+.5)))throw Error(`Word wave clipped ink: ${id}/${w}/${placementMode}`);
   }
   measureBounds=false;canvas.width=1200;canvas.height=650;
@@ -103,14 +104,17 @@ try{
   window.letterQA={draw,hindiCue};
   return {letters:draw(1).glyphs,hindiGlyphs:shaped.glyphs,sungColors:afterColors.size,transitions:ALL_THEME_TRANSITIONS.length,combinations};
  });
- assert.equal(results.letters,17);assert.equal(results.hindiGlyphs,5);assert.equal(results.sungColors,1);assert.equal(results.transitions,7);assert.equal(results.combinations,375);
- for(const id of ['lift','glow','zoom']){
+ assert.equal(results.letters,17);assert.equal(results.hindiGlyphs,5);assert.equal(results.sungColors,1);assert.equal(results.transitions,7);assert.equal(results.combinations,200);
+ for(const id of ['lift','zoom']){
   await page.evaluate(id=>window.letterQA.draw(.5,{animated:false,wordStylesEnabled:false,wordAnimationsEnabled:true,enabledWordAnimations:[id]}),id);
   await page.locator('canvas').screenshot({path:`${shots}/word-${id}.png`});
  }
+ await page.evaluate(()=>window.letterQA.draw(.5,{animated:false,wordStylesEnabled:true,currentWordStyle:'orbit',wordAnimationsEnabled:false,enabledWordAnimations:[]}));
+ await page.locator('canvas').screenshot({path:`${shots}/word-orbit.png`});
  for(const [name,time,mode] of [['album-unread',.2,'normal'],['album-sung',3.7,'normal'],['hindi-shaped',1.3,'hindi'],['line-synced',1,'line']]){
   await page.evaluate(([time,mode])=>window.letterQA.draw(time,mode==='hindi'?{cue:window.letterQA.hindiCue}:mode==='line'?{cue:{...window.letterQA.hindiCue,text:'Carry the light home',timing:'estimated'}}:{}),[time,mode]);
   await page.locator('canvas').screenshot({path:`${shots}/${name}.png`});
  }
- assert.deepEqual(errors,[]);console.log('PASS browser: persistent letters, intact Hindi shaping, pale unread/line ink, one vibrant accent per sung line, overlapping Lift/Zoom letter waves, held letter Glow, 375 layer combinations, integrated intro/hold/outro and 7 theme transitions.');
+ assert.deepEqual(errors,[]);console.log('PASS browser: persistent letters, intact Hindi shaping, pale unread/line ink, one vibrant accent per sung line, overlapping Lift/Zoom letter waves, Orbit with held letter glow, 200 layer combinations, integrated intro/hold/outro and 7 theme transitions.');
 }finally{await browser.close();await server.close();}
+

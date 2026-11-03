@@ -7,7 +7,7 @@ import {byId,resolveThemePalette,TEMPLATES,type DirectedScene,type FontPack} fro
 import {applySceneFont,getFontLoadRevision,isFontPackLoaded,preloadLyricFonts} from './fonts';
 import {lightLyricColor,vibrantLyricColor,paintLyric,readableChromaticInk,readableInk,albumColorsForLine} from './contrast';
 import type {AlbumArtLyricPalette,TextGlow} from './contrast';
-import {drawCurrentWordAccent,measureWordInkBounds,wordAccentBounds,wordHighlightInk,type WordInkBounds,type CurrentWordStyle} from './currentWordStyles';
+import {drawCurrentWordAccent,measureWordInkBounds,orbitWordGlow,wordAccentBounds,wordHighlightInk,type WordInkBounds,type CurrentWordStyle} from './currentWordStyles';
 import {currentWordAnimationPose,type CurrentWordAnimation} from './currentWordAnimations';
 import {buildLetterUnits,choreographyDuration,choreographyPhase,letterMotionPose,lineMotionPose,phraseTracking,type LetterUnit} from './letterMotion';
 import {lyricCameraTransform,makeLyricProjection,STILL_CAMERA,type CameraFrame,type ProjectPoint} from './cameraRig';
@@ -636,7 +636,9 @@ export function drawKineticLyrics({
  const activeWordStyle=wordStylesEnabled&&hasWordSync&&selectedWordStyle?selectedWordStyle:'off';
  const animationPool=enabledWordAnimations??['lift'];
  const activeWordAnimation=wordAnimationsEnabled&&hasWordSync&&animationPool.length?animationPool[hash(`${cue.time}|${cue.text}`)%animationPool.length]:'off';
- const wordLettersActive=activeWordAnimation!=='off'&&wordAnimationEnergy>.001;
+ // Progressive glow is part of Orbit, including when Lift and Zoom are disabled.
+ const orbitGlowEnergy=activeWordStyle==='orbit'&&!reduced?clamp(intensity,0,1.25):0;
+ const wordLettersActive=(activeWordAnimation!=='off'&&wordAnimationEnergy>.001)||orbitGlowEnergy>.001;
  const renderLetters=energy>.001||wordLettersActive;
  const lineColors=albumPalette?albumColorsForLine(albumPalette,`${cue.time}|${cue.text}`):undefined;
 
@@ -707,7 +709,6 @@ export function drawKineticLyrics({
  interface PreparedGlyph {
   part:LetterUnit;
   pose:ReturnType<typeof letterMotionPose>;
-  wordPose:ReturnType<typeof currentWordAnimationPose>;
   matrix:[number,number,number,number,number,number];
  }
  interface PreparedWordDraw {
@@ -795,7 +796,7 @@ export function drawKineticLyrics({
       bounds.left=Math.min(bounds.left,px);bounds.right=Math.max(bounds.right,px);bounds.top=Math.min(bounds.top,py);bounds.bottom=Math.max(bounds.bottom,py);
      }
     }
-    return {part,pose,wordPose,matrix};
+    return {part,pose,matrix};
    });
    const accent=activeWordStyle==='off'?bounds:wordAccentBounds(bounds,size,activeWordStyle);
    const localHalfW=Math.max(measuredW*0.56+size*(energy>.01?.38:wordLettersActive?.24:.14)+8,activeWordStyle==='off'?0:Math.max(Math.abs(accent.left),Math.abs(accent.right))+size*.10);
@@ -898,8 +899,9 @@ export function drawKineticLyrics({
    const filledWord=isActive&&(activeWordStyle==='classic-capsule'||activeWordStyle==='classic-focus');
    const markedWord=isActive&&activeWordStyle==='ribbon';
    const highlightInk=wordHighlightInk(sungColor);
-   for(const {part,pose,wordPose,matrix} of glyphs){
-    const glyphGlow=wordPose.glow>.001?{color:sungColor,blur:Math.min(28,size*wordPose.glow)}:undefined;
+   for(const {part,pose,matrix} of glyphs){
+    const glow=isActive?orbitWordGlow(wordProgress,orbitGlowEnergy,part.index,part.count):0;
+    const glyphGlow=glow>.001?{color:sungColor,blur:Math.min(28,size*glow)}:undefined;
     c.save();
     c.globalAlpha*=pose.alpha;
     c.transform(...matrix);
