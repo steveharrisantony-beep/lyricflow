@@ -29,6 +29,34 @@ function click(text: string) {
   button.click();
 }
 
+it('resets the active song mapping and applies default settings immediately from Others',async()=>{
+ await act(async()=>click('Load fixture audio'));
+ await act(async()=>click('Fixture lyrics ready'));
+ await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="Increase lyric delay 0.5s"]')!.click());
+ await act(async()=>{
+  host.querySelector<HTMLInputElement>('[aria-label="Hide lyrics for this song"]')!.click();
+  host.querySelector<HTMLInputElement>('[aria-label="Hide video for this song"]')!.click();
+ });
+ await act(async()=>click('Others'));
+ await act(async()=>click('Reset song mapping'));
+ await act(async()=>click('Confirm reset song mapping'));
+ await act(async()=>click('Song Mapping'));
+ expect(host.querySelector<HTMLInputElement>('[aria-label="Lyrics delay seconds"]')?.value).toBe('0');
+ expect(host.querySelector<HTMLInputElement>('[aria-label="Hide lyrics for this song"]')!.checked).toBe(false);
+ expect(host.querySelector<HTMLInputElement>('[aria-label="Hide video for this song"]')!.checked).toBe(false);
+ expect(JSON.parse(localStorage.getItem('lyricflow.v3.guest.corrections')!)).toEqual({});
+ const intensity=[...host.querySelectorAll('label')].find(label=>label.textContent?.includes('Visual intensity'))!.querySelector<HTMLInputElement>('input')!;
+ await act(async()=>{
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(intensity,'36');
+  intensity.dispatchEvent(new Event('input',{bubbles:true}));
+ });
+ await act(async()=>click('Others'));
+ await act(async()=>click('Reset settings'));
+ await act(async()=>click('Confirm reset settings'));
+ expect(intensity.value).toBe('100');
+ expect(JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!).intensity).toBe(100);
+});
+
 it('offers separate data transfers in Others and applies imported settings immediately',async()=>{
  await act(async()=>click('Others'));
  for(const name of ['Export settings','Import settings','Export song mapping data','Import song mapping data']){

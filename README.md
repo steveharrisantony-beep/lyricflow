@@ -29,6 +29,7 @@ and Others**. Preferences and selection pools are saved between sessions.
 
 **Others → Import & export data** offers separate JSON backups for settings and
 song mappings saved on this device, including timing fixes and custom lyrics.
+Others also offers separate resets for settings and song mapping data, with confirmation.
 Settings imports apply immediately. Mapping imports merge into the current
 guest/account data and update matching entries. Android uses the system Save
 dialog; the browser downloads a JSON file.

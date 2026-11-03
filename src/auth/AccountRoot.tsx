@@ -5,6 +5,13 @@ import { setDeviceScope } from '../firebase/deviceStore';
 import { retrySongMappings } from '../firebase/songMappings';
 import { retryCustomLyrics } from '../firebase/usePrivateLyrics';
 import { retryAccountCorrections } from '../firebase/correctionStore';
+import {retrySongMappingReset} from '../firebase/songMappingReset';
+
+function retryAccountData(uid:string){
+  void retrySongMappingReset(uid).then(ready=>{
+    if(ready){retryAccountCorrections(uid);retryCustomLyrics(uid);retrySongMappings(uid);}
+  }).catch(()=>{/* The pending reset is retried on the next connection. */});
+}
 
 export default function AccountRoot() {
   const [session, setSession] = useState<{ ready: boolean; user: User | null }>({ ready: !auth, user: null });
@@ -13,9 +20,9 @@ export default function AccountRoot() {
     const unsubscribe = onAuthStateChanged(auth, user => {
       setDeviceScope(user?.uid);
       setSession({ ready: true, user });
-      if (user) { retryAccountCorrections(user.uid); retryCustomLyrics(user.uid); retrySongMappings(user.uid); }
+      if (user) retryAccountData(user.uid);
     });
-    const retry = () => { if (auth?.currentUser) { retryAccountCorrections(auth.currentUser.uid); retryCustomLyrics(auth.currentUser.uid); retrySongMappings(auth.currentUser.uid); } };
+    const retry = () => { if (auth?.currentUser) retryAccountData(auth.currentUser.uid); };
     window.addEventListener('online', retry);
     return () => { unsubscribe(); window.removeEventListener('online', retry); };
   }, []);

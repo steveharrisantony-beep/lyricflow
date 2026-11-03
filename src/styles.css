@@ -1980,3 +1980,18 @@ summary > span {
 .developer-credit strong{color:var(--ink);font-weight:600}
 .developer-instagram{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;flex:0 0 44px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--accent);text-decoration:none}
 .developer-instagram:hover{background:var(--surface-hover);border-color:var(--faint)}
+
+.data-reset {
+  margin-top: 24px;
+}
+.data-reset h4 {
+  margin-bottom: 8px;
+}
+.reset-confirmation {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}

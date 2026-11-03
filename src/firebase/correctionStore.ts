@@ -2,6 +2,7 @@ import { doc, onSnapshot, setDoc, deleteDoc, serverTimestamp } from 'firebase/fi
 import type { User } from 'firebase/auth';
 import { db } from './firebaseClient';
 import { readDevice, writeDevice, scopedKey } from './deviceStore';
+import {songMappingResetPending,songMappingResetVersion} from './songMappingReset';
 import { correctionKey, fingerprint, upgradeCachedCorrection, validCorrection, chooseCorrection, type Correction, type CorrectionContext } from './correctionModel';
 
 type Entry = { value: Correction; dirty: boolean; removed?: boolean };
@@ -19,12 +20,13 @@ function updateCache(cacheKey: string, id: string, value: Entry | null) {
 }
 function personalRef(uid: string, id: string) { return doc(db!, 'profiles', uid, 'corrections', id); }
 export async function flushPersonalCorrection(uid: string, context: CorrectionContext) {
-  if (!db) return;
-  const id = correctionKey(context), cacheKey = personalKey(uid);
+  if (!db || songMappingResetPending(uid)) return;
+  const id = correctionKey(context), cacheKey = personalKey(uid), version=songMappingResetVersion(uid);
   const entry = readDevice<Cache>(cacheKey, {})[id];
   if (!entry?.dirty) return;
   if (entry.removed) await deleteDoc(personalRef(uid, id));
   else await setDoc(personalRef(uid, id), { ...entry.value, updatedAt: serverTimestamp() });
+  if(version!==songMappingResetVersion(uid))return;
   const current = readDevice<Cache>(cacheKey, {})[id];
   if (JSON.stringify(current) === JSON.stringify(entry)) updateCache(cacheKey, id, entry.removed ? null : { ...entry, dirty: false });
 }
@@ -71,7 +73,7 @@ export function watchCorrection(context: CorrectionContext, uid: string | null,
     }, () => error('Using saved corrections · community updates unavailable')));
     if (uid) unsubscribers.push(onSnapshot(personalRef(uid, id), { includeMetadataChanges: true }, snap => {
       const local = readDevice<Cache>(cacheKey, {})[id];
-      if (local?.dirty) return;
+      if (local?.dirty || (uid && songMappingResetPending(uid))) return;
       if (snap.exists()) {
         const value = validCorrection(snap.data(), context);
         if (value) updateCache(cacheKey, id, { value, dirty: false });

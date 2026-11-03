@@ -2493,7 +2493,7 @@ export default function App({ user = null }: { user?: User | null }) {
             ),
             others: (
               <>
-                <SettingGroup title="Import & export data">
+                <SettingGroup title="Import, export & reset data">
                   <DataTransferSettings uid={uid} onSettingsImported={applyBackupSettings}/>
                 </SettingGroup>
                 <SettingGroup title="Playback">

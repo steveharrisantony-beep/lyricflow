@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { doc, onSnapshot, setDoc, deleteField, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebaseClient';
-import { scopedKey, readDevice, writeDevice } from './deviceStore';
+import { readDevice, writeDevice, scopedKey } from './deviceStore';
+import {songMappingResetPending,songMappingResetVersion} from './songMappingReset';
 import { correctionContext, type LyricsSourceReference, type LyricsSelection, type RecordingIdentity } from './correctionModel';
 import type { TrackInfo } from '../metadata/trackInfo';
 
@@ -45,11 +46,13 @@ function cacheWrite(key: string, id: string, entry: Entry | null) {
   writeDevice(key, key === PUBLIC ? Object.fromEntries(Object.entries(data).slice(-300)) : data); notify();
 }
 async function flush(uid: string, id: string) {
-  if (!db) return;
-  const key = scopedKey('songMappings', uid), entry = readDevice<Cache>(key, {})[id];
+  if (!db || songMappingResetPending(uid)) return;
+  const key = scopedKey('songMappings', uid), entry = readDevice<Cache>(key, {})[id], version=songMappingResetVersion(uid);
   for (const field of entry?.dirty || []) {
+    if(songMappingResetPending(uid)||version!==songMappingResetVersion(uid))return;
     const value = entry[field];
     await setDoc(doc(db, 'profiles', uid, 'songMappings', id), { identity: entry.identity, [field]: value ?? deleteField(), updatedAt: serverTimestamp() }, { merge: true });
+    if(version!==songMappingResetVersion(uid))return;
     const latest = readDevice<Cache>(key, {})[id];
     if (latest && JSON.stringify(latest[field]) === JSON.stringify(value)) cacheWrite(key, id, { ...latest, dirty: latest.dirty?.filter(f => f !== field) });
   }
@@ -78,6 +81,7 @@ export function useSongMapping(track: TrackInfo | null, uid: string | null) {
         if (snap.exists() || !snap.metadata.fromCache) cacheWrite(PUBLIC, id, value);
       }, () => setError('Using saved song mappings · shared updates unavailable')));
       if (uid) stops.push(onSnapshot(doc(db, 'profiles', uid, 'songMappings', id), snap => {
+        if(songMappingResetPending(uid))return;
         if (readDevice<Cache>(key, {})[id]?.dirty?.length) return;
         const value = snap.exists() ? validSongMapping(snap.data(), context.identity) : null;
         if (snap.exists() || !snap.metadata.fromCache) cacheWrite(key, id, value);

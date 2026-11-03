@@ -1,14 +1,16 @@
-import {loadLocalPreferences,sanitizePreferences,type UserPreferencesData} from '../firebase/firebaseClient';
+import {DEFAULT_USER_PREFERENCES,LEGACY_DELAYS_KEY,loadLocalPreferences,sanitizePreferences,type UserPreferencesData} from '../firebase/firebaseClient';
 import {readDevice,scopedKey} from '../firebase/deviceStore';
 import {correctionKey,validCorrection,type Correction,type CorrectionContext,type RecordingIdentity} from '../firebase/correctionModel';
 import {SONG_MAPPING_FIELDS,validSongMapping,type SongMapping} from '../firebase/songMappings';
 import {ALL_FONT_PACKS} from '../firebase/firebaseClient';
 import {normalizeLyricLayout,type LyricLayoutSettings} from '../lyrics/lyricLayout';
-import {ALL_ROMANIZATION_LANGUAGE_CODES,getEnabledRomanizationLanguages,getRomanizationMasterEnabled,type RomanizationLanguageCode} from '../romanization/romanize';
+import {ALL_ROMANIZATION_LANGUAGE_CODES,DEFAULT_ROMANIZATION_LANGUAGE_CODES,getEnabledRomanizationLanguages,getRomanizationMasterEnabled,type RomanizationLanguageCode} from '../romanization/romanize';
 import {ALL_CURRENT_WORD_STYLE_IDS,normalizeWordStyle,normalizeWordStylePool} from '../visualization/cinematic/currentWordStyles';
 import {ALL_CURRENT_WORD_ANIMATION_IDS,normalizeWordAnimationPool} from '../visualization/cinematic/currentWordAnimations';
 import {ALL_PLACEMENT_MODES,DEFAULT_VIDEO_PLACEMENTS,DEFAULT_THEME_PLACEMENTS,LYRIC_PLACEMENT_MODES,normalizeMotionPool} from '../visualization/cinematic/kineticTypography';
 import {ALL_THEME_TRANSITIONS} from '../visualization/cinematic/themeTransitions';
+
+import {songMappingResetKey,notifySongMappingData,markSongMappingReset} from '../firebase/songMappingReset';
 
 export type BackupKind='settings'|'song-mappings';
 export const MAX_BACKUP_BYTES=10*1024*1024;
@@ -144,7 +146,7 @@ function writeBatch(values:Record<string,unknown>){
  try{for(const [key,value] of Object.entries(values))localStorage.setItem(key,JSON.stringify(value));}
  catch{
   for(const [key,value] of before)try{if(value===null)localStorage.removeItem(key);else localStorage.setItem(key,value);}catch{/* Storage can remain blocked. */}
-  throw new Error('Could not save imported data. Check available device storage.');
+  throw new Error('Could not save data. Check available device storage.');
  }
 }
 export function restoreBackup(backup:Backup,uid:string|null){
@@ -167,4 +169,19 @@ export function restoreBackup(backup:Backup,uid:string|null){
  for(const [id,value] of Object.entries(backup.data.customLyrics))custom[id]={...value,dirty:Boolean(uid)};
  writeBatch({[mappingKey]:mappings,[correctionsKey]:corrections,[customKey]:custom});
  for(const event of ['lyricflow:songMappings','lyricflow:corrections','lyricflow:customLyrics'])window.dispatchEvent(new Event(event));
+}
+
+export function resetSettings(uid:string|null):SettingsBackupData{
+ const preferences=sanitizePreferences(DEFAULT_USER_PREFERENCES);
+ const data:SettingsBackupData={preferences,extended:extendedSettings({},preferences),romanization:{enabled:true,languages:[...DEFAULT_ROMANIZATION_LANGUAGE_CODES]}};
+ restoreBackup({format:'lyricflow-backup',version:1,exportedAt:new Date().toISOString(),kind:'settings',data},uid);
+ return data;
+}
+export function resetSongMappingData(uid:string|null){
+ writeBatch({
+  [scopedKey('songMappings',uid)]:{},[scopedKey('corrections',uid)]:{},[scopedKey('customLyrics',uid)]:{},
+  ...(uid?{[songMappingResetKey(uid)]:true}:{[LEGACY_DELAYS_KEY]:{}}),
+ });
+ if(uid)markSongMappingReset(uid);
+ notifySongMappingData();
 }
