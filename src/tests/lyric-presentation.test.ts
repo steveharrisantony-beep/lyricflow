@@ -36,6 +36,27 @@ function render(overrides:Partial<KineticArgs>={}){
 }
 
 describe('independent phrase animation and word styles',()=>{
+ it('gives each replacement a fresh duet colour even with matching album and custom colours',()=>{
+  const duet=buildCues([{time:0,end:4,text:'First'},{time:1,end:7,text:'Second'},{time:4.4,end:9,text:'Third'}],[]);
+  const mono={baseColor:'#ffffff',sungColor:'#ffffff',accentHex:'#ffffff',colors:['#ffffff'],sungColors:['#ffffff']};
+  for(const theme of TEMPLATES)for(const forceLightText of [false,true]){
+   const outputs=duet.map(cue=>render({cue,scene:{...scene,...theme},time:cue.time+.5,duetSide:cue.duetSide,
+    albumPalette:mono,customBaseColor:'#ffffff',customAccentColor:'#ffffff',forceLightText,animated:false}));
+   expect(new Set(outputs.map(output=>output.result.baseColor)).size,theme.id).toBe(3);
+   expect(new Set(outputs.map(output=>output.result.activeColor)).size,theme.id).toBe(3);
+   for(const output of outputs){
+    expect(output.result.drawn).toBe(1);
+    expect(output.paints[0].color).toBe(output.result.baseColor);
+   }
+  }
+ });
+ it('keeps the surviving duet line on the same side with stable colours, motion and font',()=>{
+  const [,cue]=buildCues([{time:0,end:4,text:'First'},{time:1,end:7,text:'Second'}],[]);
+  const before=render({cue,duetSide:cue.duetSide,time:2}).result;
+  const after=render({cue,duetSide:cue.duetSide,time:5}).result;
+  for(const property of ['placement','baseColor','activeColor','motion','font'] as const)expect(after[property]).toBe(before[property]);
+  expect(after.placement).toBe('right');
+ });
  it('applies bass camera movement after fitting with phrase animation on, off or an empty motion pool',()=>{
   const rig=new MusicCameraRig();
   rig.sample(0,NO_AUDIO,1,false,0,true,80);

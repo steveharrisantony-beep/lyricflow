@@ -3,6 +3,8 @@ import {analyzeSections,planAt,type Mood,type ScenePlan} from './sceneDirector';
 import {makeEstimatedWords,type TimedLine,type TimedWord} from './lrc';
 
 export type LyricMood=Mood;
+// Distinct hue families shared by the slot scheduler and lyric renderer.
+export const DUET_COLORS=['#38bdf8','#fbbf24','#f472b6','#4ade80','#a78bfa'] as const;
 export type LyricCue={
  time:number;
  end:number;
@@ -15,6 +17,8 @@ export type LyricCue={
  timing:'sourced'|'estimated';
  duetSide?:'left'|'right';
  duetGroupKey?:string;
+ duetStart?:number;
+ duetColorIndex?:number;
 };
 
 let cues:LyricCue[]=[];
@@ -45,7 +49,7 @@ export function getLyricState(time:number){
  for(let i=0;i<cues.length;i++){
   if(cues[i].time<=position){
    index=i;
-   if(position<cues[i].end){
+   if(position>=(cues[i].duetStart??cues[i].time)&&position<cues[i].end){
     activeCues.push(cues[i]);
    }
   }else{
@@ -128,22 +132,41 @@ export function buildCues(original:TimedLine[],romanized:TimedLine[],genre='',tr
    timing:hasSourced?'sourced':'estimated'
   });
  }
- // Lock simultaneous dual-singer pairs on two separate sides ('left' and 'right').
- // Each cue retains its individual `naturalEnd` so when one side finishes early it hides cleanly,
- // while `end` is extended to `sharedEnd` so the ongoing side never changes colour, position, animation, or font.
- for(let i=0;i<out.length-1;i++){
-  if(out[i].end>out[i+1].time+0.12){
-   const sharedEnd=Math.max(out[i].end,out[i+1].end);
-   const groupKey=out[i].duetGroupKey||`duet:${out[i].time.toFixed(2)}:${out[i].text}`;
-   out[i].naturalEnd=out[i].naturalEnd??out[i].end;
-   out[i+1].naturalEnd=out[i+1].naturalEnd??out[i+1].end;
-   out[i].end=sharedEnd;
-   out[i+1].end=sharedEnd;
-   if(!out[i].duetSide)out[i].duetSide='left';
-   out[i+1].duetSide=out[i].duetSide==='left'?'right':'left';
-   out[i].duetGroupKey=groupKey;
-   out[i+1].duetGroupKey=groupKey;
+ // Plan whole overlapping episodes once, so seeking reconstructs the same slots
+ // and colours. Each cue keeps its own end; a completed line never occupies a slot.
+ for(let first=0;first<out.length;){
+  let next=first+1,groupEnd=out[first].end;
+  while(next<out.length&&out[next].time<groupEnd){
+   groupEnd=Math.max(groupEnd,out[next].end);next++;
   }
+  if(next>first+1){
+   const groupKey=`duet:${out[first].time.toFixed(2)}:${out[first].text}`;
+   const slots:[LyricCue|null,LyricCue|null]=[null,null];
+   const recentColors:number[]=[];
+   let colorIndex=0;
+   for(let i=first;i<next;i++){
+    const cue=out[i];
+    const side=!slots[0]||slots[0].end<=cue.time?0:
+     !slots[1]||slots[1].end<=cue.time?1:slots[0].end<=slots[1].end?0:1;
+    cue.duetSide=side===0?'left':'right';
+    cue.duetGroupKey=groupKey;
+    // With more than two simultaneous voices, wait only for the first free slot.
+    // Keep the original word clock, and do not replay lines that already ended.
+    cue.duetStart=Math.max(cue.time,slots[side]?.end??cue.time);
+    if(cue.duetStart>=cue.end)continue;
+    const other=slots[side===0?1:0];
+    const excluded=new Set(recentColors);
+    if(other&&other.end>cue.duetStart&&other.duetColorIndex!==undefined)excluded.add(other.duetColorIndex);
+    while(excluded.has(colorIndex))colorIndex=(colorIndex+1)%DUET_COLORS.length;
+    cue.duetColorIndex=colorIndex;
+    recentColors.push(colorIndex);
+    if(recentColors.length>2)recentColors.shift();
+    colorIndex=(colorIndex+1)%DUET_COLORS.length;
+    slots[side]=cue;
+   }
+  }
+  first=next;
  }
  return out;
 }
+

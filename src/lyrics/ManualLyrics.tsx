@@ -22,7 +22,7 @@ import {
   resolveThemePalette,
   type SceneId,
 } from "../visualization/cinematic/catalog";
-import { albumColorsForLine, type AlbumArtLyricPalette } from "../visualization/cinematic/contrast";
+import { albumColorsForLine, lightLyricColor, type AlbumArtLyricPalette } from "../visualization/cinematic/contrast";
 import {
   computeBackgroundAdaptiveLyricColors,
   resolveLyricFillPace,
@@ -32,6 +32,7 @@ import { convertTtmlToEnhancedLrc } from "./appleLyrics";
 import { parseLRC, type TimedWord } from "./lrc";
 import {
   buildCues,
+  DUET_COLORS,
   computeNaturalLineEnd,
   nextLyricTime,
   setLyricTimeline,
@@ -480,11 +481,13 @@ export default function ManualLyrics({
   const romanLines = useMemo(() => parseLRC(roman,track?.duration), [roman,track?.duration]);
   const language = useMemo(() => detectLanguage(raw || plain), [raw, plain]);
   const sections = useMemo(() => analyzeSections(lines, genre), [lines, genre]);
+  const lyricCues = useMemo(() => buildCues(lines, romanLines, genre, track?.duration), [lines, romanLines, genre, track?.duration]);
+  const cuesByLine = useMemo(() => new Map(lines.filter(line => line.text.trim()).map((line, index) => [line, lyricCues[index]])), [lines, lyricCues]);
   const storyboard = useMemo(
     () =>
       buildCinematicSchedule(
         sections,
-        buildCues(lines, romanLines, genre, track?.duration),
+        lyricCues,
         genre,
         lines
           .map((l) => l.text)
@@ -492,18 +495,18 @@ export default function ManualLyrics({
           .slice(0, 1500),
         enabledScenes,
       ),
-    [sections, lines, romanLines, genre, enabledScenes, track?.duration],
+    [sections, lines, lyricCues, genre, enabledScenes],
   );
 
   useEffect(() => {
     setLyricTimeline(
-      buildCues(lines, romanLines, genre, track?.duration),
+      lyricCues,
       offset - delay,
       mode,
       genre,
     );
     return () => setLyricTimeline([]);
-  }, [lines, romanLines, offset, delay, mode, genre, track?.duration]);
+  }, [lyricCues, offset, delay, mode, genre]);
 
   useEffect(() => {
     if (!incoming) return;
@@ -688,10 +691,11 @@ export default function ManualLyrics({
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].time <= lyricTime) {
       idx = i;
-      const lEnd = computeNaturalLineEnd(lines[i], nextLyricTime(lines,i), track?.duration);
+      const cue = cuesByLine.get(lines[i]);
       if (
-        lines[i].text.trim().length > 0 &&
-        lyricTime < lEnd &&
+        cue &&
+        lyricTime >= (cue.duetStart ?? cue.time) &&
+        lyricTime < cue.end &&
         !isPausedSession
       ) {
         activeLineIndices.push(i);
@@ -716,6 +720,8 @@ export default function ManualLyrics({
   const current = isWithinVocalWindow ? lines[activeLineIndices[0]] : undefined;
   const duetPartnerLine =
     activeLineIndices.length > 1 ? lines[activeLineIndices[1]] : undefined;
+  const currentCue = current ? cuesByLine.get(current) : undefined;
+  const duetPartnerCue = duetPartnerLine ? cuesByLine.get(duetPartnerLine) : undefined;
   const prevLine =
     isWithinVocalWindow && activeLineIndices[0] > 0
       ? lines[activeLineIndices[0] - 1]
@@ -781,7 +787,9 @@ export default function ManualLyrics({
   // 2. `sungColor` is applied sequentially (letter-by-letter for slow songs, word-by-word for fast songs)
   //    only when real word-by-word sync is available.
   const { baseLineColor, sungAccentColor } = useMemo(() => {
+    const duetAccent = currentCue?.duetColorIndex !== undefined ? DUET_COLORS[currentCue.duetColorIndex] : undefined;
     if (
+      !duetAccent &&
       albumArtPalette &&
       (lyricColorMode === "album" ||
         (lyricColorMode === "auto" && isVideoBackground))
@@ -799,22 +807,24 @@ export default function ManualLyrics({
       resolvedSceneId,
       selectedPaletteIds(resolvedSceneId,themePalettes)[0],
     );
-    const customOverride =
+    const customOverride = duetAccent ?? (
       lyricColorMode !== "auto"
         ? LYRIC_COLOR_MAP[lyricColorMode].main
-        : undefined;
+        : undefined);
     const { baseColor, sungColor } = computeBackgroundAdaptiveLyricColors(
       palette.background,
       palette.foreground,
       palette.accent,
       customOverride,
       isVideoBackground,
+      duetAccent ? lightLyricColor(duetAccent) : undefined,
     );
     return { baseLineColor: baseColor, sungAccentColor: sungColor };
   }, [
     lyricColorMode,
     albumArtPalette,
     current,
+    currentCue,
     isVideoBackground,
     storyboard,
     lyricTime,
@@ -1313,11 +1323,11 @@ export default function ManualLyrics({
                   ))}
                 </div>
               )}
-              {duetPartnerLine && (
+              {currentCue?.duetSide && (
                 <div
                   className="spicy-duet-split"
                   role="region"
-                  aria-label="Simultaneous dual-singer lyrics"
+                  aria-label="Overlapping lyric slots"
                   style={{
                     display: "grid",
                     gridTemplateColumns: "1fr 1fr",
@@ -1325,68 +1335,35 @@ export default function ManualLyrics({
                     marginTop: 10,
                     paddingTop: 10,
                     borderTop: "1px solid rgba(255,255,255,0.12)",
-                    textAlign: "left",
                   }}
                 >
-                  <div
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: 8,
-                      background: "rgba(56,189,248,0.08)",
-                      border: "1px solid rgba(56,189,248,0.22)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        letterSpacing: "0.08em",
-                        color: sungAccentColor,
-                        marginBottom: 4,
-                      }}
-                    >
-                      SINGER 1 (LEFT STAGE)
-                    </div>
-                    <div
-                      style={{
-                        color: baseLineColor,
-                        fontWeight: 700,
-                        fontSize: "0.95em",
-                      }}
-                    >
-                      {primaryLineText}
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: 8,
-                      background: "rgba(255,209,102,0.08)",
-                      border: "1px solid rgba(255,209,102,0.22)",
-                      textAlign: "right",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        letterSpacing: "0.08em",
-                        color: "#ffd166",
-                        marginBottom: 4,
-                      }}
-                    >
-                      SINGER 2 (RIGHT STAGE)
-                    </div>
-                    <div
-                      style={{
-                        color: baseLineColor,
-                        fontWeight: 700,
-                        fontSize: "0.95em",
-                      }}
-                    >
-                      {duetPartnerLine.text}
-                    </div>
-                  </div>
+                  {(["left", "right"] as const).map(side => {
+                    const cue = [currentCue, duetPartnerCue].find(cue => cue?.duetSide === side);
+                    const color = DUET_COLORS[cue?.duetColorIndex ?? 0];
+                    const text = cue && mode !== "original" && hasDistinctRomanized(cue.text, cue.romanized) ? cue.romanized : cue?.text;
+                    return (
+                      <div
+                        key={side}
+                        data-duet-side={side}
+                        aria-hidden={!cue}
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 8,
+                          background: `${color}14`,
+                          border: `1px solid ${color}38`,
+                          textAlign: side,
+                          visibility: cue ? "visible" : "hidden",
+                        }}
+                      >
+                        <div style={{fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color, marginBottom: 4}}>
+                          {side === "left" ? "LEFT STAGE" : "RIGHT STAGE"}
+                        </div>
+                        <div style={{color: lightLyricColor(color), fontWeight: 700, fontSize: "0.95em"}}>
+                          {text}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </>

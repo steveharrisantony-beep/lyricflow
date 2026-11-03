@@ -179,7 +179,7 @@ describe('YouTube metadata cleaning & 4-Engine LyricFlow Engine', () => {
     expect(rightSong.confidence).toBeGreaterThanOrEqual(0.75);
   });
 
-  it('supports simultaneous dual-singer cues on two sides and holds both sides until the second singer finishes', () => {
+  it('releases a finished singer while the remaining singer keeps the same side', () => {
     const ttml = [
       '<tt xmlns:ttm="http://www.w3.org/ns/ttml#metadata">',
       '<body><div>',
@@ -197,20 +197,20 @@ describe('YouTube metadata cleaning & 4-Engine LyricFlow Engine', () => {
     const cues = buildCues(parsed, []);
     setLyricTimeline(cues, 0, 'original');
 
-    // Both cues share the same duetGroupKey and extended end time (until the second side finishes)
+    // Both cues share a scene group, but keep their independent finish times.
     expect(cues[0].duetSide).toBe('left');
     expect(cues[1].duetSide).toBe('right');
     expect(cues[0].duetGroupKey).toBeTruthy();
     expect(cues[0].duetGroupKey).toBe(cues[1].duetGroupKey);
-    expect(cues[0].end).toBeCloseTo(cues[1].end, 2);
+    expect(cues[0].end).toBeLessThan(cues[1].end);
+    expect(cues[0].end).toBe(cues[0].naturalEnd);
 
     // At 14.2s, Singer 1 (left) has already finished singing (at 12.8s), while Singer 2 (right) is still singing (until 15.2s).
-    // Both cues must remain active in their locked left/right positions until Singer 2 finishes!
+    // Only the ongoing singer remains active, still locked on the right.
     const stateAfterFirstFinishes = getLyricState(14.2);
-    expect(stateAfterFirstFinishes.cue?.text).toBe('Hold the line');
-    expect(stateAfterFirstFinishes.cue?.duetSide).toBe('left');
-    expect(stateAfterFirstFinishes.secondaryCue?.text).toBe('Stay with me tonight');
-    expect(stateAfterFirstFinishes.secondaryCue?.duetSide).toBe('right');
+    expect(stateAfterFirstFinishes.cue?.text).toBe('Stay with me tonight');
+    expect(stateAfterFirstFinishes.cue?.duetSide).toBe('right');
+    expect(stateAfterFirstFinishes.secondaryCue).toBeNull();
   });
 
   it('snaps scheduled scene boundaries so neither background nor lyric animation style changes in the middle of a line', () => {
@@ -438,5 +438,6 @@ describe('YouTube metadata cleaning & 4-Engine LyricFlow Engine', () => {
     expect(() => installYouTubeAdBlocker()).not.toThrow();
   });
 });
+
 
 

@@ -1,5 +1,5 @@
 import {resolveLyricBox,type LyricLayoutSettings} from '../../lyrics/lyricLayout';
-import type {LyricCue} from '../../lyrics/lyricTimeline';
+import {DUET_COLORS,type LyricCue} from '../../lyrics/lyricTimeline';
 import {lyricFontBounds} from '../../lyrics/fontSizing';
 import {wordEmphasis,type WordEmphasis} from '../../lyrics/wordEmphasis';
 import {hasDistinctRomanized} from '../../romanization/romanize';
@@ -650,26 +650,11 @@ export function drawKineticLyrics({
  const origin=project(0,0,0),one=project(1,0,0);
  const pixelsPerWorld=Math.max(10,Math.hypot(one.x-origin.x,one.y-origin.y));
 
- // NEW LYRIC COLOUR MECHANISM:
- // 1. Entire line starts as a single uniform `baseColor` based on the background.
- // 2. `sungColor` is only applied sequentially (letter-by-letter for slow songs, word-by-word for fast songs)
- //    ONLY when real word-sync data (`hasWordSync`) is present.
- // 3. For Dual Lyrics (`duetSide` === 'left' or 'right'), ALWAYS use two separate colours on the two sides.
- const leftAccent=lineColors?.sungColor||customAccentColor||theme.accent||'#38bdf8';
- const isWarmLeft=/^#(?:ff|fe|fb|f9|f5|f4|ef|ec|ea|e1|d9)/i.test(leftAccent);
- const duetRightAccent=lineColors?.sungColor||(isWarmLeft?'#38bdf8':'#ffd166');
- const duetLeftBase=lineColors?.baseColor||customBaseColor||(forceLightText?'#e0f2fe':undefined);
- const duetRightBase=lineColors?.baseColor||(forceLightText?'#fef3c7':'#fde68a');
- const effectiveAccentOverride=duetSide==='right'
-  ?duetRightAccent
-  :duetSide==='left'
-  ?leftAccent
-  :lineColors?.sungColor||customAccentColor;
- const effectiveBaseOverride=duetSide==='right'
-  ?duetRightBase
-  :duetSide==='left'
-  ?duetLeftBase
-  :lineColors?.baseColor||customBaseColor;
+ // Duet colours belong to lines, not sides. Keep the surviving line's colour
+ // when it becomes primary, even with album or custom lyric colours enabled.
+ const duetAccent=duetSide?DUET_COLORS[cue.duetColorIndex??(duetSide==='left'?0:1)]:undefined;
+ const effectiveAccentOverride=duetAccent||lineColors?.sungColor||customAccentColor;
+ const effectiveBaseOverride=duetAccent?lightLyricColor(duetAccent):lineColors?.baseColor||customBaseColor;
  const {baseColor,sungColor,effectiveBgHex}=computeBackgroundAdaptiveLyricColors(
   theme.background,
   theme.foreground,
@@ -681,30 +666,6 @@ export function drawKineticLyrics({
  const fillPace:'letter'|'word'|'line'=hasWordSync
   ?activeWordStyle==='ribbon'?'letter':(activeWordStyle!=='off'||activeWordAnimation!=='off')?resolveLyricFillPace(runs,bpm,fillPaceMode):'word'
   :'line';
-
- // If this side of a dual-singer duet has finished its line before the other singer finishes,
- // hide this finished side while the ongoing second side keeps its colour, position, animation, and font.
- if(duetSide&&cue.naturalEnd!==undefined&&time>=cue.naturalEnd&&cue.naturalEnd<cue.end-0.02){
-  return {
-   motion,
-   words:runs.length,
-   drawn:0,
-   highlights:0,
-   font,
-   text:joinedText,
-   rows:totalRowsCount,
-   baseColor,
-   activeColor:sungColor,
-   fillPace,
-   placement:activePlacement,
-   wordStyle:activeWordStyle,
-  glyphs:renderLetters?unitCount:runs.length,
-  letterMode:units.every(parts=>parts[0]?.connected)?'shaped':units.some(parts=>parts[0]?.connected)?'mixed':'letters',
-  wordAnimation:activeWordAnimation,
-  motionPhase:choreographyPhase(age,motionDuration,energy>.001)
-  };
- }
-
 
  // Phrase perspective supports the independent, persistent letter choreography
  const yaw=energy*(
