@@ -1,0 +1,65 @@
+name: Android Emulator Tests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-emulator-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+  VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+  VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+  VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+  VITE_FIREBASE_DATABASE_ID: ${{ vars.VITE_FIREBASE_DATABASE_ID }}
+
+jobs:
+  emulator-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install native runtime build tools
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
+      - name: Install JavaScript dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Build and copy bundled web application
+        run: npm run android:sync
+      - name: Enable emulator hardware acceleration
+        run: |
+          if [ ! -e /dev/kvm ]; then
+            echo "::error::KVM is unavailable on this GitHub runner"
+            exit 1
+          fi
+          sudo chmod a+rw /dev/kvm
+      - name: Verify embedded backend on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: cd android && ./gradlew --no-daemon :app:connectedDebugAndroidTest
+      - name: Upload device test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-device-test-reports
+          path: android/app/build/reports/androidTests/
+          if-no-files-found: ignore
