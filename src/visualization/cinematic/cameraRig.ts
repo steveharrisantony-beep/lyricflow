@@ -136,6 +136,26 @@ export class MusicCameraRig {
 export interface ProjectedPoint {x:number;y:number;visible:boolean}
 export type ProjectPoint=(x:number,y:number,z:number)=>ProjectedPoint;
 
+interface ScreenBounds {x:number;y:number;width:number;height:number}
+export type CameraTransform=[number,number,number,number,number,number];
+
+/** Apply the camera after lyric fitting so alignment cannot cancel its translation or zoom.
+ * Constrain the transformed phrase to its placement box, including split duet bounds.
+ */
+export function lyricCameraTransform(w:number,h:number,camera:CameraFrame,bounds:ScreenBounds,phrase:ScreenBounds):CameraTransform{
+ if(camera.x===0&&camera.y===0&&camera.roll===0&&camera.zoom===1)return [1,0,0,1,0,0];
+ const cos=Math.cos(camera.roll),sin=Math.sin(camera.roll);
+ const rotatedW=Math.abs(cos)*phrase.width+Math.abs(sin)*phrase.height;
+ const rotatedH=Math.abs(sin)*phrase.width+Math.abs(cos)*phrase.height;
+ const zoom=Math.min(camera.zoom,bounds.width/Math.max(1,rotatedW),bounds.height/Math.max(1,rotatedH));
+ const halfW=rotatedW*zoom*.5,halfH=rotatedH*zoom*.5;
+ const cx=phrase.x+phrase.width*.5,cy=phrase.y+phrase.height*.5;
+ const targetX=clamp(cx+camera.x*w,bounds.x+halfW,bounds.x+bounds.width-halfW);
+ const targetY=clamp(cy+camera.y*h,bounds.y+halfH,bounds.y+bounds.height-halfH);
+ const a=cos*zoom,b=sin*zoom,c=-sin*zoom,d=cos*zoom;
+ return [a,b,c,d,targetX-a*cx-c*cy,targetY-b*cx-d*cy];
+}
+
 /** Canvas counterpart of a perspective camera for 2D worlds and the WebGL fallback. */
 export function makeLyricProjection(w:number,h:number,camera:CameraFrame):ProjectPoint{
  const focal=Math.min(w,h)*1.75;
@@ -150,3 +170,4 @@ export function makeLyricProjection(w:number,h:number,camera:CameraFrame):Projec
   };
  };
 }
+

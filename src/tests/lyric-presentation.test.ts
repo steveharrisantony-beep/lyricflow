@@ -9,6 +9,8 @@ import {ALL_THEME_TRANSITIONS,chooseThemeTransition} from '../visualization/cine
 import {CURRENT_WORD_ANIMATIONS,currentWordAnimationPose,normalizeWordAnimationPool} from '../visualization/cinematic/currentWordAnimations';
 import {buildCues} from '../lyrics/lyricTimeline';
 import {analyzeLyricWords} from '../lyrics/wordEmphasis';
+import {MusicCameraRig,STILL_CAMERA,lyricCameraTransform} from '../visualization/cinematic/cameraRig';
+import {NO_AUDIO} from '../visualization/cinematic/paint';
 
 const [cue]=buildCues([{time:0,text:'Carry the light home',words:[
  {text:'Carry',start:0,end:1,timing:'sourced'}, {text:'the',start:1,end:1.5,timing:'sourced'},
@@ -34,7 +36,43 @@ function render(overrides:Partial<KineticArgs>={}){
 }
 
 describe('independent phrase animation and word styles',()=>{
- it('keeps both-off text and geometry steady, including an otherwise moving camera',()=>{
+ it('applies bass camera movement after fitting with phrase animation on, off or an empty motion pool',()=>{
+  const rig=new MusicCameraRig();
+  rig.sample(0,NO_AUDIO,1,false,0,true,80);
+  const hit=rig.sample(.12,{...NO_AUDIO,bass:1,beat:1},1,false,0,true,80);
+  const next=rig.sample(.24,{...NO_AUDIO,bass:1,beat:1},1,false,0,true,80);
+  for(const options of [{animated:true},{animated:false},{animated:true,enabledMotions:[]}] as Partial<KineticArgs>[]){
+   const still=render({...options,camera:STILL_CAMERA,time:1.8});
+   const shaken=render({...options,camera:hit,time:1.8});
+   const moving=render({...options,camera:next,time:1.8});
+   expect(shaken.transforms).not.toEqual(still.transforms);
+   expect(shaken.transforms).not.toEqual(moving.transforms);
+   expect(shaken.paints.map(p=>p.text).join('')).toBe(still.paints.map(p=>p.text).join(''));
+   expect(shaken.result.drawn).toBe(still.result.drawn);
+  }
+ });
+ it('keeps reduced motion, zero intensity and the disabled camera steady',()=>{
+  const rig=new MusicCameraRig(),pulse={...NO_AUDIO,bass:1};
+  const hit=rig.sample(.1,pulse,1,false,0,true,80);
+  const off=rig.sample(.2,pulse,1,false,0,false,80);
+  for(const options of [{reduced:true},{intensity:0},{camera:off}]){
+   expect(render({camera:hit,...options}).transforms).toEqual(render({camera:STILL_CAMERA,...options}).transforms);
+  }
+ });
+ it('contains the rotated and zoomed phrase inside edge and duet placement bounds',()=>{
+  const camera={...STILL_CAMERA,x:.011,y:.012,roll:.014,zoom:1.062};
+  for(const bounds of [{x:0,y:0,width:1000,height:600},{x:515,y:12,width:465,height:240},{x:20,y:348,width:760,height:240}]){
+   const phrase={x:bounds.x+bounds.width*.25,y:bounds.y+bounds.height*.2,width:bounds.width*.75,height:bounds.height*.8};
+   const [a,b,c,d,e,f]=lyricCameraTransform(1000,600,camera,bounds,phrase);
+   for(const x of [phrase.x,phrase.x+phrase.width])for(const y of [phrase.y,phrase.y+phrase.height]){
+    expect(a*x+c*y+e).toBeGreaterThanOrEqual(bounds.x-1e-8);
+    expect(a*x+c*y+e).toBeLessThanOrEqual(bounds.x+bounds.width+1e-8);
+    expect(b*x+d*y+f).toBeGreaterThanOrEqual(bounds.y-1e-8);
+    expect(b*x+d*y+f).toBeLessThanOrEqual(bounds.y+bounds.height+1e-8);
+   }
+  }
+ });
+ it('keeps both-off typography steady without a separate camera frame',()=>{
   const overrides={animated:false,wordStylesEnabled:false,project:()=>({x:999,y:222,visible:true})};
   const a=render({...overrides,time:.2}),b=render({...overrides,time:2});
   expect(a.transforms).toEqual(b.transforms);

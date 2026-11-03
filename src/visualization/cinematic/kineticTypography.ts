@@ -10,7 +10,7 @@ import type {AlbumArtLyricPalette,TextGlow} from './contrast';
 import {drawCurrentWordAccent,type CurrentWordStyle} from './currentWordStyles';
 import {currentWordAnimationPose,type CurrentWordAnimation} from './currentWordAnimations';
 import {buildLetterUnits,choreographyDuration,choreographyPhase,letterMotionPose,lineMotionPose,phraseTracking,type LetterUnit} from './letterMotion';
-import {makeLyricProjection,STILL_CAMERA,type ProjectPoint} from './cameraRig';
+import {lyricCameraTransform,makeLyricProjection,STILL_CAMERA,type CameraFrame,type ProjectPoint} from './cameraRig';
 
 /** Keep the original twelve in their original order; new designs append to this catalog. */
 export const ORIGINAL_LYRIC_MOTIONS=['ship','fisheye','orbit','cascade','scatter','elastic','hinge','carnival','portal','broadside','alternating','wave'] as const;
@@ -270,6 +270,7 @@ export interface KineticArgs {
  reduced:boolean;
  emphasis:WordEmphasis;
  project?:ProjectPoint;
+ camera?:CameraFrame;
  animated?:boolean;
  wordStylesEnabled?:boolean;
  currentWordStyle?:CurrentWordStyle;
@@ -518,6 +519,7 @@ export function drawKineticLyrics({
  reduced,
  emphasis,
  project=makeLyricProjection(w,h,STILL_CAMERA),
+ camera=STILL_CAMERA,
  animated=true,
  wordStylesEnabled=false,
  currentWordStyle='classic-capsule',
@@ -548,7 +550,7 @@ export function drawKineticLyrics({
  const theme=resolveThemePalette(baseTemplate.id,paletteId);
  const unit=Math.min(w,h);
  const lineAnimationsActive=animated&&enabledMotions?.length!==0;
- // Disable camera movement as well as glyph movement when line animation is off.
+ // Phrase perspective belongs to choreography; global camera shake is applied after fitting.
  if(!lineAnimationsActive||reduced)project=makeLyricProjection(w,h,STILL_CAMERA);
  const energy=reduced||!lineAnimationsActive?0:clamp(intensity,0,1.25);
  const wordAnimationEnergy=reduced||!wordAnimationsEnabled?0:clamp(intensity,0,1.25);
@@ -857,6 +859,12 @@ export function drawKineticLyrics({
   const linePose=lineMotionPose(motion,age,motionDuration,cueIndex,w,energy);
   c.save();
   c.beginPath();c.rect(boundLeft,boundTop,boundRight-boundLeft,maxAllowedH);c.clip();
+  if(!reduced&&intensity>0&&(camera.x!==0||camera.y!==0||camera.roll!==0||camera.zoom!==1)){
+   const transform=lyricCameraTransform(w,h,camera,
+    {x:fitLeft,y:boundTop,width:maxAllowedW,height:maxAllowedH},
+    {x:scaledMinX+shiftX,y:scaledMinY+shiftY,width:bboxW*clampScale,height:bboxH*clampScale});
+   c.transform(...transform);
+  }
   const lineX=motion==='curtain-sweep'?clamp(linePose.x,-panReserve,panReserve):linePose.x;
   c.transform(1,0,0,1,lineX,0);
   if(linePose.scale!==undefined){const scale=linePose.scale;c.transform(scale,0,0,scale,(centerX+shiftX)*(1-scale),(centerY+shiftY)*(1-scale));}

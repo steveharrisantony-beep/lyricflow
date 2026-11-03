@@ -11,7 +11,7 @@ import {setLyricBackdrop} from './contrast';
 import {drawMotionGraphics,MOTION_SCENES} from './procedural/MotionGraphics';
 import {drawSceneTransition,transitionProgress,sceneEntryPose,TRANSITION_SECONDS} from './transitions';
 import {drawKineticLyrics,lyricWordHit,type LyricMotion,type LyricFillPaceMode,type LyricPlacementMode} from './kineticTypography';
-import {MusicCameraRig,makeLyricProjection} from './cameraRig';
+import {MusicCameraRig} from './cameraRig';
 import {getSpectrumSensitivity,getInputSource,getLocalMediaTime,readLocalAudio,setVirtualMediaTime} from '../../audio/audioSignal';
 import {useEffect,useRef,useState} from 'react';
 import {getLyricState,getLyricTimelineSnapshot} from '../../lyrics/lyricTimeline';
@@ -422,7 +422,6 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
    const activeCue=(config.audioPaused||config.hideStageLyrics)?null:lyric.cue;
    const secondaryCue=(config.audioPaused||config.hideStageLyrics)?null:lyric.secondaryCue;
    if(activeCue){
-    const project=makeLyricProjection(w,h,cameraFrame);
     const activePaletteId=previousPaletteId??resolveScenePaletteId(scene.id);
     const isDuet=Boolean(secondaryCue||activeCue.duetSide);
     const primaryDuetSide=activeCue.duetSide??(secondaryCue?'left':undefined);
@@ -444,7 +443,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
      intensity:factor,
      reduced:config.reducedMotion,
      emphasis:snapshot.emphasis,
-     project,
+     camera:cameraFrame,
      animated:config.spatialTypography,
      wordStylesEnabled:config.wordStylesEnabled,
      currentWordStyle:config.currentWordStyle,
@@ -482,7 +481,7 @@ function useCinematicRenderer(props:CinematicProps,ytWrapRef:React.RefObject<HTM
       intensity:factor,
       reduced:config.reducedMotion,
       emphasis:snapshot.emphasis,
-      project,
+      camera:cameraFrame,
       animated:config.spatialTypography,
      wordStylesEnabled:config.wordStylesEnabled,
      currentWordStyle:config.currentWordStyle,
