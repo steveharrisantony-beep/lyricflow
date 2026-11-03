@@ -139,6 +139,8 @@ import SettingsPanel, {
   type SettingsPage,
 } from "./ui/SettingsPanel";
 import AppUpdateControl from "./updates/AppUpdateControl";
+import DataTransferSettings from './data/DataTransferSettings';
+import type {SettingsBackupData} from './data/backupData';
 
 const choices = TEMPLATES;
 
@@ -303,7 +305,7 @@ export default function App({ user = null }: { user?: User | null }) {
     Exclude<LyricPlacementMode, "auto">[]
   >(initialPrefs.enabledPlacements || [...ALL_PLACEMENT_MODES]);
   const [wordStylesEnabled, setWordStylesEnabled] = useState(initialExtended.wordStylesEnabled !== false);
-  const [currentWordStyle] = useState<CurrentWordStyle>(() =>
+  const [currentWordStyle,setCurrentWordStyle] = useState<CurrentWordStyle>(() =>
     normalizeWordStyle(initialExtended.currentWordStyle)||"classic-capsule",
   );
   const [enabledWordStyles,setEnabledWordStyles]=useState<CurrentWordStyle[]>(()=>{
@@ -321,7 +323,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const [optionPreview,setOptionPreview]=useState<OptionPreviewSpec|null>(null);
   const closeOptionPreview=useCallback(()=>setOptionPreview(null),[]);
   // Two separate placement sets: Video Background (default 'bottom-right' / Right Bottom) vs Built-in Themes (default 'center' / Centre Stage)
-  const [videoPlacementMode] =
+  const [videoPlacementMode,setVideoPlacementMode] =
     useState<LyricPlacementMode>(() => {
       const v = initialExtended.videoPlacementMode;
       return typeof v === "string" &&
@@ -341,7 +343,7 @@ export default function App({ user = null }: { user?: User | null }) {
     }
     return [...DEFAULT_VIDEO_PLACEMENTS];
   });
-  const [themePlacementMode] =
+  const [themePlacementMode,setThemePlacementMode] =
     useState<LyricPlacementMode>(() => {
       const v = initialExtended.themePlacementMode;
       return typeof v === "string" &&
@@ -740,6 +742,21 @@ export default function App({ user = null }: { user?: User | null }) {
       setSyncStatus,
     );
   }, [uid, applyPreferences]);
+
+  const applyBackupSettings=useCallback((data:SettingsBackupData)=>{
+    remotePreferences.current='';
+    applyPreferences(data.preferences);
+    const s=data.extended;
+    setThemeMode(s.themeMode);setShowFps(s.showFps);setVideoFitMode(s.videoFitMode);
+    setWordStylesEnabled(s.wordStylesEnabled);setCurrentWordStyle(s.currentWordStyle);setEnabledWordStyles(s.enabledWordStyles);
+    setWordAnimationsEnabled(s.wordAnimationsEnabled);setEnabledWordAnimations(s.enabledWordAnimations);
+    setEnabledKineticMotions(s.enabledKineticMotions);setEnabledFonts(s.enabledFonts);setEnabledThemeTransitions(s.enabledThemeTransitions);
+    setLyricFontScale(s.lyricFontScale);setLyricLayout(s.lyricLayout);
+    setVideoPlacementMode(s.videoPlacementMode);setEnabledVideoPlacements(s.enabledVideoPlacements);
+    setThemePlacementMode(s.themePlacementMode);setEnabledThemePlacements(s.enabledThemePlacements);
+    setThemeDurationLines(s.themeDurationLines);setThemeDurationSeconds(s.themeDurationSeconds);
+    setRomanizationEnabled(data.romanization.enabled);setEnabledRomanizationLanguages(data.romanization.languages);
+  },[applyPreferences,setRomanizationEnabled,setEnabledRomanizationLanguages]);
 
   // Persist extended settings locally
   useEffect(() => {
@@ -2465,6 +2482,9 @@ export default function App({ user = null }: { user?: User | null }) {
             ),
             others: (
               <>
+                <SettingGroup title="Import & export data">
+                  <DataTransferSettings uid={uid} onSettingsImported={applyBackupSettings}/>
+                </SettingGroup>
                 <SettingGroup title="Playback">
                   <SwitchSetting
                     label="Skip non-music segments"

@@ -21,12 +21,42 @@ vi.mock('../metadata/TrackFinder', () => ({ default: (props:{onLyricsFound:(valu
 import App from '../App';
 import {LYRIC_MOTIONS,ORIGINAL_LYRIC_MOTIONS,VOXELVERSE_STYLES} from '../visualization/cinematic/kineticTypography';
 import { searchStashCatalog } from '../music/providers';
+import {createBackup} from '../data/backupData';
 let root: Root, host: HTMLDivElement;
 function click(text: string) {
   const button = [...host.querySelectorAll('button')].find(b => b.textContent === text);
   if (!button) throw Error('Missing button: ' + text);
   button.click();
 }
+
+it('offers separate data transfers in Others and applies imported settings immediately',async()=>{
+ await act(async()=>click('Others'));
+ for(const name of ['Export settings','Import settings','Export song mapping data','Import song mapping data']){
+  expect(host.querySelector(`button[aria-label="${name}"]`)).not.toBeNull();
+ }
+ const input=host.querySelector<HTMLInputElement>('input[aria-label="Settings backup file"]')!;
+ const upload=async(content:string)=>{
+  const file=new File([],'backup.json',{type:'application/json'});
+  Object.defineProperty(file,'text',{value:async()=>content});
+  Object.defineProperty(input,'files',{configurable:true,value:[file]});
+  await act(async()=>input.dispatchEvent(new Event('change',{bubbles:true})));
+ };
+ const before=localStorage.getItem('lyricflow.extendedSettings.v1');
+ await upload(JSON.stringify(createBackup('song-mappings',null)));
+ expect(host.textContent).toContain('Choose a settings backup');
+ expect(localStorage.getItem('lyricflow.extendedSettings.v1')).toBe(before);
+ const backup=createBackup('settings',null);
+ if(backup.kind!=='settings')throw Error('Wrong fixture');
+ backup.data.preferences.intensity=37;
+ backup.data.extended.themeMode='light';
+ backup.data.extended.enabledWordStyles=[];backup.data.extended.enabledWordAnimations=[];
+ backup.data.extended.themeDurationSeconds=11;
+ await upload(JSON.stringify(backup));
+ expect(host.textContent).toContain('Settings imported.');
+ expect(host.querySelector<HTMLInputElement>('input[aria-label="Visual intensity"]')?.value).toBe('37');
+ expect(document.documentElement.dataset.theme).toBe('light');
+ expect(JSON.parse(localStorage.getItem('lyricflow.extendedSettings.v1')!)).toMatchObject({themeMode:'light',enabledWordStyles:[],enabledWordAnimations:[],themeDurationSeconds:11});
+});
 beforeEach(async () => {
   localStorage.clear();
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
