@@ -114,23 +114,6 @@ jobs:
           path: artifacts/LyricFlow-Android.apk
           if-no-files-found: error
           retention-days: 30
-      - name: Enable emulator hardware acceleration
-        run: sudo chmod a+rw /dev/kvm
-      - name: Verify embedded backend on Android emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          arch: x86_64
-          profile: pixel_6
-          disable-animations: true
-          script: cd android && ./gradlew --no-daemon :app:connectedDebugAndroidTest
-      - name: Upload device test reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Android-device-test-reports
-          path: android/app/build/reports/androidTests/
-          if-no-files-found: ignore
 
   publish-update:
     needs: apk
@@ -143,7 +126,7 @@ jobs:
         with:
           name: LyricFlow-Android
           path: release
-      - name: Publish tested signed update
+      - name: Publish signed update
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -156,5 +139,5 @@ jobs:
             echo "This version has already been published; leaving its APK unchanged."
             exit 0
           fi
-          printf '%s\n' "LyricFlow ${VERSION_NAME}" "" "Signed Android update. Install through App updates inside LyricFlow or download the APK directly." > "$RUNNER_TEMP/update-notes.md"
+          printf '%s\n' "LyricFlow ${VERSION_NAME}" "" "Signed Android update. Install through App updates inside LyricFlow or download the APK directly. Emulator tests are available separately in the Android Emulator Tests workflow." > "$RUNNER_TEMP/update-notes.md"
           gh release create "$tag" release/LyricFlow-Android.apk --target "$GITHUB_SHA" --title "LyricFlow ${VERSION_NAME}" --notes-file "$RUNNER_TEMP/update-notes.md"
