@@ -27,6 +27,8 @@ function branch(parent:number,angle:number,length:number,depth:number){
 }
 for(let i=0;i<5;i++)branch(-1,i*TAU/5,.15,0);
 const branchXY=new Float32Array(branches.length*2);
+let resonanceTile:OffscreenCanvas|HTMLCanvasElement|null=null;
+let resonanceContext:OffscreenCanvasRenderingContext2D|CanvasRenderingContext2D|null=null;
 
 /** Original Canvas interpretations of flow fields, spectral geometry and nodal patterns. */
 export function drawAdvancedTheme(c:CanvasRenderingContext2D,w:number,h:number,time:number,
@@ -84,10 +86,21 @@ export function drawAdvancedTheme(c:CanvasRenderingContext2D,w:number,h:number,t
   fog.addColorStop(0,background);fog.addColorStop(1,background+'00');c.fillStyle=fog;c.fillRect(0,0,w,horizon+h*.25);
  }else if(id==='resonance-plate'){
   const size=u*.43,m=3+mid*.4,n=5+bass*.5,rotation=Math.sin(t*.06)*.10;
-  c.translate(w*.5,h*.5);c.rotate(rotation);
-  c.strokeStyle=accent+'36';c.lineWidth=1;c.strokeRect(-size,-size,size*2,size*2);
+  const side=size*2;
+  const transform=c.getTransform();
+  const pixels=Math.max(1,Math.min(1024,Math.ceil(side*Math.min(2,Math.hypot(transform.a,transform.b)))));
+  if(!resonanceTile){
+   resonanceTile=typeof OffscreenCanvas!=='undefined'?new OffscreenCanvas(pixels,pixels):document.createElement('canvas');
+   resonanceContext=resonanceTile.getContext('2d') as CanvasRenderingContext2D|null;
+  }
+  if(!resonanceContext){c.restore();return true;}
+  if(resonanceTile.width!==pixels||resonanceTile.height!==pixels){resonanceTile.width=pixels;resonanceTile.height=pixels;}
+  const tile=resonanceContext;
+  tile.setTransform(pixels/side,0,0,pixels/side,pixels*.5,pixels*.5);
+  tile.clearRect(-size,-size,side,side);tile.globalAlpha=1;
+  tile.strokeStyle=accent+'36';tile.lineWidth=1;tile.strokeRect(-size+.5,-size+.5,side-1,side-1);
   const count=Math.round(1600*detail);
-  // Project deterministic grains toward standing-wave nodes with an analytic gradient.
+  // Solve and paint one normal-sized plate, then reuse its bitmap for every copy.
   for(let i=0;i<count;i++){
    let x=seeds[i*2]*2-1,y=seeds[i*2+1]*2-1;
    for(let step=0;step<3;step++){
@@ -99,9 +112,17 @@ export function drawAdvancedTheme(c:CanvasRenderingContext2D,w:number,h:number,t
     x=Math.max(-1,Math.min(1,x-correction*gx));y=Math.max(-1,Math.min(1,y-correction*gy));
    }
    const flutter=Math.sin(t*.6+i*1.7)*high*.007;
-   c.fillStyle=i%6===0?foreground:accent;
-   c.globalAlpha=.35+seeds[i]*.55;
-   c.beginPath();c.arc((x+flutter)*size,y*size,u*(.001+seeds[i]*.0015+hit*.001),0,TAU);c.fill();
+   tile.fillStyle=i%6===0?foreground:accent;
+   tile.globalAlpha=.35+seeds[i]*.55;
+   tile.beginPath();tile.arc((x+flutter)*size,y*size,u*(.001+seeds[i]*.0015+hit*.001),0,TAU);tile.fill();
+  }
+  c.translate(w*.5,h*.5);c.rotate(rotation);
+  // Include the rotated viewport corners so portrait, landscape and ultrawide screens stay filled.
+  const cos=Math.abs(Math.cos(rotation)),sin=Math.abs(Math.sin(rotation));
+  const cols=Math.max(0,Math.ceil(((w*cos+h*sin)*.5-size)/side));
+  const rows=Math.max(0,Math.ceil(((h*cos+w*sin)*.5-size)/side));
+  for(let row=-rows;row<=rows;row++)for(let col=-cols;col<=cols;col++){
+   c.drawImage(resonanceTile,col*side-size,row*side-size,side,side);
   }
  }else{
   const expand=1+bass*.22;
