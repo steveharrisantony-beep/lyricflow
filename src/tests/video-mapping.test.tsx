@@ -14,6 +14,34 @@ beforeEach(() => {
   host=document.createElement('div');document.body.append(host);root=createRoot(host);
 });
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.restoreAllMocks();});
+it.each([101,150])('offers a different video for embedding error %s and removes Play video',async(code)=>{
+ const replace=vi.fn();
+ await act(async()=>root.render(<CinematicStage {...base} onLoadAnotherVideo={replace}/>));
+ const frame=host.querySelector('iframe')!;
+ await act(async()=>window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,data:JSON.stringify({event:'onError',info:code})})));
+ expect(host.textContent).toContain('does not allow embedded playback');
+ const buttons=()=>[...host.querySelectorAll('button')];
+ expect(buttons().some(button=>button.textContent==='Play video')).toBe(false);
+ await act(async()=>buttons().find(button=>button.textContent==='Load another video')!.click());
+ expect(replace).toHaveBeenCalledExactlyOnceWith('abcdefghijk');
+ expect(host.querySelector('.cinematic-stack')?.getAttribute('data-video-ready')).toBe('no');
+ await act(async()=>root.render(<CinematicStage {...base} onLoadAnotherVideo={replace} loadingAnotherVideo/>));
+ expect(buttons().every(button=>button.disabled)).toBe(true);
+ expect(host.textContent).toContain('Finding another video');
+ await act(async()=>root.render(<CinematicStage {...base} onLoadAnotherVideo={replace} videoRecoveryMessage="No other matching video found."/>));
+ expect(host.textContent).toContain('No other matching video found.');
+ await act(async()=>buttons().find(button=>button.textContent==='Reload video')!.click());
+ expect(host.querySelector('iframe')).not.toBe(frame);
+ expect(host.querySelector('.youtube-playback-notice')).toBeNull();
+});
+it('does not refer to the removed Play video button when autoplay is blocked',async()=>{
+ await act(async()=>root.render(<CinematicStage {...base} onLoadAnotherVideo={vi.fn()}/>));
+ const frame=host.querySelector('iframe')!;
+ await act(async()=>window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,data:JSON.stringify({event:'onAutoplayBlocked'})})));
+ expect(host.textContent).toContain('Use the player controls or reload');
+ expect(host.textContent).not.toContain('Play video');
+ expect(host.textContent).not.toContain('Load another video');
+});
 it('stores separate file and video references with signed delays for the same song across catalogs',()=>{
   const track={title:'Song',artist:'Author',album:'Album',duration:200,source:'provider' as const,confidence:1,provider:'jiosaavn' as const};
   const context=correctionContext(track,'video')!;

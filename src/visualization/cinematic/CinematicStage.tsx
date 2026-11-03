@@ -20,7 +20,7 @@ import {preloadLyricFonts} from './fonts';
 import {NO_AUDIO,type Pulse} from './paint';
 import {drawInstrumentalMark} from './typography';
 import {GraphicCompositions,type GraphicSystem} from './procedural/GraphicCompositions';
-import {useYouTubeAuth,setYouTubeInteractivePlayer} from '../../music/youtubeAuth';
+import {useYouTubeAuth} from '../../music/youtubeAuth';
 import {useNativePlaybackPolicy} from '../../audio/nativePlaybackPolicy';
 
 export type Quality='High'|'Balanced'|'Performance';
@@ -77,6 +77,9 @@ export interface CinematicProps{
  playerVolume?:number;
  onYoutubeTimeUpdate?:(currentTime:number,duration?:number)=>void;
  onYoutubeEnded?:()=>void;
+ onLoadAnotherVideo?:(videoId:string)=>void;
+ loadingAnotherVideo?:boolean;
+ videoRecoveryMessage?:string;
  onRejectBackgroundVideo?:(videoId:string)=>void;
  recordingKey?:string;
  externalPlayer?:boolean;
@@ -595,6 +598,7 @@ export default function CinematicStage(props:CinematicProps){
  latestPropsRef.current=props;
  const ytAuth=useYouTubeAuth();
  const [playbackError,setPlaybackError]=useState('');
+ const [canReplaceVideo,setCanReplaceVideo]=useState(false);
  const [errorRetryNonce,setErrorRetryNonce]=useState(0);
  const [ytVideoDuration,setYtVideoDuration]=useState<number>(0);
  const [ytVideoEnded,setYtVideoEnded]=useState<boolean>(false);
@@ -607,6 +611,7 @@ export default function CinematicStage(props:CinematicProps){
  const [playingVideoKey,setPlayingVideoKey]=useState('');
  useEffect(()=>{
   setPlaybackError('');
+  setCanReplaceVideo(false);
   ytDurationRef.current=0;
   ytEndedEarlyRef.current=false;
   lastControlSigRef.current='';
@@ -700,9 +705,11 @@ export default function CinematicStage(props:CinematicProps){
     syncYtPlayerState();
    }else if(evt==='onError'){
     const code=Number(data.info);
+     setCanReplaceVideo(true);
      setPlaybackError(code===101||code===150?'This video does not allow embedded playback. Choose another video.':code===153?'YouTube could not verify this player. Try reloading or choose another video.':'YouTube could not play this video. Try reloading or choose another video.');
    }else if(evt==='onAutoplayBlocked'){
-     setPlaybackError('Tap Play video to start YouTube audio.');
+     setCanReplaceVideo(false);
+     setPlaybackError('YouTube blocked automatic playback. Use the player controls or reload the video.');
     }else if(evt==='onStateChange'&&typeof data.info==='number'){
      if(data.info===1){
       setPlaybackError('');
@@ -1018,11 +1025,11 @@ export default function CinematicStage(props:CinematicProps){
   <canvas className="visual-canvas cinematic-canvas" ref={canvas} data-layer="lyrics"
    style={{position:'absolute',inset:0,width:'100%',height:'100%',zIndex:2,background:'transparent',pointerEvents:'none'}}
    aria-label="LyricFlow VoxelWall audio-reactive backgrounds with VoxelVerse animated lyrics"/>
-  {(playbackError||nativePolicy.message)&&<div className="youtube-playback-notice" role="status">
-   <span>{playbackError||nativePolicy.message}</span>
+  {(playbackError||props.loadingAnotherVideo||nativePolicy.message)&&<div className="youtube-playback-notice" role="status">
+   <span>{props.loadingAnotherVideo?'Finding another video…':props.videoRecoveryMessage||playbackError||nativePolicy.message}</span>
    {nativePolicy.allowed&&<>
-    <button type="button" onClick={()=>{setYouTubeInteractivePlayer(true);setPlaybackError('');setPlayingVideoKey(playbackKey);sendYouTubeCommand(ytIframeRef.current,'playVideo');}}>Play video</button>
-    <button type="button" onClick={()=>{setPlaybackError('');setErrorRetryNonce(n=>n+1);}}>Reload video</button>
+    {canReplaceVideo&&ytId&&props.onLoadAnotherVideo&&<button type="button" disabled={props.loadingAnotherVideo} onClick={()=>props.onLoadAnotherVideo?.(ytId)}>{props.loadingAnotherVideo?'Loading another video…':'Load another video'}</button>}
+    <button type="button" disabled={props.loadingAnotherVideo} onClick={()=>{setPlaybackError('');setErrorRetryNonce(n=>n+1);}}>Reload video</button>
    </>}
   </div>}
  </div>;

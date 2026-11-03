@@ -25,6 +25,33 @@ import {createBackup} from '../data/backupData';
 import {temporarySongs} from '../data/temporarySongs';
 import {getLyricTimelineSnapshot} from '../lyrics/lyricTimeline';
 let root: Root, host: HTMLDivElement;
+it('loads another matching background without changing the saved video or the audio clock',async()=>{
+ const stage=await import('../visualization/cinematic/CinematicStage');
+ let props:Parameters<typeof stage.default>[0]|undefined;
+ const probe=vi.spyOn(stage,'default').mockImplementation(value=>{props=value;return <></>;});
+ const search=vi.mocked(searchStashCatalog),originalSearch=search.getMockImplementation()!;
+ search.mockImplementation(async()=>['aaaaaaaaaaa','bbbbbbbbbbb'].map(id=>({id:'yt_'+id,youtubeVideoId:id,sourceUrl:'https://www.youtube.com/watch?v='+id,title:'Original test song Official Music Video',artist:'Test artist',album:'Studio',duration:200,provider:'resolver' as const})));
+ try{
+  await act(async()=>click('Load JioSaavn fixture'));
+  const input=host.querySelector<HTMLInputElement>('[aria-label="Background video URL"]')!;
+  await act(async()=>{
+   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'aaaaaaaaaaa');
+   input.dispatchEvent(new Event('input',{bubbles:true}));
+  });
+  await act(async()=>click('Save background video'));
+  expect(props?.youtubeVideoId).toBe('aaaaaaaaaaa');
+  await act(async()=>click('Save mapping for current song'));
+  const saved=JSON.stringify(createBackup('song-mappings',null).data);
+  const clock=props!.playbackTime,recording=props!.recordingKey;
+  await act(async()=>props!.onLoadAnotherVideo!('aaaaaaaaaaa'));
+  expect(props?.youtubeVideoId).toBe('bbbbbbbbbbb');
+  expect(props?.hasSeparateAudioStream).toBe(true);
+  expect(props?.playbackTime).toBe(clock);expect(props?.recordingKey).toBe(recording);
+  expect(JSON.stringify(createBackup('song-mappings',null).data)).toBe(saved);
+  await act(async()=>click('Load next JioSaavn fixture'));
+  expect(props?.youtubeVideoId).not.toBe('bbbbbbbbbbb');
+ }finally{probe.mockRestore();search.mockImplementation(originalSearch);}
+});
 it('keeps the latest manual lyric version and video mapped despite late automatic results',async()=>{
  const finder=await import('../metadata/TrackFinder'),stage=await import('../visualization/cinematic/CinematicStage');
  let props:Parameters<typeof finder.default>[0]|undefined;

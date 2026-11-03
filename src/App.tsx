@@ -71,6 +71,7 @@ import {useSongPreloader} from './data/useSongPreloader';
 import {TEMPORARY_SONG_EVENT} from './data/temporarySongs';
 import {formatViewCount,type SongResult} from "./music/providers";
 import { useVideoAutoSync } from "./music/useVideoAutoSync";
+import { useVideoRecovery } from "./music/useVideoRecovery";
 import {
   getEnabledRomanizationLanguages,
   getRomanizationMasterEnabled,
@@ -1483,7 +1484,7 @@ export default function App({ user = null }: { user?: User | null }) {
     return () => window.clearInterval(id);
   }, [sourceMode, localPlaying, localTrack?.duration]);
 
-  const stageYoutubeVideoId = isAdPlaying
+  const defaultStageYoutubeVideoId = isAdPlaying
     ? null
     : activeYoutubeVideoId ||
       (hasSeparateAudioStream &&
@@ -1493,6 +1494,14 @@ export default function App({ user = null }: { user?: User | null }) {
         ? autoYoutubeVideoId
         : null);
 
+  const videoRecovery = useVideoRecovery({
+    selectionKey: [recordingKey, mappedYoutubeVideoId, extractYouTubeVideoId(localTrack), preferredVideoType, hasSeparateAudioStream, isAdPlaying, songMapping.hideVideo].join('|'),
+    track: localTrack,
+    candidates: preloadedVideoChoices,
+    preference: preferredVideoType,
+  });
+  const stageYoutubeVideoId = isAdPlaying ? null : videoRecovery.videoId || defaultStageYoutubeVideoId;
+
   const effectiveYoutubeBackgroundMode: YouTubeBackgroundMode = isAdPlaying||songMapping.hideVideo
     ? "theme"
     : youtubeBackgroundMode;
@@ -1501,7 +1510,7 @@ export default function App({ user = null }: { user?: User | null }) {
     stageYoutubeVideoId && effectiveYoutubeBackgroundMode === "video",
   );
 
-  const matchedVideoCandidate =
+  const matchedVideoCandidate = videoRecovery.candidate ||
     (autoVideoMatch.candidates||autoVideoMatch.videos).find(
       (v) => extractYouTubeVideoId(v) === stageYoutubeVideoId,
     ) || null;
@@ -1591,7 +1600,7 @@ export default function App({ user = null }: { user?: User | null }) {
         : 0;
 
   // A personal automatic-timing choice (null) also overrides a published fixed delay.
-  const chosenVideoDelay = songMapping.personal?.video?songMapping.personal.video.delaySeconds:videoFix.correction
+  const chosenVideoDelay = videoRecovery.videoId ? null : songMapping.personal?.video?songMapping.personal.video.delaySeconds:videoFix.correction
     ? videoFix.correction.videoDelaySeconds
     : songMapping.video?.delaySeconds;
   const hasManualVideoDelay = chosenVideoDelay != null;
@@ -1625,6 +1634,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const currentVideoViews=currentVideoViewCount===0?"0 views":formatViewCount(currentVideoViewCount)||"Views unavailable";
 
   const saveVideoChoice = (id: string, seconds: number | null) => {
+    videoRecovery.reset();
     if(videoFix.context)discardSongCorrections(uid,videoFix.context.identity,['video'],correctionKey(videoFix.context));
     setRejectedBgVideoIds(previous=>previous.filter(value=>value!==id));
     videoFix.save({ youtubeVideoId: id, videoDelaySeconds: seconds });
@@ -1730,7 +1740,10 @@ export default function App({ user = null }: { user?: User | null }) {
                   localTrack?.provider === "external"
                 }
                 advertisementPlaying={isAdPlaying}
-                videoSearchPending={videoSearchPending}
+                videoSearchPending={videoSearchPending || videoRecovery.pending}
+                loadingAnotherVideo={videoRecovery.pending}
+                videoRecoveryMessage={videoRecovery.message}
+                onLoadAnotherVideo={videoRecovery.loadAnotherVideo}
                 playbackTime={localTime}
                 hasSeparateAudioStream={hasSeparateAudioStream}
                 playerVolume={playerVolume}
@@ -1741,6 +1754,10 @@ export default function App({ user = null }: { user?: User | null }) {
                   playerRef.current?.playNextFromQueue();
                 }}
                 onRejectBackgroundVideo={(rejectedId) => {
+                  if (rejectedId === videoRecovery.videoId) {
+                    void videoRecovery.loadAnotherVideo(rejectedId);
+                    return;
+                  }
                   if (!rejectedId||rejectedId===mappedYoutubeVideoId) return;
                   setRejectedBgVideoIds((prev) =>
                     prev.includes(rejectedId) ? prev : [...prev, rejectedId],
