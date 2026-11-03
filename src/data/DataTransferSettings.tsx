@@ -1,10 +1,8 @@
 import {useEffect,useRef,useState} from 'react';
 import {createBackup,restoreBackup,resetSettings,resetSongMappingData,type BackupKind,type SettingsBackupData} from './backupData';
 import {exportBackupFile,readBackupFile} from './backupFiles';
-import {retrySongMappings} from '../firebase/songMappings';
-import {retryAccountCorrections} from '../firebase/correctionStore';
-import {retryCustomLyrics} from '../firebase/usePrivateLyrics';
 import {retrySongMappingReset,songMappingResetPending} from '../firebase/songMappingReset';
+import {flushAccountSongData} from '../firebase/songDatabaseSync';
 
 export default function DataTransferSettings({uid,onSettingsImported}:{uid:string|null;onSettingsImported:(data:SettingsBackupData)=>void}){
  const [busy,setBusy]=useState(false),[status,setStatus]=useState('');
@@ -29,8 +27,13 @@ export default function DataTransferSettings({uid,onSettingsImported}:{uid:strin
    if(!alive.current)return;
    restoreBackup(backup,uid);
    if(backup.kind==='settings')onSettingsImported(backup.data);
-   else if(uid){retrySongMappings(uid);retryAccountCorrections(uid);retryCustomLyrics(uid);}
-   setStatus(backup.kind==='settings'?'Settings imported.':'Song mappings imported.');
+   else if(uid){
+    setStatus('Song mappings imported · syncing with your account…');
+    void flushAccountSongData(uid).then(synced=>{
+     if(alive.current)setStatus(synced?'Song mappings imported and synced.':'Song mappings imported · waiting for account sync.');
+    }).catch(()=>{if(alive.current)setStatus('Song mappings imported · waiting for account sync.');});
+   }
+   if(backup.kind==='settings'||!uid)setStatus(backup.kind==='settings'?'Settings imported.':'Song mappings imported.');
   }catch(error){if(alive.current)setStatus(error instanceof Error?error.message:'Could not import this backup.');}
   finally{if(alive.current)setBusy(false);}
  };
@@ -44,7 +47,7 @@ export default function DataTransferSettings({uid,onSettingsImported}:{uid:strin
     resetSongMappingData(uid);
     setStatus(uid?'Song mapping data reset on this device. Account reset will sync when online.':'Song mapping data reset.');
     if(uid)void retrySongMappingReset(uid).then(ready=>{
-     if(ready){retrySongMappings(uid);retryAccountCorrections(uid);retryCustomLyrics(uid);}
+     if(ready)void flushAccountSongData(uid).catch(()=>{});
      if(ready&&alive.current)setStatus('Song mapping data reset on this device and your account.');
     }).catch(()=>{/* Keep the local reset and retry account deletion when online. */});
    }

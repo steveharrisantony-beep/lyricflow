@@ -212,7 +212,7 @@ service cloud.firestore {
     match /approvedCorrections/{id} {
       // Readable without sign-in, but never writable by ordinary users.
       allow get: if true;
-      allow list: if developer();
+      allow list: if developer() || (resource.data.active == true && request.query.limit <= 300);
       allow create, update: if developer() && request.resource.data.keys().hasOnly(correctionFields().concat(['active','revision','updatedAt'])) &&
         validCorrection(request.resource.data, id) && request.resource.data.active is bool &&
         request.resource.data.revision is int && request.resource.data.revision >= 1 && request.resource.data.updatedAt == request.time;
@@ -238,7 +238,8 @@ service cloud.firestore {
     }
     match /songMappings/{id} {
       allow get: if true;
-      allow list, delete: if developer();
+      allow list: if developer() || (resource.data.active == true && request.query.limit <= 300);
+      allow delete: if developer();
       allow create, update: if developer() && id.matches('^r4_[a-f0-9]{16}$') &&
         request.resource.data.keys().hasOnly(['identity','lyrics','video','active','revision','updatedAt']) && validSongMapping(request.resource.data) &&
         request.resource.data.active is bool && request.resource.data.revision is int && request.resource.data.revision >= 1 && request.resource.data.updatedAt == request.time;

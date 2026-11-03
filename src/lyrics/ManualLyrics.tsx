@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import type { TrackInfo } from "../metadata/trackInfo";
 import {
   ALL_ROMANIZATION_LANGUAGE_CODES,
-  detectLanguage,
   getEnabledRomanizationLanguages,
   getRomanizationMasterEnabled,
   hasDistinctRomanized,
@@ -41,11 +40,11 @@ import {
 import {lyricFontBounds} from './fontSizing';
 import { clampLyricDelay, effectiveLyricTime } from "./lyricTiming";
 import { analyzeSections } from "./sceneDirector";
-import { saveUserLyrics } from "./userLibrary";
 export { normalizeTrack as cleanTrackTitle } from "../metadata/trackInfo";
 export { parseLRC } from "./lrc";
 
 export interface IncomingLyrics {
+  mappingRevision?:string;
   original: string;
   romanized: string;
   plain?: string;
@@ -474,9 +473,8 @@ export default function ManualLyrics({
 
   const lines = useMemo(() => parseLRC(raw,track?.duration), [raw,track?.duration]);
   const romanLines = useMemo(() => parseLRC(roman,track?.duration), [roman,track?.duration]);
-  const language = useMemo(() => detectLanguage(raw || plain), [raw, plain]);
   useLayoutEffect(() => {
-    onLyricContentChange?.(raw, sourceUrl, source, offset, Boolean(lines.some(line=>line.text.trim()) || plain.trim()));
+    onLyricContentChange?.(raw||plain, sourceUrl, source, offset, Boolean(lines.some(line=>line.text.trim()) || plain.trim()));
   }, [raw, plain, lines, sourceUrl, source, offset, onLyricContentChange]);
   const sections = useMemo(() => analyzeSections(lines, genre), [lines, genre]);
   const lyricCues = useMemo(() => buildCues(lines, romanLines, genre, track?.duration), [lines, romanLines, genre, track?.duration]);
@@ -663,24 +661,7 @@ export default function ManualLyrics({
       return;
     }
     onSaveCustomOverride?.(raw);
-    if (track) {
-      try {
-        saveUserLyrics({
-          title: track.title,
-          artist: track.artist,
-          album: track.album,
-          duration: track.duration,
-          original: raw,
-          romanized: roman,
-          language,
-          rightsConfirmed: true,
-          source: "Custom Override",
-        });
-      } catch {
-        // Ignore local library duplicate issues
-      }
-    }
-    setMessage("Custom lyrics override saved for this song.");
+    setMessage("Lyrics applied. Save the song mapping to keep them.");
   }
 
   const lyricTime = effectiveLyricTime(time, offset, delay);
@@ -1356,7 +1337,7 @@ export default function ManualLyrics({
               Romanize locally
             </button>
             <button className="upload-button" onClick={saveOverride}>
-              Save lyrics for current song
+              Apply edited lyrics
             </button>
             <button
               className="player-remove"

@@ -1539,7 +1539,8 @@ async function fetchIsrcWordSyncedTtml(
   isYouTube = false,
   rawTitle = '',
   rawArtist = '',
-  rawOverride = false
+  rawOverride = false,
+  preferredProvider = ''
 ): Promise<ServerLyricsResponse | null> {
   const isrcCandidates: Array<{ isrc: string; title: string; artist: string }> = [];
   const effectiveArtist = isYouTube && !rawOverride ? '' : artist;
@@ -1676,6 +1677,7 @@ async function fetchIsrcWordSyncedTtml(
       },
     ];
     for (const provider of ttmlProviders) {
+      if(preferredProvider&&!provider.name.toLowerCase().startsWith(preferredProvider))continue;
       try {
         const ttmlRes = await fetch(provider.url, {
           headers: { 'User-Agent': STASH_ANDROID_UA },
@@ -2604,6 +2606,18 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
           return;
         }
         res.status(404).json({ detail: 'No matching LRC Library recording found.' });
+        return;
+      }
+
+      // A broken mapped file retries its original service before the general chain.
+      if(['lrc.red','binimum','paxsenix','musixmatch','kugou'].includes(requestedSource)){
+        let result:ServerLyricsResponse|null=null;
+        if(requestedSource==='lrc.red'||requestedSource==='binimum')result=await fetchIsrcWordSyncedTtml(title,artist,duration,isYouTube,rawTitle,rawArtist,rawOverride,requestedSource);
+        else if(requestedSource==='paxsenix')result=(await fetchItunesPaxsenixLyrics(title,artist,duration,isYouTube,rawTitle,rawArtist,rawOverride)).lyrics||null;
+        else if(requestedSource==='musixmatch')result=await fetchMusixmatchServerLyrics(title,artist);
+        else result=await fetchKugouSyncedLrc(title,artist,duration,isYouTube);
+        if(result){setLyricsCache(cacheKey,result);res.json(result);}
+        else res.status(404).json({detail:'No matching lyrics available from the mapped source.'});
         return;
       }
 

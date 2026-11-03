@@ -10,6 +10,7 @@ import {buildCues,getLyricState,setLyricTimeline} from '../lyrics/lyricTimeline'
 import {setVirtualMediaTime} from '../audio/audioSignal';
 import {afterCurrentLyricLine} from '../lyrics/lyricHandoff';
 import {lyricFingerprint} from '../firebase/correctionModel';
+import {temporarySongs} from '../data/temporarySongs';
 const track={title:'Original rain',artist:'Test Artist',album:'',duration:200,source:'provider' as const,confidence:1};
 const lrc='[00:01.00]First original lyric line\n[00:05.00]Next original lyric line';
 it('restores mapped lyrics directly and ignores late automatic upgrades',async()=>{
@@ -33,23 +34,24 @@ it('restores mapped lyrics directly and ignores late automatic upgrades',async()
   expect(received).toHaveBeenCalledTimes(count);expect(lookup).toHaveBeenCalledOnce();
  }finally{await act(async()=>root.unmount());}
 });
-it('reports an unavailable mapped LRCLIB file without falling back to automatic lyrics',async()=>{
+it('retries the mapped source before automatic fallback when a mapped LRCLIB file is unavailable',async()=>{
  vi.useFakeTimers();
  (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
  const provider=await import('../lyrics/providers');
  vi.spyOn(provider,'retrievePermittedLyrics').mockRejectedValue(new Error('Unavailable'));
- const automatic=vi.spyOn(provider,'resolveStashLyricsChain');
+ const original=vi.spyOn(provider.lrclibProvider,'search').mockResolvedValue([]);
+ const automatic=vi.spyOn(provider,'resolveStashLyricsChain').mockResolvedValue({original:lrc,romanized:'',source:'Fallback',hasWordSync:false,candidates:[]});
  const root=createRoot(document.createElement('div')),received=vi.fn(),status=vi.fn();
  try{
   await act(async()=>root.render(<TrackFinder track={track} onMetadataChange={()=>{}} onLyricsFound={received} onStatusChange={status}
    preferredSelection={{engine:'lrclib',lrclibId:22,subtitleTrackId:null}}/>));
   await act(async()=>vi.advanceTimersByTimeAsync(180));
-  expect(automatic).not.toHaveBeenCalled();expect(received).not.toHaveBeenCalled();
-  expect(status.mock.calls.at(-1)?.[0]).toContain('mapped lyrics are unavailable');
+  expect(original).toHaveBeenCalledOnce();expect(automatic).toHaveBeenCalledOnce();
+  expect(received.mock.calls.at(-1)?.[0].original).toBe(lrc);
  }finally{await act(async()=>root.unmount());}
 });
 function deferred<T>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(r=>{resolve=r;});return {promise,resolve};}
-afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();vi.useRealTimers();setVirtualMediaTime(null);setLyricTimeline([]);});
+afterEach(()=>{temporarySongs.clear();localStorage.clear();vi.restoreAllMocks();vi.unstubAllGlobals();vi.useRealTimers();setVirtualMediaTime(null);setLyricTimeline([]);});
 it('publishes LRCLIB before a slower Apple request, then prefers Apple without refetching either library',async()=>{
  const apple=deferred<Awaited<ReturnType<typeof fetchAppleMusicWordSyncedLyrics>>>();
  vi.mocked(fetchAppleMusicWordSyncedLyrics).mockReturnValue(apple.promise);

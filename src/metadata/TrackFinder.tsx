@@ -1,3 +1,4 @@
+import {prepareSongLyrics,peekPreparedLyrics} from '../data/songPreparation';
 import {lyricProviderName,normalizeLyricSource} from '../lyrics/sourceLabels';
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {IncomingLyrics} from '../lyrics/ManualLyrics';
@@ -19,7 +20,6 @@ import {
 import { createLyricHandoff } from "../lyrics/lyricHandoff";
 import {
   lrclibProvider,
-  resolveStashLyricsChain,
   retrievePermittedLyrics,
   type StashResolvedLyrics,
 } from "../lyrics/providers";
@@ -35,6 +35,8 @@ import {
 
 export default function TrackFinder({
   track,
+  accountId=null,
+  enabled=true,
   preferredSelection,
   preferredSourceFile,
   onSelectionChange,
@@ -52,6 +54,8 @@ export default function TrackFinder({
   onStatusChange,
 }: {
   track: TrackInfo | null;
+  accountId?:string|null;
+  enabled?:boolean;
   preferredSelection?: LyricsSelection | null;
   preferredSourceFile?: LyricsSourceReference | null;
   onSelectionChange?: (selection: LyricsSelection) => void;
@@ -72,6 +76,7 @@ export default function TrackFinder({
     sourceUrl?: string;
     plain?: string;
     hasWordSync?: boolean;
+    mappingRevision?:string;
     title?: string;
     artist?: string;
   }) => void;
@@ -152,9 +157,9 @@ export default function TrackFinder({
 
   const latestLeadingOffset = useRef(leadingNonMusicOffsetSec);
   latestLeadingOffset.current = leadingNonMusicOffsetSec;
-  const requestKey=useMemo(()=>JSON.stringify([autoTrackKey,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,
+  const requestKey=useMemo(()=>JSON.stringify([autoTrackKey,enabled,accountId,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,
     preferredSelection?.engine,preferredSelection?.lrclibId,preferredSourceFile?.url,preferredSourceFile?.revision]),
-    [autoTrackKey,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,preferredSelection?.engine,preferredSelection?.lrclibId,preferredSourceFile?.url,preferredSourceFile?.revision]);
+    [autoTrackKey,enabled,accountId,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,preferredSelection?.engine,preferredSelection?.lrclibId,preferredSourceFile?.url,preferredSourceFile?.revision]);
   const latestRequestKey=useRef(requestKey);latestRequestKey.current=requestKey;
 
   // Pre-fill the manual search box with what was searched automatically before whenever a new automatic song loads
@@ -169,7 +174,7 @@ export default function TrackFinder({
   // Automatic lyrics lookup across the 4 selectable Lyrics Engine options
   useEffect(() => {
     pending.current?.abort();automaticRequest.current?.abort();
-    if (!track || track.title.trim().length < 2)
+    if (!enabled || !track || track.title.trim().length < 2)
       return;
     if (isAdvertisementTrack(track)) {
       automaticRequest.current?.abort();
@@ -240,15 +245,6 @@ export default function TrackFinder({
     const applyResolved = (resolved: StashResolvedLyrics | null) => {
       if (controller.signal.aborted||latestRequestKey.current!==requestKey) return;
       if (resolved) {
-        if (
-          preferredSourceFile?.url &&
-          resolved.sourceUrl !== preferredSourceFile.url
-        ) {
-          updateStatus(
-            "The saved lyrics source file is unavailable. Select another source explicitly.",
-          );
-          return;
-        }
         const nextEngines = resolved.availableEngines || ["lyricflow"];
         const nextSubTracks = resolved.subtitleTracks || [];
         setAvailableEngines(nextEngines);
@@ -267,6 +263,7 @@ export default function TrackFinder({
         setCandidates(resolved.candidates);
         const hasTimedLines = hasValidLrcTimestamps(resolved.original);
         const payload = {
+          mappingRevision:resolved.mappingRevision,
           original: hasTimedLines ? resolved.original : "",
           romanized: hasTimedLines ? resolved.romanized : "",
           plain:
@@ -310,62 +307,20 @@ export default function TrackFinder({
       }
     };
 
+    const cached=peekPreparedLyrics(track,accountId,{engine:lyricEngineOption,selection:preferredSelection||null,
+      source:preferredSourceFile||null,leadingOffset:latestLeadingOffset.current,subtitleId:selectedSubtitleTrackId});
+    if(cached){applyResolved(cached);return()=>{handoff.cancel();controller.abort();};}
+
     const timer = setTimeout(() => {
       updateStatus(
         isYtTrack
           ? `[${engineLabel}] Searching lyrics for "${cleanedYtTitle}" (artist/album skipped for YouTube)…`
           : `[${engineLabel}] Searching synced lyrics for "${track.title}"…`,
       );
-      const selectedId = preferredSelection?.lrclibId;
-      const resolvePreferred = async () => {
-        if (selectedId) {
-          try {
-            const lyric = await retrievePermittedLyrics(
-              {
-                id: selectedId,
-                title: track.title,
-                artist: track.artist,
-                album: "",
-                duration: track.duration,
-                instrumental: false,
-                hasSynced: true,
-                hasWordSync: false,
-                url: `https://lrclib.net/api/get/${selectedId}`,
-                confidence: 1,
-              },
-              controller.signal,
-            );
-            if (lyric.synced || lyric.plain) {
-              return {
-                original: lyric.synced,
-                romanized: "",
-                plain: lyric.plain,
-                source: lyric.source,
-                sourceUrl: lyric.sourceUrl,
-                title: lyric.title || cleanedYtTitle || track.title,
-                artist: lyric.artist || track.artist,
-                hasWordSync: Boolean(
-                  lyric.synced && lyric.synced.includes("<"),
-                ),
-                candidates: [],
-                availableEngines: ["lrclib" as LyricEngineOption],
-                subtitleTracks: [] as YouTubeSubtitleTrackItem[],
-              };
-            }
-          } catch (err) {
-            if (controller.signal.aborted) throw err;
-          }
-          throw new Error('Your mapped lyrics are unavailable. Choose another version to replace the mapping.');
-        }
-        return resolveStashLyricsChain(
-          track,
-          controller.signal,
-          lyricEngineOption,
-          latestLeadingOffset.current,
-          selectedSubtitleTrackId,
-          applyResolved,
-        );
-      };
+      const resolvePreferred=()=>prepareSongLyrics(track,accountId,{
+        engine:lyricEngineOption,selection:preferredSelection||null,source:preferredSourceFile||null,
+        leadingOffset:latestLeadingOffset.current,subtitleId:selectedSubtitleTrackId,
+      },controller.signal,applyResolved);
       void resolvePreferred()
         .then(applyResolved)
         .catch((error) => {

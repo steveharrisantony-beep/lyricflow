@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, getDocs, collection, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, getDocs, collection, deleteDoc, serverTimestamp, query, where, limit } from 'firebase/firestore';
 if (!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '')) throw Error('Run against the local Firestore emulator only.');
 const env = await initializeTestEnvironment({ projectId: 'demo-lyricflow', firestore: { rules: await readFile('firestore.rules', 'utf8') } });
 const alice = env.authenticatedContext('alice', { email_verified: true }).firestore();
@@ -53,6 +53,9 @@ try {
   await yes(setDoc(doc(admin,`approvedCorrections/${id}`),approved));
   await yes(getDoc(doc(guest,`approvedCorrections/${id}`)));
   await no(getDocs(collection(guest,'approvedCorrections')));
+  await yes(getDocs(query(collection(guest,'approvedCorrections'),where('active','==',true),limit(300))));
+  await no(getDocs(query(collection(guest,'approvedCorrections'),where('active','==',true),limit(301))));
+  await no(getDocs(query(collection(guest,'approvedCorrections'),limit(300))));
   await no(setDoc(doc(alice,'admins/alice'),{admin:true}));
   await yes(setDoc(doc(admin,`correctionSubmissions/alice/items/${proposalId}`),{...pending,delaySeconds:3,status:'approved'}));
   await no(setDoc(doc(alice,`correctionSubmissions/alice/items/${proposalId}`),pending));
@@ -75,6 +78,9 @@ try {
   await no(setDoc(doc(alice,'songMappings/r4_0123456789abcdef'),{...mapping,active:true,revision:1}));
   await yes(setDoc(doc(admin,'songMappings/r4_0123456789abcdef'),{...mapping,active:true,revision:1}));
   await yes(getDoc(doc(guest,'songMappings/r4_0123456789abcdef')));
+  await yes(getDocs(query(collection(guest,'songMappings'),where('active','==',true),limit(300))));
+  await no(getDocs(query(collection(guest,'songMappings'),where('active','==',true),limit(301))));
+  await no(getDocs(query(collection(bob,'profiles/alice/songMappings'),limit(300))));
   await no(setDoc(doc(admin,'songMappings/r4_0123456789abcdef'),{...mapping,video:{youtubeVideoId:'bad',delaySeconds:2},active:true,revision:2}));
   console.log(`${checks} Firestore permission and validation checks passed.`);
 } finally { await env.cleanup(); }

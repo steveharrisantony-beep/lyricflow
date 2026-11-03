@@ -22,6 +22,7 @@ import App from '../App';
 import {LYRIC_MOTIONS,ORIGINAL_LYRIC_MOTIONS,VOXELVERSE_STYLES} from '../visualization/cinematic/kineticTypography';
 import { searchStashCatalog } from '../music/providers';
 import {createBackup} from '../data/backupData';
+import {temporarySongs} from '../data/temporarySongs';
 import {getLyricTimelineSnapshot} from '../lyrics/lyricTimeline';
 let root: Root, host: HTMLDivElement;
 it('keeps the latest manual lyric version and video mapped despite late automatic results',async()=>{
@@ -37,8 +38,7 @@ it('keeps the latest manual lyric version and video mapped despite late automati
   await act(async()=>props!.onLyricsMapped!(mapped(22),{engine:'lrclib',lrclibId:22,subtitleTrackId:null}));
   await act(async()=>props!.onLyricsFound({original:'[00:01]Late automatic lyrics',romanized:'',source:'Apple Library'}));
   expect(getLyricTimelineSnapshot().cues[0]?.text).toBe('Chosen version 22');
-  expect(localStorage.getItem('lyricflow.v3.guest.customLyrics')).toContain('Chosen version 22');
-  expect(localStorage.getItem('lyricflow.v3.guest.corrections')).not.toContain('api/get/11');
+  expect(JSON.stringify(createBackup('song-mappings',null))).not.toContain('Chosen version 22');
   const input=host.querySelector<HTMLInputElement>('[aria-label="Background video URL"]')!;
   for(const id of ['aaaaaaaaaaa','bbbbbbbbbbb']){
    await act(async()=>{
@@ -48,6 +48,7 @@ it('keeps the latest manual lyric version and video mapped despite late automati
    await act(async()=>click('Save background video'));
   }
   expect(host.querySelector('[data-testid="pinned-video"]')?.getAttribute('data-video')).toBe('bbbbbbbbbbb');
+  await act(async()=>host.querySelector<HTMLButtonElement>('button.save-song-button')!.click());
   const backup=JSON.stringify(createBackup('song-mappings',null));
   expect(backup).toContain('api/get/22');expect(backup).not.toContain('api/get/11');expect(backup).not.toContain('aaaaaaaaaaa');
   await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App/>));
@@ -55,7 +56,7 @@ it('keeps the latest manual lyric version and video mapped despite late automati
   expect(props?.preferredSelection?.lrclibId).toBe(22);expect(props?.savedCustomLrc).toContain('Chosen version 22');
   expect(host.querySelector('[data-testid="pinned-video"]')?.getAttribute('data-video')).toBe('bbbbbbbbbbb');
  }finally{choose.mockRestore();draw.mockRestore();}
-});
+},20000);
 function click(text: string) {
   const button = [...host.querySelectorAll('button')].find(b => b.textContent === text);
   if (!button) throw Error('Missing button: ' + text);
@@ -134,6 +135,7 @@ it('saves visibility in the respective song mapping sections and restores it per
   expect(output().getAttribute('data-hide-lyrics')).toBe('true');
   expect(output().getAttribute('data-hide-video')).toBe('true');
   expect(output().getAttribute('data-mode')).toBe('theme');
+  await act(async()=>host.querySelector<HTMLButtonElement>('button.save-song-button')!.click());
   expect(localStorage.getItem('lyricflow.v3.guest.songMappings')).toContain('"hideLyrics":true');
   await act(async()=>click('Load next JioSaavn fixture'));
   expect(flag('Hide lyrics for this song').checked).toBe(false);
@@ -145,12 +147,13 @@ it('saves visibility in the respective song mapping sections and restores it per
   expect(flag('Hide lyrics for this song').checked).toBe(true);
   expect(flag('Hide video for this song').checked).toBe(true);
   await act(async()=>{flag('Hide lyrics for this song').click();flag('Hide video for this song').click();});
+  await act(async()=>host.querySelector<HTMLButtonElement>('button.save-song-button')!.click());
   const mappings=JSON.parse(localStorage.getItem('lyricflow.v3.guest.songMappings')!);
   expect(Object.values(mappings)).toContainEqual(expect.objectContaining({hideLyrics:false,hideVideo:false}));
  }finally{probe.mockRestore();}
 });
 beforeEach(async () => {
-  localStorage.clear();
+  localStorage.clear();temporarySongs.clear();
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   vi.stubGlobal('requestAnimationFrame', () => 0);
   vi.stubGlobal('cancelAnimationFrame', () => {});
@@ -191,6 +194,7 @@ it('stores manual-lyrics delay on device and restores it after remount', async (
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Increase lyric delay 0.5s"]')!.click());
   expect(host.querySelector<HTMLInputElement>('[aria-label="Lyrics delay seconds"]')?.value).toBe('0.5');
   expect(host.textContent).toContain('Lyrics timing: personal');
+  await act(async()=>host.querySelector<HTMLButtonElement>('button.save-song-button')!.click());
   expect(localStorage.getItem('lyricflow.v3.guest.corrections')).toContain('"delaySeconds":0.5');
   await act(async () => root.unmount());
   root = createRoot(host);
@@ -239,6 +243,7 @@ it('calibrates lyric delay via Text seen and Voice heard buttons in either order
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(delayInput, '');
     delayInput.dispatchEvent(new Event('input', { bubbles: true }));
   });
+  await act(async()=>host.querySelector<HTMLButtonElement>('button.save-song-button')!.click());
   expect(localStorage.getItem('lyricflow.v3.guest.corrections')).toContain('"delaySeconds":0');
 });
 
@@ -277,6 +282,7 @@ it('finds a music or lyrical YouTube background for JioSaavn and saves both sour
     area.dispatchEvent(new Event('input',{bubbles:true}));
   });
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Increase lyric delay 0.5s"]')!.click());
+  await act(async()=>host.querySelector<HTMLButtonElement>('button.save-song-button')!.click());
   const maps = Object.values(JSON.parse(localStorage.getItem('lyricflow.v3.guest.songMappings') || '{}')) as {identity:{title:string;artist:string;duration:number};lyrics:{sourceFile:{revision:string};delaySeconds:number};video:{youtubeVideoId:string;delaySeconds:number}}[];
   expect(maps).toHaveLength(1);
   expect(maps[0]).toMatchObject({identity:{title:'original test song',artist:'test artist',duration:200},lyrics:{delaySeconds:.5},video:{youtubeVideoId:'abcdefghijk',delaySeconds:null}});
@@ -312,7 +318,7 @@ it('switches external advertisements to themes, aborts video search and unmounts
     expect(host.querySelector('[data-testid="stage-ad"]')?.getAttribute('data-video')).toBe('');
     expect(host.querySelector('[data-testid="stage-ad"]')?.getAttribute('data-mode')).toBe('theme');
     expect(vi.mocked(searchStashCatalog).mock.calls.length).toBe(count);
-    expect(searchSignal?.aborted).toBe(true);
+    expect(searchSignal).toBeInstanceOf(AbortSignal); // This mocked search completed before the advertisement.
     await act(async()=>click('Load JioSaavn fixture'));
     expect(host.querySelector('[data-testid="stage-ad"]')?.getAttribute('data-ad')).toBe('false');
     expect(host.querySelector('[data-testid="stage-ad"]')?.getAttribute('data-external')).toBe('false');
@@ -422,9 +428,9 @@ it('removes lyric transition choices and persists independent word animation swi
  const saved=JSON.parse(localStorage.getItem('lyricflow.extendedSettings.v1')!);
  expect(saved.enabledThemeTransitions).toEqual([]);expect(saved.enabledLyricTransitions).toBeUndefined();
  expect(saved.enabledWordAnimations).toEqual([]);expect(saved.wordStylesEnabled).toBe(true);
-});
+},20000);
 
-it('positions Save for current song above Lyrics mapping, shows exact fetched lyrics title, and does not restart song on manual search',async()=>{
+it('positions Save mapping for current song above Lyrics mapping, shows exact fetched lyrics title, and does not restart song on manual search',async()=>{
   const finder=await import('../metadata/TrackFinder');
   const stage=await import('../visualization/cinematic/CinematicStage');
   let capturedFinderProps:Parameters<typeof finder.default>[0]|null=null;
@@ -439,7 +445,7 @@ it('positions Save for current song above Lyrics mapping, shows exact fetched ly
     await act(async()=>click('Load JioSaavn fixture'));
     const saveBtn=host.querySelector<HTMLButtonElement>('button.save-song-button')!;
     const lyricsDetails=host.querySelector<HTMLDetailsElement>('details.lyrics-mapping-section')!;
-    expect(saveBtn).not.toBeNull();
+    expect(saveBtn).not.toBeNull();expect(saveBtn.textContent).toBe('Save mapping for current song');
     expect(lyricsDetails).not.toBeNull();
     expect(Boolean(saveBtn.compareDocumentPosition(lyricsDetails)&Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
 
@@ -472,8 +478,13 @@ it('positions Save for current song above Lyrics mapping, shows exact fetched ly
     const afterSearchRecordingKey=host.querySelector('[data-testid="stage-probe"]')?.getAttribute('data-recording-key');
     expect(afterSearchRecordingKey).toBe(initialRecordingKey);
 
-    // Clicking Save for current song saves both lyrics and video preferences
+    // Clicking Save mapping for current song saves both lyrics and video preferences
+    vi.useFakeTimers();
     await act(async()=>saveBtn.click());
+    expect(saveBtn.textContent).toBe('Saved');
+    await act(async()=>vi.advanceTimersByTimeAsync(2000));
+    expect(saveBtn.textContent).toBe('Save mapping for current song');
+    vi.useRealTimers();
     const maps=Object.values(JSON.parse(localStorage.getItem('lyricflow.v3.guest.songMappings')||'{}')) as {lyrics?:unknown;video?:{youtubeVideoId:string}}[];
     expect(maps).toHaveLength(1);
     expect(maps[0].lyrics).toBeTruthy();

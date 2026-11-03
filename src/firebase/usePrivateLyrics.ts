@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
-import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, LEGACY_DELAYS_KEY, type SongDelayRecord } from './firebaseClient';
 import { readDevice, writeDevice, scopedKey } from './deviceStore';
 import {songMappingResetPending,songMappingResetVersion} from './songMappingReset';
-import { correctionContext, type RecordingIdentity } from './correctionModel';
+import { type RecordingIdentity } from './correctionModel';
 import type { TrackInfo } from '../metadata/trackInfo';
+import {localSongData} from '../data/localSongData';
+import {temporarySongs,TEMPORARY_SONG_EVENT} from '../data/temporarySongs';
 
-type Custom = { identity: RecordingIdentity; text: string; dirty: boolean };
+type Custom = { identity: RecordingIdentity; text: string; dirty: boolean; imported?:boolean };
 export function legacySongDelay(track: TrackInfo | null): SongDelayRecord | null {
   if (!track) return null;
   const records = Object.values(readDevice<Record<string, SongDelayRecord>>(LEGACY_DELAYS_KEY, {}));
@@ -15,103 +17,41 @@ export function legacySongDelay(track: TrackInfo | null): SongDelayRecord | null
     && Math.abs(r.duration - track.duration) <= 1) || null;
 }
 export function usePrivateLyrics(track: TrackInfo | null, uid: string | null) {
-  const context = correctionContext(track, 'lyrics');
-  const id = context?.recordingKey || '';
-  const cacheKey = scopedKey('customLyrics', uid);
-  const [state, setState] = useState({ id: '', text: '', exists: false });
-  const [error, setError] = useState('');
-  useEffect(() => {
-    if (!id || !context) return;
-    let stopped = false;
-    const initial = readDevice<Record<string, Custom>>(cacheKey, {});
-    if (!initial[id]) {
-      const matches = Object.entries(initial).filter(([key, value]) => key.startsWith('r3_') && value.identity &&
-        value.identity.title === context.identity.title && value.identity.artist === context.identity.artist && value.identity.duration === context.identity.duration);
-      if (matches.length && matches.every(([, value]) => value.text === matches[0][1].text)) {
-        initial[id] = { ...matches[0][1], identity: context.identity, dirty: Boolean(uid) }; writeDevice(cacheKey, initial);
-      }
-    }
-    const read = () => readDevice<Record<string, Custom>>(cacheKey, {})[id];
-    const emit = () => { if (!stopped) setState({ id, text: read()?.text || '', exists: Boolean(read()) }); };
-    const sync = () => {
-      const entry = read();
-      if (!db || !uid || !entry?.dirty || songMappingResetPending(uid)) return;
-      const version=songMappingResetVersion(uid);
-      void setDoc(doc(db, 'profiles', uid, 'customLyrics', id), { identity: entry.identity, text: entry.text, updatedAt: serverTimestamp() })
-        .then(() => {
-          if(uid&&version!==songMappingResetVersion(uid))return;
-          const map = readDevice<Record<string, Custom>>(cacheKey, {});
-          if (map[id]?.text === entry.text) { map[id] = { ...entry, dirty: false }; writeDevice(cacheKey, map); }
-        }).catch(() => { if (!stopped) setError('Custom lyrics saved on device · cloud sync unavailable'); });
-    };
-    emit(); sync();
-    window.addEventListener('online', sync);
-    window.addEventListener('lyricflow:customLyrics', emit);
-    const unsubscribe = uid && db ? onSnapshot(doc(db, 'profiles', uid, 'customLyrics', id), snap => {
-      if (read()?.dirty || songMappingResetPending(uid)) return;
-      if (snap.exists() && typeof snap.data().text === 'string') {
-        const map = readDevice<Record<string, Custom>>(cacheKey, {});
-        map[id] = { identity: context.identity, text: snap.data().text.slice(0, 100000), dirty: false };
-        writeDevice(cacheKey, map); emit();
-      } else if (!snap.exists() && !snap.metadata.fromCache) {
-        const map = readDevice<Record<string, Custom>>(cacheKey, {}); delete map[id]; writeDevice(cacheKey, map); emit();
-      }
-    }, () => { if (!stopped) setError('Custom lyrics saved on device · cloud sync unavailable'); }) : () => {};
-    return () => { stopped = true; unsubscribe(); window.removeEventListener('online', sync); window.removeEventListener('lyricflow:customLyrics', emit); };
-  // Context identity is entirely represented by the recording key.
-  }, [id, uid, cacheKey]);
-  const save = (text: string) => {
-    if (!context) return;
-    try {
-      const version=uid?songMappingResetVersion(uid):0;
-      const map = readDevice<Record<string, Custom>>(cacheKey, {});
-      let retiredAlias=false;
-      for(const [oldId,old] of Object.entries(map)){
-        if(oldId===id||!old.identity||!(['title','artist','duration'] as const).every(field=>old.identity[field]===context.identity[field]))continue;
-        if(uid)map[oldId]={identity:old.identity,text:'',dirty:true};else delete map[oldId];
-        retiredAlias=true;
-      }
-      const entry = { identity: context.identity, text: text.slice(0, 100000), dirty: Boolean(uid) };
-      map[id] = entry; writeDevice(cacheKey, map); setState({ id, text: entry.text, exists: true });
-      if (uid && db && !songMappingResetPending(uid)) void setDoc(doc(db, 'profiles', uid, 'customLyrics', id), { identity: entry.identity, text: entry.text, updatedAt: serverTimestamp() })
-        .then(() => {
-          if(uid&&version!==songMappingResetVersion(uid))return;
-          const latest = readDevice<Record<string, Custom>>(cacheKey, {});
-          if (latest[id]?.text === entry.text) { latest[id].dirty = false; writeDevice(cacheKey, latest); }
-        }).catch(() => setError('Custom lyrics saved on device · waiting for cloud sync'));
-      if(uid&&retiredAlias)retryCustomLyrics(uid);
-    } catch { setError('Device storage is full or blocked. Export your lyrics before closing.'); }
-  };
-  return { text: state.id === id ? state.text : '', hasOverride: state.id === id && state.exists, save, error };
+  const [,refresh]=useState(0);
+  useEffect(()=>{
+    const emit=()=>refresh(value=>value+1);
+    window.addEventListener('lyricflow:customLyrics',emit);window.addEventListener(TEMPORARY_SONG_EVENT,emit);
+    return()=>{window.removeEventListener('lyricflow:customLyrics',emit);window.removeEventListener(TEMPORARY_SONG_EVENT,emit);};
+  },[]);
+  const local=localSongData(track,uid);
+  const save=(text:string)=>temporarySongs.edit(track,uid,entry=>{entry.draftText=text.slice(0,100000);});
+  return {text:local.text,hasOverride:Boolean(local.text),save,error:''};
 }
 
 export function importGuestCustomLyrics(uid: string) {
   const guest = readDevice<Record<string, Custom>>(scopedKey('customLyrics', null), {});
   const cacheKey = scopedKey('customLyrics', uid);
   const account = readDevice<Record<string, Custom>>(cacheKey, {});
-  for (const [id, entry] of Object.entries(guest)) {
-    const version=songMappingResetVersion(uid);
-    account[id] = { ...entry, dirty: true };
-    if (db && !songMappingResetPending(uid)) void setDoc(doc(db, 'profiles', uid, 'customLyrics', id), { identity: entry.identity, text: entry.text, updatedAt: serverTimestamp() })
-      .then(() => {
-        if(version!==songMappingResetVersion(uid))return;
-        const latest = readDevice<Record<string, Custom>>(cacheKey, {});
-        if (latest[id]?.text === entry.text) { latest[id].dirty = false; writeDevice(cacheKey, latest); }
-      }).catch(() => {});
-  }
-  writeDevice(cacheKey, account);
+  for(const [id,entry] of Object.entries(guest))account[id]={...entry,dirty:true,imported:true};
+  writeDevice(cacheKey,account);void retryCustomLyrics(uid).catch(()=>{});
   window.dispatchEvent(new Event('lyricflow:customLyrics'));
 }
-export function retryCustomLyrics(uid: string) {
-  const cacheKey = scopedKey('customLyrics', uid);
-  for (const [id, entry] of Object.entries(readDevice<Record<string, Custom>>(cacheKey, {}))) {
-    if (!entry.dirty || !db || songMappingResetPending(uid)) continue;
-    const version=songMappingResetVersion(uid);
-    void setDoc(doc(db, 'profiles', uid, 'customLyrics', id), { identity: entry.identity, text: entry.text, updatedAt: serverTimestamp() })
-      .then(() => {
-        if(version!==songMappingResetVersion(uid))return;
-        const latest = readDevice<Record<string, Custom>>(cacheKey, {});
-        if (latest[id]?.text === entry.text) { latest[id].dirty = false; writeDevice(cacheKey, latest); }
-      }).catch(() => {});
-  }
+const flushing=new Map<string,Promise<void>>();
+function flushCustomLyrics(uid:string,id:string):Promise<void>{
+ const lock=uid+':'+id+':'+songMappingResetVersion(uid),active=flushing.get(lock);
+ if(active)return active.then(()=>flushCustomLyrics(uid,id),()=>flushCustomLyrics(uid,id));
+ const task=flushCustomLatest(uid,id).finally(()=>{if(flushing.get(lock)===task)flushing.delete(lock);});
+ flushing.set(lock,task);return task;
+}
+async function flushCustomLatest(uid:string,id:string){
+ if(!db||songMappingResetPending(uid))return;
+ const cacheKey=scopedKey('customLyrics',uid),version=songMappingResetVersion(uid);
+ const entry=readDevice<Record<string,Custom>>(cacheKey,{})[id];if(!entry?.dirty)return;
+ await setDoc(doc(db,'profiles',uid,'customLyrics',id),{identity:entry.identity,text:entry.text,updatedAt:serverTimestamp()});
+ if(version!==songMappingResetVersion(uid))return;
+ const latest=readDevice<Record<string,Custom>>(cacheKey,{});
+ if(JSON.stringify(latest[id])===JSON.stringify(entry)){latest[id].dirty=false;latest[id].imported=false;writeDevice(cacheKey,latest);}
+}
+export async function retryCustomLyrics(uid:string,importsOnly=false){
+ await Promise.all(Object.entries(readDevice<Record<string,Custom>>(scopedKey('customLyrics',uid),{})).filter(([,entry])=>entry.dirty&&(!importsOnly||entry.imported)).map(([id])=>flushCustomLyrics(uid,id)));
 }

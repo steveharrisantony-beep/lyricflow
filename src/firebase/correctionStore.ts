@@ -1,11 +1,13 @@
-import { doc, onSnapshot, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
+import {temporarySongs} from '../data/temporarySongs';
+import {localSongData} from '../data/localSongData';
 import { db } from './firebaseClient';
 import { readDevice, writeDevice, scopedKey } from './deviceStore';
 import {songMappingResetPending,songMappingResetVersion} from './songMappingReset';
 import { correctionKey, fingerprint, upgradeCachedCorrection, validCorrection, chooseCorrection, type Correction, type CorrectionContext, type CorrectionKind, type RecordingIdentity } from './correctionModel';
 
-type Entry = { value: Correction; dirty: boolean; removed?: boolean };
+type Entry = { value: Correction; dirty: boolean; removed?: boolean; imported?:boolean };
 type Cache = Record<string, Entry>;
 const EVENT = 'lyricflow:corrections';
 const personalKey = (uid: string | null) => scopedKey('corrections', uid);
@@ -19,7 +21,14 @@ function updateCache(cacheKey: string, id: string, value: Entry | null) {
   window.dispatchEvent(new Event(EVENT));
 }
 function personalRef(uid: string, id: string) { return doc(db!, 'profiles', uid, 'corrections', id); }
-export async function flushPersonalCorrection(uid: string, context: CorrectionContext) {
+const flushing=new Map<string,Promise<void>>();
+export function flushPersonalCorrection(uid:string,context:CorrectionContext):Promise<void>{
+  const lock=uid+':'+correctionKey(context)+':'+songMappingResetVersion(uid),active=flushing.get(lock);
+  if(active)return active.then(()=>flushPersonalCorrection(uid,context),()=>flushPersonalCorrection(uid,context));
+  const task=flushCorrectionLatest(uid,context).finally(()=>{if(flushing.get(lock)===task)flushing.delete(lock);});
+  flushing.set(lock,task);return task;
+}
+async function flushCorrectionLatest(uid: string, context: CorrectionContext) {
   if (!db || songMappingResetPending(uid)) return;
   const id = correctionKey(context), cacheKey = personalKey(uid), version=songMappingResetVersion(uid);
   const entry = readDevice<Cache>(cacheKey, {})[id];
@@ -28,7 +37,7 @@ export async function flushPersonalCorrection(uid: string, context: CorrectionCo
   else await setDoc(personalRef(uid, id), { ...entry.value, updatedAt: serverTimestamp() });
   if(version!==songMappingResetVersion(uid))return;
   const current = readDevice<Cache>(cacheKey, {})[id];
-  if (JSON.stringify(current) === JSON.stringify(entry)) updateCache(cacheKey, id, entry.removed ? null : { ...entry, dirty: false });
+  if (JSON.stringify(current) === JSON.stringify(entry)) updateCache(cacheKey, id, entry.removed ? null : { ...entry, dirty: false, imported:false });
 }
 export function savePersonalCorrection(uid: string | null, correction: Correction) {
   const value = validCorrection(correction, correction);
@@ -42,46 +51,18 @@ export function removePersonalCorrection(uid: string | null, context: Correction
   updateCache(personalKey(uid), correctionKey(context), { value, dirty: true, removed: true });
   return flushPersonalCorrection(uid, context);
 }
-export function watchCorrection(context: CorrectionContext, uid: string | null,
-  next: (result: ReturnType<typeof chooseCorrection>) => void, error: (message: string) => void) {
-  const id = correctionKey(context), cacheKey = personalKey(uid);
-  const cache = readDevice<Cache>(cacheKey, {});
-  if (!cache[id]) {
-    const candidates = Object.values(cache).filter(entry => !entry.removed)
-      .map(entry => upgradeCachedCorrection(entry.value, context)).filter((value): value is Correction => Boolean(value));
-    if (candidates.length && candidates.every(value => JSON.stringify(value) === JSON.stringify(candidates[0]))) {
-      updateCache(cacheKey, id, { value: candidates[0], dirty: Boolean(uid) });
-    }
-  }
-  const emit = () => {
-    const p = readDevice<Cache>(cacheKey, {})[id], a = readDevice<Cache>(PUBLIC_CACHE, {})[id];
-    next(chooseCorrection(p && !p.removed ? validCorrection(p.value, context) : null, a ? validCorrection(a.value, context) : null));
+export function watchCorrection(context:CorrectionContext,uid:string|null,
+  next:(result:ReturnType<typeof chooseCorrection>)=>void,_error:(message:string)=>void){
+  const id=correctionKey(context),cacheKey=personalKey(uid);
+  const emit=()=>{
+    const cache=readDevice<Cache>(cacheKey,{}),p=cache[id],a=readDevice<Cache>(PUBLIC_CACHE,{})[id];
+    const legacy=!p?Object.values(cache).filter(entry=>!entry.removed).map(entry=>upgradeCachedCorrection(entry.value,context)).find(Boolean):null;
+    next(chooseCorrection(p&&!p.removed?validCorrection(p.value,context):legacy||null,a?validCorrection(a.value,context):null));
   };
-  emit();
-  window.addEventListener(EVENT, emit);
-  const retry = () => { if (uid) void flushPersonalCorrection(uid, context).catch(() => error('Saved on device · correction sync unavailable')); };
-  retry();
-  window.addEventListener('online', retry);
-  const unsubscribers: (() => void)[] = [];
-  if (db) {
-    // Exact document reads only. Guests cannot enumerate submissions or profiles.
-    unsubscribers.push(onSnapshot(doc(db, 'approvedCorrections', id), snap => {
-      if (snap.exists()) {
-        const value = snap.data().active === true ? validCorrection(snap.data(), context) : null;
-        updateCache(PUBLIC_CACHE, id, value ? { value, dirty: false } : null);
-      } else if (!snap.metadata.fromCache) updateCache(PUBLIC_CACHE, id, null);
-    }, () => error('Using saved corrections · community updates unavailable')));
-    if (uid) unsubscribers.push(onSnapshot(personalRef(uid, id), { includeMetadataChanges: true }, snap => {
-      const local = readDevice<Cache>(cacheKey, {})[id];
-      if (local?.dirty || (uid && songMappingResetPending(uid))) return;
-      if (snap.exists()) {
-        const value = validCorrection(snap.data(), context);
-        if (value) updateCache(cacheKey, id, { value, dirty: false });
-      } else if (!snap.metadata.fromCache) updateCache(cacheKey, id, null);
-    }, () => error('Saved on device · personal correction sync unavailable')));
-  }
-  return () => { window.removeEventListener(EVENT, emit); window.removeEventListener('online', retry); unsubscribers.forEach(fn => fn()); };
+  emit();window.addEventListener(EVENT,emit);
+  return()=>window.removeEventListener(EVENT,emit);
 }
+
 export async function submitCorrection(user: User | null, correction: Correction) {
   if (!user) throw new Error('Sign in to submit a correction. Your personal fix is already saved.');
   if (!user.emailVerified) throw new Error('Verify your account email before submitting.');
@@ -99,21 +80,18 @@ export function importGuestCorrections(uid: string) {
   const entries = Object.values(readDevice<Cache>(personalKey(null), {}));
   for (const entry of entries) if (!entry.removed) void savePersonalCorrection(uid, entry.value).catch(() => {});
 }
-export function retryAccountCorrections(uid: string) {
-  for (const entry of Object.values(readDevice<Cache>(personalKey(uid), {}))) {
-    if (entry.dirty) void flushPersonalCorrection(uid, entry.value).catch(() => {});
-  }
+export async function retryAccountCorrections(uid:string,importsOnly=false){
+  await Promise.all(Object.values(readDevice<Cache>(personalKey(uid),{})).filter(entry=>entry.dirty&&(!importsOnly||entry.imported)).map(entry=>flushPersonalCorrection(uid,entry.value)));
 }
 
 /** A newly chosen source replaces the prior selection and its version-specific timing fixes. */
 export function discardSongCorrections(uid:string|null,identity:RecordingIdentity,kinds:readonly CorrectionKind[],keepId=''){
-  const key=personalKey(uid),cache=readDevice<Cache>(key,{}),removed:Correction[]=[];
-  for(const [id,entry] of Object.entries(cache)){
-    if(id===keepId||!entry.value?.identity||!kinds.includes(entry.value.kind))continue;
-    if(!(['title','artist','duration'] as const).every(field=>entry.value.identity[field]===identity[field]))continue;
-    if(uid){cache[id]={...entry,removed:true,dirty:true};removed.push(entry.value);}else delete cache[id];
-  }
-  writeDevice(key,cache);window.dispatchEvent(new Event(EVENT));
-  if(uid)for(const value of removed)void flushPersonalCorrection(uid,value).catch(()=>{});
+  const track={...identity,provider:undefined,source:'manual' as const,confidence:1};
+  const current=localSongData(track,uid).session;
+  const cache=readDevice<Cache>(personalKey(uid),{});
+  temporarySongs.edit(track,uid,entry=>{
+    for(const [id,value] of Object.entries({...Object.fromEntries(Object.entries(cache).map(([id,e])=>[id,e.value])),...current?.corrections})){
+      if(id!==keepId&&value&&kinds.includes(value.kind)&&(['title','artist','duration'] as const).every(field=>value.identity[field]===identity[field]))entry.corrections[id]=null;
+    }
+  });
 }
-

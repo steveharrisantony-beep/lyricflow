@@ -11,19 +11,21 @@ vi.mock('firebase/firestore',()=>({
  getDocsFromServer:(...args:unknown[])=>cloud.get(...args),writeBatch:()=>({delete:cloud.remove,commit:cloud.commit}),
 }));
 import {resetSongMappingData} from '../data/backupData';
+import {saveSongMapping} from '../data/saveSongMapping';
+import {temporarySongs} from '../data/temporarySongs';
 import {retrySongMappingReset,songMappingResetPending} from '../firebase/songMappingReset';
 import {useSongMapping,retrySongMappings} from '../firebase/songMappings';
 import {usePrivateLyrics,retryCustomLyrics} from '../firebase/usePrivateLyrics';
 import {useCorrection} from '../firebase/useCorrection';
 import {retryAccountCorrections} from '../firebase/correctionStore';
 import {scopedKey,writeDevice,readDevice} from '../firebase/deviceStore';
-import {correctionContext,correctionKey,makeCorrection} from '../firebase/correctionModel';
+import {correctionContext,correctionKey,makeCorrection,lyricFingerprint} from '../firebase/correctionModel';
 const track={title:'Song',artist:'Artist',album:'Studio',duration:200,provider:'local' as const,source:'manual' as const,confidence:1};
 const context=correctionContext(track,'lyrics')!;
 let root:Root,mapping:ReturnType<typeof useSongMapping>,lyrics:ReturnType<typeof usePrivateLyrics>,correction:ReturnType<typeof useCorrection>;
 function Fixture(){mapping=useSongMapping(track,'A');lyrics=usePrivateLyrics(track,'A');correction=useCorrection(track,'lyrics','A');return null;}
 beforeEach(()=>{
- localStorage.clear();cloud.listeners.clear();vi.clearAllMocks();
+ localStorage.clear();temporarySongs.clear();cloud.listeners.clear();vi.clearAllMocks();
  cloud.set.mockResolvedValue(undefined);cloud.commit.mockResolvedValue(undefined);cloud.get.mockResolvedValue({docs:[]});
  (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
  root=createRoot(document.createElement('div'));
@@ -36,20 +38,20 @@ it('blocks stale snapshots and uploads while reset is pending, then syncs edits 
  writeDevice(scopedKey('corrections','A'),{[correctionKey(context)]:{value:oldCorrection,dirty:false}});
  await act(async()=>root.render(<Fixture/>));
  expect(mapping.hideVideo).toBe(true);expect(lyrics.hasOverride).toBe(true);expect(correction.source).toBe('personal');
+ const online=vi.spyOn(navigator,'onLine','get').mockReturnValue(false);
  await act(async()=>resetSongMappingData('A'));
  expect(mapping.hideVideo).toBe(false);expect(lyrics.hasOverride).toBe(false);expect(correction.source).toBe('automatic');
- const snap=(data:unknown)=>({exists:()=>true,data:()=>data,metadata:{fromCache:true}});
- await act(async()=>{
-  cloud.listeners.get(`profiles/A/songMappings/${context.recordingKey}`)!(snap({identity:context.identity,hideVideo:true}));
-  cloud.listeners.get(`profiles/A/customLyrics/${context.recordingKey}`)!(snap({text:'Old custom lyrics'}));
-  cloud.listeners.get(`profiles/A/corrections/${correctionKey(context)}`)!(snap(oldCorrection));
- });
+ expect(cloud.listeners.size).toBe(0);
  expect(mapping.hideVideo).toBe(false);expect(lyrics.hasOverride).toBe(false);expect(correction.source).toBe('automatic');
  await act(async()=>{
-  mapping.savePart('hideLyrics',true);lyrics.save('New custom lyrics');correction.save({selection:{engine:'lrclib',lrclibId:2,subtitleTrackId:null}});
-  retrySongMappings('A');retryCustomLyrics('A');retryAccountCorrections('A');
+  mapping.savePart('hideLyrics',true);lyrics.save('New custom lyrics');
+  mapping.savePart('lyrics',{sourceFile:{name:'Custom',url:'',revision:lyricFingerprint('New custom lyrics')},selection:null,delaySeconds:0});
+  correction.save({selection:{engine:'lrclib',lrclibId:2,subtitleTrackId:null}});
+  saveSongMapping(track,'A');
+  void retrySongMappings('A');void retryCustomLyrics('A');void retryAccountCorrections('A');
  });
  expect(cloud.set).not.toHaveBeenCalled();
+ online.mockReturnValue(true);
  cloud.get.mockImplementation(async(path:string)=>({docs:[{ref:`${path}/remote-only`}]}));
  await act(async()=>{expect(await retrySongMappingReset('A')).toBe(true);});
  expect(cloud.remove).toHaveBeenCalledTimes(3);expect(cloud.commit).toHaveBeenCalledOnce();
@@ -76,14 +78,19 @@ it('ignores acknowledgements from saves started before a reset',async()=>{
   mapping.savePart('hideLyrics',true);
   lyrics.save('Same text');
   correction.save({selection:{engine:'apple',lrclibId:null,subtitleTrackId:null}});
+  mapping.savePart('lyrics',{sourceFile:{name:'Custom',url:'',revision:lyricFingerprint('Same text')},selection:null,delaySeconds:0});
+  saveSongMapping(track,'A');
  });
+ const online=vi.spyOn(navigator,'onLine','get').mockReturnValue(false);
  await act(async()=>resetSongMappingData('A'));
  // A new edit can have the same value as an old pending save.
- await act(async()=>{lyrics.save('Same text');correction.save({selection:{engine:'apple',lrclibId:null,subtitleTrackId:null}});});
+ await act(async()=>{lyrics.save('Same text');correction.save({selection:{engine:'apple',lrclibId:null,subtitleTrackId:null}});
+ mapping.savePart('lyrics',{sourceFile:{name:'Custom',url:'',revision:lyricFingerprint('Same text')},selection:null,delaySeconds:0});saveSongMapping(track,'A');});
+ online.mockReturnValue(true);
  await act(async()=>{await retrySongMappingReset('A');for(const resolve of acknowledgements)resolve();});
  expect(readDevice<Record<string,{dirty:boolean}>>(scopedKey('customLyrics','A'),{})[context.recordingKey].dirty).toBe(true);
  expect(readDevice<Record<string,{dirty:boolean}>>(scopedKey('corrections','A'),{})[correctionKey(context)].dirty).toBe(true);
- expect(readDevice(scopedKey('songMappings','A'),null)).toEqual({});
+ expect(readDevice<Record<string,{dirty:string[]}>>(scopedKey('songMappings','A'),{})[context.recordingKey].dirty).toContain('lyrics');
  // Mapping fields now travel in one atomic write rather than separate field writes.
  expect(cloud.set).toHaveBeenCalledTimes(3);
 });

@@ -2,15 +2,11 @@ import { useEffect, useState } from 'react';
 import App from '../App';
 import { auth, onAuthStateChanged, type User } from '../firebase/firebaseClient';
 import { setDeviceScope } from '../firebase/deviceStore';
-import { retrySongMappings } from '../firebase/songMappings';
-import { retryCustomLyrics } from '../firebase/usePrivateLyrics';
-import { retryAccountCorrections } from '../firebase/correctionStore';
-import {retrySongMappingReset} from '../firebase/songMappingReset';
+import {syncAccountSongData,syncPublishedSongData} from '../firebase/songDatabaseSync';
+import {temporarySongs} from '../data/temporarySongs';
 
 function retryAccountData(uid:string){
-  void retrySongMappingReset(uid).then(ready=>{
-    if(ready){retryAccountCorrections(uid);retryCustomLyrics(uid);retrySongMappings(uid);}
-  }).catch(()=>{/* The pending reset is retried on the next connection. */});
+  void syncAccountSongData(uid).catch(()=>{/* Keep local data and retry when connected. */});
 }
 
 export default function AccountRoot() {
@@ -20,8 +16,10 @@ export default function AccountRoot() {
     return { ready: true, user: initialUser };
   });
   useEffect(() => {
+    void syncPublishedSongData().catch(()=>{});
     if (!auth) { setDeviceScope(); return; }
     const unsubscribe = onAuthStateChanged(auth, user => {
+      temporarySongs.clear();
       setDeviceScope(user?.uid);
       setSession({ ready: true, user });
       if (user) retryAccountData(user.uid);

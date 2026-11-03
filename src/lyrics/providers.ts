@@ -125,6 +125,7 @@ export async function resolveAutomaticLyrics(track:TrackInfo,signal?:AbortSignal
 }
 
 export interface StashResolvedLyrics {
+ mappingRevision?:string;
  original:string;
  romanized:string;
  plain?:string;

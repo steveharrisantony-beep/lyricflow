@@ -74,6 +74,7 @@ type Props = {
   onTimeChange: (time: number) => void;
   onFileChange: (loaded: boolean) => void;
   onTrackChange: (track: TrackInfo | null) => void;
+  onQueueChange?: (queue:TrackInfo[])=>void;
   onDurationChange: (duration: number) => void;
   onAudioStreamModeChange?: (hasAudioStream: boolean) => void;
   onVolumeChange?: (volume: number) => void;
@@ -98,6 +99,7 @@ function LocalPlayer(
     onTimeChange,
     onFileChange,
     onTrackChange,
+    onQueueChange,
     onDurationChange,
     onAudioStreamModeChange,
     onVolumeChange,
@@ -166,6 +168,10 @@ function LocalPlayer(
   const [queue, setQueue] = useState<QueuedSongItem[]>([]);
   const queueRef = useRef<QueuedSongItem[]>([]);
   queueRef.current = queue;
+  useEffect(()=>{
+    onQueueChange?.(queue.map(({song})=>({...song,source:'provider',sourceTrackId:song.id,
+      videoId:song.youtubeVideoId||extractYouTubeVideoId(song)||undefined,confidence:1})));
+  },[queue,onQueueChange]);
   const historyRef = useRef<PlayableSong[]>([]);
   const lastRemoteSongRef = useRef<PlayableSong | null>(null);
   const [dragQueueIndex, setDragQueueIndex] = useState<number | null>(null);

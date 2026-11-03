@@ -98,7 +98,7 @@ export default function CorrectionControls({
     editing.current = false;
     setVideoDelay(String(seconds));
     onVideoChange(id, seconds);
-    setMessage("Video timing saved for this song.");
+    setMessage("Video timing applied. Save the song mapping to keep it.");
     return true;
   };
   useEffect(() => {
@@ -141,7 +141,7 @@ export default function CorrectionControls({
     setVideoDelay(String(next));
     if (savedVideoId) {
       onVideoChange(savedVideoId, next);
-      setMessage("Video timing saved for this song.");
+      setMessage("Video timing applied. Save the song mapping to keep it.");
     }
   };
   const handleVideoTap = (kind: "video" | "voice") => {

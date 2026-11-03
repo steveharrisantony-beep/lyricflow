@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { correctionContext, correctionKey, makeCorrection, lyricFingerprint, validCorrection, chooseCorrection } from '../firebase/correctionModel';
 import type { TrackInfo } from '../metadata/trackInfo';
 import { scopedKey } from '../firebase/deviceStore';
+import {temporarySongs} from '../data/temporarySongs';
+import {saveSongMapping} from '../data/saveSongMapping';
 
 const fake = vi.hoisted(() => ({ listeners: new Map<string, (snap: unknown) => void>(), set: vi.fn().mockResolvedValue(undefined), remove: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../firebase/firebaseClient', () => ({ db: {} }));
@@ -19,9 +21,12 @@ const track: TrackInfo = { title: 'Song', artist: 'Artist', album: 'Studio', dur
 const ctx = correctionContext(track, 'delay', lyricFingerprint('[00:01]Original test words'))!;
 const approved = makeCorrection(ctx, { delaySeconds: 2 });
 const personal = makeCorrection(ctx, { delaySeconds: 0 });
-function snapshot(value: unknown, fromCache = false) { return { exists: () => value !== null, data: () => value, metadata: { fromCache, hasPendingWrites: false } }; }
+function publish(value:unknown){
+ localStorage.setItem('lyricflow.v3.approvedCorrections',JSON.stringify(value?{[correctionKey(ctx)]:{value,dirty:false}}:{}));
+ window.dispatchEvent(new Event('lyricflow:corrections'));
+}
 
-beforeEach(() => { localStorage.clear(); fake.listeners.clear(); fake.set.mockReset().mockResolvedValue(undefined); fake.remove.mockReset().mockResolvedValue(undefined); });
+beforeEach(() => { localStorage.clear(); temporarySongs.clear(); fake.listeners.clear(); fake.set.mockReset().mockResolvedValue(undefined); fake.remove.mockReset().mockResolvedValue(undefined); });
 it('removes old lyric selections and timing fixes while preserving the video and other songs',async()=>{
  const selectionContext=correctionContext(track,'lyrics')!,videoContext=correctionContext(track,'video')!;
  await savePersonalCorrection(null,personal);
@@ -30,6 +35,8 @@ it('removes old lyric selections and timing fixes while preserving the video and
  const other=correctionContext({...track,title:'Another song'},'delay',ctx.lyricsKey)!;
  await savePersonalCorrection(null,makeCorrection(other,{delaySeconds:3}));
  discardSongCorrections(null,ctx.identity,['lyrics','delay']);
+ expect(JSON.parse(localStorage.getItem(scopedKey('corrections',null))!)[correctionKey(ctx)]).toBeDefined();
+ saveSongMapping(track,null);
  const saved=JSON.parse(localStorage.getItem(scopedKey('corrections',null))!);
  expect(saved[correctionKey(ctx)]).toBeUndefined();expect(saved[correctionKey(selectionContext)]).toBeUndefined();
  expect(saved[correctionKey(videoContext)]).toBeDefined();expect(saved[correctionKey(other)]).toBeDefined();
@@ -57,7 +64,7 @@ describe('personal and public storage', () => {
     await savePersonalCorrection('accountA', personal);
     const results: unknown[] = [];
     const stop = watchCorrection(ctx, null, value => results.push(value), () => {});
-    fake.listeners.get('approvedCorrections/' + correctionKey(ctx))!(snapshot({ ...approved, active: true }));
+    publish(approved);
     expect(results.at(-1)).toMatchObject({ source: 'approved', correction: { delaySeconds: 2 } });
     expect([...fake.listeners.keys()].some(p => p.startsWith('profiles/'))).toBe(false);
     stop(); expect(fake.listeners.size).toBe(0);
@@ -66,12 +73,11 @@ describe('personal and public storage', () => {
     await savePersonalCorrection(null, personal);
     let result: unknown;
     const stop = watchCorrection(ctx, null, value => { result = value; }, () => {});
-    const pub = fake.listeners.get('approvedCorrections/' + correctionKey(ctx))!;
-    pub(snapshot({ ...approved, active: true }));
+    publish(approved);
     expect(result).toMatchObject({ source: 'personal', correction: { delaySeconds: 0 } });
     await removePersonalCorrection(null, ctx);
     expect(result).toMatchObject({ source: 'approved', correction: { delaySeconds: 2 } });
-    pub(snapshot({ ...approved, active: false }));
+    publish(null);
     expect(result).toMatchObject({ source: 'automatic', correction: null });
     stop();
   });
@@ -80,7 +86,7 @@ describe('personal and public storage', () => {
     void savePersonalCorrection('accountA', personal);
     let result: unknown;
     const stop = watchCorrection(ctx, 'accountA', value => { result = value; }, () => {});
-    fake.listeners.get(`profiles/accountA/corrections/${correctionKey(ctx)}`)!(snapshot(approved, true));
+    expect(fake.listeners.size).toBe(0);
     expect(result).toMatchObject({ source: 'personal', correction: { delaySeconds: 0 } });
     expect(JSON.parse(localStorage.getItem(scopedKey('corrections', 'accountA'))!)[correctionKey(ctx)].dirty).toBe(true);
     stop();
@@ -89,11 +95,11 @@ describe('personal and public storage', () => {
   });
   it('removes a revoked public correction after reconnect, rather than keeping stale cache forever', () => {
     const stop = watchCorrection(ctx, null, () => {}, () => {});
-    fake.listeners.get('approvedCorrections/' + correctionKey(ctx))!(snapshot({ ...approved, active: true })); stop();
+    publish(approved); stop();
     let result: unknown;
     const stopAgain = watchCorrection(ctx, null, value => { result = value; }, () => {});
     expect(result).toMatchObject({ source: 'approved' });
-    fake.listeners.get('approvedCorrections/' + correctionKey(ctx))!(snapshot(null));
+    publish(null);
     expect(result).toMatchObject({ source: 'automatic', correction: null }); stopAgain();
   });
   it('requires verified sign-in and submits metadata only as pending', async () => {

@@ -11,6 +11,7 @@ import {ALL_PLACEMENT_MODES,DEFAULT_VIDEO_PLACEMENTS,DEFAULT_THEME_PLACEMENTS,LY
 import {ALL_THEME_TRANSITIONS} from '../visualization/cinematic/themeTransitions';
 
 import {songMappingResetKey,notifySongMappingData,markSongMappingReset} from '../firebase/songMappingReset';
+import {temporarySongs} from './temporarySongs';
 
 export type BackupKind='settings'|'song-mappings';
 export const MAX_BACKUP_BYTES=10*1024*1024;
@@ -159,28 +160,28 @@ export function restoreBackup(backup:Backup,uid:string|null){
   return;
  }
  const mappingKey=scopedKey('songMappings',uid),correctionsKey=scopedKey('corrections',uid),customKey=scopedKey('customLyrics',uid);
- const mappings=readDevice<Record<string,SongMapping&{dirty?:string[];removed?:boolean}>>(mappingKey,{});
- const corrections=readDevice<Record<string,{value:Correction;dirty:boolean;removed?:boolean}>>(correctionsKey,{});
- const custom=readDevice<Record<string,CustomLyrics&{dirty:boolean}>>(customKey,{});
+ const mappings=readDevice<Record<string,SongMapping&{dirty?:string[];removed?:boolean;imported?:boolean}>>(mappingKey,{});
+ const corrections=readDevice<Record<string,{value:Correction;dirty:boolean;removed?:boolean;imported?:boolean}>>(correctionsKey,{});
+ const custom=readDevice<Record<string,CustomLyrics&{dirty:boolean;imported?:boolean}>>(customKey,{});
  for(const [id,value] of Object.entries(backup.data.mappings)){
   const aliases=Object.entries(mappings).filter(([oldId,old])=>oldId!==id&&!old.removed&&old.identity&&sameSong(old.identity,value.identity));
   const previous:SongMapping=Object.assign({identity:value.identity},...aliases.map(([,old])=>old),mappings[id]);
   const replaceLyrics=Boolean(value.lyrics&&previous.lyrics?.sourceFile.revision!==value.lyrics.sourceFile.revision);
   const replaceVideo=Boolean(value.video&&JSON.stringify(previous.video)!==JSON.stringify(value.video));
-  for(const [oldId,old] of aliases){if(uid)mappings[oldId]={identity:old.identity,removed:true};else delete mappings[oldId];}
+  for(const [oldId,old] of aliases){if(uid)mappings[oldId]={identity:old.identity,removed:true,imported:true};else delete mappings[oldId];}
   if(replaceLyrics&&!backup.data.customLyrics[id])for(const [oldId,old] of Object.entries(custom)){
-   if(sameSong(old.identity,value.identity)){if(uid)custom[oldId]={identity:old.identity,text:'',dirty:true};else delete custom[oldId];}
+   if(sameSong(old.identity,value.identity)){if(uid)custom[oldId]={identity:old.identity,text:'',dirty:true,imported:true};else delete custom[oldId];}
   }
   for(const [oldId,old] of Object.entries(corrections)){
    if(!sameSong(old.value.identity,value.identity)||!(replaceLyrics&&(old.value.kind==='lyrics'||old.value.kind==='delay')||replaceVideo&&old.value.kind==='video'))continue;
-   if(uid)corrections[oldId]={...old,dirty:true,removed:true};else delete corrections[oldId];
+   if(uid)corrections[oldId]={...old,dirty:true,removed:true,imported:true};else delete corrections[oldId];
   }
   const fields=SONG_MAPPING_FIELDS.filter(field=>value[field]!==undefined);
   const copied=SONG_MAPPING_FIELDS.filter(field=>previous[field]!==undefined&&mappings[id]?.[field]===undefined);
-  mappings[id]={...previous,...value,dirty:uid?[...new Set([...(mappings[id]?.dirty||[]),...copied,...fields])]:[]};
+  mappings[id]={...previous,...value,imported:true,dirty:uid?[...new Set([...(mappings[id]?.dirty||[]),...copied,...fields])]:[]};
  }
- for(const value of backup.data.corrections)corrections[correctionKey(value)]={value,dirty:Boolean(uid)};
- for(const [id,value] of Object.entries(backup.data.customLyrics))custom[id]={...value,dirty:Boolean(uid)};
+ for(const value of backup.data.corrections)corrections[correctionKey(value)]={value,dirty:Boolean(uid),imported:true};
+ for(const [id,value] of Object.entries(backup.data.customLyrics))custom[id]={...value,dirty:Boolean(uid),imported:true};
  writeBatch({[mappingKey]:mappings,[correctionsKey]:corrections,[customKey]:custom});
  for(const event of ['lyricflow:songMappings','lyricflow:corrections','lyricflow:customLyrics'])window.dispatchEvent(new Event(event));
 }
@@ -197,5 +198,6 @@ export function resetSongMappingData(uid:string|null){
   ...(uid?{[songMappingResetKey(uid)]:true}:{[LEGACY_DELAYS_KEY]:{}}),
  });
  if(uid)markSongMappingReset(uid);
+ temporarySongs.clear(uid);
  notifySongMappingData();
 }

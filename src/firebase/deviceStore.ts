@@ -7,3 +7,14 @@ export function readDevice<T>(key: string, fallback: T): T {
 export function writeDevice(key: string, value: unknown): void {
   localStorage.setItem(key, JSON.stringify(value));
 }
+
+/** A song snapshot is either saved in full or rolled back on quota errors. */
+export function atomicDeviceWrite(values:Record<string,unknown>){
+ const before=new Map(Object.keys(values).map(key=>[key,localStorage.getItem(key)]));
+ try{for(const [key,value] of Object.entries(values))writeDevice(key,value);}
+ catch{
+  for(const [key,value] of before)try{if(value===null)localStorage.removeItem(key);else localStorage.setItem(key,value);}catch{/* Storage may remain blocked. */}
+  throw new Error('Could not save data. Check available device storage.');
+ }
+}
+

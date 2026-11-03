@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
-import { doc, onSnapshot, setDoc, deleteDoc, deleteField, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, deleteField, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebaseClient';
 import { readDevice, writeDevice, scopedKey } from './deviceStore';
 import {songMappingResetPending,songMappingResetVersion} from './songMappingReset';
 import { correctionContext, type LyricsSourceReference, type LyricsSelection, type RecordingIdentity } from './correctionModel';
 import type { TrackInfo } from '../metadata/trackInfo';
+import {localSongData} from '../data/localSongData';
+import {temporarySongs,TEMPORARY_SONG_EVENT} from '../data/temporarySongs';
 
 export interface SongLyricsMapping { sourceFile: LyricsSourceReference; selection: LyricsSelection | null; delaySeconds: number; }
 export interface SongVideoMapping { youtubeVideoId: string; delaySeconds: number|null; }
 export interface SongMapping { identity: RecordingIdentity; lyrics?: SongLyricsMapping; video?: SongVideoMapping; hideLyrics?: boolean; hideVideo?: boolean; }
 export const SONG_MAPPING_FIELDS=['lyrics','video','hideLyrics','hideVideo'] as const;
 type SongMappingField=typeof SONG_MAPPING_FIELDS[number];
-type Entry = SongMapping & { dirty?: SongMappingField[]; removed?:boolean };
+type Entry = SongMapping & { dirty?: SongMappingField[]; removed?:boolean; imported?:boolean };
 type Cache = Record<string, Entry>;
 const PUBLIC = 'lyricflow.v4.publishedSongMappings';
 const EVENT = 'lyricflow:songMappings';
@@ -67,64 +69,39 @@ async function flushLatest(uid: string, id: string) {
     {mergeFields:['identity',...fields,'updatedAt']});
   if(version!==songMappingResetVersion(uid))return;
   const latest=readDevice<Cache>(key,{})[id];
-  if(latest&&!latest.removed)cacheWrite(key,id,{...latest,dirty:latest.dirty?.filter(field=>
-    !fields.includes(field)||JSON.stringify(latest[field])!==JSON.stringify(entry[field]))});
-}
-export function retrySongMappings(uid: string) {
-  for (const [id, entry] of Object.entries(readDevice<Cache>(scopedKey('songMappings', uid), {}))) {
-    if (entry.removed||entry.dirty?.length) void flush(uid, id).catch(() => {});
+  if(latest&&!latest.removed){
+    const remaining=latest.dirty?.filter(field=>!fields.includes(field)||JSON.stringify(latest[field])!==JSON.stringify(entry[field]));
+    cacheWrite(key,id,{...latest,imported:remaining?.length?latest.imported:false,dirty:remaining});
   }
 }
+export async function retrySongMappings(uid: string,importsOnly=false) {
+  await Promise.all(Object.entries(readDevice<Cache>(scopedKey('songMappings', uid), {}))
+    .filter(([,entry])=>(!importsOnly||entry.imported)&&(entry.removed||entry.dirty?.length)).map(([id])=>flush(uid,id)));
+}
 export function useSongMapping(track: TrackInfo | null, uid: string | null) {
-  const serialized = JSON.stringify(correctionContext(track, 'lyrics'));
-  const context = useMemo(() => JSON.parse(serialized) as ReturnType<typeof correctionContext>, [serialized]);
-  const id = context?.recordingKey || '', key = scopedKey('songMappings', uid);
-  const [state, setState] = useState<{ id: string; personal: SongMapping | null; approved: SongMapping | null }>({ id: '', personal: null, approved: null });
-  const [error, setError] = useState('');
-  useEffect(() => {
-    if (!context) return;
-    const emit = () => setState({ id, personal: validSongMapping(readDevice<Cache>(key, {})[id], context.identity), approved: validSongMapping(readDevice<Cache>(PUBLIC, {})[id], context.identity) });
-    emit(); window.addEventListener(EVENT, emit);
-    const retry = () => { if (uid) void flush(uid, id).catch(() => setError('Song mapping saved on device · waiting for sync')); };
-    retry(); window.addEventListener('online', retry);
-    const stops: (() => void)[] = [];
-    if (db) {
-      stops.push(onSnapshot(doc(db, 'songMappings', id), snap => {
-        const value = snap.exists() && snap.data().active === true ? validSongMapping(snap.data(), context.identity) : null;
-        if (snap.exists() || !snap.metadata.fromCache) cacheWrite(PUBLIC, id, value);
-      }, () => setError('Using saved song mappings · shared updates unavailable')));
-      if (uid) stops.push(onSnapshot(doc(db, 'profiles', uid, 'songMappings', id), snap => {
-        if(songMappingResetPending(uid))return;
-        if (readDevice<Cache>(key, {})[id]?.dirty?.length) return;
-        const value = snap.exists() ? validSongMapping(snap.data(), context.identity) : null;
-        if (snap.exists() || !snap.metadata.fromCache) cacheWrite(key, id, value);
-      }, () => setError('Song mappings saved on device · account sync unavailable')));
-    }
-    return () => { window.removeEventListener(EVENT, emit); window.removeEventListener('online', retry); stops.forEach(fn => fn()); };
-  }, [context, id, uid, key]);
-  const personal = state.id === id ? state.personal : null, approved = state.id === id ? state.approved : null;
-  const savePart = <K extends SongMappingField>(field: K, value: NonNullable<SongMapping[K]> | null) => {
-    if (!context) return;
-    try {
-      const cache=readDevice<Cache>(key,{});
-      const aliases=Object.entries(cache).filter(([oldId,old])=>oldId!==id&&!old.removed&&old.identity&&sameSong(old.identity,context.identity));
-      const entry:Entry=Object.assign({identity:context.identity},...aliases.map(([,old])=>old),cache[id]);
-      if (!aliases.length&&JSON.stringify(entry[field]) === JSON.stringify(value ?? undefined)) return;
-      const copied=SONG_MAPPING_FIELDS.filter(part=>entry[part]!==undefined&&cache[id]?.[part]===undefined);
-      const next = { ...entry, identity: context.identity, [field]: value ?? undefined, dirty: uid ? [...new Set([...(entry.dirty || []),...copied,field])] : [] };
-      const checked = validSongMapping(next, context.identity); if (!checked) throw new Error('Invalid song mapping');
-      if(value!==null&&(field==='lyrics'||field==='video'))for(const [oldId,old] of Object.entries(cache)){
-        if(oldId!==id&&old.identity&&sameSong(old.identity,context.identity)){
-          if(uid)cache[oldId]={identity:old.identity,removed:true};else delete cache[oldId];
-        }
-      }
-      cache[id]={...checked,dirty:next.dirty};writeDevice(key,cache);notify();
-      if(uid)for(const [oldId,old] of Object.entries(cache))if(old.removed)void flush(uid,oldId).catch(()=>{});
-      if (uid) void flush(uid, id).catch(() => setError('Song mapping saved on device · waiting for sync'));
-    } catch { setError('Song mapping could not be saved. Check device storage.'); }
+  const serialized=JSON.stringify(correctionContext(track,'lyrics'));
+  const context=useMemo(()=>JSON.parse(serialized) as ReturnType<typeof correctionContext>,[serialized]);
+  const [,refresh]=useState(0);
+  useEffect(()=>{
+    const emit=()=>refresh(value=>value+1);
+    window.addEventListener(EVENT,emit);window.addEventListener(TEMPORARY_SONG_EVENT,emit);
+    return()=>{window.removeEventListener(EVENT,emit);window.removeEventListener(TEMPORARY_SONG_EVENT,emit);};
+  },[]);
+  const local=localSongData(track,uid),personal=local.mapping;
+  const approved=context?validSongMapping(readDevice<Cache>(PUBLIC,{})[context.recordingKey],context.identity):null;
+  const [error,setError]=useState('');
+  const savePart=<K extends SongMappingField>(field:K,value:NonNullable<SongMapping[K]>|null)=>{
+    if(!context)return;
+    const draft={...(localSongData(track,uid).mapping||{identity:context.identity}),[field]:value??undefined};
+    if(!validSongMapping(draft,context.identity)){setError('Invalid song mapping.');return;}
+    temporarySongs.edit(track,uid,entry=>{
+      entry.draftMapping=draft;
+      if(field==='lyrics'){delete entry.lyrics;if(!value)entry.draftText='';}
+      if(field==='video')delete entry.videos;
+    });
   };
-  return { lyrics: personal?.lyrics || approved?.lyrics || null, video: personal?.video || approved?.video || null,
-    hideLyrics:personal?.hideLyrics??false,hideVideo:personal?.hideVideo??false,personal, approved, savePart, error };
+  return {lyrics:personal?.lyrics||approved?.lyrics||null,video:personal?.video||approved?.video||null,
+    hideLyrics:personal?.hideLyrics??false,hideVideo:personal?.hideVideo??false,personal,approved,savePart,error};
 }
 
 export function importGuestSongMappings(uid: string) {
@@ -132,8 +109,8 @@ export function importGuestSongMappings(uid: string) {
   const key = scopedKey('songMappings', uid), account = readDevice<Cache>(key, {});
   for (const [id, entry] of Object.entries(guest)) {
     const merged={...account[id],...entry};
-    account[id]={...merged,dirty:SONG_MAPPING_FIELDS.filter(field=>merged[field]!==undefined)};
+    account[id]={...merged,imported:true,dirty:SONG_MAPPING_FIELDS.filter(field=>merged[field]!==undefined)};
   }
-  writeDevice(key, account); notify(); retrySongMappings(uid);
+  writeDevice(key, account); notify(); void retrySongMappings(uid).catch(()=>{});
 }
 
