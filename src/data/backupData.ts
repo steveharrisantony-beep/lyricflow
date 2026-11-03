@@ -1,7 +1,7 @@
 import {DEFAULT_USER_PREFERENCES,LEGACY_DELAYS_KEY,loadLocalPreferences,sanitizePreferences,type UserPreferencesData} from '../firebase/firebaseClient';
 import {readDevice,scopedKey} from '../firebase/deviceStore';
 import {correctionKey,validCorrection,type Correction,type CorrectionContext,type RecordingIdentity} from '../firebase/correctionModel';
-import {SONG_MAPPING_FIELDS,validSongMapping,type SongMapping} from '../firebase/songMappings';
+import {SONG_MAPPING_FIELDS,sameSong,validSongMapping,type SongMapping} from '../firebase/songMappings';
 import {ALL_FONT_PACKS} from '../firebase/firebaseClient';
 import {normalizeLyricLayout,type LyricLayoutSettings} from '../lyrics/lyricLayout';
 import {ALL_ROMANIZATION_LANGUAGE_CODES,DEFAULT_ROMANIZATION_LANGUAGE_CODES,getEnabledRomanizationLanguages,getRomanizationMasterEnabled,type RomanizationLanguageCode} from '../romanization/romanize';
@@ -138,7 +138,8 @@ export function createBackup(kind:BackupKind,uid:string|null):Backup{
  const envelope={format:'lyricflow-backup' as const,version:1 as const,exportedAt:new Date().toISOString()};
  if(kind==='settings')return {...envelope,kind,data:parseSettings({preferences:loadLocalPreferences(uid),extended:readDevice(EXTENDED_KEY,{}),romanization:{enabled:getRomanizationMasterEnabled(),languages:getEnabledRomanizationLanguages()}})};
  const cache=readDevice<Record<string,{value:Correction;removed?:boolean}>>(scopedKey('corrections',uid),{});
- return {...envelope,kind,data:parseMappings({mappings:readDevice(scopedKey('songMappings',uid),{}),corrections:Object.values(cache).filter(entry=>!entry.removed).map(entry=>entry.value),customLyrics:readDevice(scopedKey('customLyrics',uid),{})})};
+ const mappings=readDevice<Record<string,SongMapping&{removed?:boolean}>>(scopedKey('songMappings',uid),{});
+ return {...envelope,kind,data:parseMappings({mappings:Object.fromEntries(Object.entries(mappings).filter(([,entry])=>!entry.removed)),corrections:Object.values(cache).filter(entry=>!entry.removed).map(entry=>entry.value),customLyrics:readDevice(scopedKey('customLyrics',uid),{})})};
 }
 /** Validate before writing, and roll back every key if storage fills partway through. */
 function writeBatch(values:Record<string,unknown>){
@@ -158,12 +159,25 @@ export function restoreBackup(backup:Backup,uid:string|null){
   return;
  }
  const mappingKey=scopedKey('songMappings',uid),correctionsKey=scopedKey('corrections',uid),customKey=scopedKey('customLyrics',uid);
- const mappings=readDevice<Record<string,SongMapping&{dirty?:string[]}>>(mappingKey,{});
+ const mappings=readDevice<Record<string,SongMapping&{dirty?:string[];removed?:boolean}>>(mappingKey,{});
  const corrections=readDevice<Record<string,{value:Correction;dirty:boolean;removed?:boolean}>>(correctionsKey,{});
  const custom=readDevice<Record<string,CustomLyrics&{dirty:boolean}>>(customKey,{});
  for(const [id,value] of Object.entries(backup.data.mappings)){
+  const aliases=Object.entries(mappings).filter(([oldId,old])=>oldId!==id&&!old.removed&&old.identity&&sameSong(old.identity,value.identity));
+  const previous:SongMapping=Object.assign({identity:value.identity},...aliases.map(([,old])=>old),mappings[id]);
+  const replaceLyrics=Boolean(value.lyrics&&previous.lyrics?.sourceFile.revision!==value.lyrics.sourceFile.revision);
+  const replaceVideo=Boolean(value.video&&JSON.stringify(previous.video)!==JSON.stringify(value.video));
+  for(const [oldId,old] of aliases){if(uid)mappings[oldId]={identity:old.identity,removed:true};else delete mappings[oldId];}
+  if(replaceLyrics&&!backup.data.customLyrics[id])for(const [oldId,old] of Object.entries(custom)){
+   if(sameSong(old.identity,value.identity)){if(uid)custom[oldId]={identity:old.identity,text:'',dirty:true};else delete custom[oldId];}
+  }
+  for(const [oldId,old] of Object.entries(corrections)){
+   if(!sameSong(old.value.identity,value.identity)||!(replaceLyrics&&(old.value.kind==='lyrics'||old.value.kind==='delay')||replaceVideo&&old.value.kind==='video'))continue;
+   if(uid)corrections[oldId]={...old,dirty:true,removed:true};else delete corrections[oldId];
+  }
   const fields=SONG_MAPPING_FIELDS.filter(field=>value[field]!==undefined);
-  mappings[id]={...mappings[id],...value,dirty:uid?[...new Set([...(mappings[id]?.dirty||[]),...fields])]:[]};
+  const copied=SONG_MAPPING_FIELDS.filter(field=>previous[field]!==undefined&&mappings[id]?.[field]===undefined);
+  mappings[id]={...previous,...value,dirty:uid?[...new Set([...(mappings[id]?.dirty||[]),...copied,...fields])]:[]};
  }
  for(const value of backup.data.corrections)corrections[correctionKey(value)]={value,dirty:Boolean(uid)};
  for(const [id,value] of Object.entries(backup.data.customLyrics))custom[id]={...value,dirty:Boolean(uid)};

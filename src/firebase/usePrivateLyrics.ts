@@ -65,6 +65,12 @@ export function usePrivateLyrics(track: TrackInfo | null, uid: string | null) {
     try {
       const version=uid?songMappingResetVersion(uid):0;
       const map = readDevice<Record<string, Custom>>(cacheKey, {});
+      let retiredAlias=false;
+      for(const [oldId,old] of Object.entries(map)){
+        if(oldId===id||!old.identity||!(['title','artist','duration'] as const).every(field=>old.identity[field]===context.identity[field]))continue;
+        if(uid)map[oldId]={identity:old.identity,text:'',dirty:true};else delete map[oldId];
+        retiredAlias=true;
+      }
       const entry = { identity: context.identity, text: text.slice(0, 100000), dirty: Boolean(uid) };
       map[id] = entry; writeDevice(cacheKey, map); setState({ id, text: entry.text, exists: true });
       if (uid && db && !songMappingResetPending(uid)) void setDoc(doc(db, 'profiles', uid, 'customLyrics', id), { identity: entry.identity, text: entry.text, updatedAt: serverTimestamp() })
@@ -73,6 +79,7 @@ export function usePrivateLyrics(track: TrackInfo | null, uid: string | null) {
           const latest = readDevice<Record<string, Custom>>(cacheKey, {});
           if (latest[id]?.text === entry.text) { latest[id].dirty = false; writeDevice(cacheKey, latest); }
         }).catch(() => setError('Custom lyrics saved on device · waiting for cloud sync'));
+      if(uid&&retiredAlias)retryCustomLyrics(uid);
     } catch { setError('Device storage is full or blocked. Export your lyrics before closing.'); }
   };
   return { text: state.id === id ? state.text : '', hasOverride: state.id === id && state.exists, save, error };

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { doc, onSnapshot, setDoc, deleteField, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, deleteDoc, deleteField, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebaseClient';
 import { readDevice, writeDevice, scopedKey } from './deviceStore';
 import {songMappingResetPending,songMappingResetVersion} from './songMappingReset';
@@ -11,7 +11,7 @@ export interface SongVideoMapping { youtubeVideoId: string; delaySeconds: number
 export interface SongMapping { identity: RecordingIdentity; lyrics?: SongLyricsMapping; video?: SongVideoMapping; hideLyrics?: boolean; hideVideo?: boolean; }
 export const SONG_MAPPING_FIELDS=['lyrics','video','hideLyrics','hideVideo'] as const;
 type SongMappingField=typeof SONG_MAPPING_FIELDS[number];
-type Entry = SongMapping & { dirty?: SongMappingField[] };
+type Entry = SongMapping & { dirty?: SongMappingField[]; removed?:boolean };
 type Cache = Record<string, Entry>;
 const PUBLIC = 'lyricflow.v4.publishedSongMappings';
 const EVENT = 'lyricflow:songMappings';
@@ -45,21 +45,34 @@ function cacheWrite(key: string, id: string, entry: Entry | null) {
   if (entry) data[id] = entry; else delete data[id];
   writeDevice(key, key === PUBLIC ? Object.fromEntries(Object.entries(data).slice(-300)) : data); notify();
 }
-async function flush(uid: string, id: string) {
-  if (!db || songMappingResetPending(uid)) return;
-  const key = scopedKey('songMappings', uid), entry = readDevice<Cache>(key, {})[id], version=songMappingResetVersion(uid);
-  for (const field of entry?.dirty || []) {
-    if(songMappingResetPending(uid)||version!==songMappingResetVersion(uid))return;
-    const value = entry[field];
-    await setDoc(doc(db, 'profiles', uid, 'songMappings', id), { identity: entry.identity, [field]: value ?? deleteField(), updatedAt: serverTimestamp() }, { merge: true });
+const flushing=new Map<string,Promise<void>>();
+function flush(uid:string,id:string):Promise<void>{
+  const lock=uid+':'+id+':'+songMappingResetVersion(uid),existing=flushing.get(lock);
+  if(existing)return existing.then(()=>flush(uid,id),()=>flush(uid,id));
+  const work=flushLatest(uid,id).finally(()=>{if(flushing.get(lock)===work)flushing.delete(lock);});
+  flushing.set(lock,work);return work;
+}
+async function flushLatest(uid: string, id: string) {
+  if (!db||songMappingResetPending(uid)) return;
+  const key = scopedKey('songMappings', uid), entry = readDevice<Cache>(key, {})[id],version=songMappingResetVersion(uid);
+  if(entry?.removed){
+    await deleteDoc(doc(db,'profiles',uid,'songMappings',id));
     if(version!==songMappingResetVersion(uid))return;
-    const latest = readDevice<Cache>(key, {})[id];
-    if (latest && JSON.stringify(latest[field]) === JSON.stringify(value)) cacheWrite(key, id, { ...latest, dirty: latest.dirty?.filter(f => f !== field) });
+    if(readDevice<Cache>(key,{})[id]?.removed)cacheWrite(key,id,null);
+    return;
   }
+  const fields=entry?.dirty||[];if(!fields.length)return;
+  const values=Object.fromEntries(fields.map(field=>[field,entry[field]??deleteField()]));
+  await setDoc(doc(db,'profiles',uid,'songMappings',id),{identity:entry.identity,...values,updatedAt:serverTimestamp()},
+    {mergeFields:['identity',...fields,'updatedAt']});
+  if(version!==songMappingResetVersion(uid))return;
+  const latest=readDevice<Cache>(key,{})[id];
+  if(latest&&!latest.removed)cacheWrite(key,id,{...latest,dirty:latest.dirty?.filter(field=>
+    !fields.includes(field)||JSON.stringify(latest[field])!==JSON.stringify(entry[field]))});
 }
 export function retrySongMappings(uid: string) {
   for (const [id, entry] of Object.entries(readDevice<Cache>(scopedKey('songMappings', uid), {}))) {
-    if (entry.dirty?.length) void flush(uid, id).catch(() => {});
+    if (entry.removed||entry.dirty?.length) void flush(uid, id).catch(() => {});
   }
 }
 export function useSongMapping(track: TrackInfo | null, uid: string | null) {
@@ -93,15 +106,24 @@ export function useSongMapping(track: TrackInfo | null, uid: string | null) {
   const savePart = <K extends SongMappingField>(field: K, value: NonNullable<SongMapping[K]> | null) => {
     if (!context) return;
     try {
-      const entry = readDevice<Cache>(key, {})[id] || { identity: context.identity };
-      if (JSON.stringify(entry[field]) === JSON.stringify(value ?? undefined)) return;
-      const next = { ...entry, identity: context.identity, [field]: value ?? undefined, dirty: uid ? [...new Set([...(entry.dirty || []), field])] : [] };
+      const cache=readDevice<Cache>(key,{});
+      const aliases=Object.entries(cache).filter(([oldId,old])=>oldId!==id&&!old.removed&&old.identity&&sameSong(old.identity,context.identity));
+      const entry:Entry=Object.assign({identity:context.identity},...aliases.map(([,old])=>old),cache[id]);
+      if (!aliases.length&&JSON.stringify(entry[field]) === JSON.stringify(value ?? undefined)) return;
+      const copied=SONG_MAPPING_FIELDS.filter(part=>entry[part]!==undefined&&cache[id]?.[part]===undefined);
+      const next = { ...entry, identity: context.identity, [field]: value ?? undefined, dirty: uid ? [...new Set([...(entry.dirty || []),...copied,field])] : [] };
       const checked = validSongMapping(next, context.identity); if (!checked) throw new Error('Invalid song mapping');
-      cacheWrite(key, id, { ...checked, dirty: next.dirty });
+      if(value!==null&&(field==='lyrics'||field==='video'))for(const [oldId,old] of Object.entries(cache)){
+        if(oldId!==id&&old.identity&&sameSong(old.identity,context.identity)){
+          if(uid)cache[oldId]={identity:old.identity,removed:true};else delete cache[oldId];
+        }
+      }
+      cache[id]={...checked,dirty:next.dirty};writeDevice(key,cache);notify();
+      if(uid)for(const [oldId,old] of Object.entries(cache))if(old.removed)void flush(uid,oldId).catch(()=>{});
       if (uid) void flush(uid, id).catch(() => setError('Song mapping saved on device · waiting for sync'));
     } catch { setError('Song mapping could not be saved. Check device storage.'); }
   };
-  return { lyrics: approved?.lyrics || personal?.lyrics || null, video: approved?.video || personal?.video || null,
+  return { lyrics: personal?.lyrics || approved?.lyrics || null, video: personal?.video || approved?.video || null,
     hideLyrics:personal?.hideLyrics??false,hideVideo:personal?.hideVideo??false,personal, approved, savePart, error };
 }
 

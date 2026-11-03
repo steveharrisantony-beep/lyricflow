@@ -15,6 +15,7 @@ export default function CorrectionControls({
   video,
   mappedLyrics,
   mappedVideo,
+  preferMappedVideo=false,
   canChangeVideo,
   onVideoChange,
   currentVideoDelay,
@@ -30,6 +31,7 @@ export default function CorrectionControls({
   video: Fix;
   mappedLyrics?: SongLyricsMapping | null;
   mappedVideo?: SongVideoMapping | null;
+  preferMappedVideo?:boolean;
   canChangeVideo: boolean;
   onVideoChange: (id: string, delaySeconds: number | null) => void;
   currentVideoDelay?: number;
@@ -48,12 +50,13 @@ export default function CorrectionControls({
   } | null>(null);
   const editing = useRef(false);
   const savedVideoId =
+    (preferMappedVideo?mappedVideo?.youtubeVideoId:null)||
     video.correction?.youtubeVideoId ||
     mappedVideo?.youtubeVideoId ||
     currentVideoId ||
     extractYouTubeVideoId(track) ||
     "";
-  const chosenVideoDelay = video.correction
+  const chosenVideoDelay = preferMappedVideo&&mappedVideo?mappedVideo.delaySeconds:video.correction
     ? video.correction.videoDelaySeconds
     : mappedVideo?.delaySeconds;
   const sponsorBlockDefaultDelay =
@@ -379,3 +382,4 @@ export default function CorrectionControls({
     </div>
   );
 }
+

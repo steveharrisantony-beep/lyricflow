@@ -38,6 +38,11 @@ Song Mapping includes **Hide lyrics for this song** and **Hide video for this so
 in their respective sections. These personal choices are saved per recording and
 included in mapping backups. Hidden videos use a theme while audio continues.
 
+Your latest personal mapping takes priority over automatic or shared matches.
+Choosing another lyrics file or video replaces the previous choice for that song;
+changing lyrics also clears timing fixes tied to the old file. Explicit lyric
+choices are restored from the saved copy, including after mapping backup import.
+
 Apple lyrics lookup makes up to three attempts, with a 1-second wait before the
 second and a 2-second wait before the third. LRC Library lyrics can display while
 Apple is loading. In automatic or Apple mode, a successful Apple result takes

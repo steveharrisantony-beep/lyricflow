@@ -22,7 +22,40 @@ import App from '../App';
 import {LYRIC_MOTIONS,ORIGINAL_LYRIC_MOTIONS,VOXELVERSE_STYLES} from '../visualization/cinematic/kineticTypography';
 import { searchStashCatalog } from '../music/providers';
 import {createBackup} from '../data/backupData';
+import {getLyricTimelineSnapshot} from '../lyrics/lyricTimeline';
 let root: Root, host: HTMLDivElement;
+it('keeps the latest manual lyric version and video mapped despite late automatic results',async()=>{
+ const finder=await import('../metadata/TrackFinder'),stage=await import('../visualization/cinematic/CinematicStage');
+ let props:Parameters<typeof finder.default>[0]|undefined;
+ const choose=vi.spyOn(finder,'default').mockImplementation(value=>{props=value;return null;});
+ const draw=vi.spyOn(stage,'default').mockImplementation(value=><span data-testid="pinned-video" data-video={value.youtubeVideoId||''}/>);
+ const mapped=(id:number)=>({original:`[00:01]Chosen version ${id}`,romanized:'',source:'LRCLIB',sourceUrl:`https://lrclib.net/api/get/${id}`});
+ try{
+  await act(async()=>click('Load JioSaavn fixture'));
+  await act(async()=>props!.onLyricsMapped!(mapped(11),{engine:'lrclib',lrclibId:11,subtitleTrackId:null}));
+  await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="Increase lyric delay 0.5s"]')!.click());
+  await act(async()=>props!.onLyricsMapped!(mapped(22),{engine:'lrclib',lrclibId:22,subtitleTrackId:null}));
+  await act(async()=>props!.onLyricsFound({original:'[00:01]Late automatic lyrics',romanized:'',source:'Apple Library'}));
+  expect(getLyricTimelineSnapshot().cues[0]?.text).toBe('Chosen version 22');
+  expect(localStorage.getItem('lyricflow.v3.guest.customLyrics')).toContain('Chosen version 22');
+  expect(localStorage.getItem('lyricflow.v3.guest.corrections')).not.toContain('api/get/11');
+  const input=host.querySelector<HTMLInputElement>('[aria-label="Background video URL"]')!;
+  for(const id of ['aaaaaaaaaaa','bbbbbbbbbbb']){
+   await act(async()=>{
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,id);
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+   });
+   await act(async()=>click('Save background video'));
+  }
+  expect(host.querySelector('[data-testid="pinned-video"]')?.getAttribute('data-video')).toBe('bbbbbbbbbbb');
+  const backup=JSON.stringify(createBackup('song-mappings',null));
+  expect(backup).toContain('api/get/22');expect(backup).not.toContain('api/get/11');expect(backup).not.toContain('aaaaaaaaaaa');
+  await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App/>));
+  await act(async()=>click('Load JioSaavn fixture'));
+  expect(props?.preferredSelection?.lrclibId).toBe(22);expect(props?.savedCustomLrc).toContain('Chosen version 22');
+  expect(host.querySelector('[data-testid="pinned-video"]')?.getAttribute('data-video')).toBe('bbbbbbbbbbb');
+ }finally{choose.mockRestore();draw.mockRestore();}
+});
 function click(text: string) {
   const button = [...host.querySelectorAll('button')].find(b => b.textContent === text);
   if (!button) throw Error('Missing button: ' + text);

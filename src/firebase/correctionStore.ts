@@ -3,7 +3,7 @@ import type { User } from 'firebase/auth';
 import { db } from './firebaseClient';
 import { readDevice, writeDevice, scopedKey } from './deviceStore';
 import {songMappingResetPending,songMappingResetVersion} from './songMappingReset';
-import { correctionKey, fingerprint, upgradeCachedCorrection, validCorrection, chooseCorrection, type Correction, type CorrectionContext } from './correctionModel';
+import { correctionKey, fingerprint, upgradeCachedCorrection, validCorrection, chooseCorrection, type Correction, type CorrectionContext, type CorrectionKind, type RecordingIdentity } from './correctionModel';
 
 type Entry = { value: Correction; dirty: boolean; removed?: boolean };
 type Cache = Record<string, Entry>;
@@ -104,3 +104,16 @@ export function retryAccountCorrections(uid: string) {
     if (entry.dirty) void flushPersonalCorrection(uid, entry.value).catch(() => {});
   }
 }
+
+/** A newly chosen source replaces the prior selection and its version-specific timing fixes. */
+export function discardSongCorrections(uid:string|null,identity:RecordingIdentity,kinds:readonly CorrectionKind[],keepId=''){
+  const key=personalKey(uid),cache=readDevice<Cache>(key,{}),removed:Correction[]=[];
+  for(const [id,entry] of Object.entries(cache)){
+    if(id===keepId||!entry.value?.identity||!kinds.includes(entry.value.kind))continue;
+    if(!(['title','artist','duration'] as const).every(field=>entry.value.identity[field]===identity[field]))continue;
+    if(uid){cache[id]={...entry,removed:true,dirty:true};removed.push(entry.value);}else delete cache[id];
+  }
+  writeDevice(key,cache);window.dispatchEvent(new Event(EVENT));
+  if(uid)for(const value of removed)void flushPersonalCorrection(uid,value).catch(()=>{});
+}
+

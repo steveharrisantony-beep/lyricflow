@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type {IncomingLyrics} from '../lyrics/ManualLyrics';
+export type FoundLyrics=Omit<IncomingLyrics,'token'>;
 import type {
   LyricsSelection,
   LyricsSourceReference,
@@ -45,6 +47,7 @@ export default function TrackFinder({
   leadingNonMusicOffsetSec = 0,
   onMetadataChange,
   onLyricsFound,
+  onLyricsMapped,
   onStatusChange,
 }: {
   track: TrackInfo | null;
@@ -72,6 +75,7 @@ export default function TrackFinder({
     artist?: string;
   }) => void;
   onStatusChange?: (status: string) => void;
+  onLyricsMapped?:(lyrics:FoundLyrics,selection:LyricsSelection|null)=>void;
 }) {
   const getAutoSearchedFields = (t: TrackInfo | null) => {
     if (!t) return { title: "", artist: "", isYt: false };
@@ -111,6 +115,11 @@ export default function TrackFinder({
   const [matches, setMatches] = useState<LibraryEntry[]>([]);
   const pending = useRef<AbortController | null>(null);
   const automaticRequest = useRef<AbortController | null>(null);
+  const publishManual=(lyrics:FoundLyrics,selection:LyricsSelection|null)=>{
+    automaticRequest.current?.abort();
+    if(onLyricsMapped)onLyricsMapped(lyrics,selection);
+    else{onLyricsFound(lyrics);if(selection)onSelectionChange?.(selection);}
+  };
 
   const updateStatus = (msg: string) => {
     setMessage(msg);
@@ -142,6 +151,10 @@ export default function TrackFinder({
 
   const latestLeadingOffset = useRef(leadingNonMusicOffsetSec);
   latestLeadingOffset.current = leadingNonMusicOffsetSec;
+  const requestKey=useMemo(()=>JSON.stringify([autoTrackKey,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,
+    preferredSelection?.engine,preferredSelection?.lrclibId,preferredSourceFile?.url,preferredSourceFile?.revision]),
+    [autoTrackKey,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,preferredSelection?.engine,preferredSelection?.lrclibId,preferredSourceFile?.url,preferredSourceFile?.revision]);
+  const latestRequestKey=useRef(requestKey);latestRequestKey.current=requestKey;
 
   // Pre-fill the manual search box with what was searched automatically before whenever a new automatic song loads
   useEffect(() => {
@@ -154,7 +167,8 @@ export default function TrackFinder({
 
   // Automatic lyrics lookup across the 4 selectable Lyrics Engine options
   useEffect(() => {
-    if (!track || track.source === "manual" || track.title.trim().length < 2)
+    pending.current?.abort();automaticRequest.current?.abort();
+    if (!track || track.title.trim().length < 2)
       return;
     if (isAdvertisementTrack(track)) {
       automaticRequest.current?.abort();
@@ -175,7 +189,8 @@ export default function TrackFinder({
         original: hasTimed ? savedCustomLrc : "",
         plain: hasTimed ? undefined : savedCustomLrc,
         romanized: "",
-        source: "Saved Custom Override",
+        source: preferredSourceFile?.name || "Saved Custom Override",
+        sourceUrl:preferredSourceFile?.url||undefined,
         hasWordSync: hasTimed && savedCustomLrc.includes("<"),
         title: track.title,
         artist: track.artist,
@@ -183,6 +198,7 @@ export default function TrackFinder({
       updateStatus("Loaded your saved custom lyrics for this track.");
       return;
     }
+    if(track.source==='manual')return;
 
     const saved = findUserLyrics(track).filter(
       (entry) =>
@@ -221,7 +237,7 @@ export default function TrackFinder({
 
     const handoff = createLyricHandoff(controller.signal);
     const applyResolved = (resolved: StashResolvedLyrics | null) => {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted||latestRequestKey.current!==requestKey) return;
       if (resolved) {
         if (
           preferredSourceFile?.url &&
@@ -264,7 +280,7 @@ export default function TrackFinder({
           artist: resolved.artist || track.artist,
         };
         const commit = () => {
-          if (controller.signal.aborted) return;
+          if (controller.signal.aborted||latestRequestKey.current!==requestKey) return;
           latestLyrics.current(payload);
           updateStatus(
             hasTimedLines && resolved.hasWordSync
@@ -338,6 +354,7 @@ export default function TrackFinder({
           } catch (err) {
             if (controller.signal.aborted) throw err;
           }
+          throw new Error('Your mapped lyrics are unavailable. Choose another version to replace the mapping.');
         }
         return resolveStashLyricsChain(
           track,
@@ -366,14 +383,7 @@ export default function TrackFinder({
       handoff.cancel();
       controller.abort();
     };
-  }, [
-    autoTrackKey,
-    savedCustomLrc,
-    lyricEngineOption,
-    selectedSubtitleTrackId,
-    preferredSelection?.lrclibId,
-    preferredSourceFile?.url,
-  ]);
+  }, [requestKey]);
 
   const canSearch = Boolean(track && manualTitle.trim().length >= 2);
 
@@ -514,7 +524,7 @@ export default function TrackFinder({
         return;
       }
       const hasTimed = hasValidLrcTimestamps(lyric.synced);
-      onLyricsFound({
+      publishManual({
         original: hasTimed ? lyric.synced : "",
         romanized: "",
         plain:
@@ -524,8 +534,7 @@ export default function TrackFinder({
         hasWordSync: hasTimed && lyric.synced.includes("<"),
         title: lyric.title || c.title,
         artist: lyric.artist || c.artist,
-      });
-      onSelectionChange?.({
+      },{
         engine: c.provider === "apple" ? "apple" : "lrclib",
         lrclibId: c.provider === "apple" ? null : c.id,
         subtitleTrackId: null,
@@ -656,13 +665,13 @@ export default function TrackFinder({
                     automaticRequest.current?.abort();
                     pending.current?.abort();
                     const hasTimed = hasValidLrcTimestamps(e.original);
-                    onLyricsFound({
+                    publishManual({
                       original: hasTimed ? e.original : "",
                       plain: hasTimed ? undefined : e.original,
                       romanized: e.romanized,
                       source: "My library",
                       hasWordSync: hasTimed && e.original.includes("<"),
-                    });
+                    },null);
                     updateStatus("Loaded saved library lyrics.");
                   }}
                 >

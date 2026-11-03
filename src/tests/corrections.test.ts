@@ -14,7 +14,7 @@ vi.mock('firebase/firestore', () => ({
   },
   setDoc: (...args: unknown[]) => fake.set(...args), deleteDoc: (...args: unknown[]) => fake.remove(...args), serverTimestamp: () => 'SERVER_TIME',
 }));
-import { watchCorrection, savePersonalCorrection, removePersonalCorrection, submitCorrection } from '../firebase/correctionStore';
+import { watchCorrection, savePersonalCorrection, removePersonalCorrection, submitCorrection,discardSongCorrections } from '../firebase/correctionStore';
 const track: TrackInfo = { title: 'Song', artist: 'Artist', album: 'Studio', duration: 200, provider: 'local', source: 'manual', confidence: 1 };
 const ctx = correctionContext(track, 'delay', lyricFingerprint('[00:01]Original test words'))!;
 const approved = makeCorrection(ctx, { delaySeconds: 2 });
@@ -22,6 +22,18 @@ const personal = makeCorrection(ctx, { delaySeconds: 0 });
 function snapshot(value: unknown, fromCache = false) { return { exists: () => value !== null, data: () => value, metadata: { fromCache, hasPendingWrites: false } }; }
 
 beforeEach(() => { localStorage.clear(); fake.listeners.clear(); fake.set.mockReset().mockResolvedValue(undefined); fake.remove.mockReset().mockResolvedValue(undefined); });
+it('removes old lyric selections and timing fixes while preserving the video and other songs',async()=>{
+ const selectionContext=correctionContext(track,'lyrics')!,videoContext=correctionContext(track,'video')!;
+ await savePersonalCorrection(null,personal);
+ await savePersonalCorrection(null,makeCorrection(selectionContext,{selection:{engine:'lrclib',lrclibId:11,subtitleTrackId:null}}));
+ await savePersonalCorrection(null,makeCorrection(videoContext,{youtubeVideoId:'abcdefghijk',videoDelaySeconds:0}));
+ const other=correctionContext({...track,title:'Another song'},'delay',ctx.lyricsKey)!;
+ await savePersonalCorrection(null,makeCorrection(other,{delaySeconds:3}));
+ discardSongCorrections(null,ctx.identity,['lyrics','delay']);
+ const saved=JSON.parse(localStorage.getItem(scopedKey('corrections',null))!);
+ expect(saved[correctionKey(ctx)]).toBeUndefined();expect(saved[correctionKey(selectionContext)]).toBeUndefined();
+ expect(saved[correctionKey(videoContext)]).toBeDefined();expect(saved[correctionKey(other)]).toBeDefined();
+});
 describe('safe correction matching', () => {
   it('separates recordings, durations and lyrics revisions while sharing catalog matches', () => {
     for (const change of [{ title: 'Song (Live)' }, { duration: 260 }]) {
@@ -93,3 +105,4 @@ describe('personal and public storage', () => {
     expect(payload.status).toBe('pending'); expect(payload).not.toHaveProperty('email'); expect(payload).not.toHaveProperty('original');
   });
 });
+

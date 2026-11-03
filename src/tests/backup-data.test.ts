@@ -19,6 +19,16 @@ beforeEach(()=>{localStorage.clear();setDeviceScope();setRomanizationMasterEnabl
 afterEach(()=>vi.restoreAllMocks());
 
 describe('separate data backups',()=>{
+ it('replaces obsolete lyric snapshots and corrections when a different mapped file is imported',()=>{
+  seed(null);
+  const backup=createBackup('song-mappings',null);
+  if(backup.kind!=='song-mappings')throw Error('Wrong fixture');
+  backup.data.mappings[ctx.recordingKey].lyrics!.sourceFile.revision='l3_1111111111111111';
+  backup.data.corrections=[];backup.data.customLyrics={};
+  restoreBackup(backup,null);
+  expect(JSON.parse(localStorage.getItem(scopedKey('corrections',null))!)[correctionKey(ctx)]).toBeUndefined();
+  expect(JSON.parse(localStorage.getItem(scopedKey('customLyrics',null))!)[ctx.recordingKey]).toBeUndefined();
+ });
  it('round-trips both song visibility choices, including explicit false and mappings without sources',()=>{
   writeDevice(scopedKey('songMappings',null),{
    [ctx.recordingKey]:{identity:ctx.identity,hideLyrics:true,hideVideo:false},
@@ -59,7 +69,7 @@ describe('separate data backups',()=>{
 
  it('exports only the selected personal scope and restores mappings, exact zero delays and custom lyrics',()=>{
   seed('accountA');seed(null);
-  writeDevice(scopedKey('songMappings','accountB'),{r4_0000000000000000:{identity:ctx.identity,video:{youtubeVideoId:'zzzzzzzzzzz',delaySeconds:7}}});
+  writeDevice(scopedKey('songMappings','accountB'),{r4_0000000000000000:{identity:{...ctx.identity,title:'Another song'},video:{youtubeVideoId:'zzzzzzzzzzz',delaySeconds:7}}});
   writeDevice('lyricflow.v4.publishedSongMappings',{sharedOnly:'must-not-export'});
   const backup=createBackup('song-mappings','accountA');
   const json=JSON.stringify(backup);

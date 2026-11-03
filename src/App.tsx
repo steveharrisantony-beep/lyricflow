@@ -113,13 +113,15 @@ import YouTubeAccountControl from "./auth/YouTubeAccountControl";
 import CorrectionControls from "./firebase/CorrectionControls";
 import {
   lyricFingerprint,
+  correctionKey,
   type LyricsSelection,
 } from "./firebase/correctionModel";
-import { importGuestCorrections } from "./firebase/correctionStore";
-import { scopedKey, writeDevice } from "./firebase/deviceStore";
+import { discardSongCorrections, importGuestCorrections } from "./firebase/correctionStore";
+import { readDevice, scopedKey, writeDevice } from "./firebase/deviceStore";
 import {
   importGuestSongMappings,
   useSongMapping,
+  type SongMapping,
 } from "./firebase/songMappings";
 import { useCorrection } from "./firebase/useCorrection";
 import {
@@ -640,10 +642,10 @@ export default function App({ user = null }: { user?: User | null }) {
   const privateLyrics = usePrivateLyrics(localTrack, uid);
   const legacyDelay = !uid ? legacySongDelay(localTrack) : null;
   const savedCustomLrc = privateLyrics.hasOverride
-    ? privateLyrics.text
+    ? songMapping.personal?.lyrics&&privateLyrics.text&&lyricFingerprint(privateLyrics.text,songMapping.personal.lyrics.sourceFile.url)!==songMapping.personal.lyrics.sourceFile.revision?'':privateLyrics.text
     : legacyDelay?.customLyricsLrc || "";
   const lyricDelay =
-    delayFix.correction?.delaySeconds ??
+    (songMapping.personal?.lyrics?.sourceFile.revision===lyricsKey?songMapping.personal.lyrics.delaySeconds:undefined) ?? delayFix.correction?.delaySeconds ??
     (songMapping.lyrics?.sourceFile.revision === lyricsKey
       ? songMapping.lyrics.delaySeconds
       : 0);
@@ -674,20 +676,21 @@ export default function App({ user = null }: { user?: User | null }) {
     }
   }, [uid, recordingKey, lyricsKey, delayFix.source]);
   const legacyAutomaticLrc = Boolean(
-    !songMapping.approved?.lyrics &&
+    !savedCustomLrc && !songMapping.approved?.lyrics &&
       !lyricsFix.correction?.selection &&
       songMapping.lyrics?.selection?.engine === "lrclib" &&
       songMapping.lyrics.sourceFile.name.startsWith("LyricFlow Engine"),
   );
+  const preferredLyricsSelection=!legacyAutomaticLrc&&songMapping.personal?.lyrics
+    ?songMapping.personal.lyrics.selection
+    :lyricsFix.correction?.selection||(legacyAutomaticLrc?null:songMapping.lyrics?.selection)||null;
+  const preferredLyricsSource=(!legacyAutomaticLrc?songMapping.personal?.lyrics?.sourceFile:null)||
+    (lyricsFix.source==='personal'?null:songMapping.approved?.lyrics?.sourceFile)||null;
   const effectiveLyricsEngine =
-    lyricsFix.correction?.selection?.engine ||
-    (legacyAutomaticLrc
-      ? "lyricflow"
-      : songMapping.lyrics?.selection?.engine) ||
+    preferredLyricsSelection?.engine ||
     lyricEngineOption;
   const effectiveSubtitleTrackId =
-    lyricsFix.correction?.selection?.subtitleTrackId ||
-    songMapping.lyrics?.selection?.subtitleTrackId ||
+    preferredLyricsSelection?.subtitleTrackId ||
     selectedSubtitleTrackId;
 
   const applyPreferences = useCallback((prefs: UserPreferencesData) => {
@@ -913,8 +916,11 @@ export default function App({ user = null }: { user?: User | null }) {
   ]);
 
   const selectLyrics = (selection: LyricsSelection) => {
+    if(lyricsFix.context)discardSongCorrections(uid,lyricsFix.context.identity,['lyrics','delay'],correctionKey(lyricsFix.context));
+    songMapping.savePart('lyrics',null);
     privateLyrics.save("");
     lyricsFix.save({ selection });
+    pendingLyricsSelection.current=selection.engine==='lyricflow'?null:{key:recordingKey,selection};
   };
   const selectEngine = (engine: LyricEngineOption) => {
     if (engine === "youtube" && effectiveLyricsEngine === "youtube")
@@ -924,6 +930,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const selectSubtitle = (id: string) =>
     selectLyrics({ engine: "youtube", lrclibId: null, subtitleTrackId: id });
   const updateLyricDelay = (value: number) => {
+    saveCurrentLyricsMapping(value);
     delayFix.save({ delaySeconds: clampLyricDelay(value) });
   };
 
@@ -952,11 +959,44 @@ export default function App({ user = null }: { user?: User | null }) {
   };
 
   const handleSaveCustomOverride = (lrc: string) => {
-    privateLyrics.save(lrc);
+    saveMappedLyrics({original:lrc,romanized:'',source:'Saved Custom Override'},null);
   };
   const incomingRevision = useRef(0);
-  const acceptLyrics = (lyrics: Omit<IncomingLyrics, "token">) =>
+  const pendingLyricsSelection=useRef<{key:string;selection:LyricsSelection}|null>(null);
+  function saveMappedLyrics(lyrics:Omit<IncomingLyrics,'token'>,selection:LyricsSelection|null,delay=0){
+    const text=lyrics.original||lyrics.plain||'';
+    if(!text.trim()||!lyricsFix.context)return;
+    pendingLyricsSelection.current=null;
+    discardSongCorrections(uid,lyricsFix.context.identity,['lyrics','delay'],selection?correctionKey(lyricsFix.context):'');
+    privateLyrics.save(text);
+    if(selection)lyricsFix.save({selection});
+    songMapping.savePart('lyrics',{sourceFile:{name:lyrics.source.slice(0,256),url:lyrics.sourceUrl||'',revision:lyricFingerprint(text,lyrics.sourceUrl||'')},selection,delaySeconds:clampLyricDelay(delay)});
+    setIncoming({...lyrics,token:++incomingRevision.current});
+  }
+  function saveCurrentLyricsMapping(delay=lyricDelay){
+    if(!lyricsKey||activeLyrics.recordingKey!==recordingKey)return;
+    const id=activeLyrics.url.match(/lrclib\.net\/api\/get\/(\d+)/)?.[1];
+    const selection=id?{engine:'lrclib' as const,lrclibId:Number(id),subtitleTrackId:null}:
+      activeLyrics.url?preferredLyricsSelection||{engine:effectiveLyricsEngine,lrclibId:null,subtitleTrackId:effectiveSubtitleTrackId||null}:null;
+    saveMappedLyrics({original:activeLyrics.original,romanized:'',source:activeLyrics.name,sourceUrl:activeLyrics.url,title:incoming?.title,artist:incoming?.artist},selection,delay);
+  }
+  const acceptLyrics = (lyrics: Omit<IncomingLyrics, "token">) => {
+    const pending=pendingLyricsSelection.current;
+    if(pending?.key===recordingKey){
+      const engine=pending.selection.engine,source=lyrics.source+' '+(lyrics.sourceUrl||'');
+      if(!(engine==='apple'?/apple/i.test(source):engine==='lrclib'?/lrc/i.test(source):/youtube|subtitle/i.test(source))){
+        if(!pending.selection.lrclibId)setIncoming({...lyrics,token:++incomingRevision.current});
+        return;
+      }
+      if(pending.selection.lrclibId&&lyrics.sourceUrl!==`https://lrclib.net/api/get/${pending.selection.lrclibId}`)return;
+      saveMappedLyrics(lyrics,pending.selection);return;
+    }
+    const mapped=readDevice<Record<string,SongMapping>>(scopedKey('songMappings',uid),{})[recordingKey]?.lyrics;
+    const saved=readDevice<Record<string,{text:string}>>(scopedKey('customLyrics',uid),{})[recordingKey]?.text;
+    const legacy=mapped?.sourceFile.name.startsWith('LyricFlow Engine')&&!saved;
+    if(mapped&&!legacy&&lyricFingerprint(lyrics.original||lyrics.plain||'',lyrics.sourceUrl||'')!==mapped.sourceFile.revision)return;
     setIncoming({ ...lyrics, token: ++incomingRevision.current });
+  };
 
   useEffect(() => {
     setSpectrumSensitivity(spectrumSensitivity / 100);
@@ -1155,7 +1195,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const [rejectedBgVideoIds, setRejectedBgVideoIds] = useState<string[]>([]);
 
   const mappedYoutubeVideoId = hasSeparateAudioStream
-    ? videoFix.correction?.youtubeVideoId ||
+    ? songMapping.personal?.video?.youtubeVideoId || videoFix.correction?.youtubeVideoId ||
       songMapping.video?.youtubeVideoId ||
       null
     : null;
@@ -1205,7 +1245,7 @@ export default function App({ user = null }: { user?: User | null }) {
 
   // Find a background for the current recording; stale results never carry into another song.
   useEffect(() => {
-    if(songMapping.hideVideo){
+    if(songMapping.hideVideo||mappedYoutubeVideoId){
       setAutoVideoMatch(previous=>previous.key===videoSearchKey?{...previous,pending:false}:
         {key:videoSearchKey,id:null,pending:false,videos:[],candidateCount:0});
       return;
@@ -1278,6 +1318,7 @@ export default function App({ user = null }: { user?: User | null }) {
     localTrack?.isAd,
     isAdPlaying,
     songMapping.hideVideo,
+    mappedYoutubeVideoId,
     hasSeparateAudioStream,
     preferredVideoType,
   ]);
@@ -1526,7 +1567,7 @@ export default function App({ user = null }: { user?: User | null }) {
         : 0;
 
   // A personal automatic-timing choice (null) also overrides a published fixed delay.
-  const chosenVideoDelay = videoFix.correction
+  const chosenVideoDelay = songMapping.personal?.video?songMapping.personal.video.delaySeconds:videoFix.correction
     ? videoFix.correction.videoDelaySeconds
     : songMapping.video?.delaySeconds;
   const hasManualVideoDelay = chosenVideoDelay != null;
@@ -1559,52 +1600,9 @@ export default function App({ user = null }: { user?: User | null }) {
   const currentVideoViewCount=currentVideoMetadata?.viewCount??(videoIsAudioTrack?localTrack?.viewCount:undefined);
   const currentVideoViews=currentVideoViewCount===0?"0 views":formatViewCount(currentVideoViewCount)||"Views unavailable";
 
-  useEffect(() => {
-    if (!localTrack || !lyricsKey) return;
-    const sourceFile = {
-      name: activeLyrics.name,
-      url: activeLyrics.url,
-      revision: lyricsKey,
-    };
-    const candidateId = activeLyrics.url.match(
-      /lrclib\.net\/api\/get\/(\d+)/,
-    )?.[1];
-    const selection = lyricsFix.correction?.selection || {
-      engine: effectiveLyricsEngine,
-      lrclibId:
-        effectiveLyricsEngine === "lrclib" && candidateId
-          ? Number(candidateId)
-          : null,
-      subtitleTrackId: effectiveSubtitleTrackId || null,
-    };
-    songMapping.savePart("lyrics", {
-      sourceFile,
-      selection,
-      delaySeconds: lyricDelay,
-    });
-  }, [
-    recordingKey,
-    lyricsKey,
-    activeLyrics.name,
-    activeLyrics.url,
-    effectiveLyricsEngine,
-    effectiveSubtitleTrackId,
-    lyricDelay,
-  ]);
-  useEffect(() => {
-    if (localTrack && activeYoutubeVideoId && hasManualVideoDelay) {
-      songMapping.savePart("video", {
-        youtubeVideoId: activeYoutubeVideoId,
-        delaySeconds: videoDelaySeconds,
-      });
-    }
-  }, [
-    recordingKey,
-    activeYoutubeVideoId,
-    hasManualVideoDelay,
-    videoDelaySeconds,
-  ]);
   const saveVideoChoice = (id: string, seconds: number | null) => {
+    if(videoFix.context)discardSongCorrections(uid,videoFix.context.identity,['video'],correctionKey(videoFix.context));
+    setRejectedBgVideoIds(previous=>previous.filter(value=>value!==id));
     videoFix.save({ youtubeVideoId: id, videoDelaySeconds: seconds });
     songMapping.savePart("video", {
       youtubeVideoId: id,
@@ -1719,7 +1717,7 @@ export default function App({ user = null }: { user?: User | null }) {
                   playerRef.current?.playNextFromQueue();
                 }}
                 onRejectBackgroundVideo={(rejectedId) => {
-                  if (!rejectedId) return;
+                  if (!rejectedId||rejectedId===mappedYoutubeVideoId) return;
                   setRejectedBgVideoIds((prev) =>
                     prev.includes(rejectedId) ? prev : [...prev, rejectedId],
                   );
@@ -1900,29 +1898,6 @@ export default function App({ user = null }: { user?: User | null }) {
                     className="source-primary save-song-button"
                     onClick={() => {
                       updateLyricDelay(lyricDelay);
-                      const candidateId = activeLyrics.url.match(
-                        /lrclib\.net\/api\/get\/(\d+)/,
-                      )?.[1];
-                      const selection = lyricsFix.correction?.selection || {
-                        engine: effectiveLyricsEngine,
-                        lrclibId:
-                          effectiveLyricsEngine === "lrclib" && candidateId
-                            ? Number(candidateId)
-                            : null,
-                        subtitleTrackId: effectiveSubtitleTrackId || null,
-                      };
-                      lyricsFix.save({ selection });
-                      if (lyricsKey) {
-                        songMapping.savePart("lyrics", {
-                          sourceFile: {
-                            name: activeLyrics.name,
-                            url: activeLyrics.url,
-                            revision: lyricsKey,
-                          },
-                          selection,
-                          delaySeconds: clampLyricDelay(lyricDelay),
-                        });
-                      }
                       const flushedVideo =
                         videoCorrectionSaveRef.current?.() ?? false;
                       if (!flushedVideo && stageYoutubeVideoId) {
@@ -1977,6 +1952,7 @@ export default function App({ user = null }: { user?: User | null }) {
                     }}
                     mappedLyrics={songMapping.lyrics}
                     mappedVideo={songMapping.video}
+                    preferMappedVideo={Boolean(songMapping.personal?.video)}
                     canChangeVideo={hasSeparateAudioStream}
                     currentVideoDelay={videoDelaySeconds}
                     currentVideoId={stageYoutubeVideoId}
@@ -2322,22 +2298,9 @@ export default function App({ user = null }: { user?: User | null }) {
                         <TrackFinder
                           key={"finder-" + fileEpoch}
                           track={localTrack}
-                          preferredSelection={
-                            lyricsFix.correction?.selection ||
-                            (legacyAutomaticLrc
-                              ? null
-                              : songMapping.lyrics?.selection) ||
-                            null
-                          }
-                          preferredSourceFile={
-                            lyricsFix.source === "personal"
-                              ? null
-                              : songMapping.approved?.lyrics?.sourceFile ||
-                                (effectiveLyricsEngine !== "lyricflow"
-                                  ? songMapping.lyrics?.sourceFile
-                                  : null) ||
-                                null
-                          }
+                          preferredSelection={preferredLyricsSelection}
+                          preferredSourceFile={preferredLyricsSource}
+                          onLyricsMapped={saveMappedLyrics}
                           onSelectionChange={selectLyrics}
                           savedCustomLrc={savedCustomLrc}
                           customEditOpen={mappingSearchOpen}

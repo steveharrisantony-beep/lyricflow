@@ -550,6 +550,7 @@ export default function ManualLyrics({
   }, [trackLoaded]);
 
   function updateRaw(value: string) {
+    setSourceUrl('');
     if (value.includes("<tt") || value.includes("<p begin=")) {
       const converted = convertTtmlToEnhancedLrc(value);
       if (converted.lrc) {

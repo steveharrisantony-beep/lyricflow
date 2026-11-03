@@ -84,5 +84,6 @@ it('ignores acknowledgements from saves started before a reset',async()=>{
  expect(readDevice<Record<string,{dirty:boolean}>>(scopedKey('customLyrics','A'),{})[context.recordingKey].dirty).toBe(true);
  expect(readDevice<Record<string,{dirty:boolean}>>(scopedKey('corrections','A'),{})[correctionKey(context)].dirty).toBe(true);
  expect(readDevice(scopedKey('songMappings','A'),null)).toEqual({});
- expect(cloud.set).toHaveBeenCalledTimes(4);
+ // Mapping fields now travel in one atomic write rather than separate field writes.
+ expect(cloud.set).toHaveBeenCalledTimes(3);
 });
