@@ -110,3 +110,102 @@ it('does not abort an in-flight automatic lyric lookup when track.duration or le
  }finally{await act(async()=>root.unmount());}
 });
 
+
+it('keeps the captured boundary when a newer Apple result arrives after the next LRC line starts',async()=>{
+ vi.useFakeTimers();
+ (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
+ const provider=await import('../lyrics/providers');
+ let emit:((value:StashResolvedLyrics)=>void)|undefined;
+ const finished=deferred<StashResolvedLyrics|null>();
+ vi.spyOn(provider,'resolveStashLyricsChain').mockImplementation((_track,_signal,_engine,_offset,_selected,callback)=>{emit=callback;return finished.promise;});
+ const host=document.createElement('div'),root=createRoot(host),received=vi.fn();
+ const first:StashResolvedLyrics={original:lrc,romanized:'',source:'LRC Library',hasWordSync:false,candidates:[],availableEngines:['lyricflow','lrclib']};
+ const apple={...first,original:'[00:01.00]Apple first\n[00:05.00]Apple next',source:'Apple Library',hasWordSync:true};
+ const latest={...apple,source:'Apple Library · video aligned'};
+ try{
+  await act(async()=>root.render(<TrackFinder track={track} onMetadataChange={()=>{}} onLyricsFound={received}/>));
+  await act(async()=>vi.advanceTimersByTimeAsync(180));
+  await act(async()=>emit!(first));
+  const cues=buildCues([{time:1,text:'First LRC line'},{time:5,text:'Next LRC line'},{time:10,text:'Third LRC line'}],[]);
+  setLyricTimeline(cues);setVirtualMediaTime(2);
+  await act(async()=>emit!(apple));expect(received).toHaveBeenCalledTimes(1);
+  setVirtualMediaTime(5.01);
+  // The playback clock can cross the boundary before the 40ms polling callback.
+  await act(async()=>emit!(latest));
+  await act(async()=>vi.advanceTimersByTimeAsync(40));
+  expect(received).toHaveBeenCalledTimes(2);
+  expect(received.mock.calls[1][0].source).toBe(latest.source);
+  finished.resolve(latest);await act(async()=>{});
+  expect(received).toHaveBeenCalledTimes(2);
+ }finally{await act(async()=>root.unmount());}
+});
+
+it('retains Apple preference and defers its upgrade while paused on temporary LRC lyrics',async()=>{
+ vi.useFakeTimers();
+ (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
+ const provider=await import('../lyrics/providers');
+ let emit:((value:StashResolvedLyrics)=>void)|undefined;
+ const finished=deferred<StashResolvedLyrics|null>();
+ vi.spyOn(provider,'resolveStashLyricsChain').mockImplementation((_track,_signal,_engine,_offset,_selected,callback)=>{emit=callback;return finished.promise;});
+ const host=document.createElement('div'),root=createRoot(host),received=vi.fn(),engineChange=vi.fn();
+ const first:StashResolvedLyrics={original:lrc,romanized:'',source:'LRC Library',hasWordSync:false,candidates:[],availableEngines:['lyricflow','lrclib']};
+ const apple={...first,original:'[00:01.00]Apple first\n[00:05.00]Apple next',source:'Apple Library',hasWordSync:true,availableEngines:['lyricflow','lrclib','apple'] as const};
+ try{
+  await act(async()=>root.render(<TrackFinder track={track} lyricEngineOption="apple" onLyricEngineOptionChange={engineChange} onMetadataChange={()=>{}} onLyricsFound={received}/>));
+  await act(async()=>vi.advanceTimersByTimeAsync(180));
+  await act(async()=>emit!(first));expect(received).toHaveBeenCalledTimes(1);expect(engineChange).not.toHaveBeenCalled();
+  const cues=buildCues([{time:1,text:'First LRC line'},{time:5,text:'Next LRC line'}],[]);
+  setLyricTimeline(cues,1);setVirtualMediaTime(2);
+  const upgraded={...apple,availableEngines:[...apple.availableEngines]};
+  await act(async()=>emit!(upgraded));
+  await act(async()=>vi.advanceTimersByTimeAsync(10000));expect(received).toHaveBeenCalledTimes(1);
+  setVirtualMediaTime(4);await act(async()=>vi.advanceTimersByTimeAsync(40));
+  expect(received).toHaveBeenCalledTimes(2);expect(received.mock.calls[1][0].source).toBe('Apple Library');
+  finished.resolve(upgraded);await act(async()=>{});
+ }finally{await act(async()=>root.unmount());}
+});
+
+it('shows an early manual LRCLIB search result and upgrades to Apple only after the line ends',async()=>{
+ vi.useFakeTimers();
+ (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
+ const provider=await import('../lyrics/providers');
+ const appleModule=await import('../lyrics/appleLyrics');
+ const apple=deferred<Awaited<ReturnType<typeof fetchAppleMusicWordSyncedLyrics>>>();
+ vi.mocked(fetchAppleMusicWordSyncedLyrics).mockReturnValue(apple.promise);
+ vi.mocked(appleModule.fetchAppleMusicCandidates).mockResolvedValue([]);
+ vi.spyOn(provider.lrclibProvider,'search').mockResolvedValue([{id:1,title:track.title,artist:track.artist,album:'',duration:200,hasSynced:true,hasWordSync:false,instrumental:false,syncedLyrics:lrc,confidence:1,url:'https://lrclib.net/api/get/1'}]);
+ const host=document.createElement('div'),root=createRoot(host),received=vi.fn();
+ try{
+  await act(async()=>root.render(<TrackFinder track={{...track,source:'manual'}} onMetadataChange={()=>{}} onLyricsFound={received}/>));
+  const search=[...host.querySelectorAll('button')].find(button=>button.textContent==='Search');expect(search).toBeTruthy();
+  await act(async()=>search!.click());
+  expect(received).toHaveBeenCalledTimes(1);expect(received.mock.calls[0][0].source).toContain('LRCLIB');
+  const cues=buildCues([{time:1,text:'First LRC line'},{time:5,text:'Next LRC line'}],[]);setLyricTimeline(cues);setVirtualMediaTime(2);
+  apple.resolve({lrc:'[00:01.00]Apple first\n[00:05.00]Apple next',hasWordSync:true,source:'Apple Library'});
+  await act(async()=>{});expect(received).toHaveBeenCalledTimes(1);
+  setVirtualMediaTime(5);await act(async()=>vi.advanceTimersByTimeAsync(40));
+  expect(received).toHaveBeenCalledTimes(2);expect(received.mock.calls[1][0].source).toBe('Apple Library');
+ }finally{await act(async()=>root.unmount());}
+});
+
+it('cancels a queued Apple upgrade when a new song loads',async()=>{
+ vi.useFakeTimers();
+ (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
+ const provider=await import('../lyrics/providers');
+ let emit:((value:StashResolvedLyrics)=>void)|undefined;
+ const finished=deferred<StashResolvedLyrics|null>();
+ vi.spyOn(provider,'resolveStashLyricsChain').mockImplementation((_track,_signal,_engine,_offset,_selected,callback)=>{emit=callback;return finished.promise;});
+ const host=document.createElement('div'),root=createRoot(host),received=vi.fn();
+ const first:StashResolvedLyrics={original:lrc,romanized:'',source:'LRC Library',hasWordSync:false,candidates:[],availableEngines:['lyricflow','lrclib']};
+ try{
+  await act(async()=>root.render(<TrackFinder track={track} onMetadataChange={()=>{}} onLyricsFound={received}/>));
+  await act(async()=>vi.advanceTimersByTimeAsync(180));
+  await act(async()=>emit!(first));
+  setLyricTimeline(buildCues([{time:1,text:'First line'},{time:5,text:'Next line'}],[]));setVirtualMediaTime(2);
+  await act(async()=>emit!({...first,source:'Apple Library',original:'[00:01.00]Old Apple line',hasWordSync:true}));
+  await act(async()=>root.render(<TrackFinder track={null} onMetadataChange={()=>{}} onLyricsFound={received}/>));
+  setVirtualMediaTime(5);await act(async()=>vi.advanceTimersByTimeAsync(80));
+  expect(received).toHaveBeenCalledTimes(1);
+  finished.resolve(first);await act(async()=>{});expect(received).toHaveBeenCalledTimes(1);
+ }finally{await act(async()=>root.unmount());}
+});

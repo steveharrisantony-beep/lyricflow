@@ -365,7 +365,48 @@ export async function fetchYouTubeSubtitlesForTrack(
  *    - Creator-uploaded YouTube Subtitles
  * 2. Falls back to direct client-side lookup if running in offline/test mode.
  */
+/** Retry an empty Apple lookup twice; the delays start after each failed attempt. */
 export async function fetchAppleMusicWordSyncedLyrics(
+  track: TrackInfo,
+  signal?: AbortSignal,
+  requestedSource: 'all' | 'apple' | 'lrclib' | 'youtube' = 'all',
+  rawOverride = false
+): Promise<AppleLyricResult | null> {
+  if (requestedSource !== 'apple') {
+    return fetchAppleMusicWordSyncedLyricsOnce(track, signal, requestedSource, rawOverride);
+  }
+  if (track.title.trim().length < 2) return null;
+  for (const delay of [0, 1000, 2000]) {
+    signal?.throwIfAborted();
+    if (delay) await waitForAppleRetry(delay, signal);
+    try {
+      const result = await fetchAppleMusicWordSyncedLyricsOnce(track, signal, requestedSource, rawOverride);
+      signal?.throwIfAborted();
+      if (result && (result.lrc.trim() || result.plain?.trim())) return result;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+    }
+  }
+  return null;
+}
+
+function waitForAppleRetry(delay: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const cancel = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', cancel);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', cancel);
+      resolve();
+    }, delay);
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) cancel();
+  });
+}
+
+async function fetchAppleMusicWordSyncedLyricsOnce(
   track: TrackInfo,
   signal?: AbortSignal,
   requestedSource: 'all' | 'apple' | 'lrclib' | 'youtube' = 'all',

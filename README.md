@@ -38,6 +38,14 @@ Song Mapping includes **Hide lyrics for this song** and **Hide video for this so
 in their respective sections. These personal choices are saved per recording and
 included in mapping backups. Hidden videos use a theme while audio continues.
 
+Apple lyrics lookup makes up to three attempts, with a 1-second wait before the
+second and a 2-second wait before the third. LRC Library lyrics can display while
+Apple is loading. In automatic or Apple mode, a successful Apple result takes
+over after the currently displayed line finishes, without restarting playback.
+The same handoff applies to manual searches; changing songs or choosing a version
+cancels pending work. Saved source-file choices and explicit LRC selection keep
+priority.
+
 ## Android app
 
 The APK includes the app and its backend, so no external server hosting is needed.

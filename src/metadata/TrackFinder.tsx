@@ -13,7 +13,7 @@ import {
   type LyricEngineOption,
   type YouTubeSubtitleTrackItem,
 } from "../lyrics/lyricFlowEngine";
-import { afterCurrentLyricLine } from "../lyrics/lyricHandoff";
+import { createLyricHandoff } from "../lyrics/lyricHandoff";
 import {
   lrclibProvider,
   resolveStashLyricsChain,
@@ -219,9 +219,7 @@ export default function TrackFinder({
         )
       : track.title;
 
-    let appliedSignature = "",
-      pendingSignature = "";
-    let cancelHandoff: (() => void) | undefined;
+    const handoff = createLyricHandoff(controller.signal);
     const applyResolved = (resolved: StashResolvedLyrics | null) => {
       if (controller.signal.aborted) return;
       if (resolved) {
@@ -242,7 +240,10 @@ export default function TrackFinder({
         latestSubtitleTracks.current?.(nextSubTracks);
         if (
           nextEngines.length > 0 &&
-          !nextEngines.includes(lyricEngineOption)
+          !nextEngines.includes(lyricEngineOption) &&
+          // Keep an Apple preference while LRCLIB supplies temporary lyrics.
+          // Changing engines here would cancel the in-flight Apple retries.
+          lyricEngineOption !== "apple"
         ) {
           latestEngineChange.current?.(nextEngines[0]);
         }
@@ -262,15 +263,8 @@ export default function TrackFinder({
           title: resolved.title || cleanedYtTitle || track.title,
           artist: resolved.artist || track.artist,
         };
-        const signature = JSON.stringify(payload);
-        if (signature === appliedSignature || signature === pendingSignature)
-          return;
-        cancelHandoff?.();
-        pendingSignature = signature;
         const commit = () => {
           if (controller.signal.aborted) return;
-          appliedSignature = signature;
-          pendingSignature = "";
           latestLyrics.current(payload);
           updateStatus(
             hasTimedLines && resolved.hasWordSync
@@ -280,13 +274,15 @@ export default function TrackFinder({
                 : `${resolved.source} — plain lyrics loaded (no line timestamps available).`,
           );
         };
-        if (lyricEngineOption === "lyricflow" && appliedSignature) {
-          updateStatus(
-            "Preferred lyrics ready · switching after the current line finishes…",
-          );
-          cancelHandoff = afterCurrentLyricLine(commit, controller.signal);
-        } else commit();
-      } else if (!appliedSignature) {
+        const disposition = handoff.publish(
+          JSON.stringify(payload),
+          commit,
+          lyricEngineOption === "lyricflow" || lyricEngineOption === "apple",
+        );
+        if (disposition === "pending") {
+          updateStatus("Preferred lyrics ready · switching after the current line finishes…");
+        }
+      } else if (!handoff.hasApplied) {
         setAvailableEngines([]);
         setSubtitleTracks([]);
         latestAvailableEngines.current?.([]);
@@ -367,7 +363,7 @@ export default function TrackFinder({
 
     return () => {
       clearTimeout(timer);
-      cancelHandoff?.();
+      handoff.cancel();
       controller.abort();
     };
   }, [
@@ -411,29 +407,27 @@ export default function TrackFinder({
     pending.current?.abort();
     const controller = new AbortController();
     pending.current = controller;
-    try {
-      const [appleDirect, appleCands, lrcCands] = await Promise.all([
-        fetchAppleMusicWordSyncedLyrics(
-          searchTrack,
-          controller.signal,
-          "apple",
-          overrideBracketFilter,
-        ).catch(() => null),
-        fetchAppleMusicCandidates(
-          searchTrack,
-          controller.signal,
-          overrideBracketFilter,
-        ).catch(() => []),
-        lrclibProvider
-          .search(searchTrack, controller.signal, overrideBracketFilter)
-          .catch(() => []),
-      ]);
+    const handoff = createLyricHandoff(controller.signal);
+    type LyricPayload = Parameters<typeof onLyricsFound>[0];
+    let appleDirect: Awaited<ReturnType<typeof fetchAppleMusicWordSyncedLyrics>> = null;
+    let appleCands: TrackCandidate[] = [], lrcCands: TrackCandidate[] = [];
+    const publishLyrics = (payload: LyricPayload, status: string) => {
+      if (controller.signal.aborted) return;
+      const disposition = handoff.publish(JSON.stringify(payload), () => {
+        latestLyrics.current(payload);
+        updateStatus(status);
+      });
+      if (disposition === "pending") {
+        updateStatus("Preferred lyrics ready · switching after the current line finishes…");
+      }
+    };
+    const publishAvailable = (finished = false) => {
       if (controller.signal.aborted) return;
       const combinedCandidates = [...appleCands, ...lrcCands];
       setCandidates(combinedCandidates);
       if (appleDirect && (appleDirect.lrc || appleDirect.plain)) {
         const hasTimed = hasValidLrcTimestamps(appleDirect.lrc);
-        onLyricsFound({
+        publishLyrics({
           original: hasTimed ? appleDirect.lrc : "",
           plain:
             appleDirect.plain ||
@@ -444,13 +438,12 @@ export default function TrackFinder({
           hasWordSync: hasTimed && appleDirect.hasWordSync,
           title: appleDirect.title || appleCands[0]?.title || searchTrack.title,
           artist: appleDirect.artist || appleCands[0]?.artist || searchTrack.artist,
-        });
-        updateStatus(
+        },
           `Loaded ${appleDirect.source} (${hasTimed ? (appleDirect.hasWordSync ? "Word timestamps" : "Line timestamps") : "Plain lyrics"}). ${combinedCandidates.length} Apple Library & LRCLIB candidate(s) listed below.`,
         );
       } else if (appleCands.length > 0 && appleCands[0].syncedLyrics) {
         const topApple = appleCands[0];
-        onLyricsFound({
+        publishLyrics({
           original: topApple.syncedLyrics!,
           romanized: "",
           source: topApple.hasWordSync
@@ -460,14 +453,13 @@ export default function TrackFinder({
           hasWordSync: Boolean(topApple.hasWordSync),
           title: topApple.title || searchTrack.title,
           artist: topApple.artist || searchTrack.artist,
-        });
-        updateStatus(
+        },
           `Loaded Apple Library lyrics for "${topApple.title}". ${combinedCandidates.length} candidate(s) listed below.`,
         );
       } else if (lrcCands.length > 0 && (lrcCands[0].syncedLyrics || lrcCands[0].plainLyrics)) {
         const topLrc = lrcCands[0];
         const hasTimed = hasValidLrcTimestamps(topLrc.syncedLyrics);
-        onLyricsFound({
+        publishLyrics({
           original: hasTimed && topLrc.syncedLyrics ? topLrc.syncedLyrics : "",
           plain:
             topLrc.plainLyrics ||
@@ -478,17 +470,27 @@ export default function TrackFinder({
           hasWordSync: Boolean(hasTimed && topLrc.hasWordSync),
           title: topLrc.title || searchTrack.title,
           artist: topLrc.artist || searchTrack.artist,
-        });
-        updateStatus(
+        },
           `Loaded LRCLIB lyrics for "${topLrc.title}". ${combinedCandidates.length} candidate(s) listed below.`,
         );
-      } else {
+      } else if (finished) {
         updateStatus(
           combinedCandidates.length
             ? `${combinedCandidates.length} candidate(s) found across Apple Library & LRCLIB. Select a version below.`
             : "No matching candidates found; paste custom LRC in the editor below.",
         );
       }
+    };
+    try {
+      await Promise.all([
+        fetchAppleMusicWordSyncedLyrics(searchTrack, controller.signal, "apple", overrideBracketFilter)
+          .catch(() => null).then(result => { appleDirect = result; publishAvailable(); }),
+        fetchAppleMusicCandidates(searchTrack, controller.signal, overrideBracketFilter)
+          .catch(() => []).then(result => { appleCands = result; publishAvailable(); }),
+        lrclibProvider.search(searchTrack, controller.signal, overrideBracketFilter)
+          .catch(() => []).then(result => { lrcCands = result; publishAvailable(); }),
+      ]);
+      publishAvailable(true);
     } catch (e) {
       if (!controller.signal.aborted)
         updateStatus(e instanceof Error ? e.message : "Lyrics search failed.");

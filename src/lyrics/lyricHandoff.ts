@@ -20,3 +20,35 @@ export function afterCurrentLyricLine(apply:()=>void,signal?:AbortSignal){
  if(signal?.aborted)cancel();
  return cancel;
 }
+
+/** Keep the original line boundary while newer provider results replace the queued payload. */
+export function createLyricHandoff(signal?:AbortSignal){
+ let appliedSignature='',pendingSignature='',waiting=false;
+ let queuedCommit:(()=>void)|undefined,cancelWait:(()=>void)|undefined;
+ const cancel=()=>{
+  cancelWait?.();cancelWait=undefined;waiting=false;
+  queuedCommit=undefined;pendingSignature='';
+ };
+ return {
+  get hasApplied(){return Boolean(appliedSignature);},
+  publish(signature:string,apply:()=>void,defer=true){
+   if(signal?.aborted)return 'ignored';
+   if(signature===appliedSignature||signature===pendingSignature)return 'unchanged';
+   const commit=()=>{appliedSignature=signature;pendingSignature='';apply();};
+   if(!defer||!appliedSignature){cancel();commit();return 'applied';}
+   pendingSignature=signature;queuedCommit=commit;
+   if(!waiting){
+    waiting=true;
+    const stop=afterCurrentLyricLine(()=>{
+     waiting=false;cancelWait=undefined;
+     const latest=queuedCommit;queuedCommit=undefined;
+     latest?.();
+    },signal);
+    // There may be no active cue, so the callback can run synchronously.
+    if(waiting)cancelWait=stop;
+   }
+   return waiting?'pending':'applied';
+  },
+  cancel
+ };
+}

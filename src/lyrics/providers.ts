@@ -224,7 +224,9 @@ export async function resolveStashLyricsChain(
  // Start both libraries immediately. Captions enrich sync but never delay the first library result.
  let appleRes:AppleLyricResult|null=null,lrcRes:StashResolvedLyrics|null=null,ytSubRes:AppleLyricResult|null=null;
  const publish=()=>{
-  if(engineOption!=='lyricflow'||signal?.aborted||!onProgress||(!appleRes&&!lrcRes))return;
+  if(signal?.aborted||!onProgress||(!appleRes&&!lrcRes))return;
+  // Explicit LRCLIB selection stays on LRCLIB; Apple selection can use it temporarily.
+  if(engineOption==='lrclib'&&!lrcRes)return;
   const result=combineLibraryLyrics(appleRes,lrcRes,ytSubRes,engineOption,leadingNonMusicOffsetSec,selectedSubtitleTrackId);
   if(result)onProgress(result);
  };
