@@ -1,5 +1,6 @@
 import {searchMusicVideos,mergeVideoMetadata,hydrateVideoMetadata,VideoSearchCache,youtubeViews} from './server/youtubeSearch';
 import {fetchYouTubeCaptions,CaptionFetchError} from './server/youtubeCaptions';
+import {buildYouTubeAuthHeaders,verifyYouTubeAccount,type YouTubeAuthContext} from './server/youtubeAuth';
 import express, { type Request, type Response } from 'express';
 import { createHash } from 'node:crypto';
 import dns from 'node:dns';
@@ -650,11 +651,6 @@ function scoreCandidateMatch(target: TrackMetadata, cand: TrackMetadata): number
   return score;
 }
 
-interface YouTubeAuthContext {
-  accessToken?: string;
-  cookie?: string;
-}
-
 let serverYouTubeAuth: YouTubeAuthContext = {
   accessToken: process.env.YOUTUBE_ACCESS_TOKEN || '',
   cookie: process.env.YOUTUBE_COOKIE || '',
@@ -669,37 +665,6 @@ function extractRequestYouTubeAuth(req?: Request): YouTubeAuthContext {
     accessToken: headerToken || serverYouTubeAuth.accessToken || '',
     cookie: headerCookie || serverYouTubeAuth.cookie || '',
   };
-}
-
-function buildYouTubeAuthHeaders(
-  auth?: YouTubeAuthContext,
-  origin = 'https://www.youtube.com'
-): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (!auth) return headers;
-  const token = (auth.accessToken || '').trim();
-  const cookie = (auth.cookie || '').trim();
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  if (cookie) {
-    headers.Cookie = cookie;
-    headers['X-Origin'] = origin;
-    headers['X-Goog-AuthUser'] = '0';
-    const sapisidMatch =
-      cookie.match(/(?:^|;\s*)SAPISID=([^;]+)/) ||
-      cookie.match(/(?:^|;\s*)__Secure-3PAPISID=([^;]+)/);
-    if (sapisidMatch?.[1] && !headers.Authorization) {
-      const sapisid = sapisidMatch[1].trim();
-      const ts = Math.floor(Date.now() / 1000);
-      const digest = createHash('sha1')
-        .update(`${ts} ${sapisid} ${origin}`)
-        .digest('hex');
-      const tokenHash = `${ts}_${digest}`;
-      headers.Authorization = `SAPISIDHASH ${tokenHash} SAPISID1PHASH ${tokenHash} SAPISID3PHASH ${tokenHash}`;
-    }
-  }
-  return headers;
 }
 
 function extractDirectVideoIdFromQuery(query: string): string | null {
@@ -2738,28 +2703,41 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
     }
   };
 
+  let youTubeAuthRevision = 0;
   const handleYouTubeAuth = async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const revision = ++youTubeAuthRevision;
     const body = (req.body || {}) as { accessToken?: string; cookie?: string };
-    const headerAuth = extractRequestYouTubeAuth(req);
-    const queryToken = typeof req.query.accessToken === 'string' ? req.query.accessToken.trim() : '';
-    const queryCookie = typeof req.query.cookie === 'string' ? req.query.cookie.trim() : '';
-    const nextToken =
-      typeof body.accessToken === 'string'
-        ? body.accessToken.trim().replace(/^Bearer\s+/i, '')
-        : queryToken || headerAuth.accessToken || '';
-    const nextCookie =
-      typeof body.cookie === 'string'
-        ? body.cookie.trim()
-        : queryCookie || headerAuth.cookie || '';
-    serverYouTubeAuth = {
-      accessToken: nextToken,
-      cookie: nextCookie,
+    const explicit = Object.hasOwn(body, 'accessToken') || Object.hasOwn(body, 'cookie');
+    const previous = serverYouTubeAuth;
+    const next: YouTubeAuthContext = {
+      accessToken: (typeof body.accessToken === 'string' ? body.accessToken : explicit ? '' :
+        String(req.headers['x-youtube-token'] || req.query.accessToken || (req.method === 'GET' ? previous.accessToken || '' : ''))).trim().replace(/^Bearer\s+/i, ''),
+      cookie: (typeof body.cookie === 'string' ? body.cookie : explicit ? '' :
+        String(req.headers['x-youtube-cookie'] || req.query.cookie || (req.method === 'GET' ? previous.cookie || '' : ''))).trim(),
     };
-    res.json({
-      authenticated: Boolean(serverYouTubeAuth.accessToken || serverYouTubeAuth.cookie),
-      hasAccessToken: Boolean(serverYouTubeAuth.accessToken),
-      hasCookie: Boolean(serverYouTubeAuth.cookie),
-    });
+    // Stop using stale credentials immediately; only a verified account can replace them.
+    serverYouTubeAuth = {};
+    if (!next.accessToken && !next.cookie) {
+      res.json({ authenticated: false, verified: false, hasAccessToken: false, hasCookie: false });
+      return;
+    }
+    try {
+      const accountLabel = await verifyYouTubeAccount(next);
+      if (revision !== youTubeAuthRevision) {
+        res.status(409).json({ authenticated: false, verified: false, detail: 'YouTube connection changed. Try again.' });
+        return;
+      }
+      if (!accountLabel) {
+        res.status(401).json({ authenticated: false, verified: false, detail: 'YouTube did not confirm a signed-in account. Sign in again.' });
+        return;
+      }
+      serverYouTubeAuth = next;
+      res.json({ authenticated: true, verified: true, accountLabel,
+        hasAccessToken: Boolean(next.accessToken), hasCookie: Boolean(next.cookie) });
+    } catch {
+      res.status(502).json({ authenticated: false, verified: false, detail: 'Unable to verify your YouTube account. Try again when YouTube is reachable.' });
+    }
   };
 
   let blockyCache: { hosts: string[]; syncedSources: string[]; updatedAt: number } | null = null;

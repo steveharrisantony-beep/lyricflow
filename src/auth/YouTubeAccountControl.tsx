@@ -55,15 +55,11 @@ export default function YouTubeAccountControl({
     try {
       const next = await signInToYouTubeAccount(mode);
       if (next.connected) {
-        setStatusMsg(
-          isNativeApp()
-            ? "Signed in to YouTube! Embedded videos and searches now use your YouTube account."
-            : "YouTube account connected! Videos now play from your signed-in YouTube session.",
-        );
+        setStatusMsg(`YouTube account verified: ${next.accountLabel}.`);
         onSignedIn?.();
       } else {
         setStatusMsg(
-          "YouTube sign-in window closed. Click Reload Video if you signed in.",
+          "YouTube sign-in was not completed. The account remains disconnected.",
         );
       }
     } catch (err) {
@@ -81,14 +77,14 @@ export default function YouTubeAccountControl({
     e.preventDefault();
     setBusy(true);
     try {
-      await saveCustomYouTubeCredentials({
+      const next = await saveCustomYouTubeCredentials({
         accessToken: tokenInput,
         cookieHeader: cookieInput,
       });
-      setStatusMsg(
-        "Saved YouTube session credentials and synced with search resolver.",
-      );
-      onSignedIn?.();
+      setStatusMsg(next.connected
+        ? `YouTube account verified: ${next.accountLabel}.`
+        : "No session credentials supplied. YouTube is disconnected.");
+      if (next.connected) onSignedIn?.();
     } catch (err) {
       setStatusMsg(
         err instanceof Error ? err.message : "Failed to save credentials.",
@@ -233,7 +229,7 @@ export default function YouTubeAccountControl({
             >
               <LogIn size={14} />
               {busy
-                ? "Opening YouTube Sign-In…"
+                ? "Connecting to YouTube…"
                 : isNativeApp()
                   ? "Sign in to YouTube (In-App)"
                   : ytAuth.connected
@@ -550,7 +546,7 @@ export default function YouTubeAccountControl({
                   YouTube Session Cookie (optional — e.g. SAPISID=...;
                   __Secure-3PAPISID=...)
                   <input
-                    type="text"
+                    type="password"
                     value={cookieInput}
                     onChange={(e) => setCookieInput(e.target.value)}
                     placeholder="SAPISID=...; __Secure-3PAPISID=...; LOGIN_INFO=..."

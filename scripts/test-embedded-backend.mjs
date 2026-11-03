@@ -5,6 +5,10 @@ const originalFetch = globalThis.fetch;
 const sample = new Uint8Array([1, 2, 3, 4]);
 let rangeForwarded = false;
 let captionRequests=0;
+let completeAccountCheck;
+const verifiedAccount = {actions:[{openPopupAction:{popup:{multiPageMenuRenderer:{header:{
+  activeAccountHeaderRenderer:{accountName:{runs:[{text:'Fixture account'}]}}
+}}}}}]};
 globalThis.fetch = async (input, options) => {
   const url = new URL(String(input));
   if (url.hostname === 'www.jiosaavn.com' && url.searchParams.get('__call') === 'search.getResults') {
@@ -21,6 +25,12 @@ globalThis.fetch = async (input, options) => {
     return new Response(sample, {status: 206, headers: {
       'Content-Type': 'audio/mp4', 'Content-Length': '4', 'Content-Range': 'bytes 0-3/4', 'Accept-Ranges': 'bytes',
     }});
+  }
+  if(url.hostname==='music.youtube.com'&&url.pathname==='/youtubei/v1/account/account_menu'){
+    const cookie=options?.headers?.Cookie||'';
+    if(cookie==='SAPISID=slow-fixture') return new Promise(resolve=>{completeAccountCheck=()=>resolve(Response.json(verifiedAccount));});
+    if(cookie==='SAPISID=outage-fixture') throw new Error('Fixture network outage');
+    return Response.json(cookie==='SAPISID=valid-fixture'?verifiedAccount:{actions:[]});
   }
   if(url.hostname==='www.youtube.com'&&url.pathname==='/watch'){
     if(url.searchParams.get('v')==='blocked1234')return new Response('',{status:403});
@@ -94,6 +104,29 @@ try {
   assert.equal((await request('/')).status, 404);
   assert.equal((await request('/music/yt-subtitles?videoId=invalid')).status, 400);
   assert.equal((await request('/music/lyrics?title=')).status, 400);
+  const setYouTubeAuth = (credentials) => originalFetch(base+'/music/yt-auth', {
+    method:'POST',headers:{'X-LyricFlow-Token':token,'Content-Type':'application/json'},body:JSON.stringify(credentials),
+  });
+  const guestAuth = await setYouTubeAuth({cookie:'VISITOR_INFO1_LIVE=guest-fixture'});
+  assert.equal(guestAuth.status,401);
+  assert.equal((await guestAuth.json()).authenticated,false);
+  const connected = await setYouTubeAuth({cookie:'SAPISID=valid-fixture'});
+  assert.equal(connected.status,200);
+  const connection = await connected.json();
+  assert.equal(connection.verified,true);
+  assert.equal(connection.accountLabel,'Fixture account');
+  assert.equal('cookie' in connection,false,'Never echo session credentials');
+  assert.equal(connected.headers.get('cache-control'),'no-store');
+  assert.equal((await setYouTubeAuth({cookie:'SAPISID=expired-fixture'})).status,401);
+  assert.equal((await (await request('/music/yt-auth')).json()).authenticated,false,'Invalid credentials clear an earlier connection');
+  assert.equal((await setYouTubeAuth({cookie:'SAPISID=outage-fixture'})).status,502);
+  const slowCheck = setYouTubeAuth({cookie:'SAPISID=slow-fixture'});
+  for(let i=0;i<100&&!completeAccountCheck;i++) await new Promise(resolve=>setTimeout(resolve,10));
+  assert.ok(completeAccountCheck,'Verification must start');
+  assert.equal((await (await setYouTubeAuth({cookie:'',accessToken:''})).json()).authenticated,false);
+  completeAccountCheck();
+  assert.equal((await slowCheck).status,409,'Late validation cannot undo a disconnect');
+  assert.equal((await (await request('/music/yt-auth')).json()).authenticated,false);
   const search = await (await request('/music/search?q=example&provider=jiosaavn')).json();
   assert.equal(search.data[0].id, 'saavn_fixture');
   const ytSearch = await (await request('/music/search?q=Run+It+Up+Hanumankind+Official+Video&provider=youtube')).json();
@@ -121,7 +154,7 @@ try {
   const blocked=await request('/music/yt-subtitles?videoId=blocked1234');
   assert.equal(blocked.status,403);
   assert.equal((await blocked.json()).code,'restricted');
-  console.log('Embedded backend passed: loopback binding, authorization, routes, search, resolution, Range audio streaming, and timed lyrics.');
+  console.log('Embedded backend passed: loopback binding, authorization, routes, verified YouTube authentication, search, resolution, Range audio streaming, and timed lyrics.');
 } finally {
   globalThis.fetch = originalFetch;
   server.closeAllConnections();

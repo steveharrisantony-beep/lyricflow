@@ -82,10 +82,9 @@ public class ExternalMediaPlugin extends Plugin {
 
     private boolean hasYouTubeLoginCookie(String cookie) {
         if (cookie == null || cookie.isEmpty()) return false;
-        return cookie.contains("SAPISID=")
-            || cookie.contains("__Secure-3PAPISID=")
-            || cookie.contains("LOGIN_INFO=")
-            || cookie.contains("SID=");
+        // Match whole cookie names; strings such as VISITOR_SID are not login cookies.
+        return java.util.regex.Pattern.compile("(?:^|;\\s*)(?:SAPISID|__Secure-3PAPISID|LOGIN_INFO|SID)=[^;\\s]+")
+            .matcher(cookie).find();
     }
 
     private String readMergedYouTubeCookies() {

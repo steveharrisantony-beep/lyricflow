@@ -14,299 +14,226 @@ export interface YouTubeAuthState {
 }
 
 const STORAGE_KEY = 'lyricflow.youtubeAuth.v1';
-
-// Keep OAuth accessToken & cookies in memory so they are never leaked unnecessarily
 let memoryAccessToken = '';
 let memoryCookieHeader = '';
+let storedCookieHeader = '';
+let authVersion = 0;
+let activeSignIn = 0;
+let restorePromise: Promise<YouTubeAuthState> | null = null;
+// Keep resolver writes ordered so a late verification cannot undo a disconnect.
+let backendQueue: Promise<unknown> = Promise.resolve();
 
 interface StoredYouTubeMeta {
-  connected?: boolean;
-  method?: YouTubeAuthState['method'];
-  accountLabel?: string;
-  interactivePlayer?: boolean;
   useNoCookieDomain?: boolean;
   cookieHeader?: string;
 }
 
 function loadInitialState(): YouTubeAuthState {
+  let useNoCookieDomain = false;
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
     if (raw) {
       const parsed = JSON.parse(raw) as StoredYouTubeMeta;
-      if (parsed.cookieHeader) {
-        memoryCookieHeader = parsed.cookieHeader;
-      }
-      return {
-        connected: Boolean(parsed.connected),
-        method: parsed.method ?? null,
-        accountLabel: parsed.accountLabel || (parsed.connected ? 'YouTube Account' : ''),
-        interactivePlayer: false,
-        useNoCookieDomain: Boolean(parsed.useNoCookieDomain),
-        reloadNonce: 0,
-        hasServerAuth: Boolean(memoryAccessToken || memoryCookieHeader),
-      };
+      storedCookieHeader = typeof parsed.cookieHeader === 'string' ? parsed.cookieHeader : '';
+      useNoCookieDomain = Boolean(parsed.useNoCookieDomain);
     }
-  } catch {
-    // Ignore storage read error
-  }
-  return {
-    connected: false,
-    method: null,
-    accountLabel: '',
-    interactivePlayer: false,
-    useNoCookieDomain: false,
-    reloadNonce: 0,
-    hasServerAuth: false,
-  };
+  } catch { /* Ignore storage read errors. */ }
+  // Persisted metadata is not proof of a currently signed-in YouTube account.
+  return { connected: false, method: null, accountLabel: '', interactivePlayer: false,
+    useNoCookieDomain, reloadNonce: 0, hasServerAuth: false };
 }
 
-let currentState: YouTubeAuthState = loadInitialState();
+let currentState = loadInitialState();
 const listeners = new Set<(state: YouTubeAuthState) => void>();
 
 function saveAndNotify(next: Partial<YouTubeAuthState>) {
-  currentState = {
-    ...currentState,
-    ...next,
-    hasServerAuth: Boolean(memoryAccessToken || memoryCookieHeader),
-  };
+  currentState = { ...currentState, ...next };
+  currentState.hasServerAuth = Boolean(currentState.connected && (memoryAccessToken || memoryCookieHeader));
   try {
-    if (typeof localStorage !== 'undefined') {
-      const toStore: StoredYouTubeMeta = {
-        connected: currentState.connected,
-        method: currentState.method,
-        accountLabel: currentState.accountLabel,
-        interactivePlayer: false,
-        useNoCookieDomain: currentState.useNoCookieDomain,
-        cookieHeader: memoryCookieHeader || undefined,
-      };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore));
-    }
-  } catch {
-    // Ignore storage error
-  }
-  for (const listener of listeners) {
-    listener(currentState);
-  }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      useNoCookieDomain: currentState.useNoCookieDomain,
+      cookieHeader: memoryCookieHeader || undefined,
+    } satisfies StoredYouTubeMeta));
+  } catch { /* Ignore storage write errors. */ }
+  for (const listener of listeners) listener(currentState);
 }
 
-export function getYouTubeAuthState(): YouTubeAuthState {
-  return currentState;
-}
-
-export function getYouTubeAccessToken(): string {
-  return memoryAccessToken;
-}
-
-export function getYouTubeCookieHeader(): string {
-  return memoryCookieHeader;
-}
-
+export function getYouTubeAuthState(): YouTubeAuthState { return currentState; }
+export function getYouTubeAccessToken(): string { return memoryAccessToken; }
+export function getYouTubeCookieHeader(): string { return memoryCookieHeader; }
 export function getYouTubeRequestHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (memoryAccessToken) {
-    headers['X-YouTube-Token'] = memoryAccessToken;
-  }
-  if (memoryCookieHeader) {
-    headers['X-YouTube-Cookie'] = memoryCookieHeader;
-  }
-  return headers;
+  if (!currentState.connected) return {};
+  return { ...(memoryAccessToken ? { 'X-YouTube-Token': memoryAccessToken } : {}),
+    ...(memoryCookieHeader ? { 'X-YouTube-Cookie': memoryCookieHeader } : {}) };
 }
 
-async function syncCredentialsToBackend(): Promise<void> {
-  try {
-    const base =
-      (typeof localStorage !== 'undefined' && localStorage.getItem('lyricflow.resolver')) ||
-      import.meta.env?.VITE_MUSIC_RESOLVER ||
-      musicBackendBase();
-    const url = `${base.replace(/\/$/, '')}/yt-auth`;
-    await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getYouTubeRequestHeaders(),
-      },
-      body: JSON.stringify({
-        accessToken: memoryAccessToken || '',
-        cookie: memoryCookieHeader || '',
-      }),
+function ensureCurrent(version: number) {
+  if (version !== authVersion) throw new Error('YouTube sign-in was cancelled or replaced by another attempt.');
+}
+
+function sendCredentials(accessToken: string, cookie: string, version: number): Promise<string | null> {
+  const request = backendQueue.then(async () => {
+    ensureCurrent(version);
+    const base = (typeof localStorage !== 'undefined' && localStorage.getItem('lyricflow.resolver')) ||
+      import.meta.env?.VITE_MUSIC_RESOLVER || musicBackendBase();
+    const response = await fetch(`${base.replace(/\/$/, '')}/yt-auth`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken, cookie }), signal: AbortSignal.timeout(10000),
     });
-  } catch {
-    // Non-fatal if backend is not yet ready
-  }
+    ensureCurrent(version);
+    if (!accessToken && !cookie) return null;
+    if (!response.ok) throw new Error(response.status === 401
+      ? 'YouTube did not confirm a signed-in account. Sign in again.'
+      : 'Unable to verify your YouTube account. Please try again.');
+    const data = await response.json() as { authenticated?: boolean; verified?: boolean; accountLabel?: string };
+    if (data.authenticated !== true || data.verified !== true || !data.accountLabel?.trim()) {
+      throw new Error('YouTube sign-in could not be verified. The account remains disconnected.');
+    }
+    return data.accountLabel.trim();
+  });
+  backendQueue = request.catch(() => undefined);
+  return request;
+}
+
+function clearConnection() {
+  memoryAccessToken = '';
+  memoryCookieHeader = '';
+  storedCookieHeader = '';
+  saveAndNotify({ connected: false, method: null, accountLabel: '' });
+}
+
+function beginAttempt(): number {
+  const version = ++authVersion;
+  clearConnection();
+  void sendCredentials('', '', version).catch(() => undefined);
+  return version;
+}
+
+async function connectVerified(version: number, method: YouTubeAuthState['method'], accessToken: string, cookie: string) {
+  ensureCurrent(version);
+  if (!accessToken && !cookie) throw new Error('YouTube did not return sign-in credentials. Please sign in again.');
+  const accountLabel = await sendCredentials(accessToken, cookie, version);
+  ensureCurrent(version);
+  memoryAccessToken = accessToken;
+  memoryCookieHeader = cookie;
+  saveAndNotify({ connected: true, method, accountLabel: accountLabel!,
+    useNoCookieDomain: false, reloadNonce: currentState.reloadNonce + 1 });
+  return currentState;
 }
 
 export async function refreshNativeYouTubeAuthStatus(): Promise<YouTubeAuthState> {
-  if (!isAndroidApp()) return currentState;
-  try {
-    const status = await ExternalMedia.getYouTubeAuthStatus();
-    if (status?.signedIn) {
-      memoryCookieHeader = status.cookie || memoryCookieHeader;
-      saveAndNotify({
-        connected: true,
-        method: 'android-webview',
-        accountLabel: 'Signed in on Android YouTube',
-      });
-      void syncCredentialsToBackend();
-    }
-  } catch {
-    // Ignore if plugin method not available
-  }
-  return currentState;
+  if (!isAndroidApp() || activeSignIn) return currentState;
+  if (restorePromise) return restorePromise;
+  const version = beginAttempt();
+  restorePromise = (async () => {
+    try {
+      const status = await ExternalMedia.getYouTubeAuthStatus();
+      ensureCurrent(version);
+      if (status?.signedIn === true && status.cookie?.trim()) {
+        return await connectVerified(version, 'android-webview', '', status.cookie.trim());
+      }
+    } catch { /* A failed or unavailable check must leave the account disconnected. */ }
+    return currentState;
+  })();
+  try { return await restorePromise; } finally { restorePromise = null; }
 }
 
-/**
- * Signs in to the user's YouTube account:
- * - On Android App: opens a first-party WebView Dialog to Google/YouTube Sign-In, shares cookies with
- *   the embedded YouTube player (`CookieManager.setAcceptThirdPartyCookies`), and forwards session cookies to the backend.
- * - On Web (with Firebase): opens Google OAuth with `youtube.readonly` scope so YouTube searches and embeds run under the user's Google account.
- * - On Web (without Firebase / Guest mode): opens the YouTube Sign-In window so the browser authenticates on youtube.com for embedded playback.
- */
+/** A popup closing or a WebView receiving guest cookies is not sign-in confirmation. */
 export async function signInToYouTubeAccount(
-  mode: 'auto' | 'browser-popup' | 'google-oauth' = 'auto'
+  mode: 'auto' | 'browser-popup' | 'google-oauth' = 'auto',
 ): Promise<YouTubeAuthState> {
-  // 1. Android Native App: Use in-app WebView Dialog with shared CookieManager
-  if (isAndroidApp() && mode !== 'google-oauth') {
-    const res = await ExternalMedia.openYouTubeSignIn();
-    if (res?.cookie) {
-      memoryCookieHeader = res.cookie;
+  const version = beginAttempt();
+  activeSignIn = version;
+  try {
+    if (isAndroidApp() && mode !== 'google-oauth') {
+      const result = await ExternalMedia.openYouTubeSignIn();
+      ensureCurrent(version);
+      if (result?.signedIn !== true) return currentState;
+      return await connectVerified(version, 'android-webview', '', result.cookie?.trim() || '');
     }
-    saveAndNotify({
-      connected: Boolean(res?.signedIn || res?.cookie),
-      method: 'android-webview',
-      accountLabel: res?.signedIn ? 'YouTube Account (Android)' : 'YouTube Session Active',
-      useNoCookieDomain: false,
-      reloadNonce: currentState.reloadNonce + 1,
-    });
-    await syncCredentialsToBackend();
-    return currentState;
-  }
-
-  // 2. Web Google OAuth Popup (when Firebase is configured and requested)
-  if ((mode === 'auto' || mode === 'google-oauth') && !isAndroidApp()) {
-    try {
+    if ((mode === 'auto' || mode === 'google-oauth') && !isAndroidApp()) {
       const fb = await import('../firebase/firebaseClient');
       if (fb.isFirebaseConfigured && fb.auth) {
         const provider = new GoogleAuthProvider();
         provider.addScope('https://www.googleapis.com/auth/youtube.readonly');
         provider.setCustomParameters({ prompt: 'select_account' });
         const result = await signInWithPopup(fb.auth, provider);
-        const credential = GoogleAuthProvider.credentialFromResult(result);
-        if (credential?.accessToken) {
-          memoryAccessToken = credential.accessToken;
-        }
-        const label =
-          result.user.displayName || result.user.email || 'Google / YouTube Account';
-        saveAndNotify({
-          connected: true,
-          method: 'google-oauth',
-          accountLabel: label,
-          useNoCookieDomain: false,
-          reloadNonce: currentState.reloadNonce + 1,
-        });
-        await syncCredentialsToBackend();
-        return currentState;
+        ensureCurrent(version);
+        const token = GoogleAuthProvider.credentialFromResult(result)?.accessToken;
+        // OAuth errors/cancellation must not fall through to a browser-only success path.
+        return await connectVerified(version, 'google-oauth', token?.trim() || '', '');
       }
-    } catch (err) {
-      if (mode === 'google-oauth') throw err;
-      // Fall through to browser session popup if OAuth popup wasn't used
+      if (mode === 'google-oauth') throw new Error('Google sign-in is not configured.');
     }
-  }
-
-  // 3. Browser YouTube Session Sign-In Popup (works in all web environments including Guest mode)
-  if (typeof window !== 'undefined') {
-    const loginUrl =
-      'https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2F';
+    if (typeof window === 'undefined') throw new Error('YouTube sign-in is unavailable here.');
     const popup = window.open(
-      loginUrl,
-      'lyricflow_youtube_signin',
-      'width=520,height=680,menubar=no,toolbar=no,location=yes,status=no'
+      'https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2F',
+      'lyricflow_youtube_signin', 'width=520,height=680,menubar=no,toolbar=no,location=yes,status=no',
     );
-    if (popup) {
-      await new Promise<void>(resolve => {
-        let elapsed = 0;
-        const timer = window.setInterval(() => {
-          elapsed += 500;
-          if (popup.closed || elapsed >= 45000) {
-            window.clearInterval(timer);
-            resolve();
-          }
-        }, 500);
-      });
-    }
-    saveAndNotify({
-      connected: true,
-      method: 'browser-session',
-      accountLabel: 'YouTube Browser Account',
-      useNoCookieDomain: false,
-      reloadNonce: currentState.reloadNonce + 1,
+    if (!popup) throw new Error('The YouTube sign-in popup was blocked. Allow popups and try again.');
+    await new Promise<void>(resolve => {
+      let elapsed = 0;
+      const timer = window.setInterval(() => {
+        elapsed += 500;
+        if (popup.closed || elapsed >= 45000 || version !== authVersion) {
+          window.clearInterval(timer);
+          resolve();
+        }
+      }, 500);
     });
+    ensureCurrent(version);
+    // Cross-origin browser sessions cannot be inspected by this app.
+    throw new Error('Browser sign-in could not be verified. The account remains disconnected.');
+  } catch (error) {
+    if (version === authVersion) {
+      clearConnection();
+      void sendCredentials('', '', version).catch(() => undefined);
+    }
+    throw error;
+  } finally {
+    if (activeSignIn === version) activeSignIn = 0;
   }
-
-  return currentState;
 }
 
 export async function saveCustomYouTubeCredentials(options: {
-  accessToken?: string;
-  cookieHeader?: string;
-  accountLabel?: string;
+  accessToken?: string; cookieHeader?: string; accountLabel?: string;
 }): Promise<YouTubeAuthState> {
-  if (options.accessToken !== undefined) {
-    memoryAccessToken = options.accessToken.trim().replace(/^Bearer\s+/i, '');
-  }
-  if (options.cookieHeader !== undefined) {
-    memoryCookieHeader = options.cookieHeader.trim();
-  }
-  const hasAny = Boolean(memoryAccessToken || memoryCookieHeader);
-  saveAndNotify({
-    connected: hasAny || currentState.connected,
-    method: hasAny ? 'custom-credentials' : currentState.method,
-    accountLabel:
-      options.accountLabel?.trim() ||
-      (hasAny ? 'YouTube Authenticated Session' : currentState.accountLabel),
-    useNoCookieDomain: false,
-    reloadNonce: currentState.reloadNonce + 1,
-  });
-  await syncCredentialsToBackend();
-  return currentState;
+  const token = (options.accessToken ?? memoryAccessToken).trim().replace(/^Bearer\s+/i, '');
+  const cookie = (options.cookieHeader ?? memoryCookieHeader).trim();
+  const version = beginAttempt();
+  if (!token && !cookie) return currentState;
+  activeSignIn = version;
+  try { return await connectVerified(version, 'custom-credentials', token, cookie); }
+  finally { if (activeSignIn === version) activeSignIn = 0; }
 }
 
 export function setYouTubeInteractivePlayer(interactive: boolean): void {
-  saveAndNotify({
-    interactivePlayer: interactive,
-  });
+  saveAndNotify({ interactivePlayer: interactive });
 }
-
 export function setYouTubeNoCookieDomain(useNoCookie: boolean): void {
-  saveAndNotify({
-    useNoCookieDomain: useNoCookie,
-    reloadNonce: currentState.reloadNonce + 1,
-  });
+  saveAndNotify({ useNoCookieDomain: useNoCookie, reloadNonce: currentState.reloadNonce + 1 });
 }
-
 export function triggerYouTubePlayerReload(): void {
-  saveAndNotify({
-    reloadNonce: currentState.reloadNonce + 1,
-  });
+  saveAndNotify({ reloadNonce: currentState.reloadNonce + 1 });
 }
 
 export async function signOutYouTubeAccount(): Promise<void> {
-  memoryAccessToken = '';
-  memoryCookieHeader = '';
+  const version = beginAttempt();
+  activeSignIn = 0;
+  saveAndNotify({ interactivePlayer: false, reloadNonce: currentState.reloadNonce + 1 });
   if (isAndroidApp()) {
-    try {
-      await ExternalMedia.signOutYouTube();
-    } catch {
-      // Ignore native sign-out error
-    }
+    try { await ExternalMedia.signOutYouTube(); } catch { /* Keep local state disconnected. */ }
   }
-  saveAndNotify({
-    connected: false,
-    method: null,
-    accountLabel: '',
-    interactivePlayer: false,
-    reloadNonce: currentState.reloadNonce + 1,
-  });
-  await syncCredentialsToBackend();
+  await sendCredentials('', '', version).catch(() => undefined);
+}
+
+function restoreStoredAuth(): Promise<YouTubeAuthState> {
+  if (restorePromise) return restorePromise;
+  if (activeSignIn || !storedCookieHeader) return Promise.resolve(currentState);
+  const cookie = storedCookieHeader;
+  const version = beginAttempt();
+  restorePromise = connectVerified(version, 'custom-credentials', '', cookie).catch(() => currentState);
+  return restorePromise.finally(() => { restorePromise = null; });
 }
 
 export function useYouTubeAuth(): YouTubeAuthState {
@@ -314,14 +241,9 @@ export function useYouTubeAuth(): YouTubeAuthState {
   useEffect(() => {
     const listener = (next: YouTubeAuthState) => setState(next);
     listeners.add(listener);
-    if (isAndroidApp()) {
-      void refreshNativeYouTubeAuthStatus();
-    } else if (memoryAccessToken || memoryCookieHeader) {
-      void syncCredentialsToBackend();
-    }
-    return () => {
-      listeners.delete(listener);
-    };
+    if (isAndroidApp()) void refreshNativeYouTubeAuthStatus();
+    else void restoreStoredAuth();
+    return () => { listeners.delete(listener); };
   }, []);
   return state;
 }
