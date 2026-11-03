@@ -1,3 +1,4 @@
+import {SmoothCurve} from './SmoothCurve';
 /**
  * Art-directed 2D visual engines.
  *
@@ -30,6 +31,7 @@ function rgb(color:string,a:number){return 'rgba('+color+','+clamp(a)+')'}
 export class GraphicCompositions {
  private lastMode:GraphicSystem|null=null;
  private smoothed=new Float32Array(64);
+ private contour=new SmoothCurve(64);
  private peaks=new Float32Array(64);
  private lastTime=0;
  private beatGlow=0;
@@ -166,7 +168,7 @@ export class GraphicCompositions {
   c.rect(margin,h*.11,w-2*margin,h*.85);
   c.clip();
 
-  const contourPoints:{x:number;y:number}[]=[];
+  this.contour.reset();
   for(let i=0;i<total;i++){
    const amp=this.smoothed[i];
    const peak=Math.pow(clamp(amp),.78);
@@ -175,7 +177,7 @@ export class GraphicCompositions {
    const x=left+i*slot+slot*.20;
    const barW=Math.max(1.4,slot*.58);
    const rising=baseline-height;
-   contourPoints.push({x:x+barW*.5,y:rising-6});
+   this.contour.add(x+barW*.5,rising-6);
 
    const grad=c.createLinearGradient(x,rising,x,baseline);
    grad.addColorStop(0,i<15?'#fff4e8':i<42?'#ffd2ec':'#d5c6ff');
@@ -202,16 +204,9 @@ export class GraphicCompositions {
   }
 
   // Upper plotter spline trace connecting all 64 spectral peaks
-  if(contourPoints.length>1){
-   c.strokeStyle='rgba(255,235,245,0.42)';
-   c.lineWidth=1.2;
-   c.beginPath();
-   for(let i=0;i<contourPoints.length;i++){
-    const pt=contourPoints[i];
-    if(i===0)c.moveTo(pt.x,pt.y);else c.lineTo(pt.x,pt.y);
-   }
-   c.stroke();
-  }
+  c.strokeStyle='rgba(255,235,245,0.42)';
+  c.lineWidth=1.2;
+  c.beginPath();this.contour.trace(c);c.stroke();
   c.restore();
 
   // Horizon laser beam & architectural elliptical rings

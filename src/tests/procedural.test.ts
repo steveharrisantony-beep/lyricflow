@@ -1,4 +1,4 @@
-import {describe,it,expect} from 'vitest';
+import {describe,it,expect,vi} from 'vitest';
 import {MOTION_SCENES} from '../visualization/cinematic/procedural/MotionGraphics';
 import {TEMPLATES,AUDIO_ONLY_SCENES,VOXELWALL_CATEGORIES,byId} from '../visualization/cinematic/catalog';
 import {VOXELVERSE_STYLES,VOXELVERSE_FAMILIES,LYRIC_MOTIONS} from '../visualization/cinematic/kineticTypography';
@@ -38,7 +38,7 @@ describe('VoxelWall 2D scene & VoxelVerse lyric style registries',()=>{
    expect(byId[id].accent).toMatch(/^#[0-9a-f]{6}$/i);
   }
  });
- it('zooms Color Riot, roots Pixel Garden below screen, wraps Origami Flight off-screen, and spreads Resonance Plate full-screen',async()=>{
+ it('zooms Color Riot, roots Pixel Garden below screen, wraps Origami Flight off-screen, and tiles Resonance Plate full-screen',async()=>{
   const {drawMotionGraphics}=await import('../visualization/cinematic/procedural/MotionGraphics');
   const {GraphicCompositions}=await import('../visualization/cinematic/procedural/GraphicCompositions');
   const {NO_AUDIO}=await import('../visualization/cinematic/paint');
@@ -49,6 +49,7 @@ describe('VoxelWall 2D scene & VoxelVerse lyric style registries',()=>{
    const translates:[number,number][]=[];
    const strokeRects:[number,number,number,number][]=[];
    const arcs:[number,number][]=[];
+   const images:[number,number,number,number][]=[];
    const grad={addColorStop:()=>{}};
    const ctx={
     save:()=>{},restore:()=>{},clearRect:()=>{},fillRect:()=>{},
@@ -61,11 +62,13 @@ describe('VoxelWall 2D scene & VoxelVerse lyric style registries',()=>{
     translate:(x:number,y:number)=>{translates.push([x,y]);},
     rotate:()=>{},
     scale:(sx:number,sy:number)=>{scales.push([sx,sy]);},
+    setTransform:()=>{},getTransform:()=>({a:1,b:0,c:0,d:1,e:0,f:0}),
+    drawImage:(_image:CanvasImageSource,x:number,y:number,rw:number,rh:number)=>{images.push([x,y,rw,rh]);},
     createLinearGradient:()=>grad,
     createRadialGradient:()=>grad,
     fillStyle:'',strokeStyle:'',lineWidth:1,lineCap:'butt',globalAlpha:1,shadowColor:'',shadowBlur:0,shadowOffsetY:0,
    } as unknown as CanvasRenderingContext2D;
-   return {ctx,scales,moves,translates,strokeRects,arcs};
+   return {ctx,scales,moves,translates,strokeRects,arcs,images};
   };
 
   const riot=makeCtx();
@@ -84,13 +87,19 @@ describe('VoxelWall 2D scene & VoxelVerse lyric style registries',()=>{
   expect(Math.min(...planeX)).toBeLessThan(0);
   expect(Math.max(...planeX)).toBeGreaterThan(w);
 
-  const plate=makeCtx();
-  drawMotionGraphics(plate.ctx,w,h,1,NO_AUDIO,'resonance-plate',1,false);
-  expect(plate.strokeRects).toHaveLength(0);
-  const grainX=plate.arcs.map(([x])=>Math.abs(x));
-  const grainY=plate.arcs.map(([,y])=>Math.abs(y));
-  expect(Math.max(...grainX)).toBeGreaterThan(w*.45);
-  expect(Math.max(...grainY)).toBeGreaterThan(h*.45);
+  const plate=makeCtx(),tile=makeCtx();
+  vi.stubGlobal('OffscreenCanvas',class{
+   constructor(public width:number,public height:number){}
+   getContext(){return tile.ctx;}
+  });
+  try{
+   drawMotionGraphics(plate.ctx,w,h,1,NO_AUDIO,'resonance-plate',1,false);
+   expect(tile.arcs).toHaveLength(1600);
+   expect(plate.images.length).toBeGreaterThan(1);
+   expect(plate.images.every(([, ,rw,rh])=>rw===h*.86&&rh===h*.86)).toBe(true);
+   expect(Math.min(...plate.images.map(([x])=>x))).toBeLessThan(-w*.5);
+   expect(Math.max(...plate.images.map(([x,,rw])=>x+rw))).toBeGreaterThan(w*.5);
+  }finally{vi.unstubAllGlobals();}
  });
 });
 

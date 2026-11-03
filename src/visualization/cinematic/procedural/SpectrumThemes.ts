@@ -1,3 +1,4 @@
+import {SmoothCurve} from './SmoothCurve';
 import type {ThemePalette} from '../catalog';
 import type {Pulse} from '../paint';
 import {frequencyDrive} from './AdvancedThemes';
@@ -59,6 +60,7 @@ const rgb=(hex:string)=>[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16)
 
 export class SpectrumThemes{
  readonly state=new SpectrumState();
+ private curve=new SmoothCurve(64);
  private historyCanvas:HistoryCanvas|null=null;
  private historyContext:CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D|null=null;
  private image:ImageData|null=null;
@@ -152,11 +154,13 @@ export class SpectrumThemes{
     const scale=1-layer*.25;
     c.beginPath();
     for(let side=1;side>=-1;side-=2){
-     for(let step=0;step<BINS;step+=stride){
-      const i=side===1?step:BINS-1-step;
+     this.curve.reset();
+     for(let step=0;step<=Math.ceil((BINS-1)/stride);step++){
+      const bin=Math.min(BINS-1,step*stride),i=side===1?bin:BINS-1-bin;
       const x=left+i/(BINS-1)*width,y=base+side*drive(i)*span*scale;
-      if(side===1&&step===0)c.moveTo(x,y);else c.lineTo(x,y);
+      this.curve.add(x,y);
      }
+     this.curve.trace(c,false,side===-1);
     }
     c.closePath();
     const fill=c.createLinearGradient(0,base-span,0,base+span);

@@ -1,8 +1,10 @@
+import {SmoothCurve} from './SmoothCurve';
 import type {SceneId,ThemePalette} from '../catalog';
 import type {Pulse} from '../paint';
 
 export interface MotionDetail {bands?:Float32Array;detail?:number}
 const TAU=Math.PI*2;
+const curve=new SmoothCurve();
 const advancedIds=new Set<SceneId>(['fluid-ink','spectral-terrain','resonance-plate','mycelium-network']);
 const clamp=(v:number)=>Number.isFinite(v)?Math.max(0,Math.min(1,v)):0;
 
@@ -47,14 +49,15 @@ export function drawAdvancedTheme(c:CanvasRenderingContext2D,w:number,h:number,t
    const cx=w*(.5+Math.sin(t*.12+l*.45)*.12),cy=h*(.5+Math.cos(t*.15+l*.62)*.12);
    const radius=u*(.16+l*.035+bass*.075);
    c.beginPath();
-   const steps=Math.round(64*detail);
-   for(let j=0;j<=steps;j++){
+   const steps=Math.max(48,Math.round(96*detail));
+   curve.reset();
+   for(let j=0;j<steps;j++){
     const a=j/steps*TAU;
     const r=radius*(1+Math.sin(a*3+t*.26+l*.5)*(.15+mid*.15)+Math.cos(a*7-t*.4)*high*.055);
     const x=cx+Math.cos(a)*r*1.35,y=cy+Math.sin(a)*r;
-    if(j===0)c.moveTo(x,y);else c.lineTo(x,y);
+    curve.add(x,y);
    }
-   c.closePath();
+   curve.trace(c,true);
    const ink=c.createRadialGradient(cx-radius*.4,cy-radius*.3,0,cx,cy,radius*1.5);
    ink.addColorStop(0,foreground+'16');ink.addColorStop(.6,accent+'28');ink.addColorStop(1,accent+'88');
    c.fillStyle=ink;c.fill();c.strokeStyle=accent+'66';c.lineWidth=1+hit*2;c.stroke();
@@ -70,16 +73,19 @@ export function drawAdvancedTheme(c:CanvasRenderingContext2D,w:number,h:number,t
   for(let r=0;r<rows;r++){
    const z=r/(rows-1),depth=.08+z*z*.92;
    c.beginPath();
+   curve.reset();
    for(let j=0;j<=cols;j++){
     const x=j/cols,energy=band(x);
     const ridge=Math.pow(.5+.5*Math.sin(x*14+t*.65-r*.43),2);
     const height=u*(.035+energy*.20+bass*.06)*depth*ridge;
     const px=w*.5+(x-.5)*w*(.2+depth*1.6);
     const py=horizon+depth*h*.78-height;
-    if(j===0)c.moveTo(px,py);else c.lineTo(px,py);
+    curve.add(px,py);
    }
+   curve.trace(c);
    c.lineTo(w*1.5,h*1.4);c.lineTo(-w*.5,h*1.4);c.closePath();
    c.fillStyle=background;c.fill();
+   c.beginPath();curve.trace(c);
    c.strokeStyle=r%4===0?foreground+'70':accent+'aa';c.lineWidth=.6+depth*1.3+hit*.7;c.stroke();
   }
   const fog=c.createLinearGradient(0,horizon-h*.08,0,horizon+h*.25);

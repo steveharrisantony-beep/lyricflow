@@ -1,3 +1,4 @@
+import {SmoothCurve} from './SmoothCurve';
 import {isSpectrumScene} from './SpectrumThemes';
 import {byId,resolveThemePalette,TEMPLATES,type SceneId} from '../catalog';
 import type {Pulse} from '../paint';
@@ -10,6 +11,7 @@ export const MOTION_SCENES:readonly SceneId[]=TEMPLATES
 const TAU=Math.PI*2;
 const starPositions=new Float32Array(120);
 const orbitPositions=new Float32Array(16);
+const curve=new SmoothCurve();
 
 /**
  * 23 distinct VoxelWall 2D music-reactive live backgrounds across 7 categories.
@@ -35,7 +37,8 @@ export function drawMotionGraphics(
  const detail=Math.max(.3,Math.min(1,options.detail??1));
  const count=(full:number,min:number)=>Math.max(min,Math.round(full*detail));
  const band=(x:number)=>frequencyDrive(p,options.bands,x)*k;
- const segments=count(120,48);
+ const segments=count(160,80);
+ const waveSegments=Math.max(80,Math.min(256,Math.ceil(w/(detail<.6?18:12))));
 
  c.save();
  c.fillStyle=theme.background;
@@ -87,14 +90,17 @@ export function drawMotionGraphics(
   for(let i=0;i<ribbonCount;i++){
    const yBase=h*(.08+i*(.84/(ribbonCount-1)));
    c.beginPath();
-   for(let x=-12;x<=w+12;x+=10){
+   curve.reset();
+   for(let step=0;step<=waveSegments;step++){
+    const x=-12+(w+24)*step/waveSegments;
     const nx=x/w;
     const voice=band(i/(ribbonCount-1));
     const wave1=Math.sin(nx*TAU*1.35+t*.52+i*.48)*u*(.042+bass*.10+voice*.10);
     const wave2=Math.cos(nx*TAU*3.2-t*.74+i*.32)*u*(.018+high*.058);
     const y=yBase+wave1+wave2;
-    if(x===-12)c.moveTo(x,y);else c.lineTo(x,y);
+    curve.add(x,y);
    }
+   curve.trace(c);
    c.strokeStyle=i%3===0?theme.accent+'cc':i%2?theme.accent+'77':theme.foreground+'44';
    c.lineWidth=u*.0062*(1+mid*.85);
    c.stroke();
@@ -113,19 +119,20 @@ export function drawMotionGraphics(
   // Parametric Lissajous figure-8 harmonic weave & pendulum silk loops
   c.save();
   c.translate(w*.5,h*.5);
-  const loops=7;
+  const loops=3;
   for(let l=0;l<loops;l++){
    const phase=l*.42+t*.38;
-   const rx=w*(.24+l*.022+bass*.03+band(l/6)*.045);
+   const rx=w*(.24+l*.022+bass*.03+band(l/(loops-1))*.045);
    const ry=h*(.16+l*.025+mid*.05);
    c.beginPath();
-   for(let step=0;step<=segments;step++){
+   curve.reset();
+   for(let step=0;step<segments;step++){
     const a=(step/segments)*TAU;
     const x=Math.sin(a*2+phase)*rx;
     const y=Math.sin(a*3-phase*.7)*ry;
-    if(step===0)c.moveTo(x,y);else c.lineTo(x,y);
+    curve.add(x,y);
    }
-   c.closePath();
+   curve.trace(c,true);
    c.strokeStyle=l%2===0?theme.accent+'bb':theme.foreground+'55';
    c.lineWidth=u*(.0035+(l===0?hit*.006:0));
    c.stroke();
@@ -144,16 +151,17 @@ export function drawMotionGraphics(
   const lobes=4;
   for(let i=0;i<rings;i++){
    c.beginPath();
-   for(let j=0;j<=segments;j++){
+   curve.reset();
+   for(let j=0;j<segments;j++){
     const a=j/segments*TAU;
     const r=u*(.11+i/(rings-1)*.36)*(1+bass*.10+band(i/(rings-1))*.09)
      +Math.sin(a*lobes+t*.48+i*.24)*u*(.028+mid*.054)
      +Math.cos(a*7-t*.62+i*.15)*u*(.010+high*.020);
     const x=w*.5+Math.cos(a)*r*1.32;
     const y=h*.5+Math.sin(a)*r;
-    if(j===0)c.moveTo(x,y);else c.lineTo(x,y);
+    curve.add(x,y);
    }
-   c.closePath();
+   curve.trace(c,true);
    c.strokeStyle=i%4===0?theme.foreground+'99':theme.accent+(i%2?'66':'bb');
    c.lineWidth=i%4===0?2.2:1.15;
    c.stroke();
@@ -168,15 +176,17 @@ export function drawMotionGraphics(
   for(let r=0;r<ridges;r++){
    const baseY=h*(.18+r*(.68/(ridges-1)));
    c.beginPath();
-   for(let s=0;s<=64;s++){
-    const frac=s/64;
+   curve.reset();
+   for(let s=0;s<=96;s++){
+    const frac=s/96;
     const x=leftX+frac*spanW;
     const envelope=Math.exp(-Math.pow((frac-.5)*3.1,2));
     const ridgeWave=Math.abs(Math.sin(frac*TAU*3.5+t*1.1+r*.55))*u*(.045+bass*.07+band(frac)*.10)*envelope
      +Math.cos(frac*TAU*8-t*1.6+r)*u*.012*high*envelope;
     const y=baseY-ridgeWave;
-    if(s===0)c.moveTo(x,y);else c.lineTo(x,y);
+    curve.add(x,y);
    }
+   curve.trace(c);
    c.strokeStyle=r%3===0?theme.accent:theme.foreground+'88';
    c.lineWidth=r%3===0?2.2+hit*1.5:1.2;
    c.stroke();
@@ -243,13 +253,16 @@ export function drawMotionGraphics(
    const side=i%2===0?-1:1;
    const layer=Math.floor(i/2);
    c.save();
-   c.translate(w*(side<0?.11:.89)+side*layer*u*.015,h*(.10+layer*.19));
+   const voice=band(i/9);
+   const driftX=Math.sin(t*.65+i*.9)*u*(bass*.04+voice*.04);
+   const driftY=Math.sin(t*.83+i)*u*(mid*.035+voice*.035)+hit*u*.018*(i%2?-1:1);
+   c.translate(w*(side<0?.11:.89)+side*layer*u*.015+driftX,h*(.10+layer*.19)+driftY);
    c.rotate(side*(.22+mid*.38)+Math.sin(t*.34+i)*.07);
    c.shadowColor='rgba(18,22,34,0.28)';
    c.shadowBlur=u*.032;
    c.shadowOffsetY=u*.014;
    c.fillStyle=i%3===0?theme.accent:i%3===1?theme.foreground+'33':theme.accent+'66';
-   const rw=u*(.46+bass*.12+band(i/9)*.12),rh=u*(.16+hit*.09);
+   const rw=u*.46,rh=u*.16;
    c.fillRect(-rw*.5,-rh*.5,rw,rh);
    c.strokeStyle=theme.foreground+'55';
    c.lineWidth=1.2;
@@ -373,13 +386,15 @@ export function drawMotionGraphics(
   for(let cIdx=0;cIdx<curtains;cIdx++){
    const baseY=h*(.22+cIdx/(curtains-1)*.48);
    c.beginPath();
-   for(let x=0;x<=w;x+=14){
-    const nx=x/w;
+   curve.reset();
+   for(let step=0;step<=waveSegments;step++){
+    const x=w*step/waveSegments,nx=x/w;
     const sway=Math.sin(nx*TAU*1.6+t*.45+cIdx*.7)*u*(.05+bass*.12)
      +Math.cos(nx*TAU*4.2-t*.8+cIdx)*u*(.018+high*.04);
     const y=baseY+sway;
-    if(x===0)c.moveTo(x,y);else c.lineTo(x,y);
+    curve.add(x,y);
    }
+   curve.trace(c);
    c.strokeStyle=cIdx%2===0?theme.accent+'88':theme.foreground+'44';
    c.lineWidth=u*(.004+band(cIdx/curtains)*.008);c.stroke();
    c.lineTo(w,h*.96);c.lineTo(0,h*.96);c.closePath();
@@ -395,13 +410,15 @@ export function drawMotionGraphics(
   for(let i=0;i<swells;i++){
    const yBase=h*(.18+i/(swells-1)*.69);
    c.beginPath();
-   for(let x=0;x<=w;x+=12){
-    const nx=x/w;
+   curve.reset();
+   for(let step=0;step<=waveSegments;step++){
+    const x=w*step/waveSegments,nx=x/w;
     const swell=Math.sin(nx*TAU*2.1+t*.65+i*.42)*u*(.022+bass*.09);
     const ripple=Math.cos(nx*TAU*5.5-t*1.1+i)*u*(.008+high*.025);
     const y=yBase+swell+ripple;
-    if(x===0)c.moveTo(x,y);else c.lineTo(x,y);
+    curve.add(x,y);
    }
+   curve.trace(c);
    c.strokeStyle=i%3===0?theme.accent+'bb':theme.foreground+'40';
    c.lineWidth=1.4+(i/swells)*2.4+mid*2;
    c.stroke();
@@ -415,29 +432,36 @@ export function drawMotionGraphics(
  }
 
  case 'pixel-garden': {
-  const flowers=count(26,14);
+  const flowers=count(26,14),backCount=Math.ceil(flowers/2);
   c.lineCap='round';
   for(let i=0;i<flowers;i++){
-   const back=i<flowers/2,layer=back?.66:1;
+   const back=i<backCount,layer=back?.72:1;
+   const variant=.5+.5*Math.sin(i*2.731+.8);
    const x=w*(.035+((i*.618033989)%1)*.93);
-   const ground=h*1.06;
+   const ground=h*1.025;
    const voice=band(i/(flowers-1));
-   const stem=h*(back?.14:0)+h*(.18+((i*7)%11)*.014+bass*.14+voice*.13)*layer;
-   const sway=Math.sin(t*.55+i*1.9)*u*(.008+mid*.035)*layer;
-   const topX=x+sway,topY=ground-stem;
+   const stem=u*((back?.24:.13)+variant*(back?.04:.035)+bass*.024+voice*.020);
+   const sway=Math.sin(t*.55+i*1.9)*u*(.004+mid*.018)*layer;
+   const topX=x+Math.sin(i*1.37)*u*.018*layer+sway,topY=ground-stem;
+   const lowerX=x+Math.sin(i*2.17+.7)*u*.065*layer+sway*.3;
+   const upperX=topX+Math.cos(i*1.73+.4)*u*.055*layer-sway*.35;
+   const lowerY=ground-stem*.32,upperY=topY+stem*.28;
    c.globalAlpha=back?.48:.94;
-   c.strokeStyle=theme.accent;c.lineWidth=u*.003*layer;
-   c.beginPath();c.moveTo(x,ground);c.bezierCurveTo(x-sway,ground-stem*.3,topX,topY+stem*.3,topX,topY);c.stroke();
-   // Tapered leaves on both sides of a curved stem.
+   c.strokeStyle=theme.accent;c.lineWidth=u*.0025*layer;
+   c.beginPath();c.moveTo(x,ground);c.bezierCurveTo(lowerX,lowerY,upperX,upperY,topX,topY);c.stroke();
+   // Attach leaves to the actual cubic stem rather than a straight approximation.
    for(let side=-1;side<=1;side+=2){
-    const ly=ground-stem*(side<0?.38:.57),lx=x+sway*.45;
+    const f=side<0?.35:.62,q=1-f;
+    const lx=q*q*q*x+3*q*q*f*lowerX+3*q*f*f*upperX+f*f*f*topX;
+    const ly=q*q*q*ground+3*q*q*f*lowerY+3*q*f*f*upperY+f*f*f*topY;
+    const leaf=u*(back?.027:.032);
     c.beginPath();c.moveTo(lx,ly);
-    c.quadraticCurveTo(lx+side*u*.047*layer,ly-u*.043*layer,lx+side*u*.05*layer,ly-u*.01*layer);
-    c.quadraticCurveTo(lx+side*u*.026*layer,ly+u*.013*layer,lx,ly);
+    c.quadraticCurveTo(lx+side*leaf,ly-leaf*.85,lx+side*leaf*1.2,ly-leaf*.2);
+    c.quadraticCurveTo(lx+side*leaf*.6,ly+leaf*.3,lx,ly);
     c.fillStyle=theme.accent+'aa';c.fill();
    }
    const petals=i%3===0?8:5;
-   const radius=u*(.013+((i*3)%5)*.002+high*.014+voice*.008)*layer;
+   const radius=u*(.010+variant*.005+high*.006+voice*.004)*layer;
    const open=1+hit*.15;
    c.save();c.translate(topX,topY);c.rotate(Math.sin(t*.35+i)*(.06+mid*.15));
    const petal=c.createRadialGradient(0,0,0,0,0,radius*2.2);
@@ -473,15 +497,11 @@ export function drawMotionGraphics(
     const wave=Math.sin(col*.45+r*.55-t*2.1);
     const voice=band((col+r*.45)/(cols+rows*.45));
     const scale=.24+.24*(.5+.5*wave)+voice*.48+bass*.12;
-    const bw=cellW*scale,bh=cellH*scale;
+    const edge=Math.min(cellW,cellH)*scale;
     c.strokeStyle=(r+col)%3===0?theme.accent+'cc':theme.foreground+'44';
     c.lineWidth=1.2;
-    const extrusion=u*(.004+bass*.014);
-    c.strokeRect(cx-bw*.5+extrusion,cy-bh*.5-extrusion,bw,bh);
-    c.fillStyle=theme.accent+'12';c.fillRect(cx-bw*.5,cy-bh*.5,bw,bh);
-    c.strokeRect(cx-bw*.5,cy-bh*.5,bw,bh);
-    line(cx-bw*.5,cy-bh*.5,cx-bw*.5+extrusion,cy-bh*.5-extrusion);
-    line(cx+bw*.5,cy+bh*.5,cx+bw*.5+extrusion,cy+bh*.5-extrusion);
+    c.fillStyle=theme.accent+'12';c.fillRect(cx-edge*.5,cy-edge*.5,edge,edge);
+    c.strokeRect(cx-edge*.5,cy-edge*.5,edge,edge);
     if((r+col)%4===0){
      circle(cx,cy,u*(.004+high*.008),theme.accent);
     }
