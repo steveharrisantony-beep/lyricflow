@@ -14,7 +14,11 @@ function retryAccountData(uid:string){
 }
 
 export default function AccountRoot() {
-  const [session, setSession] = useState<{ ready: boolean; user: User | null }>({ ready: !auth, user: null });
+  const [session, setSession] = useState<{ ready: boolean; user: User | null }>(() => {
+    const initialUser = auth?.currentUser ?? null;
+    setDeviceScope(initialUser?.uid);
+    return { ready: true, user: initialUser };
+  });
   useEffect(() => {
     if (!auth) { setDeviceScope(); return; }
     const unsubscribe = onAuthStateChanged(auth, user => {

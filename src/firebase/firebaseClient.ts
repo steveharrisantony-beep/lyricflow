@@ -14,30 +14,36 @@ import { FONT_SHOWCASE } from '../visualization/cinematic/fonts';
 import { ALL_PLACEMENT_MODES, LYRIC_MOTIONS, normalizeMotionPool, normalizeLyricMotion, type LyricMotion, type LyricPlacementMode } from '../visualization/cinematic/kineticTypography';
 import { CAMERA_VIEWS, type Quality, type CameraMode, type CameraView } from '../visualization/cinematic/CinematicStage';
 import { readDevice, writeDevice, scopedKey } from './deviceStore';
+import firebaseAppletConfig from '../../firebase-applet-config.json';
 
 const env = import.meta.env || {};
-const config = {
-  apiKey: env.VITE_FIREBASE_API_KEY || '', projectId: env.VITE_FIREBASE_PROJECT_ID || '',
-  appId: env.VITE_FIREBASE_APP_ID || '', authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || '',
+export const firebaseConfig = {
+  apiKey: env.VITE_FIREBASE_API_KEY || firebaseAppletConfig.apiKey || '',
+  projectId: env.VITE_FIREBASE_PROJECT_ID || firebaseAppletConfig.projectId || '',
+  appId: env.VITE_FIREBASE_APP_ID || firebaseAppletConfig.appId || '',
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || firebaseAppletConfig.authDomain || '',
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || firebaseAppletConfig.storageBucket || '',
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseAppletConfig.messagingSenderId || '',
 };
-export const isFirebaseConfigured = Boolean(config.apiKey && config.projectId && config.appId);
-const app = isFirebaseConfigured ? initializeApp(config) : null;
+export const firebaseDatabaseId = env.VITE_FIREBASE_DATABASE_ID || firebaseAppletConfig.firestoreDatabaseId || '(default)';
+const isUnitTestWithoutEmulator = Boolean(env.VITEST || env.MODE === 'test') && env.VITE_FIREBASE_EMULATORS !== 'true';
+export const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId);
+const app = isFirebaseConfigured && !isUnitTestWithoutEmulator ? initializeApp(firebaseConfig) : null;
 export const auth = app ? getAuth(app) : null;
 let firestore: Firestore | null = null;
 if (app) {
-  const databaseId = env.VITE_FIREBASE_DATABASE_ID || '(default)';
   try {
     firestore = initializeFirestore(app, {
       localCache: typeof indexedDB !== 'undefined'
         ? persistentLocalCache({ tabManager: persistentMultipleTabManager() }) : memoryLocalCache(),
-    }, databaseId);
+    }, firebaseDatabaseId);
   } catch {
-    firestore = initializeFirestore(app, { localCache: memoryLocalCache() }, databaseId);
+    firestore = initializeFirestore(app, { localCache: memoryLocalCache() }, firebaseDatabaseId);
   }
 }
 export const db = firestore;
 // Explicit, demo-project-only switch for automated tests. Production never redirects.
-if (env.VITE_FIREBASE_EMULATORS === 'true' && config.projectId.startsWith('demo-') && auth && db) {
+if (env.VITE_FIREBASE_EMULATORS === 'true' && firebaseConfig.projectId.startsWith('demo-') && auth && db) {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
 }
