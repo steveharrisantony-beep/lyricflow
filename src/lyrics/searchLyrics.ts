@@ -1,7 +1,9 @@
 import { backendOrigin } from '../network/backend';
 import { hasValidLrcTimestamps } from '../metadata/trackInfo';
 import { convertTtmlToEnhancedLrc } from './appleLyrics';
-import { lyricsQuality } from './lyricsQuality';
+import { checkLyricsTiming, lyricsQuality } from './lyricsQuality';
+import { stripLrcWordTiming } from './lrc';
+import { normalizeLyricSource } from './sourceLabels';
 import type { LyricEngineOption } from './lyricFlowEngine';
 import {
   compareLyricCandidates, isPreferredWordSync, validateLyricsCandidate, lyricsStageProviders, type LyricsStageProvider,
@@ -37,13 +39,18 @@ function prepareCandidate(raw: ProviderLyric, plan: LyricsSearchPlan, query: Lyr
   const { ttml, ...metadata } = raw;
   const decoded = ttml ? convertTtmlToEnhancedLrc(ttml) : undefined;
   const text = decoded?.lrc || raw.lrc || '';
-  const lrc = hasValidLrcTimestamps(text) ? text : '';
-  const plain = raw.plain || (!lrc && text.trim()) || undefined;
-  const quality = lyricsQuality(lrc || plain);
+  const timed = hasValidLrcTimestamps(text) ? text : '';
+  const timing = timed ? checkLyricsTiming(timed, decoded?.lrc ? decoded.primaryLineStarts : undefined) : {};
+  const lrc = timing.rejection ? '' : timing.wordTimingIssue ? stripLrcWordTiming(timed) : timed;
+  const plain = raw.plain || (!timed && text.trim()) || undefined;
+  const quality = timing.rejection ? 0 : lyricsQuality(lrc || plain);
   const match = validateLyricsCandidate(raw, plan, query);
   return {
-    ...metadata, lrc, plain, romanized: decoded?.romanizedLrc,
-    quality, ...match, rejection: match.rejection || (!quality ? 'No usable lyrics' : undefined),
+    ...metadata, lrc, plain, romanized: lrc ? decoded?.romanizedLrc : undefined,
+    source: timing.wordTimingIssue ? normalizeLyricSource(raw.source, raw.sourceUrl, false) : raw.source,
+    quality, ...match,
+    rejection: match.rejection || timing.rejection || (!quality ? 'No usable lyrics' : undefined),
+    timingNote: timing.wordTimingIssue ? timing.wordTimingIssue + ' · using line timing' : undefined,
   };
 }
 

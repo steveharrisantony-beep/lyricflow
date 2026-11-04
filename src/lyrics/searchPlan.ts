@@ -45,6 +45,7 @@ export interface ProviderLyric {
 
 export interface LyricsSearchCandidate extends Omit<ProviderLyric, 'ttml'> {
   romanized?: string;
+  timingNote?: string;
   quality: number;
   confidence: number;
   difference?: number;

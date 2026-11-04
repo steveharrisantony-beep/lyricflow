@@ -39,7 +39,7 @@ export function parseTtmlTime(value: string | null | undefined): number | null {
  * - Preserves overlapping <p ttm:agent="v1"> / <p ttm:agent="v2"> lines for simultaneous two-side duet display
  * - Glues adjacent syllable spans that have no whitespace between </span> and <span into unified words
  */
-export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; romanizedLrc?: string; hasWordSync: boolean } {
+export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; romanizedLrc?: string; hasWordSync: boolean; primaryLineStarts?: number[] } {
   if (!ttml || !ttml.includes('<p')) return { lrc: '', hasWordSync: false };
   const decodeEntities = (s: string) =>
     s
@@ -58,6 +58,7 @@ export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; romanized
   const romanSpanRegex = /<span\b[^>]*\bttm:role\s*=\s*["']x-roman["'][^>]*>([\s\S]*?)<\/span>/gi;
   const lines: string[] = [];
   const romanLines: string[] = [];
+  const primaryLineStarts: number[] = [];
 
   const parseLeafTokens = (fragment: string) => {
     const wordTokens: { text: string; start: number; end: number; trailingSpace: boolean; endEstimated:boolean }[] = [];
@@ -158,6 +159,7 @@ export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; romanized
       const body = wordTokens
         .map(w => `${formatLrcTimestamp(w.start, '<')}${w.text}`)
         .join(' ');
+      if (wordTokens.some(token => /[\p{L}\p{N}]/u.test(token.text))) primaryLineStarts.push(lineStart);
       const lastEnd = wordTokens[wordTokens.length - 1].end;
       lines.push(`${formatLrcTimestamp(lineStart, '[')}${body}${last.endEstimated?'':formatLrcTimestamp(lastEnd, '<')}`);
       for (const bgLine of secondaryBgLines) {
@@ -169,6 +171,7 @@ export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; romanized
     } else {
       const plainText = decodeEntities(pInner.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
       if (plainText && pBegin !== null) {
+        if (/[\p{L}\p{N}]/u.test(plainText)) primaryLineStarts.push(pBegin);
         lines.push(`${formatLrcTimestamp(pBegin, '[')}${plainText}${pEnd!==null&&pEnd>pBegin?formatLrcTimestamp(pEnd,'<'):''}`);
         if (extractedRoman) {
           romanLines.push(`${formatLrcTimestamp(pBegin, '[')}${extractedRoman}`);
@@ -182,5 +185,6 @@ export function convertTtmlToEnhancedLrc(ttml: string): { lrc: string; romanized
     lrc,
     romanizedLrc: romanLines.length > 0 ? romanLines.join('\n') : undefined,
     hasWordSync:hasWordTiming(lrc),
+    primaryLineStarts,
   };
 }

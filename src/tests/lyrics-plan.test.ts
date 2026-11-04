@@ -191,6 +191,60 @@ it('keeps the verified duration and word timing ahead of provider preference', a
   expect(await resolveStashLyricsChain(track, undefined, 'lyricflow')).toMatchObject({ source: 'LRCLIB', hasWordSync: true });
 });
 
+it('skips collapsed TTML before showing progress even when the recording duration matches', async () => {
+  const song = { ...track, duration: 281.867 };
+  const ttml = '<tt><body dur="281.867s">' + Array.from({ length: 54 }, (_, index) => {
+    const start = 250.595 + index / 100;
+    return `<p begin="${start}s" end="${start + .02}s"><span begin="${start}s">First </span><span begin="${start + .01}s">word</span></p>`;
+  }).join('') + '</body></tt>';
+  fetchStages(query => query.get('provider') === 'isrc'
+    ? reply([{ ...candidate, id:'collapsed', duration: song.duration, source:'lrc.red', lrc:undefined, ttml }])
+    : query.get('provider') === 'lrclib' ? reply([{ ...candidate, duration: song.duration }]) : reply());
+  const progress = vi.fn(), report = vi.fn();
+  const result = await resolveStashLyricsChain(song, undefined, 'lyricflow', 0, undefined, progress, {}, report);
+  expect(result).toMatchObject({ source:'LRCLIB', original:lines });
+  expect(progress.mock.calls.map(([lyrics]) => lyrics.source)).toEqual(['LRCLIB']);
+  expect(report.mock.calls.at(-1)?.[0].stages[0].candidates[0]).toMatchObject({
+    id:'collapsed', quality:0, rejection:'Collapsed line timing: 54 lyric lines start within 0.53 seconds',
+  });
+});
+
+it('counts the main lyric cue once when TTML includes simultaneous backing lines', async () => {
+  const backing = Array.from({ length: 8 }, (_, index) => {
+    const start = 10 + index / 10;
+    return `<span ttm:role="x-bg"><span begin="${start}s">Backing </span><span begin="${start + .5}s">vocals</span></span>`;
+  }).join('');
+  const ttml = `<tt><body><p begin="10s" end="14s"><span begin="10s">Main </span><span begin="12s">vocal</span>${backing}</p></body></tt>`;
+  fetchStages(query => query.get('provider') === 'isrc'
+    ? reply([{ ...candidate, lrc:undefined, source:'lrc.red', ttml }]) : reply());
+  expect(await resolveStashLyricsChain(track)).toMatchObject({ source:'lrc.red', hasWordSync:true });
+});
+
+it('tries the next stage when many distinct LRC lines use the same timestamp', async () => {
+  const collapsed = Array.from({ length: 10 }, (_, index) => `[02:50]Lyric line ${index}`).join('\n');
+  const calls = fetchStages(query => query.get('artist') === track.artist
+    ? reply([{ ...candidate, lrc:collapsed }]) : reply([{ ...candidate, lrc:words }]));
+  const progress = vi.fn();
+  expect(await resolveStashLyricsChain(track, undefined, 'lrclib', 0, undefined, progress)).toMatchObject({
+    original:words, hasWordSync:true,
+  });
+  expect(calls).toHaveLength(2);
+  expect(progress.mock.calls.map(([lyrics]) => lyrics.original)).toEqual([words]);
+});
+
+it.each(['shared', 'per line'])('preserves line sync when only %s word timings collapse', async mode => {
+  const clean = Array.from({ length: 8 }, (_, index) => `[00:${String(10 + index * 5).padStart(2, '0')}.00]First second third`).join('\n');
+  const lrc = clean.split('\n').map((line, index) => {
+    const start = mode === 'shared' ? '55' : String(10 + index * 5).padStart(2, '0');
+    return line.replace('First second third', `<00:${start}.00>First <00:${start}.03>second <00:${start}.06>third`);
+  }).join('\n');
+  fetchStages(() => reply([{ ...candidate, source:'LRCLIB · Word-Synced', lrc }]));
+  const report = vi.fn();
+  const result = await resolveStashLyricsChain(track, undefined, 'lrclib', 0, undefined, undefined, {}, report);
+  expect(result).toMatchObject({ original:clean, hasWordSync:false, source:'LRCLIB · Line-Synced' });
+  expect(report.mock.calls.at(-1)?.[0].selected.timingNote).toMatch(/using line timing/);
+});
+
 it('keeps validated line lyrics when another recording has word timing', async () => {
   const calls = fetchStages(() => reply([
     candidate, { ...candidate, id: 'wrong', duration: 210, lrc: words },

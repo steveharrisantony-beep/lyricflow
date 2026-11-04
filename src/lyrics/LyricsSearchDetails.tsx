@@ -58,6 +58,7 @@ export function PreloadedLyrics({ report, loaded, onChoose }: {
             {' · Stage '}{stage?.query.number}
           </small>
           <small>{candidate.rejection || Math.round(candidate.confidence * 100) + '% match'}
+            {!candidate.rejection && candidate.timingNote && ' · ' + candidate.timingNote}
             {active && ' · Currently loaded'}
             {candidate.sourceUrl && /^https:\/\//i.test(candidate.sourceUrl) && <>
               {' · '}<a href={candidate.sourceUrl} target="_blank" rel="noreferrer">Source ↗</a>
@@ -88,7 +89,7 @@ export function LyricsSearchLogs({ report }: { report?: LyricsSearchReport }) {
       {stage.failures.map((message, index) => <p key={index} className="quiet-status">{message}</p>)}
       {stage.candidates.map((candidate, index) => <p key={candidate.id + ':' + index} className="quiet-status">
         {candidate.source} · {candidate.title || 'Title unavailable'} · {candidate.rejection ||
-          (candidate.id === stage.selectedId ? 'Stage winner' : 'Valid alternative')}
+          (candidate.id === stage.selectedId ? 'Stage winner' : 'Valid alternative')}{!candidate.rejection && candidate.timingNote && ' · ' + candidate.timingNote}
       </p>)}
     </details>)}
     <p className="quiet-status">{report.selected ? 'Selected · ' + report.selected.source : statusText(report)}</p>

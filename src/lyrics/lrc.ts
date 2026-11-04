@@ -3,6 +3,7 @@ export type TimedLine={time:number;text:string;words?:TimedWord[];end?:number};
 const LINE_TAG=/\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
 const WORD_TAG=/<(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?>/g;
 const seconds=(match:RegExpMatchArray)=>Number(match[1])*60+Number(match[2])+Number((match[3]||'0').padEnd(3,'0'))/1000;
+export const stripLrcWordTiming=(text:string)=>text.replace(WORD_TAG,'');
 export function parseLRC(input:string,trackEnd?:number):TimedLine[]{
  const output:TimedLine[]=[];
  if(input.length>250000)return [];
