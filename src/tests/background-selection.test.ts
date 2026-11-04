@@ -62,3 +62,20 @@ it.each([
  expect(params.get('backgroundArtist')).toBe(primary);
  expect(params.get('backgroundFeaturedArtist')).toBe(featured);
 });
+
+it.each([
+ ['Song | LEAD–ONE','Song | LEAD–ONE Guest One video','', 'Guest One'],
+ ['Song | Guest One','Song | Guest One Lead One video','Lead One',null],
+ ['Song | Lead One and Guest One (feat. Guest One & Guest Two)',
+  'Song | Lead One and Guest One video','',null],
+ ['Song | Lead Oneil and Guest with One','Song | Lead Oneil and Guest with One Lead One Guest One video',
+  'Lead One','Guest One'],
+] as const)('skips artist names already in the query title %s',async(title,query,primary,featured)=>{
+ const fetcher=mockSearch([]);
+ await findYouTubeBackgrounds({title,artist:'Lead One feat. Guest One'},'https://resolver.example');
+ expect(fetcher).toHaveBeenCalledTimes(1);
+ const params=new URL(fetcher.mock.calls[0][0]).searchParams;
+ expect(params.get('q')).toBe(query);
+ expect(params.get('backgroundArtist')).toBe(primary);
+ expect(params.get('backgroundFeaturedArtist')).toBe(featured);
+});
