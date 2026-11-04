@@ -16,7 +16,7 @@ it('matches any complete song-title word, ignoring punctuation and case',()=>{
  expect(check(video('Siri മഴേ | Visualizer'),'മഴ')).toEqual(['No song-title word in the video title']);
 });
 it('uses only the five requested keywords and allows a keyword in the original title',()=>{
- for(const word of ['jukebox','cover','reaction','karoke','reply']){
+ for(const word of ['jukebox','cover','reaction','karaoke','reply']){
   expect(check(video(`Road [${word.toUpperCase()}]`))).toEqual([`Rejected keyword: ${word}`]);
   expect(check(video(`Road [${word}]`),`Road ${word}`)).toEqual([]);
  }
