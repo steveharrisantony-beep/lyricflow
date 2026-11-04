@@ -4,7 +4,7 @@ export const lyricsStageProviders = ['isrc', 'paxsenix', 'lrclib', 'musixmatch',
 export type LyricsStageProvider = typeof lyricsStageProviders[number];
 
 export interface LyricsSearchContext {
-  /** Set only for the current recording's selected, visible YouTube background. */
+  /** Video ID for an explicitly selected YouTube subtitle lookup. */
   backgroundVideoId?: string;
 }
 
@@ -26,7 +26,6 @@ export interface LyricsSearchPlan {
   duration: number;
   stages: LyricsQuery[];
   artistHint?: string;
-  backgroundVideoId?: string;
   sourceTrackId?: string;
 }
 
@@ -143,17 +142,18 @@ export function cleanTitleForLyrics(rawTitle: string, artistContext = ''): strin
   return title || visible || rawTitle.trim();
 }
 
-export function buildLyricsSearchPlan(
-  track: TrackInfo,
-  context: LyricsSearchContext = {},
-): LyricsSearchPlan {
-  const youtube = track.lyricsAudioSource === 'youtube' ||
-    (track.lyricsAudioSource !== 'stream' && (track.provider === 'resolver' || track.provider === 'ytmusic'));
+export function buildLyricsSearchPlan(track: TrackInfo): LyricsSearchPlan {
+  const external = track.provider === 'external';
+  const externalYouTube = external && (
+    track.externalPackageName === 'com.google.android.youtube' ||
+    track.externalPackageName === 'com.google.android.apps.youtube.music'
+  );
+  const youtube = !external && (track.lyricsAudioSource === 'youtube' ||
+    (track.lyricsAudioSource !== 'stream' && (track.provider === 'resolver' || track.provider === 'ytmusic')));
   const local = track.provider === 'local' || track.source === 'filename';
-  const externalBackground = track.provider === 'external' && context.backgroundVideoId;
-  const strategy = youtube || local || externalBackground ? 'A' : 'B';
-  const reason = youtube ? 'Built-in YouTube audio' : local ? 'Local audio file'
-    : externalBackground ? 'External audio with a selected YouTube background' : 'Original audio source metadata';
+  const strategy = youtube || local || externalYouTube ? 'A' : 'B';
+  const reason = youtube ? 'Built-in YouTube audio' : externalYouTube ? 'YouTube audio from Android notification listening'
+    : local ? 'Local audio file' : 'Original audio source metadata';
   const originalTitle = youtube ? track.videoTitle || track.title : track.title;
   const artistHint = youtube ? cleanArtist(track.artist) || cleanArtist(track.channelHint || '') : undefined;
   const artistCredit = cleanArtist(track.artist) ? track.artist : track.primaryArtist || '';
@@ -183,11 +183,10 @@ export function buildLyricsSearchPlan(
     if (firstName) add(1, 'Filtered title + primary artist first word', filteredTitle, firstName);
     add(2, 'Filtered title only', filteredTitle);
   }
-  const backgroundVideoId = externalBackground || undefined;
   const sourceTrackId = track.sourceTrackId;
-  const key = JSON.stringify([strategy, audioSource, reason, backgroundVideoId, sourceTrackId, originalTitle, originalArtist, artistHint, filteredTitle, firstName]);
+  const key = JSON.stringify([strategy, audioSource, reason, track.externalPackageName, sourceTrackId, originalTitle, originalArtist, artistHint, filteredTitle, firstName]);
   return { key, strategy, audioSource, reason, originalTitle, originalArtist, filteredTitle, artistHint,
-    duration: track.duration, backgroundVideoId, sourceTrackId, stages };
+    duration: track.duration, sourceTrackId, stages };
 }
 
 export function validateLyricsCandidate(

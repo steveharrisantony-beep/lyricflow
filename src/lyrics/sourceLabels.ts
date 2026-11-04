@@ -20,10 +20,11 @@ export function lyricProviderName(source:string,sourceUrl=''):string|undefined{
  return namedProvider?.[0]||providers.find(([,pattern])=>pattern.test(sourceUrl))?.[0];
 }
 
-export function normalizeLyricSource(source:string,sourceUrl=''):string{
+export function normalizeLyricSource(source:string,sourceUrl='',wordTiming?:boolean):string{
  const raw=(source||'').trim(),provider=lyricProviderName(raw,sourceUrl);
  if(!raw)return provider||'Synced lyrics';
- const custom=raw.replace(/\bCustom Apple TTML\b/gi,'Custom TTML');
+ const verifiedLabel=wordTiming===false?raw.replace(/\bWord[- ]Synced\b/gi,'Line-Synced'):raw;
+ const custom=verifiedLabel.replace(/\bCustom Apple TTML\b/gi,'Custom TTML');
  let label=custom.replace(/\bApple(?:\s+(?:Music|Library))?\b/gi,provider||'Synced lyrics');
  if(provider){
   const escaped=provider.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');

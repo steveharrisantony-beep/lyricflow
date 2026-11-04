@@ -29,18 +29,20 @@ const pairs = (calls: URLSearchParams[]) => calls.map(query => [query.get('title
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 it.each([
-  [{ provider: 'resolver' }, {}, 'A'],
-  [{ provider: 'ytmusic', lyricsAudioSource: 'youtube' }, {}, 'A'],
-  [{ provider: 'local', source: 'filename' }, {}, 'A'],
-  [{ provider: 'external', audioSource: 'External Player (Spotify)' }, { backgroundVideoId: 'abcdefghijk' }, 'A'],
-  [{ provider: 'jiosaavn', youtubeVideoId: 'abcdefghijk' }, { backgroundVideoId: 'abcdefghijk' }, 'B'],
-  [{ provider: 'external', audioSource: 'External Player (Spotify)', youtubeVideoId: 'abcdefghijk' }, {}, 'B'],
-  [{ provider: 'external', audioSource: 'External Player (Apple Music)' }, {}, 'B'],
-  [{ provider: 'resolver', lyricsAudioSource: 'stream', youtubeVideoId: 'abcdefghijk' }, {}, 'B'],
-  [{ provider: undefined, youtubeVideoId: 'abcdefghijk' }, {}, 'B'],
-] as const)('uses the actual audio and current background context to choose a strategy', (source, context, expected) => {
+  [{ provider: 'resolver' }, 'A'],
+  [{ provider: 'ytmusic', lyricsAudioSource: 'youtube' }, 'A'],
+  [{ provider: 'local', source: 'filename' }, 'A'],
+  [{ provider: 'external', externalPackageName: 'com.google.android.youtube' }, 'A'],
+  [{ provider: 'external', externalPackageName: 'com.google.android.apps.youtube.music' }, 'A'],
+  [{ provider: 'jiosaavn', youtubeVideoId: 'abcdefghijk' }, 'B'],
+  [{ provider: 'external', externalPackageName: 'com.spotify.music', youtubeVideoId: 'abcdefghijk' }, 'B'],
+  [{ provider: 'external', externalPackageName: 'com.apple.android.music' }, 'B'],
+  [{ provider: 'external', externalPackageName: 'com.android.chrome', audioSource: 'External Player (YouTube)' }, 'B'],
+  [{ provider: 'resolver', lyricsAudioSource: 'stream', youtubeVideoId: 'abcdefghijk' }, 'B'],
+  [{ provider: undefined, youtubeVideoId: 'abcdefghijk' }, 'B'],
+] as const)('chooses a strategy from the app playing the audio', (source, expected) => {
   const original = { ...track, ...source };
-  const plan = buildLyricsSearchPlan(original, context);
+  const plan = buildLyricsSearchPlan(original);
   expect(plan.strategy).toBe(expected);
   expect(plan.originalTitle).toBe(track.title);
   expect(plan.originalArtist).toBe(track.artist);
@@ -112,10 +114,30 @@ it('uses filtered title plus hint first, then requires an artist word in the raw
   expect(pairs(calls)).toEqual([['Apna Bana Le', 'Arijit'], ['Apna Bana Le', null]]);
 });
 
-it('uses external metadata even when an active background exists', () => {
-  const plan = buildLyricsSearchPlan({ ...track, provider: 'external', videoTitle: 'Other Artist - Unrelated Song' }, { backgroundVideoId: 'abcdefghijk' });
-  expect(plan.stages.map(query => query.title)).toEqual(['Apna Bana Le', 'Apna Bana Le']);
+it('uses the notification title and artist for external YouTube rather than the background title', () => {
+  const plan = buildLyricsSearchPlan({
+    ...track, provider: 'external', externalPackageName: 'com.google.android.apps.youtube.music',
+    videoTitle: 'Other Artist - Unrelated Song',
+  });
+  expect(plan.stages.map(query => [query.title,query.artist])).toEqual([
+    ['Apna Bana Le','Arijit'],['Apna Bana Le',undefined],
+  ]);
   expect(plan.originalTitle).toBe(track.title);
+  expect(plan.originalArtist).toBe(track.artist);
+});
+
+it('keeps a Paxsenix line end from winning as word sync', async () => {
+  const calls = fetchStages(query => query.get('provider') === 'paxsenix' && query.get('artist') === track.artist
+    ? reply([{ ...candidate, source:'Paxsenix', id:'paxsenix:1', lrc:undefined,
+      ttml:'<tt><p begin="1s" end="8s"><span begin="1s" end="8s">One entire line</span></p></tt>' }])
+    : query.get('provider') === 'isrc' && query.get('artist') === 'Arijit'
+      ? reply([{ ...candidate, source:'lrc.red', lrc:words }])
+      : reply());
+  const progress=vi.fn();
+  const result=await resolveStashLyricsChain(track,undefined,'lyricflow',0,undefined,progress);
+  expect(progress.mock.calls[0][0]).toMatchObject({source:'Paxsenix',hasWordSync:false});
+  expect(result).toMatchObject({source:'lrc.red',hasWordSync:true});
+  expect(calls).toHaveLength(12);
 });
 
 it('shows the first valid line while providers finish and upgrades only after a later stage finds valid words', async () => {

@@ -1,3 +1,5 @@
+import {convertTtmlToEnhancedLrc} from './src/lyrics/ttml';
+import {hasWordTiming} from './src/lyrics/lyricsQuality';
 import { isScrambledMusixmatch, normalizeKugouLrc, searchLyricsStageProvider } from './server/lyricsStage';
 import { lyricsStageProviders, type LyricsStageProvider } from './src/lyrics/searchPlan';
 import {searchMusicVideos,mergeVideoMetadata,hydrateVideoMetadata,VideoSearchCache,youtubeViews} from './server/youtubeSearch';
@@ -1718,13 +1720,14 @@ async function fetchIsrcWordSyncedTtml(
         if (!ttmlRes.ok) continue;
         const xml = await ttmlRes.text();
         if (xml.includes('<p') && xml.includes('<span')) {
+          const hasWordSync=convertTtmlToEnhancedLrc(xml).hasWordSync;
           return {
             ttml: xml,
-            source: provider.name,
+            source: hasWordSync?provider.name:provider.name.replace('Word-Synced TTML','TTML'),
             sourceUrl: provider.url,
             title: cand.title || title,
             artist: cand.artist || undefined,
-            hasWordSync: true,
+            hasWordSync,
           };
         }
       } catch {
@@ -1843,11 +1846,11 @@ async function fetchItunesPaxsenixLyrics(
             appleTrackViewUrl: trackViewUrl || undefined,
             lyrics: {
               ttml: body,
-              source: 'Paxsenix · Word-Synced TTML',
+              source: 'Paxsenix · TTML',
               sourceUrl: endpoint.url,
               title: matchedTitle,
               artist: matchedArtist || undefined,
-              hasWordSync: body.includes('<span'),
+              hasWordSync: convertTtmlToEnhancedLrc(body).hasWordSync,
             },
           };
         }
@@ -1859,11 +1862,11 @@ async function fetchItunesPaxsenixLyrics(
               appleTrackViewUrl: trackViewUrl || undefined,
               lyrics: {
                 ttml: embeddedTtml,
-                source: 'Paxsenix · Word-Synced TTML',
+                source: 'Paxsenix · TTML',
                 sourceUrl: endpoint.url,
                 title: matchedTitle,
                 artist: matchedArtist || undefined,
-                hasWordSync: embeddedTtml.includes('<span'),
+                hasWordSync: convertTtmlToEnhancedLrc(embeddedTtml).hasWordSync,
               },
             };
           }
@@ -1919,11 +1922,11 @@ async function fetchLrclibServerLyrics(
         if (synced.includes('[')) {
           return {
             lrc: synced,
-            source: synced.includes('<') ? 'LRCLIB · Word-Synced' : 'LRCLIB · Synced Recording',
+            source: hasWordTiming(synced) ? 'LRCLIB · Word-Synced' : 'LRCLIB · Synced Recording',
             sourceUrl: item.id ? `https://lrclib.net/api/get/${String(item.id)}` : undefined,
             title: String(item.trackName || title).trim(),
             artist: String(item.artistName || effectiveArtist).trim() || undefined,
-            hasWordSync: synced.includes('<'),
+            hasWordSync: hasWordTiming(synced),
           };
         }
       }
@@ -1970,7 +1973,7 @@ async function fetchLrclibServerLyrics(
               artist: artistName,
               album: albumName,
               duration: dur,
-              hasWordSync: synced.includes('<'),
+              hasWordSync: hasWordTiming(synced),
             },
             matchCtx
           );
@@ -1984,11 +1987,11 @@ async function fetchLrclibServerLyrics(
         const synced = best.syncedLyrics.trim();
         return {
           lrc: synced,
-          source: synced.includes('<') ? 'LRCLIB · Word-Synced' : 'LRCLIB · Synced',
+          source: hasWordTiming(synced) ? 'LRCLIB · Word-Synced' : 'LRCLIB · Synced',
           sourceUrl: best.id ? `https://lrclib.net/api/get/${String(best.id)}` : undefined,
           title: String(best.trackName || title).trim(),
           artist: String(best.artistName || effectiveArtist).trim() || undefined,
-          hasWordSync: synced.includes('<'),
+          hasWordSync: hasWordTiming(synced),
         };
       }
     }
@@ -2021,8 +2024,8 @@ async function fetchMusixmatchServerLyrics(
       if (synced.includes('[') && !isScrambledMusixmatch(synced)) {
         return {
           lrc: synced,
-          source: synced.includes('<') ? 'MusixMatch · Word-Synced' : 'MusixMatch · Synced LRC',
-          hasWordSync: synced.includes('<'),
+          source: hasWordTiming(synced) ? 'MusixMatch · Word-Synced' : 'MusixMatch · Synced LRC',
+          hasWordSync: hasWordTiming(synced),
         };
       }
     }
@@ -2132,7 +2135,7 @@ async function fetchKugouSyncedLrc(
       return {
         lrc: normalized,
         source: 'KuGou · Synced LRC',
-        hasWordSync: normalized.includes('<'),
+        hasWordSync: hasWordTiming(normalized),
       };
     }
   } catch {
@@ -2450,7 +2453,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
           duration: duration || 200,
           instrumental: false,
           hasSynced: true,
-          hasWordSync: true,
+          hasWordSync: isrcMatch.hasWordSync,
           url: isrcMatch.sourceUrl || '',
           confidence: 0.98,
           ttml: isrcMatch.ttml,
@@ -2510,11 +2513,11 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
                   duration: dur,
                   instrumental: false,
                   hasSynced: true,
-                  hasWordSync: ttml.includes('<span'),
+                  hasWordSync: convertTtmlToEnhancedLrc(ttml).hasWordSync,
                   url: lyricsUrl,
                   confidence: Math.max(0.75, 0.95 - idx * 0.04),
                   ttml,
-                  sourceLabel: 'Paxsenix · Word-Synced TTML',
+                  sourceLabel: 'Paxsenix · TTML',
                 });
               }
             } catch {

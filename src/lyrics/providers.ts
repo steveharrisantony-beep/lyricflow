@@ -1,4 +1,5 @@
 import {lyricProviderName,normalizeLyricSource} from './sourceLabels';
+import {hasWordTiming} from './lyricsQuality';
 import {providerRequest} from '../network/request';
 import {buildLyricsSearchPlan,type LyricsSearchContext,type LyricsSearchReport,type LyricsSearchCandidate} from './searchPlan';
 import {executeLyricsSearchPlan} from './searchLyrics';
@@ -32,7 +33,7 @@ const record=(v:unknown):SearchRecord|null=>{
  const plain=typeof v.plainLyrics==='string'&&v.plainLyrics.trim()?v.plainLyrics.trim():null;
  return {id:num(v.id),trackName:str(v.trackName),artistName:str(v.artistName),
  albumName:str(v.albumName),duration:num(v.duration),instrumental:v.instrumental===true,
- syncedLyrics:synced,plainLyrics:plain,hasWordSync:Boolean(synced&&(v.hasWordSync===true||synced.includes('<')))};
+ syncedLyrics:synced,plainLyrics:plain,hasWordSync:hasWordTiming(synced||undefined)};
 };
 export const lrclibProvider:LyricProvider={
  id:'lrclib',label:'LRCLIB (track candidates)',
@@ -144,7 +145,7 @@ export async function resolveStashLyricsChain(
    hasWordSync:false,candidates:[],availableEngines:['lyricflow','youtube'],subtitleTracks,selectedSubtitleTrackId:chosen?.id};
  }
 
- const plan=buildLyricsSearchPlan(track,context);
+ const plan=buildLyricsSearchPlan(track);
  // Captions can align a verified match to the video clock, but cannot win a discovery stage.
  const timingVideo=plan.audioSource==='youtube'&&engine==='lyricflow'?(extractYouTubeVideoId(track)||track.videoId):null;
  const timingController=new AbortController();

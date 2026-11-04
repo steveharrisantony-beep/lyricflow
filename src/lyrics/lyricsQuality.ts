@@ -1,6 +1,13 @@
-/** Real word timestamps outrank line timestamps; plain text is the last fallback. */
-export function lyricsQuality(text:string|undefined,hasWordSync=false):number{
+import {hasSourcedWordTiming,parseLRC} from './lrc';
+
+export function hasWordTiming(text:string|undefined):boolean{
+ return Boolean(text&&hasSourcedWordTiming(parseLRC(text)));
+}
+
+/** Determine timing from the lyric text. Provider flags and end markers are not word timings. */
+export function lyricsQuality(text:string|undefined):number{
  if(!text?.trim())return 0;
- if(!/\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]/.test(text))return 1;
- return (hasWordSync||/<\d{1,3}:\d{2}(?:[.:]\d{1,3})?>/.test(text))?3:2;
+ const lines=parseLRC(text);
+ if(!lines.length)return 1;
+ return hasSourcedWordTiming(lines)?3:2;
 }

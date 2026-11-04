@@ -949,3 +949,45 @@ it('opens last-stage preloaded lyrics without searching and keeps the chosen ver
  expect(list()?.textContent).toContain('No candidates found');
  expect(lyricRequests()).toBe(count);
 },20000);
+
+it('uses the active notification package and metadata for the lyrics strategy',async()=>{
+ const external=await import('../audio/externalPlayer');
+ const finder=await import('../metadata/TrackFinder');
+ const stage=await import('../visualization/cinematic/CinematicStage');
+ const {buildLyricsSearchPlan}=await import('../lyrics/searchPlan');
+ let deliver:Parameters<typeof external.subscribeExternalMedia>[0]|undefined;
+ let finderProps:Parameters<typeof finder.default>[0]|undefined;
+ let stageProps:Parameters<typeof stage.default>[0]|undefined;
+ const subscribe=vi.spyOn(external,'subscribeExternalMedia').mockImplementation(async callback=>{deliver=callback;return()=>{};});
+ const find=vi.spyOn(finder,'default').mockImplementation(props=>{finderProps=props;return null;});
+ const draw=vi.spyOn(stage,'default').mockImplementation(props=>{stageProps=props;return <></>;});
+ external.setAndroidAppOverrideForTest(true);
+ try{
+  await act(async()=>click('Select source'));
+  await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('.source-option-card')].find(button=>button.textContent?.includes('External player'))!.click());
+  const notification={
+   title:'Original test song (From "Film")',artist:'Test artist',album:'Film',duration:200,
+   position:1,playing:true,packageName:'com.spotify.music',appName:'Spotify',updatedAt:Date.now(),
+  };
+  await act(async()=>deliver!(notification,true));
+  const first=finderProps!.track!;
+  expect(buildLyricsSearchPlan(first).strategy).toBe('B');
+  const input=host.querySelector<HTMLInputElement>('[aria-label="Background video URL"]')!;
+  await act(async()=>{
+   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'abcdefghijk');
+   input.dispatchEvent(new Event('input',{bubbles:true}));
+  });
+  await act(async()=>click('Save background video'));
+  await act(async()=>stageProps!.onVerifiedBackground!(stageProps!.recordingKey!,'abcdefghijk'));
+  expect(buildLyricsSearchPlan(finderProps!.track!).key).toBe(buildLyricsSearchPlan(first).key);
+  await act(async()=>deliver!({...notification,packageName:'com.google.android.youtube',appName:'YouTube',duration:0},true));
+  expect(finderProps!.track).toMatchObject({
+   title:notification.title,artist:notification.artist,album:notification.album,duration:0,
+   externalPackageName:'com.google.android.youtube',
+  });
+  expect(buildLyricsSearchPlan(finderProps!.track!)).toMatchObject({strategy:'A',originalTitle:notification.title,originalArtist:notification.artist});
+ }finally{
+  external.setAndroidAppOverrideForTest(null);
+  subscribe.mockRestore();find.mockRestore();draw.mockRestore();
+ }
+},20000);

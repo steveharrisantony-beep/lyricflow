@@ -6,7 +6,7 @@ import {resolveStashLyricsChain,retrievePermittedLyrics,lrclibProvider,type Stas
 import {convertTtmlToEnhancedLrc,convertStructuredAppleJsonToLrc} from '../lyrics/appleLyrics';
 import type {LyricEngineOption} from '../lyrics/lyricFlowEngine';
 import {lyricProviderName,normalizeLyricSource} from '../lyrics/sourceLabels';
-import {lyricsQuality} from '../lyrics/lyricsQuality';
+import {hasWordTiming,lyricsQuality} from '../lyrics/lyricsQuality';
 import {providerRequest} from '../network/request';
 import {backendOrigin} from '../network/backend';
 import {findYouTubeBackgrounds} from '../music/backgroundVideos';
@@ -50,11 +50,11 @@ function shared<T>(id:string,entry:TemporarySong,signal:AbortSignal|undefined,st
  });
 }
 function lyricsKey(track:TrackInfo,options:LyricsPreparationOptions){
- return JSON.stringify([buildLyricsSearchPlan(track,options.context).key,options.engine,options.selection,options.source,options.subtitleId,options.leadingOffset||0]);
+ return JSON.stringify([buildLyricsSearchPlan(track).key,options.engine,options.engine==='youtube'?options.context?.backgroundVideoId:undefined,options.selection,options.source,options.subtitleId,options.leadingOffset||0]);
 }
 export function preparedLyricsNeedWordSync(value:StashResolvedLyrics,options:LyricsPreparationOptions){
  return !value.searchComplete&&(options.engine==='lyricflow'||options.engine==='apple')&&!options.source&&!options.selection&&
-  lyricsQuality(value.original||value.plain,value.hasWordSync)<3;
+  lyricsQuality(value.original||value.plain)<3;
 }
 export function peekPreparedLyrics(track:TrackInfo|null,uid:string|null,options:LyricsPreparationOptions){
  const entry=localSongData(track,uid).session;
@@ -63,7 +63,7 @@ export function peekPreparedLyrics(track:TrackInfo|null,uid:string|null,options:
 function resolvedText(text:string,source:string,sourceUrl:string,track:TrackInfo):StashResolvedLyrics{
  const timed=hasValidLrcTimestamps(text);
  return {original:timed?text:'',plain:timed?undefined:text,romanized:'',source,sourceUrl,
-  title:track.title,artist:track.artist,hasWordSync:timed&&text.includes('<'),candidates:[]};
+  title:track.title,artist:track.artist,hasWordSync:hasWordTiming(timed?text:undefined),candidates:[]};
 }
 async function savedLink(track:TrackInfo,source:LyricsSourceReference,signal:AbortSignal):Promise<StashResolvedLyrics|null>{
  if(!/^https?:\/\//i.test(source.url))return null;
@@ -117,7 +117,7 @@ export function prepareSongLyrics(track:TrackInfo,uid:string|null,options:Lyrics
   let best=cached;
   const prefer=(value:StashResolvedLyrics)=>{
    // Planned results have already been ranked by verified recording and timing.
-   if(value.searchComplete!==undefined||!best||lyricsQuality(value.original||value.plain,value.hasWordSync)>=lyricsQuality(best.original||best.plain,best.hasWordSync))best=value;
+   if(value.searchComplete!==undefined||!best||lyricsQuality(value.original||value.plain)>=lyricsQuality(best.original||best.plain))best=value;
    return best;
   };
   const source=options.source||local.mapping?.lyrics?.sourceFile;

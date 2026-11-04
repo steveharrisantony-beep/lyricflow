@@ -1,3 +1,4 @@
+import {hasWordTiming} from './lyrics/lyricsQuality';
 import {LyricsSearchLogs,PreloadedLyrics,useLyricsSearchReport} from './lyrics/LyricsSearchDetails';
 import {lyricsFromSearchCandidate} from './lyrics/providers';
 import {evaluateBackgroundVideos} from './music/videoMatching';
@@ -1365,30 +1366,18 @@ export default function App({ user = null }: { user?: User | null }) {
           const nextTitle = media.title.trim();
           const nextArtist = (media.artist || "").trim();
           const nextAlbum = (media.album || "").trim();
-          const nextDur =
-            media.duration && media.duration > 0
-              ? media.duration
-              : (prev?.duration ?? 0);
+          const packageName = (media.packageName || "").trim();
+          const sameRecording = prev?.provider === "external" &&
+            prev.externalPackageName === packageName && prev.title === nextTitle &&
+            prev.artist === nextArtist && prev.album === nextAlbum && Boolean(prev.isAd) === adDetected;
+          const nextDur = Number.isFinite(media.duration) && media.duration > 0
+            ? media.duration : sameRecording ? prev.duration : 0;
           const nextAudioSource = media.appName
             ? `External Player (${media.appName})`
             : "External Player (Android)";
-          if (
-            prev &&
-            prev.provider === "external" &&
-            prev.title === nextTitle &&
-            prev.artist === nextArtist &&
-            prev.album === nextAlbum &&
-            Boolean(prev.isAd) === adDetected
-          ) {
-            if (nextDur && prev.duration !== nextDur) {
-              return {
-                ...prev,
-                duration: nextDur,
-                audioSource: nextAudioSource,
-                isAd: adDetected,
-              };
-            }
-            return prev;
+          if (sameRecording) {
+            return prev.duration === nextDur && prev.audioSource === nextAudioSource
+              ? prev : { ...prev, duration: nextDur, audioSource: nextAudioSource };
           }
           setFileEpoch((e) => e + 1);
           setIncoming(null);
@@ -1403,6 +1392,7 @@ export default function App({ user = null }: { user?: User | null }) {
             duration: nextDur,
             source: "provider",
             provider: "external",
+            externalPackageName: packageName,
             audioSource: nextAudioSource,
             confidence: 1,
             isAd: adDetected,
@@ -1490,8 +1480,8 @@ export default function App({ user = null }: { user?: User | null }) {
     backgroundVideoId: isYtVideoBackgroundActive&&verifiedBackground?.key===recordingKey&&verifiedBackground.id===stageYoutubeVideoId
       ? verifiedBackground.id||undefined : undefined,
   };
-  const lyricsSearchReport = useLyricsSearchReport(localTrack,uid,lyricsSearchContext);
-  const preloadedLyricsKey=JSON.stringify([recordingKey,lyricsSearchContext.backgroundVideoId]);
+  const lyricsSearchReport = useLyricsSearchReport(localTrack,uid);
+  const preloadedLyricsKey=JSON.stringify([recordingKey,localTrack?.externalPackageName]);
   const preloadedLyricsOpen=openPreloadedLyrics===preloadedLyricsKey;
   const matchedVideoCandidate = stageYoutubeVideoId
     ? preloadedVideoChoices.find(v => extractYouTubeVideoId(v) === stageYoutubeVideoId)
@@ -1606,8 +1596,9 @@ export default function App({ user = null }: { user?: User | null }) {
     :lyricsSearchReport?.status==='failed'?"Search failed"
       :lyricsSearchReport?.status==='searching'?"Automatic search in progress"
         :lyricsSearchReport?.status==='empty'?"Lyrics not found":lyricsLoading?"Loading…":"Not found";
+  const activeLyricsHaveWordTiming=useMemo(()=>hasWordTiming(activeLyrics.original),[activeLyrics.original]);
   const currentLyricsLibrary=hasLoadedLyrics
-    ?describeLyricProvider(activeLyrics.name,/<\d+:/.test(activeLyrics.original),Boolean(activeLyrics.original.trim()),true,activeLyrics.url).providerName
+    ?describeLyricProvider(activeLyrics.name,activeLyricsHaveWordTiming,Boolean(activeLyrics.original.trim()),true,activeLyrics.url).providerName
     :"";
   const currentVideoMetadata=selectedVideoMetadata&&extractYouTubeVideoId(selectedVideoMetadata)===stageYoutubeVideoId
     ?selectedVideoMetadata:matchedVideoCandidate;

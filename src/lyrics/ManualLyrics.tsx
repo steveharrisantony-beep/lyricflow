@@ -1,3 +1,4 @@
+import {hasWordTiming} from './lyricsQuality';
 import {lyricProviderName,normalizeLyricSource} from './sourceLabels';
 import {selectedPaletteIds,type ThemePaletteSelections} from '../visualization/cinematic/themeSelection';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -29,7 +30,7 @@ import {
   type LyricFillPaceMode,
 } from "../visualization/cinematic/kineticTypography";
 import { convertTtmlToEnhancedLrc } from "./appleLyrics";
-import { parseLRC, type TimedWord } from "./lrc";
+import { hasSourcedWordTiming, parseLRC, type TimedWord } from "./lrc";
 import {
   buildCues,
   DUET_COLORS,
@@ -512,10 +513,12 @@ export default function ManualLyrics({
       ? ""
       : incoming.romanized || romanizeText(incoming.original).text;
     setRoman(nextRoman);
-    setSource(normalizeLyricSource(incoming.source,incoming.sourceUrl));
+    const verifiedSource=normalizeLyricSource(incoming.source,incoming.sourceUrl,
+      incoming.original?hasWordTiming(incoming.original):undefined);
+    setSource(verifiedSource);
     setSourceUrl(incoming.sourceUrl || "");
     setCorrected(false);
-    setMessage(`Auto-loaded from ${normalizeLyricSource(incoming.source,incoming.sourceUrl)}.`);
+    setMessage(`Auto-loaded from ${verifiedSource}.`);
   }, [incoming?.token]);
 
   // Upgrade non-Latin lyrics with haroldalan/spotify-karaoke Google phonetic romanization (dt=rm)
@@ -716,11 +719,11 @@ export default function ManualLyrics({
 
   const hasWordTags = useMemo(
     () =>
-      lines.some((l) => l.words && l.words.some((w) => w.timing === "sourced")),
+      hasSourcedWordTiming(lines),
     [lines],
   );
   const currentHasWordSync = Boolean(
-    current?.words &&
+    hasWordTags && current?.words &&
       current.words.length > 0 &&
       current.words.some((w) => w.timing === "sourced"),
   );

@@ -8,7 +8,7 @@ import {isSyncedLyricsSource,lyricProviderName,normalizeLyricSource} from '../ly
 
 afterEach(()=>vi.restoreAllMocks());
 const track={title:'Sample Song',artist:'Sample Artist',album:'Sample Album',duration:200,source:'manual' as const,confidence:1};
-const ttml='<tt><body><div><p begin="1s" end="3s"><span begin="1s" end="2s">Sample</span><span begin="2s" end="3s">words</span></p></div></body></tt>';
+const ttml='<tt><body><div><p begin="1s" end="3s"><span begin="1s" end="2s">Sample </span><span begin="2s" end="3s">words</span></p></div></body></tt>';
 
 it.each([
  ['lrc.red','https://lrc.red/s/TEST00000001.ttml'],
@@ -62,4 +62,8 @@ it('ranks word-synced candidates first while rejecting other songs during automa
  const found=await fetchAppleMusicCandidates(track,undefined,false,false);
  expect(found.map(value=>value.id)).toEqual([3,1]);
  expect(found[0].hasWordSync).toBe(true);
+});
+
+it('corrects a saved Paxsenix word-sync label when the file only has line timing',()=>{
+ expect(normalizeLyricSource('Paxsenix · Word-Synced TTML','',false)).toBe('Paxsenix · Line-Synced TTML');
 });

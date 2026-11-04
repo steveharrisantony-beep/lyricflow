@@ -9,6 +9,7 @@ export interface TrackInfo {
   provider?:'ytmusic'|'soundcloud'|'jiosaavn'|'audius'|'resolver'|'local'|'external';
   audioSource?:string;
   lyricsAudioSource?:'youtube'|'stream';
+  externalPackageName?:string;
   sourceUrl?:string;
   youtubeVideoId?:string;
   videoId?:string;

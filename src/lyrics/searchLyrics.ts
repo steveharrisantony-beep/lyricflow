@@ -40,7 +40,7 @@ function prepareCandidate(raw: ProviderLyric, plan: LyricsSearchPlan, query: Lyr
   const text = decoded?.lrc || raw.lrc || '';
   const lrc = hasValidLrcTimestamps(text) ? text : '';
   const plain = raw.plain || (!lrc && text.trim()) || undefined;
-  const quality = lyricsQuality(lrc || plain, decoded?.hasWordSync);
+  const quality = lyricsQuality(lrc || plain);
   const match = validateLyricsCandidate(raw, plan, query);
   return {
     ...metadata, lrc, plain, romanized: decoded && 'romanizedLrc' in decoded && typeof decoded.romanizedLrc === 'string' ? decoded.romanizedLrc : undefined,

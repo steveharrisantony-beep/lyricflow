@@ -1,5 +1,6 @@
 import {afterEach,expect,it} from 'vitest';
 import {parseLRC} from '../lyrics/lrc';
+import {lyricsQuality} from '../lyrics/lyricsQuality';
 import {buildCues,computeNaturalLineEnd,getLyricState,setLyricTimeline} from '../lyrics/lyricTimeline';
 import {convertTtmlToEnhancedLrc} from '../lyrics/appleLyrics';
 import {choreographyDuration,choreographyTiming,letterMotionPose} from '../visualization/cinematic/letterMotion';
@@ -52,4 +53,18 @@ it('does not start a line outro before the latest possible vocal finish, includi
 it('uses the next distinct timestamp for simultaneous starts instead of stretching to media end',()=>{
  const cues=buildCues(parseLRC('[00:00]First voice\n[00:00]Second voice\n[00:09]Next phrase'),[],'',200);
  expect(cues[0].naturalEnd).toBe(9);expect(cues[1].naturalEnd).toBe(9);
+});
+
+it.each([
+ '[00:01]An entire line<00:05>',
+ '[00:01]<00:01>An entire line<00:05>',
+ '[00:01]<00:01>An entire <00:01>line<00:05>',
+])('keeps line markers out of word timing while preserving the line end',text=>{
+ expect(lyricsQuality(text)).toBe(2);
+ expect(parseLRC(text)[0]).toMatchObject({text:'An entire line',end:5});
+ expect(parseLRC(text)[0].words).toBeUndefined();
+});
+
+it('recognizes separately timed text when the first word starts at the line time',()=>{
+ expect(lyricsQuality('[00:01]First <00:02>word<00:05>')).toBe(3);
 });

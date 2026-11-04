@@ -1,5 +1,5 @@
 import {prepareSongLyrics,peekPreparedLyrics,preparedLyricsNeedWordSync} from '../data/songPreparation';
-import {lyricsQuality} from '../lyrics/lyricsQuality';
+import {hasWordTiming,lyricsQuality} from '../lyrics/lyricsQuality';
 import {buildLyricsSearchPlan,type LyricsSearchContext} from '../lyrics/searchPlan';
 import {lyricProviderName,normalizeLyricSource} from '../lyrics/sourceLabels';
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -142,10 +142,11 @@ export default function TrackFinder({
 
   const latestLeadingOffset = useRef(leadingNonMusicOffsetSec);
   latestLeadingOffset.current = leadingNonMusicOffsetSec;
-  const searchKey=track?buildLyricsSearchPlan(track,searchContext).key:'';
-  const requestKey=useMemo(()=>JSON.stringify([autoTrackKey,searchKey,enabled,accountId,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,
+  const captionVideoId=lyricEngineOption==='youtube'?searchContext?.backgroundVideoId:undefined;
+  const searchKey=track?buildLyricsSearchPlan(track).key:'';
+  const requestKey=useMemo(()=>JSON.stringify([autoTrackKey,searchKey,captionVideoId,enabled,accountId,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,
     preferredSelection?.engine,preferredSelection?.lrclibId,preferredSourceFile?.url,preferredSourceFile?.revision]),
-    [autoTrackKey,searchKey,enabled,accountId,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,preferredSelection?.engine,preferredSelection?.lrclibId,preferredSourceFile?.url,preferredSourceFile?.revision]);
+    [autoTrackKey,searchKey,captionVideoId,enabled,accountId,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,preferredSelection?.engine,preferredSelection?.lrclibId,preferredSourceFile?.url,preferredSourceFile?.revision]);
   const latestRequestKey=useRef(requestKey);latestRequestKey.current=requestKey;
   const lastAutomaticLyrics=useRef<{trackKey:string;signature:string}|undefined>(undefined);
 
@@ -176,13 +177,14 @@ export default function TrackFinder({
     }
     if (savedCustomLrc && savedCustomLrc.trim()) {
       const hasTimed = hasValidLrcTimestamps(savedCustomLrc);
+      const wordTimed=hasWordTiming(savedCustomLrc);
       latestLyrics.current({
         original: hasTimed ? savedCustomLrc : "",
         plain: hasTimed ? undefined : savedCustomLrc,
         romanized: "",
-        source: preferredSourceFile?.name || "Saved Custom Override",
+        source: normalizeLyricSource(preferredSourceFile?.name || "Saved Custom Override",preferredSourceFile?.url,hasTimed?wordTimed:undefined),
         sourceUrl:preferredSourceFile?.url||undefined,
-        hasWordSync: hasTimed && savedCustomLrc.includes("<"),
+        hasWordSync: wordTimed,
         title: track.title,
         artist: track.artist,
       });
@@ -203,7 +205,7 @@ export default function TrackFinder({
         plain: hasTimed ? undefined : saved[0].original,
         romanized: saved[0].romanized,
         source: "Saved Library",
-        hasWordSync: hasTimed && saved[0].original.includes("<"),
+        hasWordSync: hasTimed && hasWordTiming(saved[0].original),
         title: saved[0].title || track.title,
         artist: saved[0].artist || track.artist,
       });
@@ -239,6 +241,7 @@ export default function TrackFinder({
           latestEngineChange.current?.(nextEngines[0]);
         }
         const hasTimedLines = hasValidLrcTimestamps(resolved.original);
+        const wordTimed=hasWordTiming(resolved.original);
         const payload = {
           mappingRevision:resolved.mappingRevision,
           original: hasTimedLines ? resolved.original : "",
@@ -248,9 +251,9 @@ export default function TrackFinder({
             (!hasTimedLines && resolved.original
               ? resolved.original
               : undefined),
-          source: resolved.source,
+          source: normalizeLyricSource(resolved.source,resolved.sourceUrl,hasTimedLines?wordTimed:undefined),
           sourceUrl: resolved.sourceUrl,
-          hasWordSync: hasTimedLines && resolved.hasWordSync,
+          hasWordSync: wordTimed,
           title: resolved.title || track.title,
           artist: resolved.artist || track.artist,
         };
@@ -260,11 +263,11 @@ export default function TrackFinder({
           lastAutomaticLyrics.current={trackKey:autoTrackKey,signature};
           latestLyrics.current(payload);
           updateStatus(
-            hasTimedLines && resolved.hasWordSync
-              ? `${resolved.source} — word-by-word sync active.`
+            wordTimed
+              ? `${payload.source} — word-by-word sync active.`
               : hasTimedLines
-                ? `${resolved.source} — line-by-line sync active.`
-                : `${resolved.source} — plain lyrics loaded (no line timestamps available).`,
+                ? `${payload.source} — line-by-line sync active.`
+                : `${payload.source} — plain lyrics loaded (no line timestamps available).`,
           );
         };
         const disposition = handoff.publish(
@@ -368,11 +371,11 @@ export default function TrackFinder({
     const publishAvailable = (finished = false) => {
       if (controller.signal.aborted) return;
       const combinedCandidates = [...appleCands, ...lrcCands].sort((a,b)=>
-        lyricsQuality(b.syncedLyrics||b.plainLyrics,b.hasWordSync)-lyricsQuality(a.syncedLyrics||a.plainLyrics,a.hasWordSync)||b.confidence-a.confidence);
+        lyricsQuality(b.syncedLyrics||b.plainLyrics)-lyricsQuality(a.syncedLyrics||a.plainLyrics)||b.confidence-a.confidence);
       const bestCandidate=combinedCandidates.find(c=>!c.instrumental&&(c.syncedLyrics||c.plainLyrics));
       setCandidates(combinedCandidates);
       if (appleDirect && (appleDirect.lrc || appleDirect.plain) &&
-        lyricsQuality(appleDirect.lrc||appleDirect.plain,appleDirect.hasWordSync)>=lyricsQuality(bestCandidate?.syncedLyrics||bestCandidate?.plainLyrics,bestCandidate?.hasWordSync)) {
+        lyricsQuality(appleDirect.lrc||appleDirect.plain)>=lyricsQuality(bestCandidate?.syncedLyrics||bestCandidate?.plainLyrics)) {
         const hasTimed = hasValidLrcTimestamps(appleDirect.lrc);
         publishLyrics({
           original: hasTimed ? appleDirect.lrc : "",
@@ -382,17 +385,17 @@ export default function TrackFinder({
           romanized: hasTimed ? appleDirect.romanizedLrc || "" : "",
           source: appleDirect.source,
           sourceUrl: appleDirect.sourceUrl,
-          hasWordSync: hasTimed && appleDirect.hasWordSync,
+          hasWordSync: hasTimed && hasWordTiming(appleDirect.lrc),
           title: appleDirect.title || appleCands[0]?.title || searchTrack.title,
           artist: appleDirect.artist || appleCands[0]?.artist || searchTrack.artist,
         },
-          `Loaded ${appleDirect.source} (${hasTimed ? (appleDirect.hasWordSync ? "Word timestamps" : "Line timestamps") : "Plain lyrics"}). ${combinedCandidates.length} lrc.red / Binimum / Paxsenix & LRCLIB candidate(s) listed below.`,
+          `Loaded ${appleDirect.source} (${hasTimed ? (hasWordTiming(appleDirect.lrc) ? "Word timestamps" : "Line timestamps") : "Plain lyrics"}). ${combinedCandidates.length} lrc.red / Binimum / Paxsenix & LRCLIB candidate(s) listed below.`,
         );
       } else if (bestCandidate) {
         const top=bestCandidate,hasTimed=hasValidLrcTimestamps(top.syncedLyrics);
         publishLyrics({original:hasTimed?top.syncedLyrics!:"",plain:top.plainLyrics||(!hasTimed?top.syncedLyrics:undefined),romanized:"",
           source:normalizeLyricSource(top.sourceLabel||(top.hasWordSync?"LRCLIB · Word-Synced":"LRCLIB · Synced"),top.url),
-          sourceUrl:top.url,hasWordSync:lyricsQuality(top.syncedLyrics,top.hasWordSync)===3,title:top.title||searchTrack.title,artist:top.artist||searchTrack.artist},
+          sourceUrl:top.url,hasWordSync:lyricsQuality(top.syncedLyrics)===3,title:top.title||searchTrack.title,artist:top.artist||searchTrack.artist},
           `Loaded ${lyricProviderName(top.sourceLabel||'',top.url)||'synced'} lyrics for "${top.title}". ${combinedCandidates.length} candidate(s) listed below.`);
       } else if (finished) {
         updateStatus(
@@ -442,7 +445,7 @@ export default function TrackFinder({
           lyric.plain || (!hasTimed && lyric.synced ? lyric.synced : undefined),
         source: lyric.source,
         sourceUrl: lyric.sourceUrl,
-        hasWordSync: hasTimed && lyric.synced.includes("<"),
+        hasWordSync: hasTimed && hasWordTiming(lyric.synced),
         title: lyric.title || c.title,
         artist: lyric.artist || c.artist,
       },{
@@ -452,7 +455,7 @@ export default function TrackFinder({
       });
       updateStatus(
         hasTimed
-          ? `Loaded ${lyric.source} (${lyric.synced.includes("<") ? "Word timestamps" : "Line timestamps"}).`
+          ? `Loaded ${lyric.source} (${hasWordTiming(lyric.synced) ? "Word timestamps" : "Line timestamps"}).`
           : 'Plain lyrics loaded (no line timestamps available) — click "Create approximate timestamps" below.',
       );
     } catch (e) {
@@ -578,7 +581,7 @@ export default function TrackFinder({
                       plain: hasTimed ? undefined : e.original,
                       romanized: e.romanized,
                       source: "My library",
-                      hasWordSync: hasTimed && e.original.includes("<"),
+                      hasWordSync: hasTimed && hasWordTiming(e.original),
                     },null);
                     updateStatus("Loaded saved library lyrics.");
                   }}

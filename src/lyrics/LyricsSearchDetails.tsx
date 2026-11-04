@@ -3,7 +3,7 @@ import { LYRICS_SEARCH_EVENT, TEMPORARY_SONG_EVENT, temporarySongs } from '../da
 import type { TrackInfo } from '../metadata/trackInfo';
 import { lyricProviderName } from './sourceLabels';
 import { buildLyricsSearchPlan, compareLyricCandidates, type LyricsSearchCandidate,
-  type LyricsSearchContext, type LyricsSearchReport } from './searchPlan';
+  type LyricsSearchReport } from './searchPlan';
 
 function subscribe(notify: () => void) {
   window.addEventListener(LYRICS_SEARCH_EVENT, notify);
@@ -14,8 +14,8 @@ function subscribe(notify: () => void) {
   };
 }
 
-export function useLyricsSearchReport(track: TrackInfo | null, uid: string | null, context: LyricsSearchContext) {
-  const expected = track && buildLyricsSearchPlan(track, context).key;
+export function useLyricsSearchReport(track: TrackInfo | null, uid: string | null) {
+  const expected = track && buildLyricsSearchPlan(track).key;
   return useSyncExternalStore(subscribe, () => {
     const report = temporarySongs.get(track, uid)?.lyricSearch?.value;
     if (report?.plan.key === expected) return report;

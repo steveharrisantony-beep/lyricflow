@@ -1,5 +1,5 @@
 import {SYNCED_LYRIC_SOURCES_LABEL} from './sourceLabels';
-import { parseLRC, type TimedLine, type TimedWord } from './lrc';
+import { hasSourcedWordTiming, parseLRC, type TimedLine, type TimedWord } from './lrc';
 
 export type LyricEngineOption = 'lyricflow' | 'apple' | 'lrclib' | 'youtube';
 
@@ -455,7 +455,7 @@ export function alignAppleWordSyncWithYouTubeSubtitles(
       !/^\[(?:music|applause|laughter|instrumental|intro|outro|silence)\]$/i.test(l.text.trim())
   );
 
-  const hasWordSync = appleLines.some(l => l.words && l.words.some(w => w.timing === 'sourced'));
+  const hasWordSync = hasSourcedWordTiming(appleLines);
 
   if (appleLines.length === 0) {
     return {
