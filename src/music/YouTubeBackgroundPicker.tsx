@@ -198,7 +198,7 @@ export default function YouTubeBackgroundPicker({
       <div className="track-candidates">
         {visibleResults.map((song) => {
           const id = extractYouTubeVideoId(song)!;
-          const viewsLabel = formatViewCount(song.viewCount);
+          const viewsLabel = song.viewCount === 0 ? "0 views" : formatViewCount(song.viewCount);
           const thumbUrl =
             song.artwork || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
           return (

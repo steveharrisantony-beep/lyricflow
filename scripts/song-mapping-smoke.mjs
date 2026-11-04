@@ -77,7 +77,8 @@ const song = {
 };
 const video = {
   ...song,
-  title: "Test Song (Official Music Video)",
+  title: "Test Song (Official Lyrics Video) | Test Author",
+  viewCount: 1000,
   id: "yt_abcdefghijk",
   provider: "resolver",
   youtubeVideoId: "abcdefghijk",
@@ -174,14 +175,7 @@ await page.route("**/music/search**", (route) => {
   return route.fulfill({
     json: {
       data: [
-        p.get("provider") === "youtube"
-          ? {
-              ...video,
-              title: (p.get("q") || "").includes("lyric")
-                ? "Test Song (Official Lyrics Video)"
-                : video.title,
-            }
-          : song,
+        p.get("provider") === "youtube" ? video : song,
       ],
     },
   });
@@ -264,18 +258,14 @@ try {
   );
   const existingSearches = videoSearchRequests;
   await page.getByRole("tab", { name: "Song Mapping", exact: true }).click();
-  await page.getByRole("button", { name: "Find video", exact: true }).click();
+  await page.getByText("Video mapping", { exact: true }).click();
+  await page.getByRole("button", { name: "Show preloaded videos", exact: true }).click();
   assert.equal(
     videoSearchRequests,
     existingSearches,
     "The chooser must reuse automatic candidates",
   );
-  assert.ok(
-    [
-      "Test Song Test Author music video",
-      "Test Song Test Author lyrics video",
-    ].every((q) => videoQueries.includes(q)),
-  );
+  assert.deepEqual(videoQueries, ["Test Song Test Author video"]);
   await page.getByRole("button", { name: "Use video", exact: true }).click();
   await page.waitForFunction(() =>
     document.querySelector("iframe")?.src.includes("abcdefghijk"),
@@ -347,19 +337,12 @@ try {
     ).some((m) => m.video?.delaySeconds === null),
   );
   assert.equal(await page.locator("audio").getAttribute("src"), originalAudio);
-  await page.getByRole("tab", { name: "Background", exact: true }).click();
+  const searchesBeforePreferenceChange = videoSearchRequests;
   await page
     .getByLabel("Preferred YouTube background", { exact: true })
     .selectOption("lyrics");
-  await page.getByRole("tab", { name: "Song Mapping", exact: true }).click();
-  await page.getByRole("button", { name: "Change video", exact: true }).click();
-  assert.ok(
-    [
-      "Test Song Test Author lyrics video",
-      "Test Song Test Author lyrical video",
-    ].every((q) => videoQueries.includes(q)),
-  );
-  await page.getByRole("button", { name: "Use video", exact: true }).click();
+  assert.equal(videoSearchRequests, searchesBeforePreferenceChange, "A mapped video bypasses automatic search");
+  assert.ok((await page.locator("iframe").getAttribute("src")).includes("abcdefghijk"));
   // The fast library must render without waiting for Apple; upgrading must wait for this line's end.
   await page.waitForFunction(() =>
     document.body.textContent.includes("LyricFlow Engine · LRC Library"),
@@ -583,3 +566,4 @@ try {
   await browser.close();
   server.kill();
 }
+

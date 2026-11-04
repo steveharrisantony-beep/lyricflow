@@ -11,8 +11,7 @@ vi.mock('../audio/LocalPlayer', () => ({ default: (props: { onTrackChange: (trac
 </div> }));
 vi.mock('../music/providers', async importOriginal => ({
   ...await importOriginal<typeof import('../music/providers')>(),
-  searchVideoCounterparts: vi.fn().mockResolvedValue([]),
-  searchStashCatalog: vi.fn().mockImplementation(async query=>[{id:'yt_abcdefghijk',title:'Original test song '+(query.includes('lyric')?'Official Lyrics Video':'Official Music Video'),artist:'Test artist',viewCount:5432100,album:'Studio',duration:200,provider:'resolver',sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk',youtubeVideoId:'abcdefghijk'}]),
+  searchStashCatalog: vi.fn().mockImplementation(async ()=>[{id:'yt_abcdefghijk',title:'Original test song Test artist Official Lyrics Video',artist:'Test artist',viewCount:5432100,album:'Studio',duration:200,provider:'resolver',sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk',youtubeVideoId:'abcdefghijk'}]),
 }));
 vi.mock('../metadata/TrackFinder', () => ({ default: (props:{onLyricsFound:(value:Omit<import('../lyrics/ManualLyrics').IncomingLyrics,'token'>)=>void;onStatusChange?:(message:string)=>void}) => <>
  <button onClick={()=>props.onStatusChange?.('Searching synced lyrics…')}>Fixture lyrics loading</button>
@@ -31,7 +30,7 @@ it('loads another matching background without changing the saved video or the au
  let props:Parameters<typeof stage.default>[0]|undefined;
  const probe=vi.spyOn(stage,'default').mockImplementation(value=>{props=value;return <></>;});
  const search=vi.mocked(searchStashCatalog),originalSearch=search.getMockImplementation()!;
- search.mockImplementation(async()=>['aaaaaaaaaaa','bbbbbbbbbbb'].map(id=>({id:'yt_'+id,youtubeVideoId:id,sourceUrl:'https://www.youtube.com/watch?v='+id,title:'Original test song Official Music Video',artist:'Test artist',album:'Studio',duration:200,provider:'resolver' as const})));
+ search.mockImplementation(async()=>['aaaaaaaaaaa','bbbbbbbbbbb'].map(id=>({id:'yt_'+id,youtubeVideoId:id,sourceUrl:'https://www.youtube.com/watch?v='+id,title:'Original test song Test artist Official Music Video',artist:'Test artist',album:'Studio',duration:200,provider:'resolver' as const,viewCount:100})));
  try{
   await act(async()=>click('Load JioSaavn fixture'));
   const input=host.querySelector<HTMLInputElement>('[aria-label="Background video URL"]')!;
@@ -49,8 +48,15 @@ it('loads another matching background without changing the saved video or the au
   expect(props?.hasSeparateAudioStream).toBe(true);
   expect(props?.playbackTime).toBe(clock);expect(props?.recordingKey).toBe(recording);
   expect(JSON.stringify(createBackup('song-mappings',null).data)).toBe(saved);
+  const {correctionContext} = await import('../firebase/correctionModel');
+  const next = correctionContext({
+    title:'Next test song',artist:'Test artist',album:'Studio',duration:200,source:'provider',confidence:1,
+  },'video')!;
+  const mappings = JSON.parse(localStorage.getItem('lyricflow.v3.guest.songMappings') || '{}');
+  mappings[next.recordingKey] = {identity:next.identity,video:{youtubeVideoId:'aaaaaaaaaaa',delaySeconds:null}};
+  localStorage.setItem('lyricflow.v3.guest.songMappings',JSON.stringify(mappings));
   await act(async()=>click('Load next JioSaavn fixture'));
-  expect(props?.youtubeVideoId).not.toBe('bbbbbbbbbbb');
+  expect(props?.youtubeVideoId).toBe('aaaaaaaaaaa');
  }finally{probe.mockRestore();search.mockImplementation(originalSearch);}
 });
 it('keeps the latest manual lyric version and video mapped despite late automatic results',async()=>{
@@ -324,13 +330,13 @@ it('stages an account edit before the first cloud snapshot or debounce, without 
 it('finds a music or lyrical YouTube background for JioSaavn and saves both source mappings without changing audio', async () => {
   await act(async () => click('Load JioSaavn fixture'));
   await act(async () => click('Show preloaded videos'));
-  expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Test artist music video', 'resolver', '', expect.any(AbortSignal));
+  expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Test artist video', 'resolver', '', expect.any(AbortSignal), {background:{title:'Original test song',artist:'Test artist'}});
   const select = host.querySelector<HTMLSelectElement>('select[aria-label="Preferred YouTube background"]')!;
   expect(select.closest('[role="tabpanel"]')?.id).toBe('settings-page-mapping');
   expect(host.querySelector('#settings-page-background select[aria-label="Preferred YouTube background"]')).toBeNull();
   await act(async () => { select.value = 'lyrics'; select.dispatchEvent(new Event('change',{bubbles:true})); });
   await act(async () => click('Show preloaded videos'));
-  expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Test artist lyrics video', 'resolver', '', expect.any(AbortSignal));
+  expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Test artist video', 'resolver', '', expect.any(AbortSignal), {background:{title:'Original test song',artist:'Test artist'}});
   await act(async () => click('Use video'));
   expect(localStorage.getItem('lyricflow.lastSourceMode')).toBe('online');
   await act(async () => click('Edit or import lyrics'));
@@ -392,22 +398,21 @@ it('waits for the full search and plays the first video shown in preloaded choic
  const search = vi.mocked(searchStashCatalog), original = search.getMockImplementation()!;
  const early = {
   id: 'yt_aaaaaaaaaaa', youtubeVideoId: 'aaaaaaaaaaa', sourceUrl: 'https://www.youtube.com/watch?v=aaaaaaaaaaa',
-  title: 'Original test song Official Music Video', artist: 'Test artist', album: 'Studio', duration: 200,
+  title: 'Original test song Test artist Official Music Video', artist: 'Test artist', album: 'Studio', duration: 200,
   provider: 'resolver' as const, viewCount: 100, channelVerified: true, channelId: 'UCfixture',
  };
  const late = {...early, id: 'yt_bbbbbbbbbbb', youtubeVideoId: 'bbbbbbbbbbb', sourceUrl: 'https://www.youtube.com/watch?v=bbbbbbbbbbb',
   title: 'Original test song Test artist Lyrics Video', artist: 'Other uploader', viewCount: 1000000, channelVerified: false};
  const unrelated = {...early, id: 'yt_ccccccccccc', youtubeVideoId: 'ccccccccccc', title: 'Original test song Official Music Video', artist: 'Other Test Musician', album: 'Different Album', viewCount: 10000000};
  let finish!: (songs: Awaited<ReturnType<typeof searchStashCatalog>>) => void;
- search.mockImplementation(async query => query === 'Original test song official music video'
-  ? new Promise(resolve => {finish = resolve;}) : [early, unrelated]);
+ search.mockImplementation(async () => new Promise(resolve => {finish = resolve;}));
  try {
   await act(async () => click('Load JioSaavn fixture'));
   await act(async () => click('Show preloaded videos'));
   const current = () => host.querySelector('[data-testid="preloaded-stage"]');
   expect(current()?.getAttribute('data-searching')).toBe('true');
   expect(current()?.getAttribute('data-video')).toBe('');
-  await act(async () => finish([late]));
+  await act(async () => finish([early, unrelated, late]));
   expect(current()?.getAttribute('data-searching')).toBe('false');
   expect(current()?.getAttribute('data-video')).toBe(late.youtubeVideoId);
   expect(host.querySelector('.video-candidate strong')?.textContent).toBe(late.title);
@@ -425,14 +430,14 @@ it('keeps online search independent of a pending preload until a video is chosen
  const search = vi.mocked(searchStashCatalog), original = search.getMockImplementation()!;
  const video = (id: string, viewCount: number) => ({
   id: 'yt_' + id, youtubeVideoId: id, sourceUrl: 'https://www.youtube.com/watch?v=' + id,
-  title: 'Original test song Official Video', artist: 'Test artist', album: 'Studio', duration: 200,
+  title: 'Original test song Test artist Official Video', artist: 'Test artist', album: 'Studio', duration: 200,
   provider: 'resolver' as const, viewCount,
  });
  const fresh = video('bbbbbbbbbbb', 1000000), old = video('aaaaaaaaaaa', 10000000);
  let finishOld!: (songs: Awaited<ReturnType<typeof searchStashCatalog>>) => void;
  search.mockImplementation(async (query, _provider, _base, _signal, options) => {
   if (options?.refresh) return [fresh];
-  if (query === 'Original test song official music video') return new Promise(resolve => {finishOld = resolve;});
+  if (query === 'Original test song Test artist video') return new Promise(resolve => {finishOld = resolve;});
   return [];
  });
  try {
@@ -796,6 +801,6 @@ it('shows loading or not found until actual lyrics load, then includes their sou
 it('includes the selected video channel and view count beside its title',async()=>{
  await act(async()=>{click('Load JioSaavn fixture');await new Promise(r=>setTimeout(r,750));});
  const video=host.querySelectorAll('#settings-page-mapping .current-song')[1];
- expect(video.textContent).toContain('Official Music Video');expect(video.textContent).toContain('Test artist');expect(video.textContent).toContain('5.4M views');
+ expect(video.textContent).toContain('Official Lyrics Video');expect(video.textContent).toContain('Test artist');expect(video.textContent).toContain('5.4M views');
 });
 

@@ -7,7 +7,7 @@ import {findYouTubeBackgrounds} from '../music/backgroundVideos';
 import {useVideoRecovery} from '../music/useVideoRecovery';
 import type {SongResult} from '../music/providers';
 const track={title:'Original rain',artist:'Test Artist',album:'',duration:200,source:'manual' as const,confidence:1};
-const video=(id:string):SongResult=>({id:'yt_'+id,youtubeVideoId:id,sourceUrl:'https://www.youtube.com/watch?v='+id,title:'Original rain Official Music Video',artist:'Test Artist',album:'',duration:200,provider:'resolver'});
+const video=(id:string):SongResult=>({id:'yt_'+id,youtubeVideoId:id,sourceUrl:'https://www.youtube.com/watch?v='+id,title:'Original rain Test Artist Official Music Video',artist:'Test Artist',album:'',duration:200,viewCount:100,provider:'resolver'});
 const a=video('aaaaaaaaaaa'),b=video('bbbbbbbbbbb'),c=video('ccccccccccc');
 let root:Root,result:ReturnType<typeof useVideoRecovery>;
 function Fixture({selectionKey='song-a',candidates=[a,b]}:{selectionKey?:string;candidates?:SongResult[]}){

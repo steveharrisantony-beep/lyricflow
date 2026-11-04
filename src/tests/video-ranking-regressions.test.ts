@@ -1,6 +1,6 @@
 import {expect,it} from 'vitest';
 import {parseSongs,type SongResult} from '../music/providers';
-import {isYouTubeBackgroundVideo,relevantYouTubeVideoChoices} from '../music/videoMatching';
+import {isYouTubeVideoCandidate,relevantYouTubeVideoChoices} from '../music/videoMatching';
 const track={title:'Ocean Road',artist:'Example Artist',duration:200};
 const video=(n:number,views:number,extra:Partial<SongResult>={}):SongResult=>{
  const id=String(n).padStart(11,'0');
@@ -17,27 +17,27 @@ it('does not promote an unverified Records name above a much more popular equiva
  const small=video(1,79700,{artist:'Echo Records'}),large=video(2,18e6,{artist:'Authentic Label'});
  expect(relevantYouTubeVideoChoices([small,large],track)[0].id).toBe(large.id);
 });
-it('allows a genuine video intro without letting a short clip or distant recording win',()=>{
+it('orders matching titles by views regardless of duration',()=>{
  const small=video(1,79700),large=video(2,18e6,{duration:230});
- expect(relevantYouTubeVideoChoices([small,large,video(3,1e9,{duration:70}),video(4,1e9,{duration:1500})],track).map(v=>v.id)).toEqual([large.id,small.id]);
+ expect(relevantYouTubeVideoChoices([small,large,video(3,1e9,{duration:70}),video(4,1e9,{duration:1500})],track).map(v=>v.id)).toEqual([video(3,0).id,video(4,0).id,large.id,small.id]);
 });
 it('rejects different artists even when the title says Full Song and the publisher is a known label',()=>{
  expect(relevantYouTubeVideoChoices([video(1,18e6,{title:'Ocean Road Full Song | Other Movie',artist:'Sony Music India'})],track)).toEqual([]);
 });
-it('requires the requested recording version in both directions',()=>{
+it('requires every word in a requested version and allows extra words',()=>{
  expect(relevantYouTubeVideoChoices([video(1,18e6)],{...track,title:'Ocean Road (Remix)'})).toEqual([]);
- expect(relevantYouTubeVideoChoices([video(1,18e6,{title:'Example Artist - Ocean Road Remix Official Video'})],track)).toEqual([]);
+ expect(relevantYouTubeVideoChoices([video(1,18e6,{title:'Example Artist - Ocean Road Remix Official Video'})],track)).toHaveLength(1);
 });
 it('excludes still images and audio even when they have OMV flags or large view counts',()=>{
- for(const title of ['Ocean Road Album Art','Ocean Road Official Audio','Ocean Road Still Image Video','Ocean Road Photo Background','Ocean Road Visualizer'])expect(isYouTubeBackgroundVideo(video(1,1e9,{title,videoType:'OMV'})),title).toBe(false);
- expect(isYouTubeBackgroundVideo(video(1,1e9,{visualContent:'static'}))).toBe(false);
- expect(isYouTubeBackgroundVideo(video(1,18e6,{title:'Ocean Road',videoType:'OMV',metadataSource:'ytmusic'}))).toBe(true);
- expect(isYouTubeBackgroundVideo(video(1,18e6,{title:'Ocean Road',videoType:'UGC'}))).toBe(false);
+ for(const title of ['Ocean Road Album Art','Ocean Road Official Audio','Ocean Road Still Image Video','Ocean Road Photo Background','Ocean Road Visualizer'])expect(isYouTubeVideoCandidate(video(1,1e9,{title,videoType:'OMV'})),title).toBe(false);
+ expect(isYouTubeVideoCandidate(video(1,1e9,{visualContent:'static'}))).toBe(false);
+ expect(isYouTubeVideoCandidate(video(1,18e6,{title:'Ocean Road',videoType:'OMV',metadataSource:'ytmusic'}))).toBe(true);
+ expect(isYouTubeVideoCandidate(video(1,18e6,{title:'Ocean Road',videoType:'UGC'}))).toBe(true);
 });
 it('requires artist evidence when the current artist is known',()=>{
  const candidates=[video(1,18e6,{artist:'Publisher',title:'Ocean Road Official Video'})];
  const unknownArtist={...track,artist:''};
- expect(relevantYouTubeVideoChoices(candidates,unknownArtist)).toHaveLength(1);
+ expect(relevantYouTubeVideoChoices(candidates,unknownArtist)).toHaveLength(0);
  // No partial title should be silently accepted for a known recording.
  expect(relevantYouTubeVideoChoices(candidates,track)).toEqual([]);
 });

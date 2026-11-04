@@ -26,7 +26,7 @@ const artistNames = (value: string) => [value, ...value.split(/[,;]|\s+(?:&|x|an
 const artistIdentities = (value: string) => new Set(artistNames(value).map(artistIdentity).filter(Boolean));
 
 /** Match a whole name, including joined spellings, without matching parts of other names. */
-function includesWholeName(words: string[], name: string) {
+export function includesWholeName(words: string[], name: string) {
  if (!name) return false;
  for (let start = 0; start < words.length; start++) {
   let joined = '';

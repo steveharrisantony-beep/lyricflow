@@ -23,7 +23,7 @@ export function youtubeViews(v:unknown):number|undefined{
  const m=text.match(/(\d+(?:\.\d+)?)\s*(crores?|cr|lakhs?|lacs?|[kmb])?\b/i);
  if(!m)return undefined;
  const unit=(m[2]||'').toLowerCase(),scale=/^(crore|cr)/.test(unit)?1e7:/^(lakh|lac)/.test(unit)?1e5:unit==='b'?1e9:unit==='m'?1e6:unit==='k'?1e3:1;
- const n=Math.round(Number(m[1])*scale);return n>0?n:undefined;
+ const n=Math.round(Number(m[1])*scale);return Number.isFinite(n)?n:undefined;
 }
 const duration=(s:string)=>/^\d+(?::\d+)+$/.test(s.trim())?s.trim().split(':').reduce((a,b)=>a*60+Number(b),0):0;
 function findValue(root:unknown,key:string):unknown{
@@ -184,10 +184,10 @@ export async function findSongVideoCounterparts(track:RecordingTarget,headers:Re
  });
 }
 
-export async function hydrateVideoMetadata<T extends Omit<UnofficialVideo,'provider'>>(videos:T[],headers:Record<string,string>,scope:string):Promise<T[]>{
+export async function hydrateVideoMetadata<T extends Omit<UnofficialVideo,'provider'>>(videos:T[],headers:Record<string,string>,scope:string,all=false):Promise<T[]>{
  // Search already supplies most metadata. Resolve missing durations/views via
  // Innertube player metadata, with a bounded worker pool and account-scoped cache.
- const missing=videos.filter(v=>v.videoType!=='ATV'&&(!v.duration||!v.viewCount||!v.channelId)).sort((a,b)=>(b.viewCount||0)-(a.viewCount||0)).slice(0,6);
+ const missing=all?videos:videos.filter(v=>v.videoType!=='ATV'&&(!v.duration||v.viewCount===undefined||!v.channelId)).sort((a,b)=>(b.viewCount||0)-(a.viewCount||0)).slice(0,6);
  const details=new Map<string,Partial<UnofficialVideo>>();let cursor=0;
  const worker=async()=>{while(cursor<missing.length){const video=missing[cursor++];
   const data=await detailsCache.get(scope+'|'+video.rawId,async()=>{
@@ -204,12 +204,12 @@ export async function hydrateVideoMetadata<T extends Omit<UnofficialVideo,'provi
    }catch{return {};}
   });details.set(video.rawId,data);
  }};
- await Promise.all(Array.from({length:Math.min(3,missing.length)},worker));
+ await Promise.all(Array.from({length:Math.min(all?10:3,missing.length)},worker));
  return videos.map(video=>{
   const d=details.get(video.rawId);if(!d)return video;
   const staticVideo=video.videoType==='ATV'||video.visualContent==='static'||d.videoType==='ATV'||d.visualContent==='static';
   return {...video,...d,videoTitle:d.videoTitle||video.videoTitle,uploaderName:d.uploaderName||video.uploaderName,
-   embeddable:video.embeddable===false?false:d.embeddable??video.embeddable,duration:d.duration||video.duration,viewCount:d.viewCount||video.viewCount,
+   embeddable:video.embeddable===false?false:d.embeddable??video.embeddable,duration:d.duration||video.duration,viewCount:d.viewCount??video.viewCount,
    channelId:d.channelId||video.channelId,channelVerified:video.channelId&&d.channelId&&video.channelId!==d.channelId?undefined:video.channelVerified,
    videoType:staticVideo?'ATV' as const:d.videoType||video.videoType,visualContent:staticVideo?'static' as const:d.visualContent||video.visualContent};
  });

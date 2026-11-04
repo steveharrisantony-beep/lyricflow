@@ -6,6 +6,11 @@ const sample = new Uint8Array([1, 2, 3, 4]);
 let rangeForwarded = false;
 let captionRequests=0;
 let youtubeSearchRequests=0;
+const backgroundTitle='Apna Bana Le - Bhediya';
+const backgroundArtist='Sachin-Jigar';
+const backgroundQuery=`${backgroundTitle} ${backgroundArtist} video`;
+const backgroundIds=['ElZfdU54Cp8',...Array.from({length:7},(_,i)=>`bg${String(i).padStart(9,'0')}`)];
+const lookedUpBackgroundIds=[];
 let wordLyricsAvailable=false,wordLookupCount=0;
 let completeAccountCheck;
 const verifiedAccount = {actions:[{openPopupAction:{popup:{multiPageMenuRenderer:{header:{
@@ -63,6 +68,14 @@ globalThis.fetch = async (input, options) => {
   }
   if(url.hostname==='www.youtube.com'&&url.pathname==='/youtubei/v1/player'){
     const {videoId}=JSON.parse(options.body);
+    if(backgroundIds.includes(videoId)){
+      lookedUpBackgroundIds.push(videoId);
+      return Response.json({playabilityStatus:{status:'OK',playableInEmbed:true},videoDetails:{
+        videoId, title:'Apna Bana Le | Sachin-Jigar | Bhediya', author:'Music label', channelId:'UCbackground',
+        lengthSeconds:'30', viewCount:videoId==='ElZfdU54Cp8'?'629000000':'1000',
+      }});
+    }
+    if(videoId==='wrongSong01')lookedUpBackgroundIds.push(videoId);
     if(videoId==='linkedVid01')return Response.json({playabilityStatus:{status:'OK',playableInEmbed:true},videoDetails:{videoId,channelId:'UCn4rEMqKtwBQ6-oEwbd4PcA',author:'Sony Music South',title:'Example Song Official Music Video',lengthSeconds:'220',viewCount:'123456'}});
     return Response.json({videoDetails:{videoId},playabilityStatus:{status:'OK'},captions:{playerCaptionsTracklistRenderer:{captionTracks:[{baseUrl:'https://www.youtube.com/api/timedtext?v='+videoId+'&fmt=srv3',vssId:'.en',languageCode:'en',name:{runs:[{text:'English [CC]'}]}}]}}});
   }
@@ -73,6 +86,13 @@ globalThis.fetch = async (input, options) => {
   }
   if(url.hostname==='www.youtube.com'&&url.pathname==='/youtubei/v1/search'){
     youtubeSearchRequests++;
+    if(JSON.parse(options.body).query===backgroundQuery){
+      return Response.json({contents:[...backgroundIds,'wrongSong01'].map(videoId=>({videoRenderer:{
+        videoId,
+        title:{simpleText:videoId==='wrongSong01'?'Apna Bana Le | Bhediya | Different Artist':'Apna Bana Le | Sachin-Jigar | Bhediya'},
+        lengthText:{simpleText:'0:30'},
+      }}))});
+    }
     return Response.json({
       contents:{
         twoColumnSearchResultsRenderer:{
@@ -180,6 +200,15 @@ try {
   assert.equal(counterpart.data[0].uploaderName,'Sony Music South');
   assert.equal(counterpart.data[0].duration,220,'Video duration can exceed its catalogue recording');
   assert.equal((await request('/music/video-counterparts?title=x')).status,400);
+  const beforeBackgroundSearch = youtubeSearchRequests;
+  const backgroundParams = new URLSearchParams({
+    q:backgroundQuery,provider:'youtube',backgroundTitle,backgroundArtist,
+  });
+  const backgrounds = await (await request('/music/search?'+backgroundParams)).json();
+  assert.equal(youtubeSearchRequests,beforeBackgroundSearch+1,'Automatic matching uses one title/primary artist query');
+  assert.deepEqual([...lookedUpBackgroundIds].sort(),[...backgroundIds].sort(),'Look up every matching ID, including candidates after the old six-video limit');
+  assert.equal(backgrounds.data.find(video=>video.youtubeVideoId==='ElZfdU54Cp8')?.viewCount,629000000);
+  assert.equal(backgrounds.data.find(video=>video.youtubeVideoId==='wrongSong01')?.viewCount,undefined);
   const resolved = await (await request('/music/resolve/saavn_fixture')).json();
   assert.equal(resolved.format, 'audio');
   const audio = await request('/music' + resolved.streamPath, {Range: 'bytes=0-3'});

@@ -1,32 +1,29 @@
 # YouTube video matching
 
-Background discovery uses unofficial Innertube search from YouTube Music's
-**videos** catalogue and YouTube web search. It does not call YouTube Data API
-search or need a YouTube API key. Existing account headers are supported; anonymous
-search remains available. The default search region is India and can be changed
+Automatic background discovery uses YouTube web search through Innertube.
+Existing account headers are supported and anonymous search is available.
+The default search region is India and can be changed
 with `YOUTUBE_REGION` in the embedded/backend environment.
 
 ## Matching and selection
 
-- Identify a YouTube Music catalogue song by title, artist, album and recording
-  duration. Look for its linked video in the Song/Video switcher. Use catalogue
-  audio only as a recording reference.
-- Pool and deduplicate artist, short-title and album/movie video searches.
-  Preserve credited artists, uploader channel IDs, badges, video type, views
-  and known embedding restrictions. Keep account-specific lookups separate.
-- Match the title and version. When the artist is known, require a full artist
-  match or a distinct album/movie match, and reject conflicting recording credits.
-  Sort only the remaining videos by views. Duration filters obvious clips and
-  compilations.
-- Wait for the search pool to finish and play the first preloaded choice.
-  Personal mappings take precedence. Published delays apply only to the video
-  they describe. Recovery skips failed videos in the same preloaded list.
+- Search once using the song source's title, first credited artist, and the word
+  `video`. Require every normalized song-title word and the primary artist in
+  the video's title. Punctuation, the order of the song words, and extra words
+  in the video title do not affect its rank.
+- Exclude known audio, static and blocked uploads. Request player details for
+  every remaining candidate to retrieve its view count. When the request fails,
+  use the search view count if available.
+- Wait for the searches and view lookups to finish, then choose the highest-viewed
+  candidate with a known count. In Lyrics video mode, require `lyric`, `lyrics`,
+  or `lyrical` in the title. Personal mappings take precedence. Recovery uses the
+  same order and skips failed videos.
 
 ## Mapping picker
 
 Show preloaded videos filters for the current recording before sorting by views.
 The status shows both the search pool size and the number of relevant choices.
-Both music and lyric videos can appear in this list. Search online starts a fresh
+The list follows the active video preference. Search online starts a fresh
 YouTube search with the current song title in an editable field. Relevance shows
 the provider order and Views shows the most-viewed results first. Sorting uses the
 current online results. The background changes when the user selects Use video.

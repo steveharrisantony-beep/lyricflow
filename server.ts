@@ -1,4 +1,5 @@
 import {searchMusicVideos,mergeVideoMetadata,hydrateVideoMetadata,findSongVideoCounterparts,VideoSearchCache,youtubeViews} from './server/youtubeSearch';
+import {isYouTubeVideoCandidate,matchesYouTubeVideoTitle,primaryVideoArtist} from './src/music/videoMatching';
 import {fetchYouTubeCaptions,CaptionFetchError} from './server/youtubeCaptions';
 import {buildYouTubeAuthHeaders,verifyYouTubeAccount,type YouTubeAuthContext} from './server/youtubeAuth';
 import express, { type Request, type Response } from 'express';
@@ -732,7 +733,7 @@ function extractTextFromRunsOrSimple(field: unknown): string {
   return '';
 }
 
-function parseYouTubeSearchTree(root: unknown, limit: number): TrackMetadata[] {
+function parseYouTubeSearchTree(root: unknown, limit: number, allowShortVideos = false): TrackMetadata[] {
   const webTracks: TrackMetadata[] = [];
   const seenWebIds = new Set<string>();
 
@@ -770,7 +771,7 @@ function parseYouTubeSearchTree(root: unknown, limit: number): TrackMetadata[] {
         const lengthText = extractTextFromRunsOrSimple(renderer.lengthText);
         const duration = parseDurationText(lengthText);
         const viewCount = parseViewCountFromRenderer(renderer);
-        if (rawTitle && (duration === 0 || duration >= 45)) {
+        if (rawTitle && (allowShortVideos || duration === 0 || duration >= 45)) {
           seenWebIds.add(videoId);
           const trackId = `yt_${videoId}`;
           const isStaticAudio =
@@ -808,7 +809,7 @@ function parseYouTubeSearchTree(root: unknown, limit: number): TrackMetadata[] {
   return webTracks;
 }
 
-async function fetchPipedOrInvidiousVideos(query: string, limit = 16, deadline = Date.now()+6500): Promise<TrackMetadata[]> {
+async function fetchPipedOrInvidiousVideos(query: string, limit = 16, deadline = Date.now()+6500, allowShortVideos = false): Promise<TrackMetadata[]> {
   const q = encodeURIComponent(query.trim());
   const endpoints = [
     { url: `https://pipedapi.kavin.rocks/search?q=${q}&filter=videos`, type: 'piped' as const },
@@ -860,7 +861,7 @@ async function fetchPipedOrInvidiousVideos(query: string, limit = 16, deadline =
           /\b(?:official\s+audio|audio\s+only|full\s+audio|audio\s+track)\b/i.test(title);
         const artist = rawAuthor.replace(/\s*[-–—]\s*Topic\b/i, '').trim() || 'YouTube';
         const duration = Number(item.duration ?? item.lengthSeconds ?? 0);
-        if (duration > 0 && duration < 45) continue;
+        if (!allowShortVideos && duration > 0 && duration < 45) continue;
         const views = Number(item.views ?? item.viewCount ?? 0);
         seen.add(videoId);
         const trackId = `yt_${videoId}`;
@@ -895,7 +896,8 @@ async function fetchPipedOrInvidiousVideos(query: string, limit = 16, deadline =
 async function runYouTubeWebSearch(
   upstreamQuery: string,
   limit = 20,
-  ytAuth?: YouTubeAuthContext
+  ytAuth?: YouTubeAuthContext,
+  allowShortVideos = false,
 ): Promise<TrackMetadata[]> {
   const deadline=Date.now()+10000;
   const authHeaders = buildYouTubeAuthHeaders(ytAuth, 'https://www.youtube.com');
@@ -950,7 +952,7 @@ async function runYouTubeWebSearch(
       });
       if (!ytRes.ok) continue;
       const rawJson = await ytRes.json();
-      const tracks = parseYouTubeSearchTree(rawJson, Math.max(limit, 20));
+      const tracks = parseYouTubeSearchTree(rawJson, Math.max(limit, 20), allowShortVideos);
       if (tracks.length > 0) return tracks;
     } catch {
       // Try next Innertube client
@@ -958,10 +960,25 @@ async function runYouTubeWebSearch(
   }
 
   // 3. Fallback to Piped / Invidious public video search mirrors if YouTube Innertube is rate-limited
-  return fetchPipedOrInvidiousVideos(upstreamQuery, Math.max(limit, 20),deadline);
+  return fetchPipedOrInvidiousVideos(upstreamQuery, Math.max(limit, 20),deadline,allowShortVideos);
 }
 
 const videoSearchCache = new VideoSearchCache<TrackMetadata[]>();
+async function searchBackgroundVideos(title:string,artist:string,ytAuth?:YouTubeAuthContext){
+  const query = `${title} ${artist} video`;
+  const scope = createHash('sha256').update(JSON.stringify(ytAuth||{})).digest('hex');
+  const region = process.env.YOUTUBE_REGION||'IN';
+  return videoSearchCache.get(JSON.stringify(['background',scope,region,title,artist]),async()=>{
+    const pool = await runYouTubeWebSearch(query,40,ytAuth,true);
+    const matches = pool.filter(video =>
+      matchesYouTubeVideoTitle(video.videoTitle||video.title,{title,artist}) &&
+      isYouTubeVideoCandidate({...video,provider:'resolver',youtubeVideoId:video.rawId})
+    );
+    const hydrated = await hydrateVideoMetadata(matches,buildYouTubeAuthHeaders(ytAuth),scope,true);
+    const details = new Map(hydrated.map(video=>[video.rawId,video]));
+    return pool.map(video=>details.get(video.rawId)??video);
+  });
+}
 async function runSingleYouTubeWebSearch(query:string,limit=40,ytAuth?:YouTubeAuthContext,refresh=false):Promise<TrackMetadata[]> {
   const scope=createHash('sha256').update(JSON.stringify(ytAuth||{})).digest('hex');
   const region=process.env.YOUTUBE_REGION||'IN';
@@ -2846,6 +2863,12 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
               ? 'youtube'
               : 'jiosaavn';
     const refresh = provider === 'youtube' && req.query.refresh === '1';
+    const backgroundTitle = provider === 'youtube' ? String(req.query.backgroundTitle || '').trim() : '';
+    const backgroundArtist = primaryVideoArtist(String(req.query.backgroundArtist || ''));
+    if (backgroundTitle && !backgroundArtist) {
+      res.status(400).json({ detail: 'Enter the primary artist for the background video search.' });
+      return;
+    }
     if (q.length < (refresh ? 1 : 2)) {
       res.status(400).json({ detail: refresh ? 'Enter a YouTube search query.' : 'Enter at least 2 characters.' });
       return;
@@ -2861,7 +2884,9 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
         results = await searchSoundCloud(q, 12);
       } else if (provider === 'ytmusic' || provider === 'youtube') {
         if (refresh) res.setHeader('Cache-Control', 'no-store');
-        results = await searchYouTubeMusic(q, provider, provider === 'youtube' ? 28 : 20, ytAuth, refresh);
+        results = backgroundTitle
+          ? await searchBackgroundVideos(backgroundTitle,backgroundArtist,ytAuth)
+          : await searchYouTubeMusic(q, provider, provider === 'youtube' ? 28 : 20, ytAuth, refresh);
       } else if (provider === 'audius') {
         results = await searchAudius(q, 12);
       }

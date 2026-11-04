@@ -26,7 +26,7 @@ export interface PlayableSong extends SongResult {streamUrl:string;format?:'hls'
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object';
 const string=(v:unknown)=>typeof v==='string'?v:'';
 
-export {isLyricalVideo,isUnwantedVideoVariant,isYouTubeBackgroundVideo} from './videoMatching';
+export {isLyricalVideo,isUnwantedVideoVariant} from './videoMatching';
 
 export function formatViewCount(views?:number):string{
  if(typeof views!=='number'||!Number.isFinite(views)||views<=0)return '';
@@ -51,7 +51,7 @@ export function parseSongs(value:unknown,provider:SongResult['provider']):SongRe
   const user=record(item.user)?item.user:{};
   const art=record(item.artwork)?item.artwork:{};
   const duration=typeof item.duration==='number'&&Number.isFinite(item.duration)?Math.max(0,item.duration):0;
-  const viewCount=typeof item.viewCount==='number'&&Number.isFinite(item.viewCount)&&item.viewCount>0?Math.round(item.viewCount):undefined;
+  const viewCount=typeof item.viewCount==='number'&&Number.isFinite(item.viewCount)&&item.viewCount>=0?Math.round(item.viewCount):undefined;
   const resolvedProv=(Object.hasOwn(MUSIC_SOURCES,string(item.provider))?string(item.provider):provider) as SongResult['provider'];
   const id=string(item.id);
   const sourceUrl=provider==='audius'&&string(item.permalink)?'https://audius.co'+string(item.permalink):string(item.sourceUrl);
@@ -118,19 +118,12 @@ export async function resolveSong(song:SongResult,base:string,signal?:AbortSigna
  *    - Direct YouTube URL / 11-char Video ID lookup,
  *    - Client-side Piped API mirrors from the user's own device IP.
  */
-export async function searchVideoCounterparts(track:{title:string;artist:string;album?:string;duration:number},base:string,signal?:AbortSignal):Promise<SongResult[]>{
- const root=base.trim()||musicBackendBase();
- const params=new URLSearchParams({title:track.title,artist:track.artist,album:track.album||'',duration:String(track.duration)});
- try{return parseSongs(await json(root.replace(/\/$/,'')+'/video-counterparts?'+params,signal),'resolver');}
- catch(error){if(signal?.aborted)throw error;return [];}
-}
-
 export async function searchStashCatalog(
  query:string,
  provider:SongResult['provider'],
  base:string,
  signal?:AbortSignal,
- {refresh=false}: {refresh?:boolean}={}
+ {refresh=false,background}: {refresh?:boolean;background?:{title:string;artist:string}}={}
 ):Promise<SongResult[]>{
  const refreshYouTubeSearch=provider==='resolver'&&refresh;
  if(query.trim().length<(refreshYouTubeSearch?1:2))return [];
@@ -140,19 +133,27 @@ export async function searchStashCatalog(
   try{
    const params=new URLSearchParams({q:query.trim(),provider:provider==='resolver'?'youtube':provider});
    if(refreshYouTubeSearch)params.set('refresh','1');
+   if(background){
+    params.set('backgroundTitle',background.title);
+    params.set('backgroundArtist',background.artist);
+   }
    const res=await providerRequest(
     `${effectiveBase.replace(/\/$/,'')}/search?`+params,
-    signal
+    signal,
+    background?32000:undefined
    );
    if(res.ok){
     const payload=await res.json();
-    const parsed=parseSongs(payload,provider).filter(s=>s.duration===0||s.duration>=45);
-    if(parsed.length>0)return parsed;
+    const parsed=parseSongs(payload,provider);
+    if(background)return parsed;
+    const available=parsed.filter(s=>s.duration===0||s.duration>=45);
+    if(available.length>0)return available;
    }
   }catch(e){
    if(signal?.aborted)throw e;
   }
  }
+ if(background)return [];
 
  if(provider==='resolver'){
   // Fallback A: Direct YouTube URL or 11-char Video ID pasted into manual search

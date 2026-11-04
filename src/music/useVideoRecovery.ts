@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {extractYouTubeVideoId,type TrackInfo} from '../metadata/trackInfo';
 import {findYouTubeBackgrounds} from './backgroundVideos';
 import type {SongResult} from './providers';
-import {relevantYouTubeVideoChoices} from './videoMatching';
+import {hasYouTubeViewCount,relevantYouTubeVideoChoices} from './videoMatching';
 
 type Options={
  selectionKey:string;
@@ -46,7 +46,7 @@ export function useVideoRecovery({selectionKey,track,candidates,preference,exclu
     const id=extractYouTubeVideoId(candidate);
     return id&&!current.excluded.has(id)&&!excludedVideoIds?.includes(id);
    });
-   return relevantYouTubeVideoChoices(eligible, track)[0] ?? null;
+   return relevantYouTubeVideoChoices(eligible, track, preference).find(hasYouTubeViewCount) ?? null;
   };
   try{
    let candidate=choose([...candidates,...current.candidates]);

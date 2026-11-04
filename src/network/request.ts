@@ -1,11 +1,11 @@
 /** Bounded retries for read-only provider requests. Abort cancels both I/O and backoff. */
-export async function providerRequest(url:string,signal?:AbortSignal):Promise<Response>{
+export async function providerRequest(url:string,signal?:AbortSignal,timeoutMs=15000):Promise<Response>{
  for(let attempt=0;attempt<3;attempt++){
   signal?.throwIfAborted();
   const controller=new AbortController();
   const abort=()=>controller.abort(signal?.reason);
   signal?.addEventListener('abort',abort,{once:true});
-  const timer=setTimeout(()=>controller.abort(new DOMException('Provider timed out','TimeoutError')),15000);
+  const timer=setTimeout(()=>controller.abort(new DOMException('Provider timed out','TimeoutError')),timeoutMs);
   let delay=400*(attempt+1);
   try{
    const response=await fetch(url,{signal:controller.signal});
@@ -28,3 +28,4 @@ export async function providerRequest(url:string,signal?:AbortSignal):Promise<Re
  }
  throw Error('Provider unavailable');
 }
+
