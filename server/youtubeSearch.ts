@@ -1,3 +1,4 @@
+import {assessRecordingIdentity,type RecordingTarget} from '../src/music/recordingIdentity';
 /** Unofficial Innertube video metadata, compatible with the embedded Node 18 runtime.
  * Search shape/filter reference: sigma67/ytmusicapi (MIT). Matching remains in
  * src/music/videoMatching.ts; this module never downloads audio or video.
@@ -6,7 +7,8 @@ export interface UnofficialVideo {
  id:string;title:string;videoTitle?:string;artist:string;album:string;duration:number;sourceUrl:string;
  rawId:string;provider:'youtube';artwork?:string;viewCount?:number;
  videoType?:'ATV'|'OMV'|'UGC';channelId?:string;channelVerified?:boolean;
- artistCredits?:string[];visualContent?:'motion'|'static'|'unknown';
+ uploaderName?:string;artistCredits?:string[];artistChannelIds?:string[];embeddable?:boolean;
+ counterpartOf?:string;catalogueTitle?:string;catalogueArtists?:string[];catalogueAlbum?:string;visualContent?:'motion'|'static'|'unknown';
  metadataSource?:'ytmusic'|'innertube'|'mirror'|'oembed';
 }
 type Obj=Record<string,unknown>;
@@ -30,7 +32,7 @@ function findValue(root:unknown,key:string):unknown{
  for(const value of Object.values(root)){const found=findValue(value,key);if(found!==undefined)return found;}
  return undefined;
 }
-export function parseMusicVideoSearch(root:unknown,limit=40):UnofficialVideo[]{
+export function parseMusicVideoSearch(root:unknown,limit=40,catalogue=false):UnofficialVideo[]{
  const found=new Map<string,UnofficialVideo>();
  const walk=(node:unknown)=>{
   if(!node||typeof node!=='object')return;
@@ -39,9 +41,9 @@ export function parseMusicVideoSearch(root:unknown,limit=40):UnofficialVideo[]{
    const columns=arr(renderer.flexColumns).map(c=>obj(obj(c).musicResponsiveListItemFlexColumnRenderer).text);
    const titleField=columns[0]||renderer.title;
    const title=youtubeText(titleField).trim();
-   const videoId=str(findValue(obj(titleField),'videoId'))||str(findValue(renderer.thumbnailOverlay,'videoId'))||str(findValue(renderer.navigationEndpoint||renderer.onTap,'videoId'));
+   const videoId=str(findValue(obj(titleField),'videoId'))||str(findValue(renderer.thumbnailOverlay,'videoId'))||str(findValue(renderer.navigationEndpoint||renderer.onTap,'videoId'))||str(obj(renderer.playlistItemData).videoId);
    const type=str(findValue(renderer,'musicVideoType'));
-   const textFields=[...columns.slice(1),renderer.subtitle,renderer.secondSubtitle].filter(Boolean);
+   const textFields=[...columns.slice(1),...arr(renderer.fixedColumns).map(c=>obj(obj(c).musicResponsiveListItemFixedColumnRenderer).text),renderer.subtitle,renderer.secondSubtitle].filter(Boolean);
    const runs=textFields.flatMap(field=>arr(obj(field).runs));
    const credits=runs.flatMap(run=>{
     const rr=obj(run),browse=obj(findValue(rr.navigationEndpoint,'browseEndpoint'));
@@ -49,12 +51,14 @@ export function parseMusicVideoSearch(root:unknown,limit=40):UnofficialVideo[]{
    });
    const texts=runs.map(run=>str(obj(run).text).trim()).filter(x=>x&&x!=='•');
    const artist=credits[0]||texts.find(x=>!duration(x)&&!youtubeViews(/views?$/i.test(x)?x:'')&&!/^(?:song|video|single|album)$/i.test(x))||'YouTube';
-   const channelId=str(findValue(runs.find(run=>str(findValue(obj(run).navigationEndpoint,'browseId')).startsWith('UC')),'browseId'))||undefined;
+   const artistChannelIds=[...new Set(runs.map(run=>str(findValue(obj(run).navigationEndpoint,'browseId'))).filter(id=>id.startsWith('UC')))];
+   const albumRun=runs.find(run=>str(findValue(obj(run).navigationEndpoint,'browseId')).startsWith('MPRE'));
+   const album=albumRun?str(obj(albumRun).text):'';
    const viewText=texts.find(x=>/views?$/i.test(x));
    if(/^[\w-]{11}$/.test(videoId)&&title&&found.size<limit){
     const atv=type==='MUSIC_VIDEO_TYPE_ATV';
-    found.set(videoId,{id:'yt_'+videoId,rawId:videoId,provider:'youtube',title,artist:atv?artist+' - Topic':artist,album:atv?'Audio Track':'',duration:texts.map(duration).find(x=>x>0)||0,
-     viewCount:youtubeViews(viewText||''),videoType:atv?'ATV':type==='MUSIC_VIDEO_TYPE_OMV'?'OMV':'UGC',channelId,artistCredits:credits,
+    found.set(videoId,{id:'yt_'+videoId,rawId:videoId,provider:'youtube',title,artist:atv&&!catalogue?artist+' - Topic':artist,album:catalogue?album:atv?'Audio Track':album,duration:texts.map(duration).find(x=>x>0)||0,
+     viewCount:youtubeViews(viewText||''),videoType:atv?'ATV':type==='MUSIC_VIDEO_TYPE_OMV'?'OMV':'UGC',artistChannelIds,artistCredits:credits,
      visualContent:atv?'static':type==='MUSIC_VIDEO_TYPE_OMV'?'motion':'unknown',metadataSource:'ytmusic',
      sourceUrl:'https://www.youtube.com/watch?v='+videoId,artwork:'https://i.ytimg.com/vi/'+videoId+'/hqdefault.jpg'});
    }
@@ -84,6 +88,10 @@ export function mergeVideoMetadata<T extends Omit<UnofficialVideo,'provider'>>(b
   titles.sort((a,b)=>Number(/\blyric(?:s|al)?\b/i.test(b))-Number(/\blyric(?:s|al)?\b/i.test(a))||b.length-a.length||a.localeCompare(b));
   byId.set(next.rawId,{...other,...primary,videoTitle:titles[0]||primary.title,duration:primary.duration||other.duration,
    artist:(other.metadataSource==='innertube'||other.metadataSource==='mirror')&&other.artist&&other.artist!=='YouTube'?other.artist:primary.artist&&primary.artist!=='YouTube'?primary.artist:other.artist,
+   uploaderName:primary.uploaderName||other.uploaderName,
+   artistChannelIds:[...new Set([...(prior.artistChannelIds||[]),...(next.artistChannelIds||[])])],
+   counterpartOf:primary.counterpartOf||other.counterpartOf,catalogueTitle:primary.catalogueTitle||other.catalogueTitle,catalogueArtists:primary.catalogueArtists||other.catalogueArtists,catalogueAlbum:primary.catalogueAlbum||other.catalogueAlbum,
+   embeddable:prior.embeddable===false||next.embeddable===false?false:primary.embeddable??other.embeddable,
    channelId:(other.metadataSource==='innertube'||other.metadataSource==='mirror')?other.channelId||primary.channelId:primary.channelId||other.channelId,channelVerified:prior.channelVerified||next.channelVerified,
    artistCredits:[...new Set([...(prior.artistCredits||[]),...(next.artistCredits||[])])],
    viewCount:Math.max(prior.viewCount||0,next.viewCount||0)||undefined,
@@ -109,10 +117,77 @@ export class VideoSearchCache<T>{
  }
 }
 const detailsCache=new VideoSearchCache<Partial<UnofficialVideo>>(600_000,300);
+const counterpartCache=new VideoSearchCache<UnofficialVideo[]>(300_000,100);
+
+/** Only accept the wrapper for the identified song, never a recommendation's counterpart. */
+export function parseVideoCounterparts(root:unknown,song:UnofficialVideo):UnofficialVideo[]{
+ const result=new Map<string,UnofficialVideo>();
+ const walk=(node:unknown)=>{
+  if(!node||typeof node!=='object')return;
+  const wrapper=obj(obj(node).playlistPanelVideoWrapperRenderer);
+  const primary=obj(obj(wrapper.primaryRenderer).playlistPanelVideoRenderer);
+  if(str(primary.videoId)===song.rawId&&!primary.unplayableText){
+   for(const item of arr(wrapper.counterpart)){
+    const video=obj(obj(obj(item).counterpartRenderer).playlistPanelVideoRenderer);
+    const id=str(video.videoId),title=youtubeText(video.title),type=str(findValue(video.navigationEndpoint,'musicVideoType'));
+    if(!/^[\w-]{11}$/.test(id)||id===song.rawId||!title||video.unplayableText||type==='MUSIC_VIDEO_TYPE_ATV')continue;
+    const byline=arr(obj(video.longBylineText).runs);
+    const credits=byline.filter(run=>str(findValue(obj(run).navigationEndpoint,'browseId')).startsWith('UC'));
+    const artists=credits.map(run=>str(obj(run).text)).filter(Boolean);
+    const atv=type==='MUSIC_VIDEO_TYPE_ATV';
+    result.set(id,{id:'yt_'+id,rawId:id,provider:'youtube',title,videoTitle:title,artist:artists[0]||song.artist,album:song.album,
+     artistCredits:artists.length?artists:song.artistCredits,artistChannelIds:credits.map(run=>str(findValue(obj(run).navigationEndpoint,'browseId'))),
+     duration:duration(youtubeText(video.lengthText)),viewCount:youtubeViews(video.viewCountText),
+     videoType:atv?'ATV':type==='MUSIC_VIDEO_TYPE_OMV'?'OMV':'UGC',visualContent:atv?'static':type==='MUSIC_VIDEO_TYPE_OMV'?'motion':'unknown',
+     metadataSource:'ytmusic',counterpartOf:song.rawId,catalogueTitle:song.title,catalogueArtists:song.artistCredits||[song.artist],catalogueAlbum:song.album,
+     sourceUrl:'https://www.youtube.com/watch?v='+id,artwork:'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg'});
+   }
+  }
+  for(const value of Object.values(node))walk(value);
+ };
+ walk(root);return [...result.values()];
+}
+
+/** Catalogue audio is an identity reference only. Every returned item is its video counterpart. */
+export async function findSongVideoCounterparts(track:RecordingTarget,headers:Record<string,string>,scope:string,region='IN'):Promise<UnofficialVideo[]>{
+ const key=scope+'|'+region+'|'+JSON.stringify(track);
+ return counterpartCache.get(key,async()=>{
+  try{
+   const context={client:{clientName:'WEB_REMIX',clientVersion:'1.20250219.01.00',hl:'en',gl:region}};
+   const query=[track.title,track.artist,track.album].filter(Boolean).join(' ');
+   const search=await fetch('https://music.youtube.com/youtubei/v1/search?prettyPrint=false',{
+    method:'POST',headers:{'Content-Type':'application/json',Origin:'https://music.youtube.com',...headers},
+    body:JSON.stringify({context,query,params:'EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D'}),signal:AbortSignal.timeout(4000),
+   });
+   if(!search.ok)return [];
+   const songs=parseMusicVideoSearch(await search.json(),30,true).flatMap(song=>{
+    const match=assessRecordingIdentity(song,track);
+    const difference=track.duration>0&&song.duration>0?Math.abs(track.duration-song.duration):null;
+    if(!match.relevant||match.confidence<.75||(difference!==null&&difference>Math.max(20,track.duration*.1)))return [];
+    return [{song,score:match.identityScore+(difference===null?0:15*Math.max(0,1-difference/20))}];
+   }).sort((a,b)=>b.score-a.score||a.song.rawId.localeCompare(b.song.rawId));
+   const song=songs[0]?.song;if(!song)return [];
+   const next=await fetch('https://music.youtube.com/youtubei/v1/next?prettyPrint=false',{
+    method:'POST',
+    headers:{'Content-Type':'application/json',Origin:'https://music.youtube.com',...headers},
+    body:JSON.stringify({
+     context,videoId:song.rawId,playlistId:'RDAMVM'+song.rawId,
+     isAudioOnly:true,enablePersistentPlaylistPanel:true,tunerSettingValue:'AUTOMIX_SETTING_NORMAL',
+     watchEndpointMusicSupportedConfigs:{
+      watchEndpointMusicConfig:{hasPersistentPlaylistPanel:true,musicVideoType:'MUSIC_VIDEO_TYPE_ATV'},
+     },
+    }),
+    signal:AbortSignal.timeout(4000),
+   });
+   return next.ok?parseVideoCounterparts(await next.json(),song):[];
+  }catch{return [];}
+ });
+}
+
 export async function hydrateVideoMetadata<T extends Omit<UnofficialVideo,'provider'>>(videos:T[],headers:Record<string,string>,scope:string):Promise<T[]>{
  // Search already supplies most metadata. Resolve missing durations/views via
  // Innertube player metadata, with a bounded worker pool and account-scoped cache.
- const missing=videos.filter(v=>v.videoType!=='ATV'&&(!v.duration||!v.viewCount)).sort((a,b)=>(b.viewCount||0)-(a.viewCount||0)).slice(0,6);
+ const missing=videos.filter(v=>v.videoType!=='ATV'&&(!v.duration||!v.viewCount||!v.channelId)).sort((a,b)=>(b.viewCount||0)-(a.viewCount||0)).slice(0,6);
  const details=new Map<string,Partial<UnofficialVideo>>();let cursor=0;
  const worker=async()=>{while(cursor<missing.length){const video=missing[cursor++];
   const data=await detailsCache.get(scope+'|'+video.rawId,async()=>{
@@ -120,13 +195,23 @@ export async function hydrateVideoMetadata<T extends Omit<UnofficialVideo,'provi
     const res=await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://www.youtube.com',...headers},body:JSON.stringify({context:{client:{clientName:'WEB',clientVersion:'2.20250219.01.00',hl:'en',gl:'IN'}},videoId:video.rawId}),signal:AbortSignal.timeout(4500)});
     if(!res.ok)return {};
     const raw=obj(await res.json()),v=obj(raw.videoDetails),play=obj(raw.playabilityStatus);
-    if(str(play.status)!=='OK'||str(v.videoId)!==video.rawId)return {};
+    if(str(play.status)!=='OK'||str(v.videoId)!==video.rawId){
+     return play.playableInEmbed===false?{embeddable:false}:{};
+    }
     const type=str(findValue(raw,'musicVideoType'));
-    return {duration:Number(v.lengthSeconds)||0,viewCount:youtubeViews(v.viewCount),channelId:str(v.channelId)||undefined,
+    return {videoTitle:str(v.title)||undefined,duration:Number(v.lengthSeconds)||0,viewCount:youtubeViews(v.viewCount),channelId:str(v.channelId)||undefined,uploaderName:str(v.author)||undefined,embeddable:typeof play.playableInEmbed==='boolean'?play.playableInEmbed:undefined,
      ...(type==='MUSIC_VIDEO_TYPE_ATV'?{videoType:'ATV' as const,visualContent:'static' as const}:type==='MUSIC_VIDEO_TYPE_OMV'?{videoType:'OMV' as const,visualContent:'motion' as const}:{})};
    }catch{return {};}
   });details.set(video.rawId,data);
  }};
  await Promise.all(Array.from({length:Math.min(3,missing.length)},worker));
- return videos.map(video=>{const d=details.get(video.rawId);return d?{...video,...d,duration:d.duration||video.duration,viewCount:d.viewCount||video.viewCount,channelId:d.channelId||video.channelId}:video;});
+ return videos.map(video=>{
+  const d=details.get(video.rawId);if(!d)return video;
+  const staticVideo=video.videoType==='ATV'||video.visualContent==='static'||d.videoType==='ATV'||d.visualContent==='static';
+  return {...video,...d,videoTitle:d.videoTitle||video.videoTitle,uploaderName:d.uploaderName||video.uploaderName,
+   embeddable:video.embeddable===false?false:d.embeddable??video.embeddable,duration:d.duration||video.duration,viewCount:d.viewCount||video.viewCount,
+   channelId:d.channelId||video.channelId,channelVerified:video.channelId&&d.channelId&&video.channelId!==d.channelId?undefined:video.channelVerified,
+   videoType:staticVideo?'ATV' as const:d.videoType||video.videoType,visualContent:staticVideo?'static' as const:d.visualContent||video.visualContent};
+ });
 }
+

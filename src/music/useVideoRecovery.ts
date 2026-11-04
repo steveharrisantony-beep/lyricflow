@@ -50,7 +50,7 @@ export function useVideoRecovery({selectionKey,track,candidates,preference}:Opti
     const base=localStorage.getItem('lyricflow.resolver')||import.meta.env.VITE_MUSIC_RESOLVER||'';
     const result=await findYouTubeBackgrounds(track,preference,base,controller.signal);
     current.candidates=result.candidates;
-    candidate=choose(result.videos);
+    candidate=choose(result.candidates);
    }
    if(controller.signal.aborted)return;
    if(candidate){
@@ -66,3 +66,4 @@ export function useVideoRecovery({selectionKey,track,candidates,preference}:Opti
  };
  return {...(state.key===selectionKey?state:empty),loadAnotherVideo,reset};
 }
+

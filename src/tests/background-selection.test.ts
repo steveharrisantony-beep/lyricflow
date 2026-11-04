@@ -4,7 +4,7 @@ import {isYouTubeBackgroundVideo,rankYouTubeBackgroundCandidates,type SongResult
 const track={title:'Original rain',artist:'Test Artist',duration:200};
 function video(index:number,title='Original rain Official Music Video',extra:Partial<SongResult>={}):SongResult{
  const id=String(index).padStart(11,'0');
- return {id:'yt_'+id,title,artist:'Test Artist',album:'',duration:200,provider:'resolver',sourceUrl:'https://www.youtube.com/watch?v='+id,youtubeVideoId:id,...extra};
+ return {id:'yt_'+id,channelId:'UC'+String(index).padStart(22,'0'),title,artist:'Test Artist',album:'',duration:200,provider:'resolver',sourceUrl:'https://www.youtube.com/watch?v='+id,youtubeVideoId:id,...extra};
 }
 afterEach(()=>vi.unstubAllGlobals());
 it('rejects Topic, ATV, static audio, visualizers and unlabelled uploads',()=>{
@@ -25,7 +25,7 @@ it('compares a broad candidate pool and falls back from missing music video to l
   return new Response(JSON.stringify({data:songs}));
  }));
  const result=await findYouTubeBackgrounds(track,'music','https://resolver.example');
- expect(requests).toHaveLength(4);
+ expect(requests).toHaveLength(5);
  expect(result.candidateCount).toBe(16);
  expect(result.usedLyricalFallback).toBe(true);
  expect(result.videos.map(s=>s.id)).toEqual(['yt_00000000099']);
@@ -34,7 +34,7 @@ it('chooses the right recording over a popular wrong title, cover or distant dur
  const results=rankYouTubeBackgroundCandidates([
   video(1,'Wrong Song Official Music Video',{viewCount:1e9}),
   video(2,'Original rain Cover Official Video',{viewCount:1e9}),
-  video(3,undefined,{duration:400,viewCount:1e9}),
+  video(3,undefined,{duration:1500,viewCount:1e9}),
   video(4,undefined,{artist:'Unrelated Artist',duration:230,viewCount:1e9}),
   video(5,undefined,{viewCount:100}),
  ],track);
@@ -57,9 +57,9 @@ it('ranks official artist video (Maroon 5 - Maps) #1 and official lyric video #2
   video(20,'Maroon 5 - Maps [Official Video HD]',{artist:'Odin Production',duration:196,videoType:'UGC',viewCount:22_500}),
   video(21,'Maroon 5 - Maps Music Video',{artist:'Mary York',duration:191,videoType:'UGC',viewCount:4_400}),
   video(22,'Maroon 5 - Maps (Official Video)',{artist:'Music Love',duration:200,videoType:'UGC',viewCount:2_000}),
-  video(23,'Maroon 5 - Maps (Lyric Video)',{artist:'Maroon 5',duration:189,videoType:'UGC',viewCount:515_200_000}),
+  video(23,'Maroon 5 - Maps (Lyric Video)',{artist:'Maroon 5',channelVerified:true,duration:189,videoType:'UGC',viewCount:515_200_000}),
   video(24,'Maroon 5 - Maps (Audio)',{artist:'Maroon 5',duration:190,videoType:'ATV',viewCount:140_000_000}),
-  video(25,'Maroon 5 - Maps',{artist:'Maroon 5',duration:209,videoType:'OMV',metadataSource:'ytmusic',viewCount:540_000_000}),
+  video(25,'Maroon 5 - Maps',{artist:'Maroon 5',channelVerified:true,artistCredits:['Maroon 5'],duration:209,videoType:'OMV',metadataSource:'ytmusic',viewCount:540_000_000}),
  ];
  const ranked=rankYouTubeBackgroundCandidates(candidates,mapsTrack,'music');
  expect(ranked[0].id).toBe('yt_00000000025');
@@ -74,8 +74,8 @@ it('ranks official movie song uploads (MC Music 12M & Muzik247 3M) #1 and #2 for
   video(32,'THUMBI PENNE | DSOULS DANCE COMPANY | DEEN JOHNS DANCE CHOREOGRAPHY',{artist:'DSOULS DANCE COMPANY',duration:81,videoType:'UGC',viewCount:923_600}),
   video(33,'thumbi penne ( s l o w e d + r e v e r b ) | lilvibe',{artist:'lilvibe -',duration:352,videoType:'UGC',viewCount:322_900}),
   video(34,'Thumbippenne Vava Lyrical Video Song | Dhruvam | Mammootty | Gouthami | Jayaram | Yesudas',{artist:'Movie World Cinema Pattukal',duration:304,videoType:'UGC',viewCount:239_100}),
-  video(35,'Thumbi Penne | Bangalore Days Songs | NivinPauly | DulquarSalman | Nazriya | Isha Talwar',{artist:'MC Music',duration:170,videoType:'UGC',viewCount:12_000_000}),
-  video(36,'Thumbi Penne- Bangalore Days | Dulquer Salman| Nivin Pauly| Nazriya Nazim | Full song',{artist:'Muzik247',duration:299,videoType:'UGC',viewCount:3_000_000}),
+  video(35,'Thumbi Penne | Bangalore Days Songs | NivinPauly | DulquarSalman | Nazriya | Isha Talwar',{artist:'MC Music',channelVerified:true,duration:170,videoType:'UGC',viewCount:12_000_000}),
+  video(36,'Thumbi Penne- Bangalore Days | Dulquer Salman| Nivin Pauly| Nazriya Nazim | Full song',{artist:'Muzik247',channelVerified:true,duration:299,videoType:'UGC',viewCount:3_000_000}),
  ];
  const ranked=rankYouTubeBackgroundCandidates(candidates,thumbiTrack,'music');
  expect(ranked.map(s=>s.id)).toEqual(['yt_00000000035','yt_00000000036','yt_00000000031']);
@@ -135,20 +135,20 @@ it('ranks Guppy Cinemas and Reetha Records 5.6M official release #1 for Kunjikka
  const kunjiTrack={title:'Kunjikkavil Meghame',artist:'Johnpaul George, Sooraj Santhosh',album:'Aashaan',duration:292};
  const candidates:SongResult[]=[
   video(60,'Kunjikkavil Meghame song | Aashaan |Johnpaul George | Vinayak Sasikumar | Sooraj Santhosh',{artist:'Gowtham_2010',duration:165,videoType:'UGC',viewCount:11_000}),
-  video(61,'Kunjikkavil Meghame Lyrical | Aashaan | Johnpaul George | Vinayak Sasikumar | Sooraj Santhosh',{artist:'Guppy Cinemas and Reetha Records',duration:292,videoType:'UGC',viewCount:5_600_000}),
+  video(61,'Kunjikkavil Meghame Lyrical | Aashaan | Johnpaul George | Vinayak Sasikumar | Sooraj Santhosh',{artist:'Guppy Cinemas and Reetha Records',channelVerified:true,duration:292,videoType:'UGC',viewCount:5_600_000}),
   video(62,'Johnpaul George, Sooraj Santhosh - Kunjikkavil Meghame (Lyrics)',{artist:'Vibe Bird Prime',duration:285,videoType:'UGC',viewCount:351_600}),
  ];
  const ranked=rankYouTubeBackgroundCandidates(candidates,kunjiTrack,'music');
  expect(ranked[0].id).toBe('yt_00000000061');
 });
 
-it('retains all safe preloaded choices instead of exposing only the four strict automatic matches',async()=>{
+it('filters preloaded choices by song relevance before sorting by views',async()=>{
  const all=Array.from({length:59},(_,i)=>video(i+100,i<4?'Original rain Test Artist Lyrics':'Original rain',{artist:i<4?'Test Artist':'Other creator',viewCount:i*1000}));
  const audio=video(200,'Original rain Official Audio',{viewCount:1e9});
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({data:[...all,audio]}))));
  const result=await findYouTubeBackgrounds(track,'lyrics','https://resolver.example');
- expect(result.candidateCount).toBe(60);expect(result.videos).toHaveLength(4);expect(result.candidates).toHaveLength(59);
- expect(result.candidates[0].id).toBe(all[58].id);expect(result.candidates.some(v=>v.id===audio.id)).toBe(false);
+ expect(result.candidateCount).toBe(60);expect(result.videos).toHaveLength(4);expect(result.candidates).toHaveLength(4);
+ expect(result.candidates[0].id).toBe(all[3].id);expect(result.candidates.some(v=>v.id===audio.id)).toBe(false);
 });
 it('finds an official lyrical release using neutral title/artist discovery as well as lyric-suffixed queries',async()=>{
  const queries:string[]=[];
@@ -158,3 +158,4 @@ it('finds an official lyrical release using neutral title/artist discovery as we
  expect(queries).toContain('Original rain Test Artist');expect(queries).toContain('Original rain official lyric video');
  expect(result.automaticVideoId).toBe(release.youtubeVideoId);expect(result.candidates).toContainEqual(expect.objectContaining({videoTitle:release.videoTitle}));
 });
+

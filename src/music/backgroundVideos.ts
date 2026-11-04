@@ -1,5 +1,5 @@
-import {selectYouTubeBackgroundCandidate,sortYouTubeVideoChoicesByViews} from './videoMatching';
-import {isLyricalVideo,rankYouTubeBackgroundCandidates,searchStashCatalog,type SongResult} from './providers';
+import {selectYouTubeBackgroundCandidate,relevantYouTubeVideoChoices} from './videoMatching';
+import {isLyricalVideo,rankYouTubeBackgroundCandidates,searchStashCatalog,searchVideoCounterparts,type SongResult} from './providers';
 import {extractYouTubeVideoId} from '../metadata/trackInfo';
 
 /** Pool artist-qualified and title-only searches before choosing the best recording. */
@@ -26,7 +26,7 @@ export async function findYouTubeBackgrounds(track:{title:string;artist:string;a
   if(track.album&&track.album.trim().toLowerCase()!==cleanTitle.toLowerCase())queries.push(`${cleanTitle} ${track.album}`);
  }
  const uniqueQueries=[...new Set(queries)];
- const batches=await Promise.all(uniqueQueries.map(q=>searchStashCatalog(q,'resolver',base,signal).catch(error=>{if(signal?.aborted)throw error;return [];})));
+ const batches=await Promise.all([searchVideoCounterparts(track,base,signal),...uniqueQueries.map(q=>searchStashCatalog(q,'resolver',base,signal).catch(error=>{if(signal?.aborted)throw error;return [];}))]);
  signal?.throwIfAborted();
  const byId=new Map<string,SongResult>();
  const hasChannel=(song:SongResult)=>Boolean(song.artist.trim())&&!/^(?:youtube|unknown|various artists?)$/i.test(song.artist.trim());
@@ -44,11 +44,17 @@ export async function findYouTubeBackgrounds(track:{title:string;artist:string;a
    videoTitle:titles[0]||primary.title,
    viewCount:Math.max(previous.viewCount||0,song.viewCount||0)||undefined,
    videoType:previous.videoType==='ATV'||song.videoType==='ATV'?'ATV':previous.videoType==='OMV'||song.videoType==='OMV'?'OMV':primary.videoType||fallback.videoType,
-   channelId:primary.channelId||fallback.channelId,channelVerified:previous.channelVerified||song.channelVerified,
+   channelId:primary.channelId||fallback.channelId,channelVerified:previous.channelVerified||song.channelVerified,uploaderName:primary.uploaderName||fallback.uploaderName,
+   artistChannelIds:[...new Set([...(previous.artistChannelIds||[]),...(song.artistChannelIds||[])])],
+   counterpartOf:primary.counterpartOf||fallback.counterpartOf,catalogueTitle:primary.catalogueTitle||fallback.catalogueTitle,catalogueArtists:primary.catalogueArtists||fallback.catalogueArtists,catalogueAlbum:primary.catalogueAlbum||fallback.catalogueAlbum,
+   embeddable:previous.embeddable===false||song.embeddable===false?false:primary.embeddable??fallback.embeddable,
    artistCredits:[...new Set([...(previous.artistCredits||[]),...(song.artistCredits||[])])],
    visualContent:previous.visualContent==='static'||song.visualContent==='static'?'static':primary.visualContent||fallback.visualContent});
  }
  const candidates=[...byId.values()];
  const videos=rankYouTubeBackgroundCandidates(candidates,track,preference);
- return {videos,candidates:sortYouTubeVideoChoicesByViews(candidates),automaticVideoId:selectYouTubeBackgroundCandidate(videos,track,preference),candidateCount:candidates.length,usedLyricalFallback:preference==='music'&&Boolean(videos[0]&&isLyricalVideo(videos[0]))};
+ const automaticVideoId=selectYouTubeBackgroundCandidate(candidates,track,preference);
+ const selected=candidates.find(song=>extractYouTubeVideoId(song)===automaticVideoId);
+ return {videos,candidates:relevantYouTubeVideoChoices(candidates,track),automaticVideoId,candidateCount:candidates.length,usedLyricalFallback:preference==='music'&&Boolean(selected&&isLyricalVideo(selected))};
 }
+

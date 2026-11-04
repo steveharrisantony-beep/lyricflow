@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import {formatViewCount,isLyricalVideo,searchStashCatalog,type SongResult} from './providers';
-import {sortYouTubeVideoChoicesByViews} from './videoMatching';
+import {sortYouTubeVideoChoicesByViews,relevantYouTubeVideoChoices} from './videoMatching';
 import { extractYouTubeVideoId, type TrackInfo } from "../metadata/trackInfo";
 import type { YouTubeBackgroundMode } from "../visualization/cinematic/CinematicStage";
 import { findYouTubeBackgrounds } from "./backgroundVideos";
@@ -38,19 +38,25 @@ export default function YouTubeBackgroundPicker({
   const [searchOnlineOpen, setSearchOnlineOpen] = useState(false);
   useEffect(() => {
     if (!showCached || !cachedCandidates) return;
-    const available=sortYouTubeVideoChoicesByViews(cachedCandidates);
+    const available=relevantYouTubeVideoChoices(cachedCandidates,track);
     setResults(available);
     setMessage(
       automaticSearchPending
         ? "Finding video candidates…"
-        : `${cachedCandidateCount ?? cachedCandidates.length} search results · ${available.length} videos available · sorted by views.${available.length?"":" Search again with a different query."}`,
+        : `${cachedCandidateCount ?? cachedCandidates.length} search results · ${available.length} relevant videos · sorted by views.${available.length?"":" Search again with a different query."}`,
     );
   }, [
     showCached,
     cachedCandidates,
     cachedCandidateCount,
     automaticSearchPending,
+    track.title,track.artist,track.album,track.duration,
   ]);
+  useEffect(()=>{
+    pending.current?.abort();
+    setShowCached(false);setResults([]);setMessage('');setBusy(false);
+    searchingCallback.current?.(false);
+  },[track.title,track.artist,track.album,preference]);
   const searchingCallback = useRef(onSearchingChange);
   searchingCallback.current = onSearchingChange;
   useEffect(
@@ -96,7 +102,7 @@ export default function YouTubeBackgroundPicker({
         compared=found.length;
       }
       if(controller.signal.aborted)return;
-      const videos=sortYouTubeVideoChoicesByViews(found);
+      const videos=custom?sortYouTubeVideoChoicesByViews(found):relevantYouTubeVideoChoices(found,track);
       setResults(videos);
       setMessage(videos.length
         ?`${compared} search results · ${videos.length} videos available · sorted by views. Choose a video below.`
@@ -204,7 +210,7 @@ export default function YouTubeBackgroundPicker({
               <div className="candidate-meta">
                 <strong>{song.videoTitle || song.title}</strong>
                 <small>
-                  {song.artist} ·{" "}
+                  {song.uploaderName||song.artist} ·{" "}
                   {song.duration
                     ? `${Math.floor(song.duration / 60)}:${String(Math.round(song.duration % 60)).padStart(2, "0")}`
                     : "Duration unknown"}
@@ -232,3 +238,4 @@ export default function YouTubeBackgroundPicker({
     </section>
   );
 }
+

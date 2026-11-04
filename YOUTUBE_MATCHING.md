@@ -8,36 +8,27 @@ with `YOUTUBE_REGION` in the embedded/backend environment.
 
 ## Matching and selection
 
-- Pool artist-qualified, short-title and album/movie queries. Deduplicate complete
-  query/source pools before ranking; explicit-video results are not discarded
-  just because a base query filled its first page.
-- Retain actual artist credits, channel IDs, verification badges, video type,
-  duration and views. Fill missing statistics using unofficial player metadata
-  for a bounded shortlist. Missing metadata stays unknown rather than becoming
-  invented evidence. Search requests and metadata lookups are cached briefly and
-  partitioned by account; identical in-flight requests share their work.
-- Match title, artist, album/movie and version first. A publisher's display name
-  or the words "Full Song" cannot excuse an artist/album mismatch. Generic names
-  containing "Records" do not establish affiliation. Verified or structured
-  artist evidence is stronger than an unverified display-name match.
-- Compute an identity shortlist once, then use one consistent score and a stable
-  video-ID tie-break. Popularity helps choose between credible recordings. Video
-  intros and movie edits have a softer duration penalty than short clips or
-  unrelated recordings. Music/lyrical preference is preserved.
-- Automatic playback requires a confidence threshold. A manual custom query may
-  offer another recording as an explicit user choice, but it cannot bypass
-  video-suitability checks. Latest saved personal mappings continue to override
-  automatic discovery.
+- Identify a YouTube Music catalogue song by title, artist, album and recording
+  duration. Look for its linked video in the Song/Video switcher. Use catalogue
+  audio only as a recording reference.
+- Pool and deduplicate artist, short-title and album/movie video searches.
+  Preserve credited artists, uploader channel IDs, badges, video type, views
+  and known embedding restrictions. Keep account-specific lookups separate.
+- Check song identity and version before ranking. Rank corroborated releases
+  ahead of unconfirmed uploads using linked videos, known uploader IDs and
+  platform metadata. Use popularity among comparable matches. Duration filters
+  obvious clips and compilations, without rewarding an exact album runtime.
+- If no credible release is available for the selection, play the top relevant
+  preloaded choice by views. Personal mappings take precedence. Recovery uses
+  the same ranking and skips candidates that have failed playback.
 
 ## Mapping picker
 
-The Lyrics/Music video preference is in Song Mapping. Automatic selection uses
-the recording and release checks above. The preloaded/manual picker retains the
-complete pool of video results independently of the automatic shortlist, rejects
-known static/audio uploads, and sorts every available choice by descending views.
-Its status distinguishes total search results from videos available to choose;
-there is no hidden 15-result display cap. Full YouTube titles are retained when
-the YouTube Music catalogue supplies a shorter title, including lyric-video labels.
+Show preloaded videos filters for the current recording before sorting by views.
+The status shows both the search pool size and the number of relevant choices.
+Both music and lyric videos can appear in this list. A custom online query can
+still search for a different recording. Known static and blocked videos are
+excluded in both cases. Full video titles are used when available.
 
 ## Video-only backgrounds
 
@@ -58,6 +49,8 @@ runtime, using these approaches without embedding their Python apps or downloade
 
 - [sigma67/ytmusicapi](https://github.com/sigma67/ytmusicapi): filtered video search,
   structured artist credits, video types and metadata extraction (MIT).
+- [Tyrrrz/YoutubeExplode](https://github.com/Tyrrrz/YoutubeExplode): video-only web
+  search, video ID deduplication and alternative uploader channel fields.
 - [spotDL/spotify-downloader](https://github.com/spotDL/spotify-downloader): match
   recording identity first, shortlist close matches, then consider popularity.
 - [music-assistant/server](https://github.com/music-assistant/server): recording
@@ -71,6 +64,8 @@ dependencies, media downloads, recording, or external backend requirements.
 `src/tests/video-ranking-regressions.test.ts` covers all permutations of the old
 sort cycle, the 79.7K/18M case, misleading publisher names, intro tolerance,
 recording versions, static rejection and late candidates. `server/youtubeSearch.test.ts`
-covers unofficial requests, metadata parsing/hydration, complete-pool merging,
-account isolation and transient retry behavior. The normal app and embedded-backend
+covers catalogue counterpart discovery, uploader metadata, complete-pool
+merging, account isolation and retries. `src/tests/video-relevance.test.ts`
+checks relevance and the highest-view fallback. The normal app and embedded-backend
 checks also apply. Live service availability and Xiaomi playback require device testing.
+

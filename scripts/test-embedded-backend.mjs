@@ -37,6 +37,19 @@ globalThis.fetch = async (input, options) => {
       'Content-Type': 'audio/mp4', 'Content-Length': '4', 'Content-Range': 'bytes 0-3/4', 'Accept-Ranges': 'bytes',
     }});
   }
+  if(url.hostname==='music.youtube.com'&&url.pathname==='/youtubei/v1/search'){
+    const body=JSON.parse(options.body);
+    if(body.params==='EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D')return Response.json({contents:[{musicResponsiveListItemRenderer:{
+      playlistItemData:{videoId:'catalogue01'},
+      flexColumns:[{musicResponsiveListItemFlexColumnRenderer:{text:{runs:[{text:'Example Song',navigationEndpoint:{watchEndpoint:{videoId:'catalogue01',watchEndpointMusicSupportedConfigs:{watchEndpointMusicConfig:{musicVideoType:'MUSIC_VIDEO_TYPE_ATV'}}}}}]}}},
+       {musicResponsiveListItemFlexColumnRenderer:{text:{runs:[{text:'Example Artist',navigationEndpoint:{browseEndpoint:{browseId:'UCexample'}}},{text:'3:00'}]}}}]
+    }}]});
+    return Response.json({contents:[]});
+  }
+  if(url.hostname==='music.youtube.com'&&url.pathname==='/youtubei/v1/next'){
+    const body=JSON.parse(options.body);assert.equal(body.videoId,'catalogue01');
+    return Response.json({contents:[{playlistPanelVideoWrapperRenderer:{primaryRenderer:{playlistPanelVideoRenderer:{videoId:'catalogue01'}},counterpart:[{counterpartRenderer:{playlistPanelVideoRenderer:{videoId:'linkedVid01',title:{simpleText:'Example Artist Example Song Official Music Video'},lengthText:{simpleText:'3:40'},navigationEndpoint:{watchEndpoint:{watchEndpointMusicSupportedConfigs:{watchEndpointMusicConfig:{musicVideoType:'MUSIC_VIDEO_TYPE_OMV'}}}}}}}]}}]});
+  }
   if(url.hostname==='music.youtube.com'&&url.pathname==='/youtubei/v1/account/account_menu'){
     const cookie=options?.headers?.Cookie||'';
     if(cookie==='SAPISID=slow-fixture') return new Promise(resolve=>{completeAccountCheck=()=>resolve(Response.json(verifiedAccount));});
@@ -49,6 +62,7 @@ globalThis.fetch = async (input, options) => {
   }
   if(url.hostname==='www.youtube.com'&&url.pathname==='/youtubei/v1/player'){
     const {videoId}=JSON.parse(options.body);
+    if(videoId==='linkedVid01')return Response.json({playabilityStatus:{status:'OK',playableInEmbed:true},videoDetails:{videoId,channelId:'UCn4rEMqKtwBQ6-oEwbd4PcA',author:'Sony Music South',title:'Example Song Official Music Video',lengthSeconds:'220',viewCount:'123456'}});
     return Response.json({videoDetails:{videoId},playabilityStatus:{status:'OK'},captions:{playerCaptionsTracklistRenderer:{captionTracks:[{baseUrl:'https://www.youtube.com/api/timedtext?v='+videoId+'&fmt=srv3',vssId:'.en',languageCode:'en',name:{runs:[{text:'English [CC]'}]}}]}}});
   }
   if(url.hostname==='www.youtube.com'&&url.pathname==='/api/timedtext'){
@@ -147,6 +161,12 @@ try {
   assert.equal(topicItem.artist, 'Hanumankind - Topic');
   assert.equal(topicItem.album, 'Audio Track');
   assert.equal(omvItem.videoType, 'UGC'); // Title inference cannot establish the actual video type.
+  const counterpart=await (await request('/music/video-counterparts?title=Example+Song&artist=Example+Artist&duration=180')).json();
+  assert.equal(counterpart.data[0].youtubeVideoId,'linkedVid01');
+  assert.equal(counterpart.data[0].counterpartOf,'catalogue01');
+  assert.equal(counterpart.data[0].uploaderName,'Sony Music South');
+  assert.equal(counterpart.data[0].duration,220,'Video duration can exceed its catalogue recording');
+  assert.equal((await request('/music/video-counterparts?title=x')).status,400);
   const resolved = await (await request('/music/resolve/saavn_fixture')).json();
   assert.equal(resolved.format, 'audio');
   const audio = await request('/music' + resolved.streamPath, {Range: 'bytes=0-3'});
@@ -186,4 +206,5 @@ try {
   server.closeAllConnections();
   await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
 }
+
 

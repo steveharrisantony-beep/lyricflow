@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react';
+import * as musicProviders from '../music/providers';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import CinematicStage, { type CinematicProps } from '../visualization/cinematic/CinematicStage';
@@ -9,6 +10,7 @@ import { validSongMapping } from '../firebase/songMappings';
 const base: CinematicProps = {quality:'Performance',intensity:0,speed:1,reducedMotion:true,demo:false,paused:true,autoScenes:false,manualScene:'holographic-tide',spatialTypography:false,motionBlur:0,youtubeVideoId:'abcdefghijk',playbackTime:10,hasSeparateAudioStream:true,audioPaused:false};
 let root: Root, host: HTMLDivElement;
 beforeEach(() => {
+  vi.spyOn(musicProviders,'searchVideoCounterparts').mockResolvedValue([]);
   (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
   vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockReturnValue(null);
   host=document.createElement('div');document.body.append(host);root=createRoot(host);
@@ -468,13 +470,16 @@ it('rejects pasted static-image/audio links in the manual background picker',asy
  expect(host.textContent).toContain('No videos found');
 });
 
-it('shows all 59 preloaded videos ordered by views, including choices outside the automatic lyrical shortlist',async()=>{
+it('shows only song-relevant preloaded videos in descending views and refreshes relevance when the track changes',async()=>{
  const {default:Picker}=await import('../music/YouTubeBackgroundPicker');
- const providers=await import('../music/providers');const search=vi.spyOn(providers,'searchStashCatalog');
- const choices=Array.from({length:59},(_,i)=>({id:'yt_'+String(i).padStart(11,'0'),youtubeVideoId:String(i).padStart(11,'0'),title:'Song '+i,artist:'Uploader '+i,album:'',duration:200,viewCount:i===0?undefined:i*1000,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v='+String(i).padStart(11,'0')}));
- await act(async()=>root.render(<Picker track={{title:'Song',artist:'Artist',album:'',duration:200,source:'manual',confidence:1}} activeVideoId={null} preference="lyrics" onChoose={()=>{}} cachedCandidates={choices} cachedCandidateCount={59}/>));
+ const search=vi.spyOn(musicProviders,'searchStashCatalog');
+ const choices=Array.from({length:130},(_,i)=>({id:'yt_'+String(i).padStart(11,'0'),youtubeVideoId:String(i).padStart(11,'0'),title:i<2?'Example Artist - Ocean Road Official Video':'Other Artist - Other Song Official Video',artist:i<2?'Distributor':'Other Artist',album:'',duration:200,viewCount:i*1000,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v='+String(i).padStart(11,'0')}));
+ const render=(title='Ocean Road')=><Picker track={{title,artist:'Example Artist',album:'',duration:200,source:'manual',confidence:1}} activeVideoId={null} preference="lyrics" onChoose={()=>{}} cachedCandidates={choices} cachedCandidateCount={130}/>;
+ await act(async()=>root.render(render()));
  await act(async()=>Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Show preloaded videos')!.click());
  const rows=Array.from(host.querySelectorAll('.video-candidate'));
- expect(rows).toHaveLength(59);expect(rows[0].querySelector('strong')?.textContent).toBe('Song 58');expect(rows.at(-1)?.querySelector('strong')?.textContent).toBe('Song 0');
- expect(host.textContent).toContain('59 search results · 59 videos available · sorted by views');expect(search).not.toHaveBeenCalled();
+ expect(rows).toHaveLength(2);expect(rows[0].querySelector('img')?.getAttribute('src')).toContain('00000000001');
+ expect(host.textContent).toContain('130 search results · 2 relevant videos · sorted by views');expect(search).not.toHaveBeenCalled();
+ await act(async()=>root.render(render('Different Song')));
+ expect(host.querySelector('.video-candidate')).toBeNull();
 });

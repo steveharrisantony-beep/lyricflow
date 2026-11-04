@@ -1,4 +1,4 @@
-import {searchMusicVideos,mergeVideoMetadata,hydrateVideoMetadata,VideoSearchCache,youtubeViews} from './server/youtubeSearch';
+import {searchMusicVideos,mergeVideoMetadata,hydrateVideoMetadata,findSongVideoCounterparts,VideoSearchCache,youtubeViews} from './server/youtubeSearch';
 import {fetchYouTubeCaptions,CaptionFetchError} from './server/youtubeCaptions';
 import {buildYouTubeAuthHeaders,verifyYouTubeAccount,type YouTubeAuthContext} from './server/youtubeAuth';
 import express, { type Request, type Response } from 'express';
@@ -32,7 +32,8 @@ interface TrackMetadata {
   audioSource?: string;
   videoType?: 'ATV' | 'OMV' | 'UGC';
   viewCount?: number;
-  channelId?:string;channelVerified?:boolean;artistCredits?:string[];
+  channelId?:string;channelVerified?:boolean;uploaderName?:string;artistCredits?:string[];artistChannelIds?:string[];
+  counterpartOf?:string;catalogueTitle?:string;catalogueArtists?:string[];catalogueAlbum?:string;embeddable?:boolean;
   visualContent?:'motion'|'static'|'unknown';metadataSource?:'ytmusic'|'innertube'|'mirror'|'oembed';
   encryptedMediaUrl?: string;
   transcodings?: Array<{
@@ -133,7 +134,9 @@ function rendererChannelId(renderer:Record<string,unknown>):string|undefined {
       if(typeof endpoint==='string'&&endpoint.startsWith('UC'))return endpoint;
     }
   }
-  return undefined;
+  const thumbnail=renderer.channelThumbnailSupportedRenderers as {channelThumbnailWithLinkRenderer?:{navigationEndpoint?:{browseEndpoint?:{browseId?:unknown}}}}|undefined;
+  const id=thumbnail?.channelThumbnailWithLinkRenderer?.navigationEndpoint?.browseEndpoint?.browseId;
+  return typeof id==='string'&&id.startsWith('UC')?id:undefined;
 }
 
 const USER_AGENT =
@@ -785,7 +788,7 @@ function parseYouTubeSearchTree(root: unknown, limit: number): TrackMetadata[] {
             album: isStaticAudio ? 'Audio Track' : '',
             duration,
             viewCount,
-            channelId:rendererChannelId(renderer),
+            channelId:rendererChannelId(renderer),uploaderName:channelName,
             channelVerified:rendererStr.includes('BADGE_STYLE_TYPE_VERIFIED_ARTIST')||rendererStr.includes('BADGE_STYLE_TYPE_VERIFIED')||rendererStr.includes('OWNER_BADGE_TYPE_VERIFIED'),
             artistCredits:rendererStr.includes('BADGE_STYLE_TYPE_VERIFIED_ARTIST')?[channelName]:undefined,
             metadataSource:'innertube',visualContent:isStaticAudio?'static':'unknown',
@@ -941,6 +944,7 @@ async function runYouTubeWebSearch(
             },
           },
           query: upstreamQuery,
+          params:'EgIQAQ%3D%3D', // YoutubeExplode: request videos rather than mixed search results.
         }),
         signal: AbortSignal.timeout(Math.max(1,Math.min(3500,deadline-Date.now()))),
       });
@@ -2865,7 +2869,8 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
           album: t.album,
           duration: t.duration,
           viewCount: t.viewCount,
-          channelId:t.channelId,channelVerified:t.channelVerified,artistCredits:t.artistCredits,
+          channelId:t.channelId,channelVerified:t.channelVerified,uploaderName:t.uploaderName,artistCredits:t.artistCredits,artistChannelIds:t.artistChannelIds,
+          counterpartOf:t.counterpartOf,catalogueTitle:t.catalogueTitle,catalogueArtists:t.catalogueArtists,catalogueAlbum:t.catalogueAlbum,embeddable:t.embeddable,
           visualContent:t.visualContent,metadataSource:t.metadataSource,
           videoType: t.videoType,
           sourceUrl: t.sourceUrl,
@@ -3184,6 +3189,17 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
   app.get(['/music/romanize', '/romanize'], handleRomanize);
   app.get(['/music/yt-subtitles', '/yt-subtitles', '/music/yt-subtitles/:videoId'], handleYouTubeSubtitles);
   app.get(['/music/sponsorblock/:videoId', '/sponsorblock/:videoId', '/music/sponsorblock'], handleSponsorBlock);
+  app.get(['/music/video-counterparts','/video-counterparts'],async(req:Request,res:Response)=>{
+    const title=String(req.query.title||'').trim(),artist=String(req.query.artist||'').trim(),album=String(req.query.album||'').trim();
+    const duration=Number(req.query.duration||0);
+    if(title.length<2||title.length>300||artist.length>500||album.length>300||!Number.isFinite(duration)||duration<0||duration>86400){res.status(400).json({detail:'Invalid song metadata.'});return;}
+    const auth=extractRequestYouTubeAuth(req),scope=createHash('sha256').update(JSON.stringify(auth||{})).digest('hex');
+    const videos=await findSongVideoCounterparts({title,artist,album,duration},buildYouTubeAuthHeaders(auth,'https://music.youtube.com'),scope,process.env.YOUTUBE_REGION||'IN');
+    const enriched=await hydrateVideoMetadata(videos,buildYouTubeAuthHeaders(auth),scope);
+    for(const video of enriched)setTrackMetaCache(video.id,video);
+    res.setHeader('Cache-Control','no-store');
+    res.json({data:enriched.map(video=>({...video,provider:'resolver',youtubeVideoId:video.rawId}))});
+  });
   app.get(['/music/search', '/search'], handleSearch);
   app.get(['/music/resolve/:trackId', '/resolve/:trackId'], handleResolve);
   app.get(['/music/audio/:trackId', '/audio/:trackId'], handleAudio);
@@ -3219,3 +3235,4 @@ if (process.env.LYRICFLOW_EMBEDDED !== '1') {
     process.exitCode = 1;
   });
 }
+

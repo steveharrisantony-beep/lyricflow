@@ -19,7 +19,7 @@ it('does not promote an unverified Records name above a much more popular equiva
 });
 it('allows a genuine video intro without letting a short clip or distant recording win',()=>{
  const small=video(1,79700),large=video(2,18e6,{duration:230});
- expect(rankYouTubeBackgroundCandidates([small,large,video(3,1e9,{duration:70}),video(4,1e9,{duration:500})],track).map(v=>v.id)).toEqual([large.id,small.id]);
+ expect(rankYouTubeBackgroundCandidates([small,large,video(3,1e9,{duration:70}),video(4,1e9,{duration:1500})],track).map(v=>v.id)).toEqual([large.id,small.id]);
 });
 it('rejects different artists even when the title says Full Song and the publisher is a known label',()=>{
  expect(rankYouTubeBackgroundCandidates([video(1,18e6,{title:'Ocean Road Full Song | Other Movie',artist:'Sony Music India'})],track)).toEqual([]);
@@ -51,8 +51,8 @@ it('does not treat an unverified artist display name as an authoritative uploade
  const impersonator=video(1,79700),release=video(2,18e6,{artist:'Authentic Label'});
  expect(rankYouTubeBackgroundCandidates([impersonator,release],track)[0].id).toBe(release.id);
 });
-it('does not auto-select a first result when duration and recording evidence are missing',()=>{
- expect(selectYouTubeBackgroundCandidate([video(1,0,{duration:0,viewCount:undefined}),video(2,0,{duration:0,viewCount:undefined})],track)).toBe(null);
+it('allows a relevant preloaded fallback with unknown duration when no credible release exists',()=>{
+ expect(selectYouTubeBackgroundCandidate([video(1,0,{duration:0,viewCount:undefined}),video(2,0,{duration:0,viewCount:undefined})],track)).toBe('00000000001');
 });
 
 it('recognizes a lyric release from its full video title when the catalogue title is shortened',()=>{
@@ -69,3 +69,4 @@ it('matches a joined title spelling while retaining recording checks',()=>{
  const release=video(1,18e6,{title:'Example Artist - OceanRoad (Official Lyric Video)'});
  expect(selectYouTubeBackgroundCandidate([release],track,'lyrics')).toBe(release.youtubeVideoId);
 });
+

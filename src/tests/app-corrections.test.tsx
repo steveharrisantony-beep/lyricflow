@@ -11,6 +11,7 @@ vi.mock('../audio/LocalPlayer', () => ({ default: (props: { onTrackChange: (trac
 </div> }));
 vi.mock('../music/providers', async importOriginal => ({
   ...await importOriginal<typeof import('../music/providers')>(),
+  searchVideoCounterparts: vi.fn().mockResolvedValue([]),
   searchStashCatalog: vi.fn().mockImplementation(async query=>[{id:'yt_abcdefghijk',title:'Original test song '+(query.includes('lyric')?'Official Lyrics Video':'Official Music Video'),artist:'Test artist',viewCount:5432100,album:'Studio',duration:200,provider:'resolver',sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk',youtubeVideoId:'abcdefghijk'}]),
 }));
 vi.mock('../metadata/TrackFinder', () => ({ default: (props:{onLyricsFound:(value:Omit<import('../lyrics/ManualLyrics').IncomingLyrics,'token'>)=>void;onStatusChange?:(message:string)=>void}) => <>
@@ -709,3 +710,4 @@ it('includes the selected video channel and view count beside its title',async()
  const video=host.querySelectorAll('#settings-page-mapping .current-song')[1];
  expect(video.textContent).toContain('Official Music Video');expect(video.textContent).toContain('Test artist');expect(video.textContent).toContain('5.4M views');
 });
+

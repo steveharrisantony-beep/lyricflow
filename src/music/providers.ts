@@ -18,7 +18,8 @@ export interface SongResult {
  youtubeVideoId?:string;videoTitle?:string;
  viewCount?:number;
  videoType?:'ATV'|'OMV'|'UGC';
- channelId?:string;channelVerified?:boolean;artistCredits?:string[];
+ channelId?:string;channelVerified?:boolean;uploaderName?:string;artistCredits?:string[];artistChannelIds?:string[];
+ counterpartOf?:string;catalogueTitle?:string;catalogueArtists?:string[];catalogueAlbum?:string;embeddable?:boolean;
  visualContent?:'motion'|'static'|'unknown';metadataSource?:'ytmusic'|'innertube'|'mirror'|'oembed';
 }
 export interface PlayableSong extends SongResult {streamUrl:string;format?:'hls'|'audio'|'youtube'}
@@ -62,7 +63,11 @@ export function parseSongs(value:unknown,provider:SongResult['provider']):SongRe
    audioSource:string(item.audioSource)||undefined,
    youtubeVideoId:ytId,
    videoTitle:string(item.videoTitle)||(ytId?string(item.title):undefined),
-   channelId:string(item.channelId)||undefined,channelVerified:item.channelVerified===true,
+   channelId:string(item.channelId)||undefined,channelVerified:item.channelVerified===true,uploaderName:string(item.uploaderName)||undefined,
+   artistChannelIds:Array.isArray(item.artistChannelIds)?item.artistChannelIds.filter((v):v is string=>typeof v==='string'):undefined,
+   counterpartOf:string(item.counterpartOf)||undefined,catalogueTitle:string(item.catalogueTitle)||undefined,catalogueAlbum:string(item.catalogueAlbum)||undefined,
+   catalogueArtists:Array.isArray(item.catalogueArtists)?item.catalogueArtists.filter((v):v is string=>typeof v==='string'):undefined,
+   embeddable:typeof item.embeddable==='boolean'?item.embeddable:undefined,
    artistCredits:Array.isArray(item.artistCredits)?item.artistCredits.filter((v):v is string=>typeof v==='string'):undefined,
    visualContent:['motion','static','unknown'].includes(string(item.visualContent))?item.visualContent as SongResult['visualContent']:undefined,
    metadataSource:['ytmusic','innertube','mirror','oembed'].includes(string(item.metadataSource))?item.metadataSource as SongResult['metadataSource']:undefined,
@@ -113,6 +118,13 @@ export async function resolveSong(song:SongResult,base:string,signal?:AbortSigna
  *    - Direct YouTube URL / 11-char Video ID lookup,
  *    - Client-side Piped API mirrors from the user's own device IP.
  */
+export async function searchVideoCounterparts(track:{title:string;artist:string;album?:string;duration:number},base:string,signal?:AbortSignal):Promise<SongResult[]>{
+ const root=base.trim()||musicBackendBase();
+ const params=new URLSearchParams({title:track.title,artist:track.artist,album:track.album||'',duration:String(track.duration)});
+ try{return parseSongs(await json(root.replace(/\/$/,'')+'/video-counterparts?'+params,signal),'resolver');}
+ catch(error){if(signal?.aborted)throw error;return [];}
+}
+
 export async function searchStashCatalog(
  query:string,
  provider:SongResult['provider'],
@@ -238,4 +250,5 @@ export async function searchStashCatalog(
 
  return [];
 }
+
 
