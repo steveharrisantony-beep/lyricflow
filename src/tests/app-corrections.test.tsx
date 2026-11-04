@@ -903,7 +903,6 @@ it('includes the selected video channel and view count beside its title',async()
  expect(video.textContent).toContain('Official Lyrics Video');expect(video.textContent).toContain('Test artist');expect(video.textContent).toContain('5.4M views');
 });
 
-
 it('opens last-stage preloaded lyrics without searching and keeps the chosen version as a draft',async()=>{
  const {prepareSongLyrics}=await import('../data/songPreparation');
  const metadata={title:'Original test song',artist:'Test artist',album:'Studio',duration:200,
