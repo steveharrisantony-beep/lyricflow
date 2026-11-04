@@ -210,6 +210,29 @@ export async function resolveStashLyricsChain(
  selectedSubtitleTrackId?:string,
  onProgress?:(result:StashResolvedLyrics)=>void
 ):Promise<StashResolvedLyrics|null>{
+ const result=await resolveLyricsPass(track,signal,engineOption,leadingNonMusicOffsetSec,selectedSubtitleTrackId,onProgress);
+ if(result||engineOption==='youtube')return result;
+ signal?.throwIfAborted();
+
+ const title=normalizeTrackForLyricsLookup(track).title;
+ const artistCredit=track.artist.trim()||track.channelHint||'';
+ const collaborationSeparator=/[,;]|\s+(?:[([]\s*)?(?:feat\.?|featuring|ft\.?)\s+|\s+[&/×x]\s+/i;
+ const artist=cleanLyricMetadata(artistCredit.split(collaborationSeparator,1)[0]);
+ if(title.trim().length<2||!artist)return null;
+
+ // Retry by song metadata so a YouTube channel or video ID cannot replace the artist query.
+ const retryTrack:TrackInfo={title,artist,album:'',duration:track.duration,source:track.source,confidence:track.confidence};
+ return resolveLyricsPass(retryTrack,signal,engineOption,leadingNonMusicOffsetSec,undefined,onProgress);
+}
+
+async function resolveLyricsPass(
+ track:TrackInfo,
+ signal:AbortSignal|undefined,
+ engineOption:LyricEngineOption,
+ leadingNonMusicOffsetSec:number,
+ selectedSubtitleTrackId?:string,
+ onProgress?:(result:StashResolvedLyrics)=>void
+):Promise<StashResolvedLyrics|null>{
  const ytVideoId=engineOption==='youtube'||isYouTubeAudioTrack(track)?extractYouTubeVideoId(track):null;
  const cleaned:TrackInfo=normalizeTrackForLyricsLookup(track);
  if(cleaned.title.trim().length<2&&!ytVideoId)return null;

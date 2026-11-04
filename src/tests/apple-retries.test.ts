@@ -107,6 +107,38 @@ it('keeps LRC lyrics after all Apple attempts fail',async()=>{
  expect(progress.mock.calls.every(([result])=>result.original===lrc)).toBe(true);
 });
 
+it.each([
+ {artist:'Test Artist, Guest Artist',provider:'jiosaavn' as const},
+ {artist:'Test Artist (feat. Guest Artist)',provider:'resolver' as const,
+  youtubeVideoId:'abcdefghijk',videoTitle:'Original rain (Official Video)',channelHint:'Video Channel'},
+])('retries a missed $provider lookup with the title and primary artist',async credit=>{
+ const progress=vi.fn();
+ const http=vi.fn(async(input:RequestInfo|URL)=>{
+  const url=new URL(String(input));
+  if(url.pathname==='/music/lyrics'&&url.searchParams.get('source')==='apple'&&url.searchParams.get('artist')===track.artist){
+   expect(url.searchParams.get('title')).toBe(track.title);
+   expect(url.searchParams.get('duration')).toBe(String(track.duration));
+   expect(url.searchParams.has('isYouTube')).toBe(false);
+   return Response.json(appleResult);
+  }
+  if(url.hostname==='itunes.apple.com')return Response.json({results:[]});
+  if(url.pathname==='/music/apple-candidates')return Response.json({candidates:[]});
+  if(url.pathname==='/api/search')return Response.json([]);
+  return new Response('',{status:404});
+ });
+ vi.stubGlobal('fetch',http);
+ const pending=resolveStashLyricsChain({...track,...credit},undefined,'lyricflow',0,undefined,progress);
+ await vi.advanceTimersByTimeAsync(2999);
+ expect(progress).not.toHaveBeenCalled();
+ await vi.advanceTimersByTimeAsync(1);
+ expect(await pending).toMatchObject({original:appleLrc,hasWordSync:true});
+ const artists=http.mock.calls.map(([url])=>new URL(String(url)))
+  .filter(url=>url.pathname==='/music/lyrics'&&url.searchParams.get('source')==='apple')
+  .map(url=>url.searchParams.get('artist'));
+ expect(artists).toEqual([...Array(3).fill('channelHint' in credit?credit.channelHint:credit.artist),track.artist]);
+ expect(progress.mock.calls.at(-1)?.[0].original).toBe(appleLrc);
+});
+
 it('retries cached line lyrics with a fresh request and upgrades them to word timestamps',async()=>{
  const cached={lrc,hasWordSync:false,source:'Paxsenix · Synced'};
  const {attempts,http}=fixture(2,Promise.resolve(Response.json(cached)));
