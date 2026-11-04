@@ -135,7 +135,7 @@ export function prepareSongLyrics(track:TrackInfo,uid:string|null,options:Lyrics
 export function prepareSongVideo(track:TrackInfo,uid:string|null,base:string,signal?:AbortSignal){
  const local=localSongData(track,uid),entry=local.session;
  if(!entry||local.mapping?.hideVideo||local.mapping?.video||isAdvertisementTrack(track))return Promise.resolve(null);
- const key=JSON.stringify([track.title,track.artist,base]);
+ const key=JSON.stringify([track.title,track.artist,track.primaryArtist,track.featuredArtist,base]);
  if(entry.videos?.key===key)return Promise.resolve(entry.videos.value);
  return shared(`${uid}:${entry.id}:video:${entry.generation}:${key}`,entry,signal,async(request)=>{
   const result=await findYouTubeBackgrounds(track,base,request);

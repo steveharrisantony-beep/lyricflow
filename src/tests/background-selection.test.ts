@@ -45,3 +45,20 @@ it('keeps short and malformed results for diagnostics',async()=>{
  expect(candidates[0].youtubeVideoId).toBeUndefined();
  expect(fetcher).toHaveBeenCalledTimes(1);
 });
+
+it.each([
+ [{title:'Song (feat. Guest One & Guest Two) (From Film)',artist:'Lead One, Lead Two'},
+  'Song (From Film) Lead One Guest One video','Lead One','Guest One'],
+ [{title:'Song',artist:'Lead One & Lead Two [ft.Guest One; Guest Two]'},
+  'Song Lead One Guest One video','Lead One','Guest One'],
+ [{title:'Song (feat. Other Guest)',artist:'Lead & Band, Second',primaryArtist:'Lead & Band',featuredArtist:'Guest & Group'},
+  'Song Lead & Band Guest & Group video','Lead & Band','Guest & Group'],
+] as const)('includes only the first primary and featured artist in the query',async(track,query,primary,featured)=>{
+ const fetcher=mockSearch([]);
+ await findYouTubeBackgrounds(track,'https://resolver.example');
+ expect(fetcher).toHaveBeenCalledTimes(1);
+ const params=new URL(fetcher.mock.calls[0][0]).searchParams;
+ expect(params.get('q')).toBe(query);
+ expect(params.get('backgroundArtist')).toBe(primary);
+ expect(params.get('backgroundFeaturedArtist')).toBe(featured);
+});

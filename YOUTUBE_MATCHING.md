@@ -1,7 +1,9 @@
 # YouTube video matching
 
-The automatic background search submits the song title, first credited artist,
-and the word `video` to YouTube web search through Innertube. The picker keeps
+The automatic background search submits the song title, first primary artist,
+first featured artist when credited, and the word `video` to YouTube web search
+through Innertube. A feature credit in the source title is extracted before the
+query is built. The picker keeps
 the first page in the returned relevance order.
 
 Autoplay checks the first 20 results in order and selects the first video that

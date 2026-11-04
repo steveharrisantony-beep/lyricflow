@@ -3,6 +3,7 @@ import { cleanYouTubeTitleForLyrics } from '../lyrics/lyricFlowEngine';
 /** Pure, replaceable track matching. Never treats a filename as verified metadata. */
 export interface TrackInfo {
   title:string; artist:string; album:string; duration:number; fileName?:string; sourceTrackId?:string;
+  primaryArtist?:string; featuredArtist?:string;
   source:'filename'|'manual'|'provider'; confidence:number;
   artwork?:string;
   provider?:'ytmusic'|'soundcloud'|'jiosaavn'|'audius'|'resolver'|'local'|'external';

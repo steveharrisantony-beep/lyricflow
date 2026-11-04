@@ -13,6 +13,7 @@ export const BUILTIN_PLAYER_SOURCES={
 /** Search metadata and resolve playable sources separately, as in a native player. */
 export interface SongResult {
  id:string;title:string;artist:string;album:string;duration:number;
+ primaryArtist?:string;featuredArtist?:string;
  provider:keyof typeof MUSIC_SOURCES;sourceUrl:string;artwork?:string;
  directStreamUrl?:string;audioSource?:string;
  youtubeVideoId?:string;videoTitle?:string;
@@ -58,6 +59,7 @@ export function parseSongs(value:unknown,provider:SongResult['provider'],keepInc
   const ytId=string(item.youtubeVideoId)||extractYouTubeVideoId({id,provider:resolvedProv,sourceUrl})||undefined;
   const artworkUrl=string(art['480x480'])||string(art['150x150'])||string(item.artwork)||(ytId?`https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`:undefined);
   return [{id,title:string(item.title),artist:string(item.artist)||string(user.name),album:string(item.album),duration,provider:resolvedProv,
+   primaryArtist:string(item.primaryArtist)||undefined,featuredArtist:string(item.featuredArtist)||undefined,
    sourceUrl,artwork:artworkUrl,
    directStreamUrl:string(item.directStreamUrl)||undefined,
    audioSource:string(item.audioSource)||undefined,
@@ -102,6 +104,8 @@ export async function resolveSong(song:SongResult,base:string,signal?:AbortSigna
   ...song,
   ...meta,
   artist:meta?.artist||song.artist,
+  primaryArtist:meta?.primaryArtist||song.primaryArtist,
+  featuredArtist:meta?.featuredArtist||song.featuredArtist,
   title:meta?.title||song.title,
   videoTitle:meta?.videoTitle||song.videoTitle||(resolvedYtId?song.title:undefined),
   youtubeVideoId:resolvedYtId,
@@ -123,7 +127,7 @@ export async function searchStashCatalog(
  provider:SongResult['provider'],
  base:string,
  signal?:AbortSignal,
- {refresh=false,background}: {refresh?:boolean;background?:{title:string;artist:string}}={}
+ {refresh=false,background}: {refresh?:boolean;background?:{title:string;artist:string;featuredArtist?:string}}={}
 ):Promise<SongResult[]>{
  const refreshYouTubeSearch=provider==='resolver'&&refresh;
  if(query.trim().length<(refreshYouTubeSearch?1:2))return [];
@@ -136,6 +140,7 @@ export async function searchStashCatalog(
    if(background){
     params.set('backgroundTitle',background.title);
     params.set('backgroundArtist',background.artist);
+    if(background.featuredArtist)params.set('backgroundFeaturedArtist',background.featuredArtist);
    }
    const res=await providerRequest(
     `${effectiveBase.replace(/\/$/,'')}/search?`+params,

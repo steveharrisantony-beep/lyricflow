@@ -2,9 +2,7 @@ import type {SongResult} from './providers';
 import {extractYouTubeVideoId} from '../metadata/trackInfo';
 import {identityWords} from './recordingIdentity';
 
-export type VideoTarget={title:string;artist:string};
 export const AUTO_VIDEO_ATTEMPT_LIMIT=20;
-export const primaryVideoArtist=(artist:string)=>artist.split(/[,;]|\s+(?:feat\.?|featuring|ft\.?)\s+/i)[0].trim();
 export const isLyricalVideo=(song:SongResult)=>/\b(?:lyrics?|lyrical)\b/i.test(song.videoTitle||song.title);
 export const isYouTubeTopicChannel=(name:string)=>/\s*[-–—]\s*Topic\s*$/i.test(name);
 

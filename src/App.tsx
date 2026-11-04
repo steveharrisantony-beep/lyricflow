@@ -1239,6 +1239,8 @@ export default function App({ user = null }: { user?: User | null }) {
     ? [
         localTrack.title,
         localTrack.artist,
+        localTrack.primaryArtist || "",
+        localTrack.featuredArtist || "",
         localTrack.album || "",
         Math.round(localTrack.duration),
         localTrack.provider,
@@ -1306,6 +1308,8 @@ export default function App({ user = null }: { user?: User | null }) {
   }, [
     localTrack?.title,
     localTrack?.artist,
+    localTrack?.primaryArtist,
+    localTrack?.featuredArtist,
     localTrack?.album,
     localTrack?.duration,
     localTrack?.provider,

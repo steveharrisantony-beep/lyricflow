@@ -8,7 +8,8 @@ let captionRequests=0;
 let youtubeSearchRequests=0;
 const backgroundTitle='Apna Bana Le - Bhediya';
 const backgroundArtist='Sachin-Jigar';
-const backgroundQuery=`${backgroundTitle} ${backgroundArtist} video`;
+const backgroundFeaturedArtist='Guest One';
+const backgroundQuery=`${backgroundTitle} ${backgroundArtist} ${backgroundFeaturedArtist} video`;
 const backgroundIds=['ElZfdU54Cp8',...Array.from({length:21},(_,i)=>`bg${String(i).padStart(9,'0')}`)];
 const lookedUpBackgroundIds=[];
 let wordLyricsAvailable=false,wordLookupCount=0;
@@ -31,7 +32,10 @@ globalThis.fetch = async (input, options) => {
   if (url.hostname === 'www.jiosaavn.com' && url.searchParams.get('__call') === 'search.getResults') {
     return Response.json({results: [{id: 'fixture', title: 'Example Song', more_info: {
       encrypted_media_url: 'fixture-token', duration: 180, album: 'Example Album',
-      artistMap: {primary_artists: [{name: 'Example Artist'}]},
+      artistMap: {
+        primary_artists: [{name: 'Example Artist'},{name: 'Second Artist'}],
+        featured_artists: [{name: 'Guest One'},{name: 'Guest Two'}],
+      },
     }}]});
   }
   if (url.hostname === 'www.jiosaavn.com' && url.searchParams.get('__call') === 'song.generateAuthToken') {
@@ -165,6 +169,8 @@ try {
   assert.equal((await (await request('/music/yt-auth')).json()).authenticated,false);
   const search = await (await request('/music/search?q=example&provider=jiosaavn')).json();
   assert.equal(search.data[0].id, 'saavn_fixture');
+  assert.equal(search.data[0].primaryArtist,'Example Artist');
+  assert.equal(search.data[0].featuredArtist,'Guest One');
   const ytSearch = await (await request('/music/search?q=Run+It+Up+Hanumankind+Official+Video&provider=youtube')).json();
   const topicItem = ytSearch.data.find(d => d.youtubeVideoId === 'topicVid123');
   const omvItem = ytSearch.data.find(d => d.youtubeVideoId === 'realOmv1234');
@@ -185,10 +191,10 @@ try {
   }
   const beforeBackgroundSearch = youtubeSearchRequests;
   const backgroundParams = new URLSearchParams({
-    q:backgroundQuery,provider:'youtube',backgroundTitle,backgroundArtist,
+    q:backgroundQuery,provider:'youtube',backgroundTitle,backgroundArtist,backgroundFeaturedArtist,
   });
   const backgrounds = await (await request('/music/search?'+backgroundParams)).json();
-  assert.equal(youtubeSearchRequests,beforeBackgroundSearch+1,'Automatic matching uses one title/primary artist query');
+  assert.equal(youtubeSearchRequests,beforeBackgroundSearch+1,'Automatic matching uses one query with both artist credits');
   assert.deepEqual([...lookedUpBackgroundIds].sort(),backgroundIds.slice(0,19).sort(),'The first twenty ranks include malformed rows and later rows are not probed');
   assert.equal(backgrounds.data[0].title,'Apna malformed result');
   assert.equal(backgrounds.data[0].youtubeVideoId,undefined);
@@ -198,6 +204,8 @@ try {
   assert.equal(backgrounds.data.at(-1).videoType,'UGC','Title words must not invent an audio-only classification');
   const resolved = await (await request('/music/resolve/saavn_fixture')).json();
   assert.equal(resolved.format, 'audio');
+  assert.equal(resolved.track.primaryArtist,'Example Artist');
+  assert.equal(resolved.track.featuredArtist,'Guest One');
   const audio = await request('/music' + resolved.streamPath, {Range: 'bytes=0-3'});
   assert.equal(audio.status, 206);
   assert.equal(audio.headers.get('content-range'), 'bytes 0-3/4');

@@ -1,5 +1,5 @@
 import {searchMusicVideos,mergeVideoMetadata,hydrateVideoMetadata,VideoSearchCache,youtubeViews} from './server/youtubeSearch';
-import {AUTO_VIDEO_ATTEMPT_LIMIT,primaryVideoArtist} from './src/music/videoMatching';
+import {AUTO_VIDEO_ATTEMPT_LIMIT} from './src/music/videoMatching';
 import {fetchYouTubeCaptions,CaptionFetchError} from './server/youtubeCaptions';
 import {buildYouTubeAuthHeaders,verifyYouTubeAccount,type YouTubeAuthContext} from './server/youtubeAuth';
 import express, { type Request, type Response } from 'express';
@@ -26,6 +26,8 @@ interface TrackMetadata {
   title: string;
   videoTitle?: string;
   artist: string;
+  primaryArtist?: string;
+  featuredArtist?: string;
   album: string;
   duration: number;
   sourceUrl: string;
@@ -158,6 +160,22 @@ const SAAVN_HEADERS: Record<string, string> = {
 // ============================================================================
 // 1. JIOSAAVN FULL-TRACK SEARCH & 320KBPS STREAM RESOLVER
 // ============================================================================
+function jioSaavnArtistCredits(info: Record<string, unknown>) {
+  const map = info.artistMap && typeof info.artistMap === 'object'
+    ? info.artistMap as Record<string, unknown>
+    : {};
+  const names = (key: 'primary_artists' | 'featured_artists') => {
+    const entries = map[key] ?? info[key];
+    const list = Array.isArray(entries) ? entries : typeof entries === 'string' ? entries.split(/[,;]/) : [];
+    return list.map(entry => {
+      const name = entry && typeof entry === 'object' ? (entry as Record<string, unknown>).name : entry;
+      return typeof name === 'string' ? decodeHtmlEntities(name).trim() : '';
+    }).filter(Boolean);
+  };
+  const primary = names('primary_artists');
+  return { artistNames: primary.join(', '), primaryArtist: primary[0], featuredArtist: names('featured_artists')[0] };
+}
+
 async function searchJioSaavn(query: string, limit = 12): Promise<TrackMetadata[]> {
   const url =
     'https://www.jiosaavn.com/api.php?' +
@@ -198,20 +216,8 @@ async function searchJioSaavn(query: string, limit = 12): Promise<TrackMetadata[
     // Exclude 30-second ringtones or preview clips
     if (duration > 0 && duration < 45) continue;
 
-    const artistMap =
-      moreInfo.artistMap && typeof moreInfo.artistMap === 'object'
-        ? (moreInfo.artistMap as Record<string, unknown>)
-        : {};
-    const primaryArtists = Array.isArray(artistMap.primary_artists)
-      ? artistMap.primary_artists
-      : [];
-    const artistNames = primaryArtists
-      .map(a => (a && typeof a === 'object' ? String((a as Record<string, unknown>).name || '') : ''))
-      .filter(Boolean)
-      .join(', ');
-    const artist = decodeHtmlEntities(
-      artistNames || String(moreInfo.music || item.subtitle || 'Unknown artist')
-    );
+    const {artistNames,primaryArtist,featuredArtist} = jioSaavnArtistCredits(moreInfo);
+    const artist = artistNames || decodeHtmlEntities(String(moreInfo.music || item.subtitle || 'Unknown artist'));
     const album = decodeHtmlEntities(String(moreInfo.album || item.album || ''));
     const artwork = String(item.image || '')
       .replace('150x150', '500x500')
@@ -225,6 +231,8 @@ async function searchJioSaavn(query: string, limit = 12): Promise<TrackMetadata[
       provider: 'jiosaavn',
       title: rawTitle,
       artist,
+      primaryArtist,
+      featuredArtist,
       album,
       duration: Number.isFinite(duration) ? duration : 0,
       sourceUrl,
@@ -329,17 +337,7 @@ async function fetchJioSaavnTrackById(rawId: string): Promise<TrackMetadata | nu
   const encryptedMediaUrl = String(moreInfo.encrypted_media_url || item.encrypted_media_url || '').trim();
   if (!encryptedMediaUrl) return null;
 
-  const artistMap =
-    moreInfo.artistMap && typeof moreInfo.artistMap === 'object'
-      ? (moreInfo.artistMap as Record<string, unknown>)
-      : {};
-  const primaryArtists = Array.isArray(artistMap.primary_artists)
-    ? artistMap.primary_artists
-    : [];
-  const artistNames = primaryArtists
-    .map(a => (a && typeof a === 'object' ? String((a as Record<string, unknown>).name || '') : ''))
-    .filter(Boolean)
-    .join(', ');
+  const {artistNames,primaryArtist,featuredArtist} = jioSaavnArtistCredits(moreInfo);
 
   const trackId = `saavn_${rawId.replace(/[^\w-]/g, '')}`;
   const meta: TrackMetadata = {
@@ -347,9 +345,9 @@ async function fetchJioSaavnTrackById(rawId: string): Promise<TrackMetadata | nu
     rawId,
     provider: 'jiosaavn',
     title: decodeHtmlEntities(String(item.title || item.song || 'Unknown title')),
-    artist: decodeHtmlEntities(
-      artistNames || String(moreInfo.primary_artists || item.primary_artists || item.subtitle || 'Unknown artist')
-    ),
+    artist: artistNames || decodeHtmlEntities(String(moreInfo.primary_artists || item.primary_artists || item.subtitle || 'Unknown artist')),
+    primaryArtist,
+    featuredArtist,
     album: decodeHtmlEntities(String(moreInfo.album || item.album || '')),
     duration: Number(moreInfo.duration || item.duration || 0),
     sourceUrl: String(item.perma_url || 'https://www.jiosaavn.com'),
@@ -970,11 +968,11 @@ async function runYouTubeWebSearch(
 }
 
 const videoSearchCache = new VideoSearchCache<TrackMetadata[]>();
-async function searchBackgroundVideos(title:string,artist:string,ytAuth?:YouTubeAuthContext){
-  const query = [title,artist,"video"].filter(Boolean).join(" ");
+async function searchBackgroundVideos(title:string,artist:string,featuredArtist:string,ytAuth?:YouTubeAuthContext){
+  const query = [title,artist,featuredArtist,"video"].filter(Boolean).join(" ");
   const scope = createHash('sha256').update(JSON.stringify(ytAuth||{})).digest('hex');
   const region = process.env.YOUTUBE_REGION||'IN';
-  return videoSearchCache.get(JSON.stringify(['background',scope,region,title,artist]),async()=>{
+  return videoSearchCache.get(JSON.stringify(['background',scope,region,query]),async()=>{
     const pool = await runYouTubeWebSearch(query,Infinity,ytAuth,true);
     const firstCandidates = pool.slice(0,AUTO_VIDEO_ATTEMPT_LIMIT).filter(video=>/^[\w-]{11}$/.test(video.rawId));
     const hydrated = await hydrateVideoMetadata(firstCandidates,buildYouTubeAuthHeaders(ytAuth),scope,true);
@@ -2867,7 +2865,8 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
               : 'jiosaavn';
     const refresh = provider === 'youtube' && req.query.refresh === '1';
     const backgroundTitle = provider === 'youtube' ? String(req.query.backgroundTitle || '').trim() : '';
-    const backgroundArtist = primaryVideoArtist(String(req.query.backgroundArtist || ''));
+    const backgroundArtist = String(req.query.backgroundArtist || '').trim();
+    const backgroundFeaturedArtist = String(req.query.backgroundFeaturedArtist || '').trim();
     if (q.length < (refresh ? 1 : 2)) {
       res.status(400).json({ detail: refresh ? 'Enter a YouTube search query.' : 'Enter at least 2 characters.' });
       return;
@@ -2884,7 +2883,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       } else if (provider === 'ytmusic' || provider === 'youtube') {
         if (refresh) res.setHeader('Cache-Control', 'no-store');
         results = backgroundTitle
-          ? await searchBackgroundVideos(backgroundTitle,backgroundArtist,ytAuth)
+          ? await searchBackgroundVideos(backgroundTitle,backgroundArtist,backgroundFeaturedArtist,ytAuth)
           : await searchYouTubeMusic(q, provider, provider === 'youtube' ? 28 : 20, ytAuth, refresh);
       } else if (provider === 'audius') {
         results = await searchAudius(q, 12);
@@ -2897,6 +2896,8 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
           title: t.title,
           videoTitle: t.videoTitle || t.title,
           artist: t.artist,
+          primaryArtist: t.primaryArtist,
+          featuredArtist: t.featuredArtist,
           album: t.album,
           duration: t.duration,
           viewCount: t.viewCount,
@@ -3087,6 +3088,8 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
           title: meta.title,
           videoTitle: meta.videoTitle || meta.title,
           artist: meta.artist,
+          primaryArtist: meta.primaryArtist,
+          featuredArtist: meta.featuredArtist,
           album: meta.album,
           duration: meta.duration,
           sourceUrl: meta.sourceUrl,
