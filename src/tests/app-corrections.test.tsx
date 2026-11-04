@@ -385,6 +385,39 @@ it('switches external advertisements to themes, aborts video search and unmounts
   }finally{external.setAndroidAppOverrideForTest(null);subscribe.mockRestore();capture.mockRestore();stop.mockRestore();find.mockRestore();draw.mockRestore();}
 });
 
+it('waits for the full search and plays the first video shown in preloaded choices', async () => {
+ const stage = await import('../visualization/cinematic/CinematicStage');
+ const draw = vi.spyOn(stage, 'default').mockImplementation(props =>
+  <span data-testid="preloaded-stage" data-video={props.youtubeVideoId || ''} data-searching={String(props.videoSearchPending)}/>);
+ const search = vi.mocked(searchStashCatalog), original = search.getMockImplementation()!;
+ const early = {
+  id: 'yt_aaaaaaaaaaa', youtubeVideoId: 'aaaaaaaaaaa', sourceUrl: 'https://www.youtube.com/watch?v=aaaaaaaaaaa',
+  title: 'Original test song Official Music Video', artist: 'Test artist', album: 'Studio', duration: 200,
+  provider: 'resolver' as const, viewCount: 100, channelVerified: true, channelId: 'UCfixture',
+ };
+ const late = {...early, id: 'yt_bbbbbbbbbbb', youtubeVideoId: 'bbbbbbbbbbb', sourceUrl: 'https://www.youtube.com/watch?v=bbbbbbbbbbb',
+  title: 'Original test song Test artist Lyrics Video', artist: 'Other uploader', viewCount: 1000000, channelVerified: false};
+ const unrelated = {...early, id: 'yt_ccccccccccc', youtubeVideoId: 'ccccccccccc', title: 'Original test song Official Music Video', artist: 'Other Test Musician', album: 'Different Album', viewCount: 10000000};
+ let finish!: (songs: Awaited<ReturnType<typeof searchStashCatalog>>) => void;
+ search.mockImplementation(async query => query === 'Original test song official music video'
+  ? new Promise(resolve => {finish = resolve;}) : [early, unrelated]);
+ try {
+  await act(async () => click('Load JioSaavn fixture'));
+  await act(async () => click('Show preloaded videos'));
+  const current = () => host.querySelector('[data-testid="preloaded-stage"]');
+  expect(current()?.getAttribute('data-searching')).toBe('true');
+  expect(current()?.getAttribute('data-video')).toBe('');
+  await act(async () => finish([late]));
+  expect(current()?.getAttribute('data-searching')).toBe('false');
+  expect(current()?.getAttribute('data-video')).toBe(late.youtubeVideoId);
+  expect(host.querySelector('.video-candidate strong')?.textContent).toBe(late.title);
+  expect(host.querySelectorAll('.video-candidate')).toHaveLength(2);
+ } finally {
+  draw.mockRestore();
+  search.mockImplementation(original);
+ }
+});
+
 it('clears the previous background while the next recording search is pending',async()=>{
  const stage=await import('../visualization/cinematic/CinematicStage');
  const draw=vi.spyOn(stage,'default').mockImplementation(props=><span data-testid="video-recording" data-video={props.youtubeVideoId||''} data-searching={String(props.videoSearchPending)}/>);

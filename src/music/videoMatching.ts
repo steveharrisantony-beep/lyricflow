@@ -1,11 +1,8 @@
 import type {SongResult} from './providers';
 import {extractYouTubeVideoId} from '../metadata/trackInfo';
-import {assessRecordingIdentity,artistIdentity,matchesArtistName,isPublisherName,isUnwantedVideoVariant,type RecordingTarget} from './recordingIdentity';
-import {confirmedMusicPublisherIds} from './youtubeChannels';
+import {assessRecordingIdentity,artistIdentity,isUnwantedVideoVariant,type RecordingTarget} from './recordingIdentity';
 export {isUnwantedVideoVariant};
 export type VideoTarget=RecordingTarget;
-export type VideoPreference='music'|'lyrics';
-export interface VideoMatch {song:SongResult;confidence:number;identityScore:number;score:number;lyric:boolean;releaseEvidence:number}
 
 export const isLyricalVideo=(song:SongResult)=>/\b(?:lyric(?:s|al)?|lirics?)\b/i.test(`${song.title} ${song.videoTitle||''}`);
 export function isYouTubeVideoCandidate(song:SongResult){
@@ -39,54 +36,4 @@ function plausibleVideoLength(song:SongResult,track:VideoTarget){
  if(!(track.duration>0&&song.duration>0))return true;
  // Gross clip/compilation checks only. Added intros/outros receive no ranking penalty or reward.
  return song.duration>=Math.min(90,track.duration*.45)&&song.duration<=Math.max(track.duration*3,track.duration+600);
-}
-function releaseTier(song: SongResult, track: VideoTarget, creditedMatch: boolean) {
- if (song.counterpartOf && song.catalogueTitle) {
-  const catalogue = assessRecordingIdentity({
-   title: song.catalogueTitle,
-   artist: (song.catalogueArtists || []).join(', '),
-   album: song.catalogueAlbum || '',
-   duration: 0,
-   artistCredits: song.catalogueArtists,
-   metadataSource: 'ytmusic',
-  }, track);
-  if (catalogue.relevant) return 4;
- }
- const uploader = song.uploaderName || song.artist;
- const channelId = song.channelId;
- if (channelId && (confirmedMusicPublisherIds.has(channelId) || song.artistChannelIds?.includes(channelId))) return 3;
- // A badge with matching release context can corroborate a publisher or artist.
- if (channelId && song.channelVerified) {
-  const matchesCredits = song.artistCredits?.some(credit => matchesArtistName(uploader, credit));
-  if (isPublisherName(uploader) || matchesCredits || matchesArtistName(uploader, track.artist)) return 2;
- }
- if (song.metadataSource === 'ytmusic' && song.videoType === 'OMV' && creditedMatch) return 1;
- return 0;
-}
-export function assessYouTubeBackgroundCandidates(songs:SongResult[],track:VideoTarget,preference:VideoPreference='music'):VideoMatch[]{
- const matches:VideoMatch[]=[];
- for(const song of relevantYouTubeVideoChoices(songs,track)){
-  const lyric=isLyricalVideo(song);
-  if(preference==='lyrics'&&!lyric)continue;
-  const match=assessRecordingIdentity(song,track);
-  const releaseEvidence=releaseTier(song,track,match.creditedMatch);
-  const popularity=song.viewCount&&song.viewCount>0?Math.min(8,Math.max(0,Math.log10(song.viewCount)-3)*1.5):0;
-  matches.push({song,confidence:match.confidence,identityScore:match.identityScore,score:match.identityScore+popularity,lyric,releaseEvidence});
- }
- const bestIdentity=new Map<number,number>();
- for(const match of matches)bestIdentity.set(match.releaseEvidence,Math.max(bestIdentity.get(match.releaseEvidence)||0,match.identityScore));
- const credibleMusic = (match: VideoMatch) => preference === 'music' && !match.lyric && match.releaseEvidence > 0 && match.confidence >= .75;
- return matches.sort((a,b)=>{
-  const aClose=a.identityScore>=(bestIdentity.get(a.releaseEvidence)||0)-20,bClose=b.identityScore>=(bestIdentity.get(b.releaseEvidence)||0)-20;
-  return Number(credibleMusic(b))-Number(credibleMusic(a))||b.releaseEvidence-a.releaseEvidence||Number(bClose)-Number(aClose)||(preference==='music'?Number(a.lyric)-Number(b.lyric):0)||b.score-a.score||(b.song.viewCount||0)-(a.song.viewCount||0)||
-   (extractYouTubeVideoId(a.song)||'').localeCompare(extractYouTubeVideoId(b.song)||'');
- });
-}
-export function rankYouTubeBackgroundCandidates(songs:SongResult[],track:VideoTarget,preference:VideoPreference='music'){
- return assessYouTubeBackgroundCandidates(songs,track,preference).map(m=>m.song);
-}
-export function selectYouTubeBackgroundCandidate(songs:SongResult[],track:VideoTarget,preference:VideoPreference='music'){
- const best=assessYouTubeBackgroundCandidates(songs,track,preference).find(match=>match.confidence>=.75&&match.releaseEvidence>0);
- // User preference: if no credible release is available, use the first relevant preloaded choice (views descending).
- return best?extractYouTubeVideoId(best.song):extractYouTubeVideoId(relevantYouTubeVideoChoices(songs,track)[0]);
 }

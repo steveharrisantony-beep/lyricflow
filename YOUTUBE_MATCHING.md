@@ -14,13 +14,13 @@ with `YOUTUBE_REGION` in the embedded/backend environment.
 - Pool and deduplicate artist, short-title and album/movie video searches.
   Preserve credited artists, uploader channel IDs, badges, video type, views
   and known embedding restrictions. Keep account-specific lookups separate.
-- Check song identity and version before ranking. Rank corroborated releases
-  ahead of unconfirmed uploads using linked videos, known uploader IDs and
-  platform metadata. Use popularity among comparable matches. Duration filters
-  obvious clips and compilations, without rewarding an exact album runtime.
-- If no credible release is available for the selection, play the top relevant
-  preloaded choice by views. Personal mappings take precedence. Recovery uses
-  the same ranking and skips candidates that have failed playback.
+- Match the title and version. When the artist is known, require a full artist
+  match or a distinct album/movie match, and reject conflicting recording credits.
+  Sort only the remaining videos by views. Duration filters obvious clips and
+  compilations.
+- Wait for the search pool to finish and play the first preloaded choice.
+  Personal mappings take precedence. Recovery uses the same order and skips
+  candidates that have failed playback.
 
 ## Mapping picker
 
@@ -52,7 +52,7 @@ runtime, using these approaches without embedding their Python apps or downloade
 - [Tyrrrz/YoutubeExplode](https://github.com/Tyrrrz/YoutubeExplode): video-only web
   search, video ID deduplication and alternative uploader channel fields.
 - [spotDL/spotify-downloader](https://github.com/spotDL/spotify-downloader): match
-  recording identity first, shortlist close matches, then consider popularity.
+  check recording identity before considering popularity.
 - [music-assistant/server](https://github.com/music-assistant/server): recording
   identity/version checks and explicit match-confidence levels.
 
@@ -66,6 +66,6 @@ sort cycle, the 79.7K/18M case, misleading publisher names, intro tolerance,
 recording versions, static rejection and late candidates. `server/youtubeSearch.test.ts`
 covers catalogue counterpart discovery, uploader metadata, complete-pool
 merging, account isolation and retries. `src/tests/video-relevance.test.ts`
-checks relevance and the highest-view fallback. The normal app and embedded-backend
+checks relevance and view order. The normal app and embedded-backend
 checks also apply. Live service availability and Xiaomi playback require device testing.
 

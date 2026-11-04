@@ -1,5 +1,5 @@
-import {selectYouTubeBackgroundCandidate,relevantYouTubeVideoChoices} from './videoMatching';
-import {isLyricalVideo,rankYouTubeBackgroundCandidates,searchStashCatalog,searchVideoCounterparts,type SongResult} from './providers';
+import {relevantYouTubeVideoChoices} from './videoMatching';
+import {searchStashCatalog,searchVideoCounterparts,type SongResult} from './providers';
 import {extractYouTubeVideoId} from '../metadata/trackInfo';
 
 /** Pool artist-qualified and title-only searches before choosing the best recording. */
@@ -51,10 +51,6 @@ export async function findYouTubeBackgrounds(track:{title:string;artist:string;a
    artistCredits:[...new Set([...(previous.artistCredits||[]),...(song.artistCredits||[])])],
    visualContent:previous.visualContent==='static'||song.visualContent==='static'?'static':primary.visualContent||fallback.visualContent});
  }
- const candidates=[...byId.values()];
- const videos=rankYouTubeBackgroundCandidates(candidates,track,preference);
- const automaticVideoId=selectYouTubeBackgroundCandidate(candidates,track,preference);
- const selected=candidates.find(song=>extractYouTubeVideoId(song)===automaticVideoId);
- return {videos,candidates:relevantYouTubeVideoChoices(candidates,track),automaticVideoId,candidateCount:candidates.length,usedLyricalFallback:preference==='music'&&Boolean(selected&&isLyricalVideo(selected))};
+ const candidates = relevantYouTubeVideoChoices([...byId.values()], track);
+ return { candidates, automaticVideoId: extractYouTubeVideoId(candidates[0]), candidateCount: byId.size };
 }
-

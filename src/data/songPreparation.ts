@@ -139,9 +139,10 @@ export function prepareSongVideo(track:TrackInfo,uid:string|null,preference:'mus
  if(entry.videos?.key===key)return Promise.resolve(entry.videos.value);
  return shared(`${uid}:${entry.id}:video:${entry.generation}:${key}`,entry,signal,async(request)=>{
   const video=local.mapping?.video;
-  const result=video?{videos:[],candidates:[],automaticVideoId:video.youtubeVideoId,candidateCount:0,usedLyricalFallback:false}:
+  const result=video?{candidates:[],automaticVideoId:video.youtubeVideoId,candidateCount:0}:
    await findYouTubeBackgrounds(track,preference,base,request);
   request.throwIfAborted();entry.videos={key,value:result};return result;
  });
 }
+
 

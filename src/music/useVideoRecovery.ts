@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {extractYouTubeVideoId,type TrackInfo} from '../metadata/trackInfo';
 import {findYouTubeBackgrounds} from './backgroundVideos';
 import type {SongResult} from './providers';
-import {selectYouTubeBackgroundCandidate} from './videoMatching';
+import {relevantYouTubeVideoChoices} from './videoMatching';
 
 type Options={
  selectionKey:string;
@@ -41,8 +41,7 @@ export function useVideoRecovery({selectionKey,track,candidates,preference}:Opti
   setState(previous=>({... (previous.key===selectionKey?previous:empty),key:selectionKey,pending:true,message:''}));
   const choose=(pool:SongResult[])=>{
    const eligible=pool.filter(candidate=>!current.excluded.has(extractYouTubeVideoId(candidate)||''));
-   const id=selectYouTubeBackgroundCandidate(eligible,track,preference);
-   return id?eligible.find(candidate=>extractYouTubeVideoId(candidate)===id)||null:null;
+   return relevantYouTubeVideoChoices(eligible, track)[0] ?? null;
   };
   try{
    let candidate=choose([...candidates,...current.candidates]);

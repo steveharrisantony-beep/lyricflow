@@ -26,7 +26,7 @@ export interface PlayableSong extends SongResult {streamUrl:string;format?:'hls'
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object';
 const string=(v:unknown)=>typeof v==='string'?v:'';
 
-export {isLyricalVideo,isUnwantedVideoVariant,isYouTubeBackgroundVideo,rankYouTubeBackgroundCandidates} from './videoMatching';
+export {isLyricalVideo,isUnwantedVideoVariant,isYouTubeBackgroundVideo} from './videoMatching';
 
 export function formatViewCount(views?:number):string{
  if(typeof views!=='number'||!Number.isFinite(views)||views<=0)return '';

@@ -23,7 +23,7 @@ it('loads a different cached match, then excludes every failed ID from fresh res
  await act(async()=>root.render(<Fixture/>));
  await act(async()=>result.loadAnotherVideo('aaaaaaaaaaa'));
  expect(result.videoId).toBe('bbbbbbbbbbb');expect(findYouTubeBackgrounds).not.toHaveBeenCalled();
- vi.mocked(findYouTubeBackgrounds).mockResolvedValue({videos:[a,b,c],candidates:[a,b,c],automaticVideoId:'aaaaaaaaaaa',candidateCount:3,usedLyricalFallback:false});
+ vi.mocked(findYouTubeBackgrounds).mockResolvedValue({candidates:[a,b,c],automaticVideoId:'aaaaaaaaaaa',candidateCount:3});
  await act(async()=>result.loadAnotherVideo('bbbbbbbbbbb'));
  expect(result.videoId).toBe('ccccccccccc');
  await act(async()=>result.loadAnotherVideo('ccccccccccc'));
@@ -43,7 +43,7 @@ it('deduplicates clicks and aborts a pending replacement when the song changes',
  const signal=vi.mocked(findYouTubeBackgrounds).mock.calls[0][3]!;
  await act(async()=>root.render(<Fixture selectionKey="song-b"/>));
  expect(signal.aborted).toBe(true);expect(result.pending).toBe(false);
- await act(async()=>{finish({videos:[c],candidates:[c],automaticVideoId:'ccccccccccc',candidateCount:1,usedLyricalFallback:false});await request;});
+ await act(async()=>{finish({candidates:[c],automaticVideoId:'ccccccccccc',candidateCount:1});await request;});
  expect(result.videoId).toBeNull();
 });
 it('allows retry after search failure and resets a temporary choice for manual selection',async()=>{
@@ -51,8 +51,9 @@ it('allows retry after search failure and resets a temporary choice for manual s
  await act(async()=>root.render(<Fixture candidates={[a]}/>));
  await act(async()=>result.loadAnotherVideo('aaaaaaaaaaa'));
  expect(result.pending).toBe(false);expect(result.message).toContain('Could not find another video');
- vi.mocked(findYouTubeBackgrounds).mockResolvedValue({videos:[b],candidates:[b],automaticVideoId:'bbbbbbbbbbb',candidateCount:1,usedLyricalFallback:false});
+ vi.mocked(findYouTubeBackgrounds).mockResolvedValue({candidates:[b],automaticVideoId:'bbbbbbbbbbb',candidateCount:1});
  await act(async()=>result.loadAnotherVideo('aaaaaaaaaaa'));
  expect(result.videoId).toBe('bbbbbbbbbbb');expect(result.message).toBe('');
  await act(async()=>result.reset());expect(result.videoId).toBeNull();
 });
+

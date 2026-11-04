@@ -1,5 +1,5 @@
+import {relevantYouTubeVideoChoices} from './music/videoMatching';
 import {isSyncedLyricsSource,lyricProviderName,normalizeLyricSource} from './lyrics/sourceLabels';
-import {selectYouTubeBackgroundCandidate} from './music/videoMatching';
 import {selectedPaletteIds,togglePaletteSelection,enableAllPaletteSelections,enableAllPalettesForTheme,type ThemePaletteSelections} from './visualization/cinematic/themeSelection';
 import {normalizeLyricLayout,type LyricLayoutSettings} from './lyrics/lyricLayout';
 import {
@@ -261,12 +261,10 @@ export default function App({ user = null }: { user?: User | null }) {
   // Android External Player & Auto-matched YouTube Video state
   const [autoVideoMatch, setAutoVideoMatch] = useState<{
     key: string;
-    id: string | null;
     pending: boolean;
-    videos: SongResult[];
-    candidates?: SongResult[];
+    candidates: SongResult[];
     candidateCount: number;
-  }>({ key: "", id: null, pending: false, videos: [], candidateCount: 0 });
+  }>({ key: "", pending: false, candidates: [], candidateCount: 0 });
   const [manualVideoSearchKey, setManualVideoSearchKey] = useState("");
   const [selectedVideoMetadata,setSelectedVideoMetadata]=useState<SongResult|null>(null);
   const [externalAudioMode, setExternalAudioMode] =
@@ -1244,19 +1242,14 @@ export default function App({ user = null }: { user?: User | null }) {
         preferredVideoType,
       ].join("|")
     : "";
-  const filteredAutoVideos =
-    autoVideoMatch.key === videoSearchKey
-      ? autoVideoMatch.videos.filter((v) => {
-          const id = extractYouTubeVideoId(v);
-          return Boolean(id && !rejectedBgVideoIds.includes(id));
-        })
-      : [];
-  const preloadedVideoChoices=useMemo(()=>autoVideoMatch.key===videoSearchKey
-    ?(autoVideoMatch.candidates||autoVideoMatch.videos).filter(v=>{const id=extractYouTubeVideoId(v);return id&&!rejectedBgVideoIds.includes(id);})
-    :[],[autoVideoMatch,videoSearchKey,rejectedBgVideoIds]);
-  const autoYoutubeVideoId = autoVideoMatch.key===videoSearchKey&&localTrack
-    ? selectYouTubeBackgroundCandidate(filteredAutoVideos,localTrack,preferredVideoType)
-    : null;
+  const preloadedVideoChoices = useMemo(() => {
+    if (!localTrack || autoVideoMatch.key !== videoSearchKey || autoVideoMatch.pending) return [];
+    return relevantYouTubeVideoChoices(autoVideoMatch.candidates, localTrack).filter(candidate => {
+      const id = extractYouTubeVideoId(candidate);
+      return id && !rejectedBgVideoIds.includes(id);
+    });
+  }, [autoVideoMatch, localTrack, videoSearchKey, rejectedBgVideoIds]);
+  const autoYoutubeVideoId = extractYouTubeVideoId(preloadedVideoChoices[0]);
   const videoSearchPending =
     Boolean(manualVideoSearchKey === recordingKey && manualVideoSearchKey) ||
     Boolean(
@@ -1271,7 +1264,7 @@ export default function App({ user = null }: { user?: User | null }) {
   useEffect(() => {
     if(songMapping.hideVideo||mappedYoutubeVideoId){
       setAutoVideoMatch(previous=>previous.key===videoSearchKey?{...previous,pending:false}:
-        {key:videoSearchKey,id:null,pending:false,videos:[],candidateCount:0});
+        {key:videoSearchKey,pending:false,candidates:[],candidateCount:0});
       return;
     }
     if (
@@ -1285,9 +1278,8 @@ export default function App({ user = null }: { user?: User | null }) {
     ) {
       setAutoVideoMatch({
         key: videoSearchKey,
-        id: null,
         pending: false,
-        videos: [],
+        candidates: [],
         candidateCount: 0,
       });
       return;
@@ -1295,9 +1287,8 @@ export default function App({ user = null }: { user?: User | null }) {
     const controller = new AbortController();
     setAutoVideoMatch({
       key: videoSearchKey,
-      id: null,
       pending: true,
-      videos: [],
+      candidates: [],
       candidateCount: 0,
     });
     const base =
@@ -1313,14 +1304,10 @@ export default function App({ user = null }: { user?: User | null }) {
     )
       .then((result) => {
         if (controller.signal.aborted) return;
-        if(!result)return;
-        const { videos, candidates, candidateCount, automaticVideoId }=result;
-        const bestId = automaticVideoId;
+        const { candidates, candidateCount } = result ?? { candidates: [], candidateCount: 0 };
         setAutoVideoMatch({
           key: videoSearchKey,
-          id: bestId || null,
           pending: false,
-          videos,
           candidates,
           candidateCount,
         });
@@ -1329,9 +1316,8 @@ export default function App({ user = null }: { user?: User | null }) {
         if (!controller.signal.aborted)
           setAutoVideoMatch({
             key: videoSearchKey,
-            id: null,
             pending: false,
-            videos: [],
+            candidates: [],
             candidateCount: 0,
           });
       });
@@ -1374,9 +1360,8 @@ export default function App({ user = null }: { user?: User | null }) {
         if (adDetected) {
           setAutoVideoMatch({
             key: "",
-            id: null,
             pending: false,
-            videos: [],
+            candidates: [],
             candidateCount: 0,
           });
           setIncoming(null);
@@ -1513,7 +1498,7 @@ export default function App({ user = null }: { user?: User | null }) {
   );
 
   const matchedVideoCandidate = videoRecovery.candidate ||
-    (autoVideoMatch.candidates||autoVideoMatch.videos).find(
+    preloadedVideoChoices.find(
       (v) => extractYouTubeVideoId(v) === stageYoutubeVideoId,
     ) || null;
   const isActiveVideoLyrical = Boolean(

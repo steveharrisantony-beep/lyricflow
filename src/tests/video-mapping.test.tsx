@@ -124,8 +124,8 @@ it('keeps an unsaved signed video delay while a background mapping catches up',a
   expect(choose).toHaveBeenCalledWith('abcdefghijk',-2);
 });
 
-it('ranks recording suitability before views, excludes static audio and requires lyrical title labels',async()=>{
-  const {rankYouTubeBackgroundCandidates}=await import('../music/providers');
+it('filters recording suitability before sorting music and lyric videos by views',async()=>{
+  const {relevantYouTubeVideoChoices}=await import('../music/videoMatching');
   const track={title:'Starboy',artist:'The Weeknd',album:'Starboy',duration:230,source:'provider' as const,confidence:1,provider:'jiosaavn' as const};
   const candidates=[
     {id:'vid_audio_topic',title:'Starboy (Official Audio)',artist:'The Weeknd - Topic',album:'Audio Track',duration:230,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v=audioTopic1',viewCount:3_000_000_000},
@@ -134,12 +134,8 @@ it('ranks recording suitability before views, excludes static audio and requires
     {id:'vid_lyric_most',title:'The Weeknd - Starboy (Official Lyric Video)',artist:'The Weeknd',album:'YouTube',duration:230,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v=lyricMost11',viewCount:85_000_000},
     {id:'vid_lyric_low',title:'The Weeknd - Starboy Lyrics',artist:'The Weeknd',album:'YouTube',duration:230,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v=lyricLow111',viewCount:120_000},
   ];
-  const musicRanked=rankYouTubeBackgroundCandidates(candidates,track,'music');
-  expect(musicRanked[0].id).toBe('vid_low_views');
-  expect(musicRanked.some(s=>s.id==='vid_audio_topic')).toBe(false);
-  const lyricRanked=rankYouTubeBackgroundCandidates(candidates,track,'lyrics');
-  expect(lyricRanked[0].id).toBe('vid_lyric_most');
-  expect(lyricRanked.every(s=>/\blyric(?:s|al)?\b/i.test(s.title))).toBe(true);
+  const choices = relevantYouTubeVideoChoices(candidates, track);
+  expect(choices.map(song=>song.id)).toEqual(['vid_lyric_most','vid_low_views','vid_lyric_low']);
 });
 
 it('renders video thumbnails in YouTubeBackgroundPicker custom video finding and supports Show preloaded videos & Search online',async()=>{

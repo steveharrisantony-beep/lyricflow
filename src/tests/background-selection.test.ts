@@ -1,6 +1,7 @@
 import {afterEach,expect,it,vi} from 'vitest';
 import {findYouTubeBackgrounds} from '../music/backgroundVideos';
-import {isYouTubeBackgroundVideo,rankYouTubeBackgroundCandidates,type SongResult} from '../music/providers';
+import {isYouTubeBackgroundVideo,type SongResult} from '../music/providers';
+import {relevantYouTubeVideoChoices} from '../music/videoMatching';
 const track={title:'Original rain',artist:'Test Artist',duration:200};
 function video(index:number,title='Original rain Official Music Video',extra:Partial<SongResult>={}):SongResult{
  const id=String(index).padStart(11,'0');
@@ -11,9 +12,9 @@ it('rejects Topic, ATV, static audio, visualizers and unlabelled uploads',()=>{
  for(const item of [video(1,'Original rain Official Audio'),video(2,'Original rain Official Music Video',{videoType:'ATV'}),video(3,undefined,{artist:'Test Artist - Topic'}),video(4,'Original rain Album Image'),video(5,'Original rain Visualizer'),video(6,'Original rain')])expect(isYouTubeBackgroundVideo(item)).toBe(false);
  expect(isYouTubeBackgroundVideo(video(7,'Original rain',{videoType:'OMV'}))).toBe(true);
 });
-it('requires lyric, lyrical or lyrics in the title for lyrical preference',()=>{
- const results=rankYouTubeBackgroundCandidates([video(1),video(2,'Original rain Lyric Video'),video(3,'Original rain Lyrical'),video(4,'Original rain Lyrics'),video(5,'Original rain Text Video')],track,'lyrics');
- expect(results.map(s=>s.id)).toEqual(['yt_00000000002','yt_00000000003','yt_00000000004']);
+it('keeps relevant music and lyric videos in the same preloaded list',()=>{
+ const results=relevantYouTubeVideoChoices([video(1),video(2,'Original rain Lyric Video'),video(3,'Original rain Lyrical'),video(4,'Original rain Lyrics'),video(5,'Original rain Text Video')],track);
+ expect(results.map(s=>s.id)).toEqual(['yt_00000000001','yt_00000000002','yt_00000000003','yt_00000000004']);
 });
 it('compares a broad candidate pool and falls back from missing music video to lyrical video',async()=>{
  const requests:string[]=[];
@@ -27,11 +28,11 @@ it('compares a broad candidate pool and falls back from missing music video to l
  const result=await findYouTubeBackgrounds(track,'music','https://resolver.example');
  expect(requests).toHaveLength(5);
  expect(result.candidateCount).toBe(16);
- expect(result.usedLyricalFallback).toBe(true);
- expect(result.videos.map(s=>s.id)).toEqual(['yt_00000000099']);
+ expect(result.automaticVideoId).toBe('00000000099');
+ expect(result.candidates.map(s=>s.id)).toEqual(['yt_00000000099']);
 });
 it('chooses the right recording over a popular wrong title, cover or distant duration',()=>{
- const results=rankYouTubeBackgroundCandidates([
+ const results=relevantYouTubeVideoChoices([
   video(1,'Wrong Song Official Music Video',{viewCount:1e9}),
   video(2,'Original rain Cover Official Video',{viewCount:1e9}),
   video(3,undefined,{duration:1500,viewCount:1e9}),
@@ -48,7 +49,7 @@ it('prefers the explicit Official Music Video over Topic or bare-titled tracks f
   video(11,'Run It Up',{artist:'Hanumankind',duration:174,videoType:'UGC',viewCount:15_000_000}),
   video(12,'Hanumankind - Run It Up ( Prod. By Kalmi ) | (Official Music Video)',{artist:'Hanumankind',duration:193,videoType:'OMV',viewCount:42_000_000}),
  ];
- const ranked=rankYouTubeBackgroundCandidates(candidates,saavnTrack,'music');
+ const ranked=relevantYouTubeVideoChoices(candidates,saavnTrack);
  expect(ranked.map(s=>s.id)).toEqual(['yt_00000000012']);
 });
 it('ranks official artist video (Maroon 5 - Maps) #1 and official lyric video #2 ahead of low-view third-party reuploads',()=>{
@@ -61,7 +62,7 @@ it('ranks official artist video (Maroon 5 - Maps) #1 and official lyric video #2
   video(24,'Maroon 5 - Maps (Audio)',{artist:'Maroon 5',duration:190,videoType:'ATV',viewCount:140_000_000}),
   video(25,'Maroon 5 - Maps',{artist:'Maroon 5',channelVerified:true,artistCredits:['Maroon 5'],duration:209,videoType:'OMV',metadataSource:'ytmusic',viewCount:540_000_000}),
  ];
- const ranked=rankYouTubeBackgroundCandidates(candidates,mapsTrack,'music');
+ const ranked=relevantYouTubeVideoChoices(candidates,mapsTrack);
  expect(ranked[0].id).toBe('yt_00000000025');
  expect(ranked[1].id).toBe('yt_00000000023');
  expect(ranked.some(s=>s.id==='yt_00000000024')).toBe(false);
@@ -77,7 +78,7 @@ it('ranks official movie song uploads (MC Music 12M & Muzik247 3M) #1 and #2 for
   video(35,'Thumbi Penne | Bangalore Days Songs | NivinPauly | DulquarSalman | Nazriya | Isha Talwar',{artist:'MC Music',channelVerified:true,duration:170,videoType:'UGC',viewCount:12_000_000}),
   video(36,'Thumbi Penne- Bangalore Days | Dulquer Salman| Nivin Pauly| Nazriya Nazim | Full song',{artist:'Muzik247',channelVerified:true,duration:299,videoType:'UGC',viewCount:3_000_000}),
  ];
- const ranked=rankYouTubeBackgroundCandidates(candidates,thumbiTrack,'music');
+ const ranked=relevantYouTubeVideoChoices(candidates,thumbiTrack);
  expect(ranked.map(s=>s.id)).toEqual(['yt_00000000035','yt_00000000036','yt_00000000031']);
 });
 it('ranks Think Music India 109.1M views official music video #1 for Radhimaa over 379.7K Echo Haven reupload despite @SaiAbhyankkar camelCase handle and longer video duration',()=>{
@@ -88,7 +89,7 @@ it('ranks Think Music India 109.1M views official music video #1 for Radhimaa ov
   video(42,'@SaiAbhyankkar Radhimaa Music Video Bhagyashri Borse Vivek Thejo Bharathwaj The G',{artist:'gamer kaka',duration:348,videoType:'UGC',viewCount:296_500}),
   video(43,'Radhimaa official (Music video) | Sai abhyankkar | Bhagyashri borse | Thejo bharathwaj | Think music',{artist:'CAC MELODY',duration:348,videoType:'UGC',viewCount:209}),
  ];
- const ranked=rankYouTubeBackgroundCandidates(candidates,radhimaaTrack,'music');
+ const ranked=relevantYouTubeVideoChoices(candidates,radhimaaTrack);
  expect(ranked[0].id).toBe('yt_00000000041');
 });
 
@@ -99,22 +100,20 @@ const boomTitle='Boom Shaka (Official Music Video) | KR$NA | Dhanda Nyoliwala';
 it('chooses the KRSNA upload in the Boom Shaka screenshot over the BeatVibe copy',()=>{
  const copy=video(50,boomTitle,{artist:'BeatVibe Studio',duration:219,viewCount:980_300,videoType:'OMV'});
  const official=video(51,boomTitle,{artist:'KRSNA',channelVerified:true,duration:219,viewCount:151_700_000});
- expect(rankYouTubeBackgroundCandidates([copy,official],boomShaka)[0].id).toBe(official.id);
- // Popularity and an inferred OMV flag cannot promote an unrelated publisher
- // above a matching artist, even when that artist's view count is unavailable.
- expect(rankYouTubeBackgroundCandidates([{...copy,viewCount:1e9},{...official,viewCount:undefined}],boomShaka)[0].id).toBe(official.id);
+ expect(relevantYouTubeVideoChoices([copy,official],boomShaka)[0].id).toBe(official.id);
+ expect(relevantYouTubeVideoChoices([{...copy,viewCount:1e9},{...official,viewCount:undefined}],boomShaka)[0].id).toBe(copy.id);
 });
-it('recognizes either credited artist and keeps fan channels separate from the uploader identity',()=>{
+it('retains both relevant uploads when either credited artist is the uploader',()=>{
  for(const uploader of ['KRSNA','KR$NA Official','Dhanda Nyoliwala','DhandaNyoliwalaVEVO']){
   const artistVideo=video(53,boomTitle,{artist:uploader,channelVerified:true,duration:219});
   const fanVideo=video(52,boomTitle,{artist:'KRSNA Fans',duration:219,viewCount:1e9,videoType:'OMV'});
-  expect(rankYouTubeBackgroundCandidates([fanVideo,artistVideo],boomShaka)[0].id,uploader).toBe(artistVideo.id);
+  expect(relevantYouTubeVideoChoices([fanVideo,artistVideo],boomShaka).map(song=>song.id),uploader).toEqual([fanVideo.id,artistVideo.id]);
  }
 });
-it('prefers an artist lyric upload to a popular unaffiliated music reupload',()=>{
+it('sorts relevant lyric and music uploads by views without changing the requested search queries',()=>{
  const copy=video(54,boomTitle,{artist:'BeatVibe Studio',duration:219,viewCount:10e6});
  const lyric=video(55,'Boom Shaka Official Lyrics | KR$NA | Dhanda Nyoliwala',{artist:'KRSNA',channelVerified:true,duration:219,viewCount:100});
- expect(rankYouTubeBackgroundCandidates([copy,lyric],boomShaka)[0].id).toBe(lyric.id);
+ expect(relevantYouTubeVideoChoices([copy,lyric],boomShaka).map(song=>song.id)).toEqual([copy.id,lyric.id]);
 });
 it('automatically discovers the artist upload through a shorter title search and merges repeated metadata',async()=>{
  const queries:string[]=[];
@@ -128,8 +127,8 @@ it('automatically discovers the artist upload through a shorter title search and
  const result=await findYouTubeBackgrounds(boomShaka,'music','https://resolver.example');
  expect(queries).toContain('Boom Shaka official music video');expect(queries).toContain('Boom Shaka');
  expect(result.candidateCount).toBe(2);
- expect(result.videos[0]).toMatchObject({id:'yt_00000000057',artist:'KRSNA',channelVerified:true,duration:219,viewCount:151_700_000});
- expect(result.usedLyricalFallback).toBe(false);
+ expect(result.candidates[0]).toMatchObject({id:'yt_00000000057',artist:'KRSNA',channelVerified:true,duration:219,viewCount:151_700_000});
+ expect(result.automaticVideoId).toBe('00000000057');
 });
 it('ranks Guppy Cinemas and Reetha Records 5.6M official release #1 for Kunjikkavil Meghame ahead of 11K 2:45 Gowtham_2010 clip',()=>{
  const kunjiTrack={title:'Kunjikkavil Meghame',artist:'Johnpaul George, Sooraj Santhosh',album:'Aashaan',duration:292};
@@ -138,7 +137,7 @@ it('ranks Guppy Cinemas and Reetha Records 5.6M official release #1 for Kunjikka
   video(61,'Kunjikkavil Meghame Lyrical | Aashaan | Johnpaul George | Vinayak Sasikumar | Sooraj Santhosh',{artist:'Guppy Cinemas and Reetha Records',channelVerified:true,duration:292,videoType:'UGC',viewCount:5_600_000}),
   video(62,'Johnpaul George, Sooraj Santhosh - Kunjikkavil Meghame (Lyrics)',{artist:'Vibe Bird Prime',duration:285,videoType:'UGC',viewCount:351_600}),
  ];
- const ranked=rankYouTubeBackgroundCandidates(candidates,kunjiTrack,'music');
+ const ranked=relevantYouTubeVideoChoices(candidates,kunjiTrack);
  expect(ranked[0].id).toBe('yt_00000000061');
 });
 
@@ -147,7 +146,7 @@ it('filters preloaded choices by song relevance before sorting by views',async()
  const audio=video(200,'Original rain Official Audio',{viewCount:1e9});
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({data:[...all,audio]}))));
  const result=await findYouTubeBackgrounds(track,'lyrics','https://resolver.example');
- expect(result.candidateCount).toBe(60);expect(result.videos).toHaveLength(4);expect(result.candidates).toHaveLength(4);
+ expect(result.candidateCount).toBe(60);expect(result.candidates).toHaveLength(4);
  expect(result.candidates[0].id).toBe(all[3].id);expect(result.candidates.some(v=>v.id===audio.id)).toBe(false);
 });
 it('finds an official lyrical release using neutral title/artist discovery as well as lyric-suffixed queries',async()=>{
