@@ -26,10 +26,12 @@ with `YOUTUBE_REGION` in the embedded/backend environment.
 
 Show preloaded videos filters for the current recording before sorting by views.
 The status shows both the search pool size and the number of relevant choices.
-Both music and lyric videos can appear in this list. A new search for the
-current song replaces the shared picker and playback results together. A custom online query can
-still search for a different recording. Known static and blocked videos are
-excluded in both cases. Full video titles are used when available.
+Both music and lyric videos can appear in this list. Search online starts a fresh
+YouTube search with the current song title in an editable field. Relevance shows
+the provider order and Views shows the most-viewed results first. Sorting uses the
+current online results. The background changes when the user selects Use video.
+Known static and blocked videos are excluded in both lists. Full video titles
+are used when available.
 
 ## Video-only backgrounds
 

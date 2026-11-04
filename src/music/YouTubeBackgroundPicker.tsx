@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import {formatViewCount,isLyricalVideo,searchStashCatalog,type SongResult} from './providers';
-import {sortYouTubeVideoChoicesByViews} from './videoMatching';
+import {compareYouTubeVideoViews,filterYouTubeVideoChoices} from './videoMatching';
 import { extractYouTubeVideoId, type TrackInfo } from "../metadata/trackInfo";
 import type { YouTubeBackgroundMode } from "../visualization/cinematic/CinematicStage";
 import { findYouTubeBackgrounds } from "./backgroundVideos";
@@ -35,13 +35,16 @@ export default function YouTubeBackgroundPicker({
   const [results, setResults] = useState<SongResult[]>([]),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
-    [customQuery, setCustomQuery] = useState("");
+    [customQuery, setCustomQuery] = useState(track.title);
   const pending = useRef<AbortController | null>(null);
   const [showCached, setShowCached] = useState(false);
   const [searchOnlineOpen, setSearchOnlineOpen] = useState(false);
+  const [sort, setSort] = useState<"relevance" | "views">("relevance");
   // App supplies the completed order used by playback. Render it directly.
   const preloadedResults = showCached ? cachedCandidates : undefined;
-  const visibleResults = preloadedResults ?? results;
+  const visibleResults = preloadedResults ?? (searchOnlineOpen && sort === "views"
+    ? [...results].sort(compareYouTubeVideoViews)
+    : results);
   const statusMessage = preloadedResults
     ? automaticSearchPending
       ? "Finding video candidates…"
@@ -50,6 +53,7 @@ export default function YouTubeBackgroundPicker({
   useEffect(()=>{
     pending.current?.abort();
     setShowCached(false);setResults([]);setMessage('');setBusy(false);
+    setSearchOnlineOpen(false);setCustomQuery(track.title);setSort("relevance");
     searchingCallback.current?.(false);
   },[track.title,track.artist,track.album,track.duration,preference]);
   const searchingCallback = useRef(onSearchingChange);
@@ -61,29 +65,22 @@ export default function YouTubeBackgroundPicker({
     },
     [],
   );
-  const runSearch = async (overrideQuery?: string) => {
+  const runSearch = async (query?: string) => {
+    const online = query !== undefined;
     setShowCached(false);
     setResults([]);
     pending.current?.abort();
     const controller = new AbortController();
     pending.current = controller;
     setBusy(true);
-    searchingCallback.current?.(true);
+    searchingCallback.current?.(!online);
     setMessage("Finding YouTube backgrounds…");
     try {
       const base =
         localStorage.getItem("lyricflow.resolver") ||
         import.meta.env.VITE_MUSIC_RESOLVER ||
         "";
-      const defaultQuery = `${track.title} ${track.artist} ${
-        preference === "music" ? "Official Video" : "Official Lyric Video"
-      }`;
-      const effectiveQuery =
-        overrideQuery && overrideQuery.trim().length >= 2
-          ? overrideQuery.trim()
-          : defaultQuery;
-      const custom = Boolean(overrideQuery && overrideQuery.trim().length >= 2);
-      const search = custom
+      const search = query !== undefined
         ? null
         : await findYouTubeBackgrounds(
             track,
@@ -97,13 +94,13 @@ export default function YouTubeBackgroundPicker({
         setShowCached(true);
         return;
       }
-      const found = search?.candidates ?? await searchStashCatalog(effectiveQuery, 'resolver', base, controller.signal);
+      const found = search?.candidates ?? await searchStashCatalog(query ?? track.title, 'resolver', base, controller.signal, {refresh: true});
       if (controller.signal.aborted) return;
       const compared = search?.candidateCount ?? found.length;
-      const videos = search ? found : sortYouTubeVideoChoicesByViews(found);
+      const videos = search ? found : filterYouTubeVideoChoices(found);
       setResults(videos);
       setMessage(videos.length
-        ?`${compared} search results · ${videos.length} videos available · sorted by views. Choose a video below.`
+        ?`${compared} search results · ${videos.length} videos available. Choose a video below.`
         :`No videos found. ${compared} search results checked; static images and audio uploads are excluded. Try another query or paste a video link.`);
     } catch (error) {
       if (!controller.signal.aborted)
@@ -139,6 +136,7 @@ export default function YouTubeBackgroundPicker({
           className="upload-button"
           disabled={busy}
           onClick={() => {
+            setSearchOnlineOpen(false);
             if (cachedCandidates) setShowCached(true);
             else void runSearch();
           }}
@@ -149,7 +147,13 @@ export default function YouTubeBackgroundPicker({
           type="button"
           className="upload-button"
           aria-expanded={searchOnlineOpen}
-          onClick={() => setSearchOnlineOpen((v) => !v)}
+          disabled={busy && searchOnlineOpen}
+          onClick={() => {
+            const query = (searchOnlineOpen ? customQuery : track.title).trim();
+            if (!searchOnlineOpen) setCustomQuery(track.title);
+            setSearchOnlineOpen(true);
+            if (query) void runSearch(query);
+          }}
         >
           <Search size={14} aria-hidden="true" />
           Search online
@@ -160,17 +164,11 @@ export default function YouTubeBackgroundPicker({
           className="yt-custom-search-row"
           onSubmit={(e) => {
             e.preventDefault();
-            void runSearch(customQuery || undefined);
+            if (customQuery.trim()) void runSearch(customQuery.trim());
           }}
         >
           <div
             className="search-input-with-icon"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              flex: 1,
-            }}
           >
             <Search size={15} aria-hidden="true" />
             <input
@@ -182,10 +180,17 @@ export default function YouTubeBackgroundPicker({
               onChange={(e) => setCustomQuery(e.target.value)}
             />
           </div>
-          <button type="submit" className="upload-button" disabled={busy}>
+          <button type="submit" className="upload-button" disabled={busy || !customQuery.trim()}>
             <Search size={14} aria-hidden="true" />
-            {visibleResults.length || showCached ? "Search again" : "Search YouTube"}
+            Search YouTube
           </button>
+          <label className="yt-search-sort">
+            Sort by
+            <select value={sort} onChange={(e) => setSort(e.target.value === "views" ? "views" : "relevance")}>
+              <option value="relevance">Relevance</option>
+              <option value="views">Views</option>
+            </select>
+          </label>
         </form>
       )}
       {statusMessage && <p role="status">{statusMessage}</p>}

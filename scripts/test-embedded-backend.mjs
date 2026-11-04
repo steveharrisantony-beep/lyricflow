@@ -5,6 +5,7 @@ const originalFetch = globalThis.fetch;
 const sample = new Uint8Array([1, 2, 3, 4]);
 let rangeForwarded = false;
 let captionRequests=0;
+let youtubeSearchRequests=0;
 let wordLyricsAvailable=false,wordLookupCount=0;
 let completeAccountCheck;
 const verifiedAccount = {actions:[{openPopupAction:{popup:{multiPageMenuRenderer:{header:{
@@ -71,6 +72,7 @@ globalThis.fetch = async (input, options) => {
     return new Response('<transcript><text start="1">Original fixture '+(cookie==='session=fixture'?'first':'second')+'</text><text start="3">Another test line</text></transcript>');
   }
   if(url.hostname==='www.youtube.com'&&url.pathname==='/youtubei/v1/search'){
+    youtubeSearchRequests++;
     return Response.json({
       contents:{
         twoColumnSearchResultsRenderer:{
@@ -161,6 +163,17 @@ try {
   assert.equal(topicItem.artist, 'Hanumankind - Topic');
   assert.equal(topicItem.album, 'Audio Track');
   assert.equal(omvItem.videoType, 'UGC'); // Title inference cannot establish the actual video type.
+  const videoQuery = '/music/search?q=Run+It+Up&provider=youtube';
+  assert.ok((await (await request(videoQuery)).json()).data.length);
+  const afterPreload = youtubeSearchRequests;
+  await request(videoQuery);
+  assert.equal(youtubeSearchRequests, afterPreload, 'Ordinary searches reuse cached results');
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const online = await request(videoQuery + '&refresh=1');
+    assert.equal(online.headers.get('cache-control'), 'no-store');
+    assert.ok((await online.json()).data.length);
+    assert.equal(youtubeSearchRequests, afterPreload + attempt, 'Each online search must query YouTube again');
+  }
   const counterpart=await (await request('/music/video-counterparts?title=Example+Song&artist=Example+Artist&duration=180')).json();
   assert.equal(counterpart.data[0].youtubeVideoId,'linkedVid01');
   assert.equal(counterpart.data[0].counterpartOf,'catalogue01');

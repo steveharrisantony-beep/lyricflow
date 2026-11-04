@@ -129,15 +129,19 @@ export async function searchStashCatalog(
  query:string,
  provider:SongResult['provider'],
  base:string,
- signal?:AbortSignal
+ signal?:AbortSignal,
+ {refresh=false}: {refresh?:boolean}={}
 ):Promise<SongResult[]>{
- if(query.trim().length<2)return [];
+ const refreshYouTubeSearch=provider==='resolver'&&refresh;
+ if(query.trim().length<(refreshYouTubeSearch?1:2))return [];
  const effectiveBase=base.trim()||musicBackendBase();
 
  if(effectiveBase){
   try{
+   const params=new URLSearchParams({q:query.trim(),provider:provider==='resolver'?'youtube':provider});
+   if(refreshYouTubeSearch)params.set('refresh','1');
    const res=await providerRequest(
-    `${effectiveBase.replace(/\/$/,'')}/search?`+new URLSearchParams({q:query.trim(),provider:provider==='resolver'?'youtube':provider}).toString(),
+    `${effectiveBase.replace(/\/$/,'')}/search?`+params,
     signal
    );
    if(res.ok){

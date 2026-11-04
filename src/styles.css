@@ -954,15 +954,28 @@ summary > span {
 .yt-custom-search-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 7px;
   margin-top: 10px;
 }
-.yt-custom-search-row > input {
+.yt-custom-search-row .search-input-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex: 1 1 180px;
+  min-width: 0;
+}
+.yt-custom-search-row input {
   width: 100%;
+  min-width: 0;
 }
 .yt-custom-search-row > button {
   flex: 0 0 auto;
+}
+.yt-search-sort {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .correction-controls > form {
   display: grid;

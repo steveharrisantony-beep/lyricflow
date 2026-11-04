@@ -418,7 +418,7 @@ it('waits for the full search and plays the first video shown in preloaded choic
  }
 });
 
-it('uses the completed picker refresh even when an older preload finishes later', async () => {
+it('keeps online search independent of a pending preload until a video is chosen', async () => {
  const stage = await import('../visualization/cinematic/CinematicStage');
  const draw = vi.spyOn(stage, 'default').mockImplementation(props =>
   <span data-testid="refresh-stage" data-video={props.youtubeVideoId || ''}/>);
@@ -429,10 +429,9 @@ it('uses the completed picker refresh even when an older preload finishes later'
   provider: 'resolver' as const, viewCount,
  });
  const fresh = video('bbbbbbbbbbb', 1000000), old = video('aaaaaaaaaaa', 10000000);
- let refreshing = false;
  let finishOld!: (songs: Awaited<ReturnType<typeof searchStashCatalog>>) => void;
- search.mockImplementation(async query => {
-  if (refreshing) return [fresh];
+ search.mockImplementation(async (query, _provider, _base, _signal, options) => {
+  if (options?.refresh) return [fresh];
   if (query === 'Original test song official music video') return new Promise(resolve => {finishOld = resolve;});
   return [];
  });
@@ -440,14 +439,14 @@ it('uses the completed picker refresh even when an older preload finishes later'
   await act(async () => click('Load JioSaavn fixture'));
   const current = () => host.querySelector('[data-testid="refresh-stage"]')?.getAttribute('data-video');
   expect(current()).toBe('');
-  refreshing = true;
   await act(async () => click('Search online'));
-  await act(async () => host.querySelector('.yt-custom-search-row')!.dispatchEvent(new Event('submit', {bubbles:true,cancelable:true})));
-  expect(current()).toBe(fresh.youtubeVideoId);
-  expect(host.querySelector('.video-candidate')?.getAttribute('aria-current')).toBe('true');
-  await act(async () => finishOld([old]));
-  expect(current()).toBe(fresh.youtubeVideoId);
+  expect(current()).toBe('');
   expect(host.querySelector('.video-candidate img')?.getAttribute('src')).toContain(fresh.youtubeVideoId);
+  await act(async () => finishOld([old]));
+  expect(current()).toBe(old.youtubeVideoId);
+  expect(host.querySelector('.video-candidate img')?.getAttribute('src')).toContain(fresh.youtubeVideoId);
+  await act(async () => click('Use video'));
+  expect(current()).toBe(fresh.youtubeVideoId);
  } finally {
   draw.mockRestore();
   search.mockImplementation(original);

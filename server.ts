@@ -962,26 +962,28 @@ async function runYouTubeWebSearch(
 }
 
 const videoSearchCache = new VideoSearchCache<TrackMetadata[]>();
-async function runSingleYouTubeWebSearch(query:string,limit=40,ytAuth?:YouTubeAuthContext):Promise<TrackMetadata[]> {
+async function runSingleYouTubeWebSearch(query:string,limit=40,ytAuth?:YouTubeAuthContext,refresh=false):Promise<TrackMetadata[]> {
   const scope=createHash('sha256').update(JSON.stringify(ytAuth||{})).digest('hex');
   const region=process.env.YOUTUBE_REGION||'IN';
-  return videoSearchCache.get(scope+'|'+region+'|'+query.trim().toLowerCase()+'|'+limit,async()=>{
+  const load=async()=>{
     const [music,web]=await Promise.all([
       searchMusicVideos(query,buildYouTubeAuthHeaders(ytAuth,'https://music.youtube.com'),region),
       runYouTubeWebSearch(query,Math.max(limit,40),ytAuth),
     ]);
     const decodedMusic=music.map(v=>({...v,title:decodeHtmlEntities(v.title),artist:decodeHtmlEntities(v.artist),artistCredits:v.artistCredits?.map(decodeHtmlEntities)}));
-    const pooled=mergeVideoMetadata<TrackMetadata>([decodedMusic as TrackMetadata[],web]);
+    const pooled=mergeVideoMetadata<TrackMetadata>(refresh?[web,decodedMusic as TrackMetadata[]]:[decodedMusic as TrackMetadata[],web]);
     const enriched=await hydrateVideoMetadata(pooled,buildYouTubeAuthHeaders(ytAuth),scope);
     for(const video of enriched)setTrackMetaCache(video.id,video);
     return enriched;
-  });
+  };
+  return refresh?load():videoSearchCache.get(scope+'|'+region+'|'+query.trim().toLowerCase()+'|'+limit,load);
 }
 
 async function fetchYouTubeWebVideos(
   query: string,
   limit = 20,
-  ytAuth?: YouTubeAuthContext
+  ytAuth?: YouTubeAuthContext,
+  refresh = false,
 ): Promise<TrackMetadata[]> {
   const directVideoId = extractDirectVideoIdFromQuery(query);
   if (directVideoId) {
@@ -994,6 +996,8 @@ async function fetchYouTubeWebVideos(
   }
 
   const trimmed = query.trim();
+  if (refresh) return runSingleYouTubeWebSearch(trimmed, limit, ytAuth, true);
+
   const baseQuery = trimmed
     .replace(/\s+\b(?:official\s+(?:music\s+)?video|music\s+video)$/i, '')
     .trim();
@@ -1019,10 +1023,11 @@ async function searchYouTubeMusic(
   query: string,
   provider: 'ytmusic' | 'youtube',
   limit = 16,
-  ytAuth?: YouTubeAuthContext
+  ytAuth?: YouTubeAuthContext,
+  refresh = false,
 ): Promise<TrackMetadata[]> {
   if (provider === 'youtube') {
-    return fetchYouTubeWebVideos(query.trim(),limit,ytAuth);
+    return fetchYouTubeWebVideos(query.trim(),limit,ytAuth,refresh);
   }
 
   try {
@@ -2829,10 +2834,6 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
   const handleSearch = async (req: Request, res: Response) => {
     const q = String(req.query.q || '').trim();
     const rawProvider = String(req.query.provider || 'jiosaavn').toLowerCase();
-    if (q.length < 2) {
-      res.status(400).json({ detail: 'Enter at least 2 characters.' });
-      return;
-    }
 
     const provider: TrackMetadata['provider'] =
       rawProvider === 'ytmusic'
@@ -2844,6 +2845,11 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
             : rawProvider === 'youtube' || rawProvider === 'resolver'
               ? 'youtube'
               : 'jiosaavn';
+    const refresh = provider === 'youtube' && req.query.refresh === '1';
+    if (q.length < (refresh ? 1 : 2)) {
+      res.status(400).json({ detail: refresh ? 'Enter a YouTube search query.' : 'Enter at least 2 characters.' });
+      return;
+    }
 
     const ytAuth = extractRequestYouTubeAuth(req);
 
@@ -2854,7 +2860,8 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       } else if (provider === 'soundcloud') {
         results = await searchSoundCloud(q, 12);
       } else if (provider === 'ytmusic' || provider === 'youtube') {
-        results = await searchYouTubeMusic(q, provider, provider === 'youtube' ? 28 : 20, ytAuth);
+        if (refresh) res.setHeader('Cache-Control', 'no-store');
+        results = await searchYouTubeMusic(q, provider, provider === 'youtube' ? 28 : 20, ytAuth, refresh);
       } else if (provider === 'audius') {
         results = await searchAudius(q, 12);
       }
