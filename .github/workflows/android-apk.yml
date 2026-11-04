@@ -1,6 +1,10 @@
 name: Build Android APK
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - android/app/src/main/java/com/steveharrisantony/lyricflow/GoogleSignInPlugin.java
   workflow_dispatch:
     inputs:
       publish_update:
@@ -20,11 +24,11 @@ env:
   VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
   VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
   VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+  VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID: ${{ vars.VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID }}
   VITE_FIREBASE_DATABASE_ID: ${{ vars.VITE_FIREBASE_DATABASE_ID }}
 
 jobs:
   apk:
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -108,6 +112,10 @@ jobs:
           else
             cp android/app/build/outputs/apk/debug/app-debug.apk artifacts/LyricFlow-Android.apk
           fi
+      - name: Show APK signing certificate
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs artifacts/LyricFlow-Android.apk \
+            | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: LyricFlow-Android

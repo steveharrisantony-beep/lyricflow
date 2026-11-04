@@ -15,6 +15,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AppUpdaterPlugin.class);
         registerPlugin(MediaPlaybackPolicyPlugin.class);
         registerPlugin(DataTransferPlugin.class);
+        registerPlugin(GoogleSignInPlugin.class);
         super.onCreate(savedInstanceState);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         CookieManager cookieManager = CookieManager.getInstance();

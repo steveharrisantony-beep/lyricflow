@@ -1,7 +1,8 @@
 import {normalizePaletteSelections,type ThemePaletteSelections} from '../visualization/cinematic/themeSelection';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { initializeApp } from 'firebase/app';
 import {
-  getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signInWithEmailAndPassword,
+  getAuth, GoogleAuthProvider, signInWithPopup, signInWithCredential, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification,
   signOut, onAuthStateChanged, linkWithCredential, EmailAuthProvider, connectAuthEmulator, type User,
 } from 'firebase/auth';
@@ -49,19 +50,25 @@ if (env.VITE_FIREBASE_EMULATORS === 'true' && firebaseConfig.projectId.startsWit
 }
 export { onAuthStateChanged, type User };
 export const isNativeApp = () => Boolean((window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.());
+const AndroidGoogleSignIn = registerPlugin<{
+  signIn(options: { webClientId: string }): Promise<{ idToken?: string }>;
+}>('LyricFlowGoogleSignIn');
+
 export async function signInWithGoogle() {
   if (!auth) throw new Error('Cloud sync is not configured yet. Your device settings still work.');
+  if (Capacitor.getPlatform() === 'android') {
+    const webClientId = env.VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID?.trim()
+      || (firebaseConfig.projectId === firebaseAppletConfig.projectId ? firebaseAppletConfig.oAuthClientId : '');
+    if (!webClientId.endsWith('.apps.googleusercontent.com')) {
+      throw new Error('Google sign-in needs the Firebase project’s Web OAuth client ID in this APK.');
+    }
+    const { idToken } = await AndroidGoogleSignIn.signIn({ webClientId });
+    if (!idToken) return null;
+    return (await signInWithCredential(auth, GoogleAuthProvider.credential(idToken))).user;
+  }
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
-  try {
-    return (await signInWithPopup(auth, provider)).user;
-  } catch (error) {
-    if (isNativeApp()) {
-      await signInWithRedirect(auth, provider);
-      return null;
-    }
-    throw error;
-  }
+  return (await signInWithPopup(auth, provider)).user;
 }
 export async function emailSignIn(email: string, password: string, create = false) {
   if (!auth) throw new Error('Cloud sync is not configured yet.');

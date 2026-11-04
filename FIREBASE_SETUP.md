@@ -5,10 +5,10 @@ The web and Android repositories use the **same Firebase project and Firestore d
 ## Set up using a browser
 
 1. Open [Firebase Console](https://console.firebase.google.com/). Create a project (or use your existing LyricFlow project). The Spark plan is sufficient to start within its quotas; this implementation needs no Cloud Functions or Cloud Storage.
-2. In **Build → Authentication → Get started → Sign-in method**, enable **Email/Password**. Optionally enable **Google** for the website. Add your deployed website domain under Authentication's authorized domains.
+2. In **Build → Authentication → Get started → Sign-in method**, enable **Google**. Add your deployed website domain under Authentication's authorized domains.
 3. In **Build → Firestore Database**, create a Standard database in production mode. Use the default database unless you deliberately configure another ID.
 4. In the Firestore **Rules** tab, replace the rules with the contents of this repository's `firestore.rules`, then click **Publish**. Publish once for the shared project, not a separate database per app. `DRAFT_firestore.rules` is a compatibility copy, not a separate configuration.
-5. In **Project settings → General → Your apps**, register a **Web app** named LyricFlow. Both current bundles use the Firebase JavaScript SDK, including email/password inside the Android WebView. Copy its `apiKey`, `projectId`, `appId`, and `authDomain`.
+5. In **Project settings → General → Your apps**, register a **Web app** named LyricFlow. Both bundles use the Firebase JavaScript SDK for sessions and sync. Copy its `apiKey`, `projectId`, `appId`, and `authDomain`.
 6. In **each GitHub repository → Settings → Secrets and variables → Actions → Variables**, add these repository variables:
 
    | Variable | Firebase config field |
@@ -21,9 +21,15 @@ The web and Android repositories use the **same Firebase project and Firestore d
 
    These Firebase web config values are public build configuration. Database Rules protect the data. Never put a service-account JSON, Admin SDK private key, or provider secret into these variables or the APK.
 7. Re-run the Android APK workflow after setting variables. For your website host, set the same environment variables in its build settings and redeploy. Changing GitHub variables alone does not configure a separately hosted website.
-8. Open **Sign in / sync** in LyricFlow. Create an email account and use it on both devices. Verify the email to submit corrections. Private settings sync does not require verification.
+8. Open **Sign in / sync → Sign in with Google** in LyricFlow and select the same account on both devices.
 
-Google popup sign-in is available on the website. The Android package does not yet have native Google sign-in: use email/password there. If you first signed in with Google on the website, open **Account & sync → Add a password for Android**. This links a password to the same Firebase user ID, preserving the shared account. Then sign into Android with that email/password. Enable Email/Password in Firebase before doing this.
+### Android Google sign-in
+
+1. In the same Firebase project, open **Project settings → General → Your apps** and register or select the Android app `com.steveharrisantony.lyricflow`.
+2. Add the SHA-1 fingerprint of the certificate that signed the APK. Use the signed GitHub Actions artifact to verify the fingerprint with `apksigner verify --print-certs LyricFlow-Android.apk`. Register each signing certificate used for builds that need Google sign-in.
+3. The bundled AI Studio project uses `oAuthClientId` from `firebase-applet-config.json`. For a different project, set `VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID` to that project's **Web** OAuth client ID and rebuild the APK.
+
+Android Credential Manager opens the Google account picker. The app exchanges the resulting ID token for a Firebase session in the same project as the website.
 
 ## Data and precedence
 
@@ -89,3 +95,4 @@ Resolved mappings save automatically on device, and privately in `profiles/{uid}
 For JioSaavn or another separate audio stream, **Find YouTube video background** searches without replacing the audio. The saved **Preferred YouTube background** setting chooses either `title + author + music video` or `title + author + lyrics video`. Results show title, author and duration for explicit selection. Choosing a result switches the stage to video mode, saves the YouTube ID, and keeps it muted. Saved video selection and delay restore on later playback; unavailable providers can be retried or a video URL pasted manually.
 
 Both offsets are signed. A lyrics delay of +2 displays lyrics two seconds later, and -2 displays them earlier. A video delay of +2 holds the video until audio reaches two seconds and then uses `videoTime = audioTime - 2`; -2 advances video to `audioTime + 2`. Video bounds are -300 to +300 seconds; lyrics retain -30 to +30 seconds. Changing video delay never changes lyric delay or the music clock. Background-video end/position events cannot end, seek or advance the audio source. Republish the updated `firestore.rules` when upgrading to this schema.
+
