@@ -1,10 +1,6 @@
 name: Build Android APK
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - android/app/src/main/java/com/steveharrisantony/lyricflow/GoogleSignInPlugin.java
   workflow_dispatch:
     inputs:
       publish_update:
@@ -29,6 +25,7 @@ env:
 
 jobs:
   apk:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
