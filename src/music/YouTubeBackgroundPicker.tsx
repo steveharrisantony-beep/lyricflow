@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import {formatViewCount,isLyricalVideo,searchStashCatalog,type SongResult} from './providers';
-import {sortYouTubeVideoChoicesByViews,relevantYouTubeVideoChoices} from './videoMatching';
+import {sortYouTubeVideoChoicesByViews} from './videoMatching';
 import { extractYouTubeVideoId, type TrackInfo } from "../metadata/trackInfo";
 import type { YouTubeBackgroundMode } from "../visualization/cinematic/CinematicStage";
 import { findYouTubeBackgrounds } from "./backgroundVideos";
 
 export default function YouTubeBackgroundPicker({
   track,
+  activeVideoId,
   preference,
   onChoose,
   onSearchingChange,
+  onMatchedSearch,
   captionStatus,
   cachedCandidates,
   cachedCandidateCount,
@@ -24,6 +26,7 @@ export default function YouTubeBackgroundPicker({
   backgroundMode?: YouTubeBackgroundMode;
   onBackgroundModeChange?: (mode: YouTubeBackgroundMode) => void;
   onSearchingChange?: (searching: boolean) => void;
+  onMatchedSearch?: (candidates: SongResult[], candidateCount: number) => void;
   captionStatus?: string;
   cachedCandidates?: SongResult[];
   cachedCandidateCount?: number;
@@ -36,27 +39,19 @@ export default function YouTubeBackgroundPicker({
   const pending = useRef<AbortController | null>(null);
   const [showCached, setShowCached] = useState(false);
   const [searchOnlineOpen, setSearchOnlineOpen] = useState(false);
-  useEffect(() => {
-    if (!showCached || !cachedCandidates) return;
-    const available=relevantYouTubeVideoChoices(cachedCandidates,track);
-    setResults(available);
-    setMessage(
-      automaticSearchPending
-        ? "Finding video candidates…"
-        : `${cachedCandidateCount ?? cachedCandidates.length} search results · ${available.length} relevant videos · sorted by views.${available.length?"":" Search again with a different query."}`,
-    );
-  }, [
-    showCached,
-    cachedCandidates,
-    cachedCandidateCount,
-    automaticSearchPending,
-    track.title,track.artist,track.album,track.duration,
-  ]);
+  // App supplies the completed order used by playback. Render it directly.
+  const preloadedResults = showCached ? cachedCandidates : undefined;
+  const visibleResults = preloadedResults ?? results;
+  const statusMessage = preloadedResults
+    ? automaticSearchPending
+      ? "Finding video candidates…"
+      : `${cachedCandidateCount ?? preloadedResults.length} search results · ${preloadedResults.length} relevant videos · sorted by views.${preloadedResults.length ? "" : " Search again with a different query."}`
+    : message;
   useEffect(()=>{
     pending.current?.abort();
     setShowCached(false);setResults([]);setMessage('');setBusy(false);
     searchingCallback.current?.(false);
-  },[track.title,track.artist,track.album,preference]);
+  },[track.title,track.artist,track.album,track.duration,preference]);
   const searchingCallback = useRef(onSearchingChange);
   searchingCallback.current = onSearchingChange;
   useEffect(
@@ -68,6 +63,7 @@ export default function YouTubeBackgroundPicker({
   );
   const runSearch = async (overrideQuery?: string) => {
     setShowCached(false);
+    setResults([]);
     pending.current?.abort();
     const controller = new AbortController();
     pending.current = controller;
@@ -95,14 +91,16 @@ export default function YouTubeBackgroundPicker({
             base,
             controller.signal,
           );
-      let found=search?.candidates;
-      let compared=search?.candidateCount||0;
-      if(!found){
-        found=await searchStashCatalog(effectiveQuery,'resolver',base,controller.signal);
-        compared=found.length;
+      if (controller.signal.aborted) return;
+      if (search && onMatchedSearch) {
+        onMatchedSearch(search.candidates, search.candidateCount);
+        setShowCached(true);
+        return;
       }
-      if(controller.signal.aborted)return;
-      const videos=custom?sortYouTubeVideoChoicesByViews(found):relevantYouTubeVideoChoices(found,track);
+      const found = search?.candidates ?? await searchStashCatalog(effectiveQuery, 'resolver', base, controller.signal);
+      if (controller.signal.aborted) return;
+      const compared = search?.candidateCount ?? found.length;
+      const videos = search ? found : sortYouTubeVideoChoicesByViews(found);
       setResults(videos);
       setMessage(videos.length
         ?`${compared} search results · ${videos.length} videos available · sorted by views. Choose a video below.`
@@ -186,20 +184,20 @@ export default function YouTubeBackgroundPicker({
           </div>
           <button type="submit" className="upload-button" disabled={busy}>
             <Search size={14} aria-hidden="true" />
-            {results.length || showCached ? "Search again" : "Search YouTube"}
+            {visibleResults.length || showCached ? "Search again" : "Search YouTube"}
           </button>
         </form>
       )}
-      {message && <p role="status">{message}</p>}
+      {statusMessage && <p role="status">{statusMessage}</p>}
       {captionStatus && <p role="status">{captionStatus}</p>}
       <div className="track-candidates">
-        {results.map((song) => {
+        {visibleResults.map((song) => {
           const id = extractYouTubeVideoId(song)!;
           const viewsLabel = formatViewCount(song.viewCount);
           const thumbUrl =
             song.artwork || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
           return (
-            <div className="candidate video-candidate" key={id}>
+            <div className="candidate video-candidate" key={id} aria-current={id === activeVideoId ? "true" : undefined}>
               <img
                 className="candidate-thumb"
                 src={thumbUrl}
@@ -215,6 +213,7 @@ export default function YouTubeBackgroundPicker({
                     ? `${Math.floor(song.duration / 60)}:${String(Math.round(song.duration % 60)).padStart(2, "0")}`
                     : "Duration unknown"}
                   {viewsLabel ? ` · ${viewsLabel}` : " · Views unavailable"} · {isLyricalVideo(song) ? "Lyrics video" : "Video"}
+                  {id === activeVideoId ? " · Current" : ""}
                 </small>
               </div>
               <button

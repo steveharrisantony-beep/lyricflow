@@ -9,12 +9,14 @@ type Options={
  track:TrackInfo|null;
  candidates:SongResult[];
  preference:'music'|'lyrics';
+ excludedVideoIds?:readonly string[];
+ onMatchedSearch?:(candidates:SongResult[],candidateCount:number)=>void;
 };
 type Recovery={key:string;videoId:string|null;candidate:SongResult|null;pending:boolean;message:string};
 const empty:Recovery={key:'',videoId:null,candidate:null,pending:false,message:''};
 
 /** Recovery is temporary for this selection; saved song mappings are never changed. */
-export function useVideoRecovery({selectionKey,track,candidates,preference}:Options){
+export function useVideoRecovery({selectionKey,track,candidates,preference,excludedVideoIds,onMatchedSearch}:Options){
  const [state,setState]=useState<Recovery>(empty);
  const session=useRef<{key:string;excluded:Set<string>;candidates:SongResult[];controller:AbortController|null}|null>(null);
  useEffect(()=>{
@@ -40,7 +42,10 @@ export function useVideoRecovery({selectionKey,track,candidates,preference}:Opti
   current.controller=controller;
   setState(previous=>({... (previous.key===selectionKey?previous:empty),key:selectionKey,pending:true,message:''}));
   const choose=(pool:SongResult[])=>{
-   const eligible=pool.filter(candidate=>!current.excluded.has(extractYouTubeVideoId(candidate)||''));
+   const eligible=pool.filter(candidate=>{
+    const id=extractYouTubeVideoId(candidate);
+    return id&&!current.excluded.has(id)&&!excludedVideoIds?.includes(id);
+   });
    return relevantYouTubeVideoChoices(eligible, track)[0] ?? null;
   };
   try{
@@ -48,7 +53,9 @@ export function useVideoRecovery({selectionKey,track,candidates,preference}:Opti
    if(!candidate){
     const base=localStorage.getItem('lyricflow.resolver')||import.meta.env.VITE_MUSIC_RESOLVER||'';
     const result=await findYouTubeBackgrounds(track,preference,base,controller.signal);
+    if(controller.signal.aborted)return;
     current.candidates=result.candidates;
+    onMatchedSearch?.(result.candidates,result.candidateCount);
     candidate=choose(result.candidates);
    }
    if(controller.signal.aborted)return;

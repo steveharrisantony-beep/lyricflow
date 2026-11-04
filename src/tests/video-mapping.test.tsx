@@ -466,15 +466,21 @@ it('rejects pasted static-image/audio links in the manual background picker',asy
  expect(host.textContent).toContain('No videos found');
 });
 
-it('shows only song-relevant preloaded videos in descending views and refreshes relevance when the track changes',async()=>{
+it('renders the supplied preloaded order and clears the list when the track changes',async()=>{
  const {default:Picker}=await import('../music/YouTubeBackgroundPicker');
  const search=vi.spyOn(musicProviders,'searchStashCatalog');
  const choices=Array.from({length:130},(_,i)=>({id:'yt_'+String(i).padStart(11,'0'),youtubeVideoId:String(i).padStart(11,'0'),title:i<2?'Example Artist - Ocean Road Official Video':'Other Artist - Other Song Official Video',artist:i<2?'Distributor':'Other Artist',album:'',duration:200,viewCount:i*1000,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v='+String(i).padStart(11,'0')}));
- const render=(title='Ocean Road')=><Picker track={{title,artist:'Example Artist',album:'',duration:200,source:'manual',confidence:1}} activeVideoId={null} preference="lyrics" onChoose={()=>{}} cachedCandidates={choices} cachedCandidateCount={130}/>;
+ const {relevantYouTubeVideoChoices}=await import('../music/videoMatching');
+ const render=(title='Ocean Road')=>{
+  const track={title,artist:'Example Artist',album:'',duration:200,source:'manual' as const,confidence:1};
+  const videos=relevantYouTubeVideoChoices(choices,track);
+  return <Picker track={track} activeVideoId={videos[0]?.youtubeVideoId ?? null} preference="lyrics" onChoose={()=>{}} cachedCandidates={videos} cachedCandidateCount={130}/>;
+ };
  await act(async()=>root.render(render()));
  await act(async()=>Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Show preloaded videos')!.click());
  const rows=Array.from(host.querySelectorAll('.video-candidate'));
  expect(rows).toHaveLength(2);expect(rows[0].querySelector('img')?.getAttribute('src')).toContain('00000000001');
+ expect(rows[0].getAttribute('aria-current')).toBe('true');
  expect(host.textContent).toContain('130 search results · 2 relevant videos · sorted by views');expect(search).not.toHaveBeenCalled();
  await act(async()=>root.render(render('Different Song')));
  expect(host.querySelector('.video-candidate')).toBeNull();

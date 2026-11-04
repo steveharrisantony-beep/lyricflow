@@ -19,14 +19,15 @@ with `YOUTUBE_REGION` in the embedded/backend environment.
   Sort only the remaining videos by views. Duration filters obvious clips and
   compilations.
 - Wait for the search pool to finish and play the first preloaded choice.
-  Personal mappings take precedence. Recovery uses the same order and skips
-  candidates that have failed playback.
+  Personal mappings take precedence. Published delays apply only to the video
+  they describe. Recovery skips failed videos in the same preloaded list.
 
 ## Mapping picker
 
 Show preloaded videos filters for the current recording before sorting by views.
 The status shows both the search pool size and the number of relevant choices.
-Both music and lyric videos can appear in this list. A custom online query can
+Both music and lyric videos can appear in this list. A new search for the
+current song replaces the shared picker and playback results together. A custom online query can
 still search for a different recording. Known static and blocked videos are
 excluded in both cases. Full video titles are used when available.
 

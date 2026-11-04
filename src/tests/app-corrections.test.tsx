@@ -418,6 +418,62 @@ it('waits for the full search and plays the first video shown in preloaded choic
  }
 });
 
+it('uses the completed picker refresh even when an older preload finishes later', async () => {
+ const stage = await import('../visualization/cinematic/CinematicStage');
+ const draw = vi.spyOn(stage, 'default').mockImplementation(props =>
+  <span data-testid="refresh-stage" data-video={props.youtubeVideoId || ''}/>);
+ const search = vi.mocked(searchStashCatalog), original = search.getMockImplementation()!;
+ const video = (id: string, viewCount: number) => ({
+  id: 'yt_' + id, youtubeVideoId: id, sourceUrl: 'https://www.youtube.com/watch?v=' + id,
+  title: 'Original test song Official Video', artist: 'Test artist', album: 'Studio', duration: 200,
+  provider: 'resolver' as const, viewCount,
+ });
+ const fresh = video('bbbbbbbbbbb', 1000000), old = video('aaaaaaaaaaa', 10000000);
+ let refreshing = false;
+ let finishOld!: (songs: Awaited<ReturnType<typeof searchStashCatalog>>) => void;
+ search.mockImplementation(async query => {
+  if (refreshing) return [fresh];
+  if (query === 'Original test song official music video') return new Promise(resolve => {finishOld = resolve;});
+  return [];
+ });
+ try {
+  await act(async () => click('Load JioSaavn fixture'));
+  const current = () => host.querySelector('[data-testid="refresh-stage"]')?.getAttribute('data-video');
+  expect(current()).toBe('');
+  refreshing = true;
+  await act(async () => click('Search online'));
+  await act(async () => host.querySelector('.yt-custom-search-row')!.dispatchEvent(new Event('submit', {bubbles:true,cancelable:true})));
+  expect(current()).toBe(fresh.youtubeVideoId);
+  expect(host.querySelector('.video-candidate')?.getAttribute('aria-current')).toBe('true');
+  await act(async () => finishOld([old]));
+  expect(current()).toBe(fresh.youtubeVideoId);
+  expect(host.querySelector('.video-candidate img')?.getAttribute('src')).toContain(fresh.youtubeVideoId);
+ } finally {
+  draw.mockRestore();
+  search.mockImplementation(original);
+ }
+});
+
+it('uses the first preloaded video when a published mapping points to a different upload', async () => {
+ const {correctionContext} = await import('../firebase/correctionModel');
+ const song = {title:'Original test song', artist:'Test artist', album:'Studio', duration:200, source:'provider' as const, confidence:1};
+ const context = correctionContext(song, 'video')!;
+ localStorage.setItem('lyricflow.v4.publishedSongMappings', JSON.stringify({
+  [context.recordingKey]: {identity:context.identity, video:{youtubeVideoId:'zzzzzzzzzzz', delaySeconds:5}},
+ }));
+ const stage = await import('../visualization/cinematic/CinematicStage');
+ const draw = vi.spyOn(stage, 'default').mockImplementation(props =>
+  <span data-testid="published-stage" data-video={props.youtubeVideoId || ''} data-delay={props.videoDelaySeconds}/>);
+ try {
+  await act(async () => click('Load JioSaavn fixture'));
+  await act(async () => click('Show preloaded videos'));
+  const current = host.querySelector('[data-testid="published-stage"]');
+  expect(current?.getAttribute('data-video')).toBe('abcdefghijk');
+  expect(current?.getAttribute('data-delay')).toBe('0');
+  expect(host.querySelector('.video-candidate')?.getAttribute('aria-current')).toBe('true');
+ } finally {draw.mockRestore();}
+});
+
 it('clears the previous background while the next recording search is pending',async()=>{
  const stage=await import('../visualization/cinematic/CinematicStage');
  const draw=vi.spyOn(stage,'default').mockImplementation(props=><span data-testid="video-recording" data-video={props.youtubeVideoId||''} data-searching={String(props.videoSearchPending)}/>);
