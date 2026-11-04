@@ -2,6 +2,7 @@ import {LyricsSearchLogs,PreloadedLyrics,useLyricsSearchReport} from './lyrics/L
 import {lyricsFromSearchCandidate} from './lyrics/providers';
 import {evaluateBackgroundVideos} from './music/videoMatching';
 import {findYouTubeBackgrounds} from './music/backgroundVideos';
+import VideoSearchLogs from './music/VideoSearchLogs';
 import {isSyncedLyricsSource,lyricProviderName,normalizeLyricSource} from './lyrics/sourceLabels';
 import {selectedPaletteIds,togglePaletteSelection,enableAllPaletteSelections,enableAllPalettesForTheme,type ThemePaletteSelections} from './visualization/cinematic/themeSelection';
 import {normalizeLyricLayout,type LyricLayoutSettings} from './lyrics/lyricLayout';
@@ -2571,9 +2572,14 @@ export default function App({ user = null }: { user?: User | null }) {
               </>
             ),
             logs: (
-              <SettingGroup title="Lyrics logs">
-                <LyricsSearchLogs report={lyricsSearchReport}/>
-              </SettingGroup>
+              <>
+                <SettingGroup title="Lyrics logs">
+                  <LyricsSearchLogs report={lyricsSearchReport}/>
+                </SettingGroup>
+                <SettingGroup title="Video search logs">
+                  <VideoSearchLogs/>
+                </SettingGroup>
+              </>
             ),
           }}
         </SettingsPanel>

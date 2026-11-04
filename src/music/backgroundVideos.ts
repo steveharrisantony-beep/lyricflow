@@ -1,5 +1,6 @@
 import type {TrackInfo} from '../metadata/trackInfo';
 import {searchStashCatalog} from './providers';
+import {logVideoSearch} from './videoSearchHistory';
 
 type VideoTarget=Pick<TrackInfo,'title'|'artist'|'primaryArtist'|'featuredArtist'>;
 
@@ -20,9 +21,9 @@ export async function findYouTubeBackgrounds(track:VideoTarget,base:string,signa
  const artist=track.primaryArtist?.trim()||firstListedArtist(artistCredit.text)||'';
  const featuredArtist=track.featuredArtist?.trim()||firstListedArtist(artistCredit.credit||titleCredit.credit);
  const query=[title,artist,featuredArtist,'video'].filter(Boolean).join(' ');
- const candidates=await searchStashCatalog(query,'resolver',base,signal,{
+ const candidates=await logVideoSearch(query,'Autoplay',()=>searchStashCatalog(query,'resolver',base,signal,{
   background:{title,artist,...(featuredArtist?{featuredArtist}:{})},
- });
+ }),signal);
  signal?.throwIfAborted();
  return {candidates,candidateCount:candidates.length};
 }

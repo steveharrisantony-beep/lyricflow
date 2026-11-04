@@ -532,11 +532,25 @@ it('keeps online search independent of a pending preload until a video is chosen
   await act(async () => click('Search online'));
   expect(current()).toBe('');
   expect(host.querySelector('.video-candidate img')?.getAttribute('src')).toContain(fresh.youtubeVideoId);
+  const manualTerms = 'Test song  (feat. Guest) + video';
+  const searchInput = host.querySelector<HTMLInputElement>('[aria-label="Custom YouTube video search"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(searchInput,manualTerms);
+    searchInput.dispatchEvent(new Event('input',{bubbles:true}));
+  });
+  await act(async () => searchInput.form!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  expect(search.mock.lastCall?.[0]).toBe(manualTerms);
   await act(async () => finishOld([old]));
   expect(current()).toBe(old.youtubeVideoId);
   expect(host.querySelector('.video-candidate img')?.getAttribute('src')).toContain(fresh.youtubeVideoId);
   await act(async () => click('Use video'));
   expect(current()).toBe(fresh.youtubeVideoId);
+  await act(async () => click('Logs'));
+  const logs = host.querySelector('#settings-page-logs')!;
+  expect(logs.textContent).toContain('Lyrics logs');
+  const videoLogs = [...logs.querySelectorAll('h3')].find(heading=>heading.textContent==='Video search logs')!.closest('section')!;
+  const queries = [...videoLogs.querySelectorAll('code')].map(code=>code.textContent);
+  expect(queries).toEqual(expect.arrayContaining(['Original test song Test artist video',manualTerms]));
  } finally {
   draw.mockRestore();
   search.mockImplementation(original);
