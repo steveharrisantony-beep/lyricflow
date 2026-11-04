@@ -403,7 +403,7 @@ it('waits for the full search and switches the active video from the completed l
  };
  const late = {...early, id: 'yt_bbbbbbbbbbb', youtubeVideoId: 'bbbbbbbbbbb', sourceUrl: 'https://www.youtube.com/watch?v=bbbbbbbbbbb',
   title: 'Original test song Test artist Official Lyric Video', artist: 'Other uploader', viewCount: 22_600_000, channelVerified: false};
- const unrelated = {...early, id: 'yt_ccccccccccc', youtubeVideoId: 'ccccccccccc', title: 'Original test song Official Music Video', artist: 'Other Test Musician', album: 'Different Album', viewCount: 10000000};
+ const unrelated = {...early, id: 'yt_ccccccccccc', youtubeVideoId: 'ccccccccccc', title: 'Different track Official Music Video', artist: 'Other Test Musician', album: 'Different Album', viewCount: 10000000};
  let finish!: (songs: Awaited<ReturnType<typeof searchStashCatalog>>) => void;
  search.mockImplementation(async () => new Promise(resolve => {finish = resolve;}));
  try {
@@ -416,7 +416,7 @@ it('waits for the full search and switches the active video from the completed l
   expect(current()?.getAttribute('data-searching')).toBe('false');
   expect(current()?.getAttribute('data-video')).toBe(early.youtubeVideoId);
   expect(host.querySelector('.video-candidate strong')?.textContent).toBe(early.title);
-  expect(host.querySelectorAll('.video-candidate')).toHaveLength(2);
+  expect(host.querySelectorAll('.video-candidate')).toHaveLength(3);
   const preference = host.querySelector<HTMLSelectElement>('[aria-label="Preferred YouTube background"]')!;
   const select = (value: string) => act(async () => {
    preference.value = value;
@@ -426,11 +426,11 @@ it('waits for the full search and switches the active video from the completed l
   await select('lyrics');
   expect(current()?.getAttribute('data-searching')).toBe('false');
   expect(current()?.getAttribute('data-video')).toBe(late.youtubeVideoId);
-  expect(host.querySelector('.video-candidate strong')?.textContent).toBe(late.title);
-  expect(host.querySelectorAll('.video-candidate')).toHaveLength(1);
+  expect(host.querySelector('.video-candidate[aria-current=true] strong')?.textContent).toBe(late.title);
+  expect(host.querySelectorAll('.video-candidate')).toHaveLength(3);
   await select('music');
   expect(current()?.getAttribute('data-video')).toBe(early.youtubeVideoId);
-  expect(host.querySelectorAll('.video-candidate')).toHaveLength(2);
+  expect(host.querySelectorAll('.video-candidate')).toHaveLength(3);
   await act(async () => host.querySelector<HTMLButtonElement>('.video-candidate button')!.click());
   await select('lyrics');
   expect(current()?.getAttribute('data-video')).toBe(early.youtubeVideoId);
@@ -441,53 +441,67 @@ it('waits for the full search and switches the active video from the completed l
  }
 });
 
-it.each(['music','lyrics'] as const)('retries by title in %s mode and autoplays the first eligible result by relevance', async (preference) => {
+it('plays the first passing result by relevance and reports rejection reasons beside all results', async () => {
  const stage = await import('../visualization/cinematic/CinematicStage');
- let loadAnotherVideo: Parameters<typeof stage.default>[0]['onLoadAnotherVideo'];
+ let stageProps: Parameters<typeof stage.default>[0] | undefined;
  const draw = vi.spyOn(stage, 'default').mockImplementation(props => {
-  loadAnotherVideo = props.onLoadAnotherVideo;
-  return <span data-testid="fallback-stage" data-video={props.youtubeVideoId || ''} data-searching={String(props.videoSearchPending)}/>;
+  stageProps = props;
+  return <span data-testid="relevance-stage" data-video={props.youtubeVideoId || ''} data-searching={String(props.videoSearchPending)}/>;
  });
  const search = vi.mocked(searchStashCatalog), original = search.getMockImplementation()!;
  const video = (id: string, title: string, viewCount?: number) => ({
   id: 'yt_' + id, youtubeVideoId: id, title, sourceUrl: 'https://www.youtube.com/watch?v=' + id,
   artist: 'Uploader', album: '', duration: 200, provider: 'resolver' as const, viewCount,
  });
- const firstSearch = preference === 'lyrics'
-  ? video('aaaaaaaaaaa','Original test song Test artist Music Video',900_000)
-  : video('aaaaaaaaaaa','Unrelated Music Video',900_000);
- const staticVideo = video('bbbbbbbbbbb','Original test song Official Audio Lyrics',90_000_000);
- const musicVideo = video('ccccccccccc','Original test song Music Video',30_000);
- const firstLyric = video('ddddddddddd','Original test song Official Lyrical Video');
- const highViews = video('eeeeeeeeeee','Original test song Lyrics',90_000_000);
+ const rejected=video('aaaaaaaaaaa','Original Cover');
+ const first=video('bbbbbbbbbbb','Original Visualizer');
+ const popular=video('ccccccccccc','Original Official Lyric Video',90_000_000);
  let finish!: (songs: Awaited<ReturnType<typeof searchStashCatalog>>) => void;
- search.mockImplementation(async (query, _provider, _base, _signal, options) => {
-  if (query === 'Original test song Test artist video' && options?.background) return [firstSearch];
-  if (query === 'Original test song' && options?.titleOnly) return new Promise(resolve => {finish = resolve;});
-  return [];
- });
+ search.mockImplementation(async () => new Promise(resolve => {finish = resolve;}));
  const before = search.mock.calls.length;
  try {
-  await act(async () => {
-   const select = host.querySelector<HTMLSelectElement>('[aria-label="Preferred YouTube background"]')!;
-   select.value = preference;
-   select.dispatchEvent(new Event('change',{bubbles:true}));
-  });
   await act(async () => click('Load JioSaavn fixture'));
-  const current = () => host.querySelector('[data-testid="fallback-stage"]');
-  expect(current()?.getAttribute('data-video')).toBe('');
-  expect(current()?.getAttribute('data-searching')).toBe('true');
-  expect(search.mock.calls.slice(before).map(call=>call[0])).toEqual(['Original test song Test artist video','Original test song']);
   await act(async () => click('Show preloaded videos'));
-  await act(async () => finish([staticVideo,musicVideo,firstLyric,highViews]));
-  const winner = preference === 'lyrics' ? firstLyric : musicVideo;
-  expect(current()?.getAttribute('data-video')).toBe(winner.youtubeVideoId);
-  expect(current()?.getAttribute('data-searching')).toBe('false');
-  expect(host.querySelector('.video-candidate strong')?.textContent).toBe(winner.title);
+  expect(stageProps?.videoSearchPending).toBe(true);
+  expect(stageProps?.youtubeVideoId).toBeNull();
+  await act(async () => finish([rejected,first,popular]));
+  expect(stageProps?.videoSearchPending).toBe(false);
+  expect(stageProps?.youtubeVideoId).toBe(first.youtubeVideoId);
+  const rows = [...host.querySelectorAll('.video-candidate')];
+  expect(rows.map(row=>row.querySelector('strong')?.textContent)).toEqual([rejected.title,first.title,popular.title]);
+  expect(rows[0].textContent).toContain('Rejected keyword: cover');
   expect(host.querySelector('.youtube-background-picker')?.textContent).toContain('sorted by relevance');
-  await act(async () => loadAnotherVideo!(winner.youtubeVideoId));
-  expect(current()?.getAttribute('data-video')).toBe(preference === 'lyrics' ? highViews.youtubeVideoId : firstLyric.youtubeVideoId);
-  expect(search.mock.calls).toHaveLength(before+2);
+  await act(async () => stageProps!.onRejectBackgroundVideo!(first.youtubeVideoId,'Embedding blocked'));
+  expect(stageProps?.youtubeVideoId).toBe(popular.youtubeVideoId);
+  expect(host.querySelectorAll('.video-candidate')[1].textContent).toContain('Embedding blocked');
+  expect(search.mock.calls).toHaveLength(before+1);
+ } finally {
+  draw.mockRestore();
+  search.mockImplementation(original);
+ }
+});
+
+it('keeps videos after the twentieth result visible when no automatic match passes', async () => {
+ const stage = await import('../visualization/cinematic/CinematicStage');
+ const draw = vi.spyOn(stage, 'default').mockImplementation(props =>
+  <span data-testid="limited-stage" data-video={props.youtubeVideoId || ''} data-searching={String(props.videoSearchPending)}/>);
+ const search = vi.mocked(searchStashCatalog), original = search.getMockImplementation()!;
+ const videos = Array.from({length:21},(_,index)=>{
+  const id=String(index).padStart(11,'0');
+  return {id:'yt_'+id,youtubeVideoId:id,sourceUrl:'https://www.youtube.com/watch?v='+id,
+   title:index<20?'Original Reply':'Original Lyric Video',artist:'Uploader',album:'',duration:200,provider:'resolver' as const};
+ });
+ search.mockResolvedValue(videos);
+ const before = search.mock.calls.length;
+ try {
+  await act(async () => click('Load JioSaavn fixture'));
+  await act(async () => click('Show preloaded videos'));
+  const current=host.querySelector('[data-testid="limited-stage"]');
+  expect(current?.getAttribute('data-searching')).toBe('false');
+  expect(current?.getAttribute('data-video')).toBe('');
+  expect(host.querySelectorAll('.video-candidate')).toHaveLength(21);
+  expect(host.querySelectorAll('.video-candidate')[20].textContent).toContain('Outside the first 20 results');
+  expect(search.mock.calls).toHaveLength(before+1);
  } finally {
   draw.mockRestore();
   search.mockImplementation(original);

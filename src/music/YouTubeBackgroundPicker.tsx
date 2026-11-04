@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import {formatViewCount,isLyricalVideo,searchStashCatalog,type SongResult} from './providers';
-import {compareYouTubeVideoViews,filterYouTubeVideoChoices,matchesVideoPreference} from './videoMatching';
+import {AUTO_VIDEO_ATTEMPT_LIMIT,compareYouTubeVideoViews,evaluateBackgroundVideos,filterYouTubeVideoChoices} from './videoMatching';
 import { extractYouTubeVideoId, type TrackInfo } from "../metadata/trackInfo";
 import type { YouTubeBackgroundMode } from "../visualization/cinematic/CinematicStage";
 import { findYouTubeBackgrounds } from "./backgroundVideos";
@@ -11,12 +11,10 @@ export default function YouTubeBackgroundPicker({
   activeVideoId,
   preference,
   onChoose,
-  onSearchingChange,
-  onMatchedSearch,
   captionStatus,
   cachedCandidates,
   cachedCandidateCount,
-  cachedCandidateOrder = "views",
+  playbackRejections,
   automaticSearchPending,
 }: {
   track: TrackInfo;
@@ -26,12 +24,10 @@ export default function YouTubeBackgroundPicker({
   onChoose: (id: string, candidate?: SongResult) => void;
   backgroundMode?: YouTubeBackgroundMode;
   onBackgroundModeChange?: (mode: YouTubeBackgroundMode) => void;
-  onSearchingChange?: (searching: boolean) => void;
-  onMatchedSearch?: (candidates: SongResult[], candidateCount: number) => void;
   captionStatus?: string;
   cachedCandidates?: SongResult[];
   cachedCandidateCount?: number;
-  cachedCandidateOrder?: "views" | "relevance";
+  playbackRejections?: Readonly<Record<string,string>>;
   automaticSearchPending?: boolean;
 }) {
   const [results, setResults] = useState<SongResult[]>([]),
@@ -42,40 +38,31 @@ export default function YouTubeBackgroundPicker({
   const [showCached, setShowCached] = useState(false);
   const [searchOnlineOpen, setSearchOnlineOpen] = useState(false);
   const [sort, setSort] = useState<"relevance" | "views">("relevance");
-  // App supplies the completed order used by playback. Render it directly.
-  const preloadedResults = showCached ? cachedCandidates : undefined;
-  const visibleResults = preloadedResults ?? (searchOnlineOpen
-    ? (sort === "views" ? [...results].sort(compareYouTubeVideoViews) : results)
-    : results.filter(song => matchesVideoPreference(song,preference)));
-  const statusMessage = preloadedResults
+  const preloaded = showCached
+    ? evaluateBackgroundVideos(cachedCandidates ?? results,track.title,preference,playbackRejections)
+    : undefined;
+  const visibleResults = preloaded
+    ? preloaded.map(choice => ({song:choice.song,choice}))
+    : (searchOnlineOpen && sort === "views" ? [...results].sort(compareYouTubeVideoViews) : results)
+        .map(song => ({song,choice:undefined}));
+  const statusMessage = preloaded
     ? automaticSearchPending
       ? "Finding video candidates…"
-      : `${cachedCandidateCount ?? preloadedResults.length} search results · ${preloadedResults.length} relevant videos · sorted by ${cachedCandidateOrder}.${preloadedResults.length ? "" : " Search again with a different query."}`
+      : `${cachedCandidateCount ?? preloaded.length} search results · sorted by relevance · autoplay checks up to ${AUTO_VIDEO_ATTEMPT_LIMIT}.`
     : message;
   useEffect(()=>{
     pending.current?.abort();
     setShowCached(false);setResults([]);setMessage('');setBusy(false);
     setSearchOnlineOpen(false);setCustomQuery(track.title);setSort("relevance");
-    searchingCallback.current?.(false);
   },[track.title,track.artist,track.album,track.duration]);
-  const searchingCallback = useRef(onSearchingChange);
-  searchingCallback.current = onSearchingChange;
-  useEffect(
-    () => () => {
-      pending.current?.abort();
-      searchingCallback.current?.(false);
-    },
-    [],
-  );
+  useEffect(() => () => pending.current?.abort(), []);
   const runSearch = async (query?: string) => {
-    const online = query !== undefined;
     setShowCached(false);
     setResults([]);
     pending.current?.abort();
     const controller = new AbortController();
     pending.current = controller;
     setBusy(true);
-    searchingCallback.current?.(!online);
     setMessage("Finding YouTube backgrounds…");
     try {
       const base =
@@ -90,16 +77,12 @@ export default function YouTubeBackgroundPicker({
             controller.signal,
           );
       if (controller.signal.aborted) return;
-      if (search && onMatchedSearch) {
-        onMatchedSearch(search.candidates, search.candidateCount);
-        setShowCached(true);
-        return;
-      }
       const found = search?.candidates ?? await searchStashCatalog(query ?? track.title, 'resolver', base, controller.signal, {refresh: true});
       if (controller.signal.aborted) return;
       const compared = search?.candidateCount ?? found.length;
       const videos = search ? found : filterYouTubeVideoChoices(found);
       setResults(videos);
+      if (search) setShowCached(true);
       setMessage(videos.length
         ?`${compared} search results · ${videos.length} videos available. Choose a video below.`
         :`No videos found. ${compared} search results checked; static images and audio uploads are excluded. Try another query or paste a video link.`);
@@ -113,7 +96,6 @@ export default function YouTubeBackgroundPicker({
     } finally {
       if (!controller.signal.aborted) {
         setBusy(false);
-        searchingCallback.current?.(false);
       }
     }
   };
@@ -197,35 +179,41 @@ export default function YouTubeBackgroundPicker({
       {statusMessage && <p role="status">{statusMessage}</p>}
       {captionStatus && <p role="status">{captionStatus}</p>}
       <div className="track-candidates">
-        {visibleResults.map((song) => {
-          const id = extractYouTubeVideoId(song)!;
+        {visibleResults.map(({song,choice},index) => {
+          const id = extractYouTubeVideoId(song);
           const viewsLabel = song.viewCount === 0 ? "0 views" : formatViewCount(song.viewCount);
           const thumbUrl =
-            song.artwork || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+            song.artwork || (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : "");
           return (
-            <div className="candidate video-candidate" key={id} aria-current={id === activeVideoId ? "true" : undefined}>
-              <img
+            <div className="candidate video-candidate" key={`${song.id}-${index}`} aria-current={id && id === activeVideoId ? "true" : undefined}>
+              {thumbUrl ? <img
                 className="candidate-thumb"
                 src={thumbUrl}
                 alt={song.title}
                 loading="lazy"
                 referrerPolicy="no-referrer"
-              />
+              /> : <span aria-hidden="true" />}
               <div className="candidate-meta">
-                <strong>{song.videoTitle || song.title}</strong>
+                <strong>{song.videoTitle || song.title || "Untitled video"}</strong>
                 <small>
-                  {song.uploaderName||song.artist} ·{" "}
+                  {choice && `#${index+1} · `}{song.uploaderName||song.artist||"Unknown uploader"} ·{" "}
                   {song.duration
                     ? `${Math.floor(song.duration / 60)}:${String(Math.round(song.duration % 60)).padStart(2, "0")}`
                     : "Duration unknown"}
                   {viewsLabel ? ` · ${viewsLabel}` : " · Views unavailable"} · {isLyricalVideo(song) ? "Lyrics video" : "Video"}
-                  {id === activeVideoId ? " · Current" : ""}
+                  {id && id === activeVideoId ? " · Current" : ""}
                 </small>
+                {choice && <small>
+                  {choice.reasons.length ? `Rejected: ${choice.reasons.join(" · ")}` : "Passed filters"}
+                  {!choice.withinLimit && ` · Outside the first ${AUTO_VIDEO_ATTEMPT_LIMIT} results`}
+                </small>}
               </div>
               <button
                 type="button"
                 className="upload-button"
+                disabled={!id || choice?.canUse === false}
                 onClick={() => {
+                  if (!id) return;
                   onChoose(id,song);
                   setShowCached(false);
                   setResults([]);

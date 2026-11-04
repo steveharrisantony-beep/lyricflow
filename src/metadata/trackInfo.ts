@@ -95,7 +95,7 @@ export function extractYouTubeVideoId(
   }
  }
  if(typeof item.sourceUrl==='string'&&item.sourceUrl){
-  const m=item.sourceUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+  const m=item.sourceUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})(?![a-zA-Z0-9_-])/);
   if(m?.[1])return m[1];
  }
  return null;
@@ -326,4 +326,5 @@ export function rankCandidate(track: TrackInfo, candidate: SearchRecord, rawOver
     confidence: Math.max(0, Math.min(1, confidence)),
   };
 }
+
 

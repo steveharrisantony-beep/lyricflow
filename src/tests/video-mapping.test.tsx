@@ -123,20 +123,6 @@ it('keeps an unsaved signed video delay while a background mapping catches up',a
   expect(choose).toHaveBeenCalledWith('abcdefghijk',-2);
 });
 
-it('filters recording suitability before sorting music and lyric videos by views',async()=>{
-  const {relevantYouTubeVideoChoices}=await import('../music/videoMatching');
-  const track={title:'Starboy',artist:'The Weeknd',album:'Starboy',duration:230,source:'provider' as const,confidence:1,provider:'jiosaavn' as const};
-  const candidates=[
-    {id:'vid_audio_topic',title:'Starboy (Official Audio)',artist:'The Weeknd - Topic',album:'Audio Track',duration:230,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v=audioTopic1',viewCount:3_000_000_000},
-    {id:'vid_low_views',title:'The Weeknd - Starboy (Official Video)',artist:'The Weeknd',album:'YouTube',duration:232,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v=vidLowViews1',viewCount:450_000},
-    {id:'vid_most_views',title:'Starboy ft. Daft Punk',artist:'The Weeknd',album:'YouTube',duration:273,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v=34Na4j8AVgA',viewCount:2_400_000_000},
-    {id:'vid_lyric_most',title:'The Weeknd - Starboy (Official Lyric Video)',artist:'The Weeknd',album:'YouTube',duration:230,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v=lyricMost11',viewCount:85_000_000},
-    {id:'vid_lyric_low',title:'The Weeknd - Starboy Lyrics',artist:'The Weeknd',album:'YouTube',duration:230,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v=lyricLow111',viewCount:120_000},
-  ];
-  const choices = relevantYouTubeVideoChoices(candidates, track);
-  expect(choices.map(song=>song.id)).toEqual(['vid_lyric_most','vid_low_views','vid_lyric_low']);
-});
-
 it('renders video thumbnails in YouTubeBackgroundPicker custom video finding and supports Show preloaded videos & Search online',async()=>{
   const providers=await import('../music/providers');
   vi.spyOn(providers,'searchStashCatalog').mockResolvedValue([
@@ -427,7 +413,7 @@ it('rejects Topic channel videos at runtime before revealing them as a separate-
    })
   }));
  });
- expect(onReject).toHaveBeenCalledWith('abcdefghijk');
+ expect(onReject).toHaveBeenCalledWith('abcdefghijk','Topic channel');
  expect(host.querySelector('.cinematic-stack')?.getAttribute('data-background-state')).toBe('themes');
  expect(send.mock.calls.map(args=>JSON.parse(String(args[0]))).some(c=>c.func==='pauseVideo')).toBe(true);
 });
@@ -488,18 +474,17 @@ it('renders the supplied preloaded order and clears the list when the track chan
  const {default:Picker}=await import('../music/YouTubeBackgroundPicker');
  const search=vi.spyOn(musicProviders,'searchStashCatalog');
  const choices=Array.from({length:130},(_,i)=>({id:'yt_'+String(i).padStart(11,'0'),youtubeVideoId:String(i).padStart(11,'0'),title:i<2?'Example Artist - Ocean Road Official Video':'Other Artist - Other Song Official Video',artist:i<2?'Distributor':'Other Artist',album:'',duration:200,viewCount:i*1000,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v='+String(i).padStart(11,'0')}));
- const {relevantYouTubeVideoChoices}=await import('../music/videoMatching');
  const render=(title='Ocean Road')=>{
   const track={title,artist:'Example Artist',album:'',duration:200,source:'manual' as const,confidence:1};
-  const videos=relevantYouTubeVideoChoices(choices,track);
-  return <Picker track={track} activeVideoId={videos[0]?.youtubeVideoId ?? null} preference="lyrics" onChoose={()=>{}} cachedCandidates={videos} cachedCandidateCount={130}/>;
+  return <Picker track={track} activeVideoId={choices[0].youtubeVideoId} preference="lyrics" onChoose={()=>{}} cachedCandidates={choices} cachedCandidateCount={130}/>;
  };
  await act(async()=>root.render(render()));
  await act(async()=>Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Show preloaded videos')!.click());
  const rows=Array.from(host.querySelectorAll('.video-candidate'));
- expect(rows).toHaveLength(2);expect(rows[0].querySelector('img')?.getAttribute('src')).toContain('00000000001');
+ expect(rows).toHaveLength(130);expect(rows[0].querySelector('img')?.getAttribute('src')).toContain('00000000000');
  expect(rows[0].getAttribute('aria-current')).toBe('true');
- expect(host.textContent).toContain('130 search results · 2 relevant videos · sorted by views');expect(search).not.toHaveBeenCalled();
+ expect(rows[0].textContent).toContain('Video title needs lyric, lyrics, or lyrical');
+ expect(host.textContent).toContain('130 search results · sorted by relevance');expect(search).not.toHaveBeenCalled();
  await act(async()=>root.render(render('Different Song')));
  expect(host.querySelector('.video-candidate')).toBeNull();
 });

@@ -1,5 +1,5 @@
 import {afterEach,expect,it,vi} from 'vitest';
-import {findSongVideoCounterparts,parseVideoCounterparts,hydrateVideoMetadata,mergeVideoMetadata,parseMusicVideoSearch,searchMusicVideos,VideoSearchCache,youtubeViews,type UnofficialVideo} from './youtubeSearch';
+import {hydrateVideoMetadata,mergeVideoMetadata,parseMusicVideoSearch,searchMusicVideos,VideoSearchCache,youtubeViews,type UnofficialVideo} from './youtubeSearch';
 afterEach(()=>vi.unstubAllGlobals());
 const entry=(id='abcdefghijk',type='MUSIC_VIDEO_TYPE_OMV')=>({musicResponsiveListItemRenderer:{
  flexColumns:[{musicResponsiveListItemFlexColumnRenderer:{text:{runs:[{text:'Ocean Road',navigationEndpoint:{watchEndpoint:{videoId:id,watchEndpointMusicSupportedConfigs:{watchEndpointMusicConfig:{musicVideoType:type}}}}}]}}},
@@ -56,30 +56,6 @@ it('keeps the complete YouTube title when YouTube Music returns a shorter catalo
 });
 
 
-const wrapper=(primary='catalogue01',id='linkedVid01',type='MUSIC_VIDEO_TYPE_OMV')=>({playlistPanelVideoWrapperRenderer:{
- primaryRenderer:{playlistPanelVideoRenderer:{videoId:primary}},
- counterpart:[{counterpartRenderer:{playlistPanelVideoRenderer:{videoId:id,title:{runs:[{text:'Example Artist - Ocean Road Official Music Video'}]},lengthText:{simpleText:'4:40'},navigationEndpoint:{watchEndpoint:{watchEndpointMusicSupportedConfigs:{watchEndpointMusicConfig:{musicVideoType:type}}}}}}}]
-}});
-it('takes only the identified song counterpart, not a related track or an art-track counterpart',()=>{
- const song=video({rawId:'catalogue01',title:'Ocean Road',artistCredits:['Example Artist'],album:'Example Movie'});
- const results=parseVideoCounterparts({contents:[wrapper('otherSong01','wrongVid001'),wrapper(),wrapper('catalogue01','staticVid01','MUSIC_VIDEO_TYPE_ATV')]},song);
- expect(results).toHaveLength(1);expect(results[0]).toMatchObject({rawId:'linkedVid01',counterpartOf:'catalogue01',catalogueTitle:'Ocean Road',catalogueArtists:['Example Artist'],duration:280});
- expect(results[0].channelId).toBeUndefined();
-});
-it('resolves catalogue identity using duration but accepts its longer video, caches by account, and retries empty lookups',async()=>{
- const fetcher=vi.fn(async(input:unknown,options?:RequestInit)=>{
-  if(String(input).includes('/search'))return Response.json({contents:[entry('catalogue01','MUSIC_VIDEO_TYPE_ATV')]});
-  const body=JSON.parse(String(options?.body));expect(body.videoId).toBe('catalogue01');expect(body.playlistId).toBe('RDAMVMcatalogue01');
-  return Response.json({contents:[wrapper()]});
- });vi.stubGlobal('fetch',fetcher);
- const target={title:'Ocean Road',artist:'Example Artist',duration:230};
- const results=await findSongVideoCounterparts(target,{Authorization:'fixture'},'counterpart-account-a');
- expect(results[0]).toMatchObject({rawId:'linkedVid01',duration:280});expect(fetcher).toHaveBeenCalledTimes(2);
- await findSongVideoCounterparts(target,{},'counterpart-account-a');expect(fetcher).toHaveBeenCalledTimes(2);
- await findSongVideoCounterparts(target,{},'counterpart-account-b');expect(fetcher).toHaveBeenCalledTimes(4);
- fetcher.mockImplementation(async()=>Response.json({contents:[]}));
- await findSongVideoCounterparts(target,{},'counterpart-empty');await findSongVideoCounterparts(target,{},'counterpart-empty');expect(fetcher).toHaveBeenCalledTimes(6);
-});
 it('keeps credited artist channel IDs separate from the actual distributor uploader returned by player metadata',async()=>{
  vi.stubGlobal('fetch',vi.fn(async()=>Response.json({playabilityStatus:{status:'OK',playableInEmbed:false},videoDetails:{videoId:'abcdefghijk',channelId:'UCpublisher',author:'Actual Distributor',title:'Full Official Video Title',lengthSeconds:'280',viewCount:'10000'}})));
  const input=video({metadataSource:'ytmusic',artistChannelIds:['UCartist'],artistCredits:['Example Artist']});

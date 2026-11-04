@@ -1,5 +1,5 @@
-import {searchMusicVideos,mergeVideoMetadata,hydrateVideoMetadata,findSongVideoCounterparts,VideoSearchCache,youtubeViews} from './server/youtubeSearch';
-import {isYouTubeVideoCandidate,matchesYouTubeVideoTitle,primaryVideoArtist} from './src/music/videoMatching';
+import {searchMusicVideos,mergeVideoMetadata,hydrateVideoMetadata,VideoSearchCache,youtubeViews} from './server/youtubeSearch';
+import {AUTO_VIDEO_ATTEMPT_LIMIT,primaryVideoArtist} from './src/music/videoMatching';
 import {fetchYouTubeCaptions,CaptionFetchError} from './server/youtubeCaptions';
 import {buildYouTubeAuthHeaders,verifyYouTubeAccount,type YouTubeAuthContext} from './server/youtubeAuth';
 import express, { type Request, type Response } from 'express';
@@ -697,7 +697,7 @@ async function resolveDirectYouTubeVideoQuery(videoId: string): Promise<TrackMet
       const title = decodeHtmlEntities(String(data.title || '').trim());
       const author = decodeHtmlEntities(String(data.author_name || 'YouTube').trim());
       if (title) {
-        const trackId = `yt_${videoId}`;
+        const trackId = validId ? `yt_${videoId}` : `candidate:${tracks.length}`;
         const meta: TrackMetadata = {
           id: trackId,
           rawId: videoId,
@@ -733,7 +733,7 @@ function extractTextFromRunsOrSimple(field: unknown): string {
   return '';
 }
 
-function parseYouTubeSearchTree(root: unknown, limit: number, allowShortVideos = false): TrackMetadata[] {
+function parseYouTubeSearchTree(root: unknown, limit: number, preserveCandidates = false): TrackMetadata[] {
   const webTracks: TrackMetadata[] = [];
   const seenWebIds = new Set<string>();
 
@@ -751,7 +751,8 @@ function parseYouTubeSearchTree(root: unknown, limit: number, allowShortVideos =
 
     if (renderer && typeof renderer === 'object') {
       const videoId = String(renderer.videoId || '').trim();
-      if (/^[a-zA-Z0-9_-]{11}$/.test(videoId) && !seenWebIds.has(videoId)) {
+      const validId = /^[a-zA-Z0-9_-]{11}$/.test(videoId);
+      if (preserveCandidates || (validId && !seenWebIds.has(videoId))) {
         const rawTitle = decodeHtmlEntities(
           extractTextFromRunsOrSimple(renderer.title || renderer.headline).trim()
         );
@@ -771,33 +772,36 @@ function parseYouTubeSearchTree(root: unknown, limit: number, allowShortVideos =
         const lengthText = extractTextFromRunsOrSimple(renderer.lengthText);
         const duration = parseDurationText(lengthText);
         const viewCount = parseViewCountFromRenderer(renderer);
-        if (rawTitle && (allowShortVideos || duration === 0 || duration >= 45)) {
+        if (preserveCandidates || (rawTitle && (duration === 0 || duration >= 45))) {
           seenWebIds.add(videoId);
-          const trackId = `yt_${videoId}`;
+          const trackId = validId ? `yt_${videoId}` : `candidate:${webTracks.length}`;
           const isStaticAudio =
-            isTopicChannel ||
+            !preserveCandidates && (isTopicChannel ||
             rendererStr.includes('MUSIC_VIDEO_TYPE_ATV') ||
             /\b(?:official\s+audio|audio\s+only|full\s+audio|audio\s+track|audio\s+song|provided\s+to\s+youtube\s+by|auto-generated\s+by\s+youtube)\b/i.test(
               rawTitle
-            );
+            ));
           const meta: TrackMetadata = {
             id: trackId,
             rawId: videoId,
             provider: 'youtube',
             title: rawTitle,
-            artist: isStaticAudio ? `${channelName} - Topic` : channelName,
-            album: isStaticAudio ? 'Audio Track' : '',
+            artist: preserveCandidates ? rawChannel : isStaticAudio ? `${channelName} - Topic` : channelName,
+            album: preserveCandidates ? String(typeof renderer.album==='string' ? renderer.album : extractTextFromRunsOrSimple(renderer.album)) : isStaticAudio ? 'Audio Track' : '',
             duration,
             viewCount,
-            channelId:rendererChannelId(renderer),uploaderName:channelName,
+            channelId:rendererChannelId(renderer),uploaderName:preserveCandidates ? rawChannel : channelName,
+            embeddable:typeof renderer.embeddable==='boolean'?renderer.embeddable:undefined,
             channelVerified:rendererStr.includes('BADGE_STYLE_TYPE_VERIFIED_ARTIST')||rendererStr.includes('BADGE_STYLE_TYPE_VERIFIED')||rendererStr.includes('OWNER_BADGE_TYPE_VERIFIED'),
             artistCredits:rendererStr.includes('BADGE_STYLE_TYPE_VERIFIED_ARTIST')?[channelName]:undefined,
-            metadataSource:'innertube',visualContent:isStaticAudio?'static':'unknown',
-            videoType: isStaticAudio ? 'ATV' : rendererStr.includes('MUSIC_VIDEO_TYPE_OMV') ? 'OMV' : 'UGC',
-            sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
-            artwork: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+            metadataSource:'innertube',visualContent:isStaticAudio||renderer.visualContent==='static'?'static':'unknown',
+            videoType: isStaticAudio || renderer.videoType==='ATV' || /"musicVideoType":"MUSIC_VIDEO_TYPE_ATV"/.test(rendererStr)
+              ? 'ATV'
+              : renderer.videoType==='OMV'||/"musicVideoType":"MUSIC_VIDEO_TYPE_OMV"/.test(rendererStr) ? 'OMV' : 'UGC',
+            sourceUrl: validId ? `https://www.youtube.com/watch?v=${videoId}` : '',
+            artwork: validId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : undefined,
           };
-          setTrackMetaCache(trackId, meta);
+          if (validId) setTrackMetaCache(trackId, meta);
           webTracks.push(meta);
         }
       }
@@ -809,7 +813,7 @@ function parseYouTubeSearchTree(root: unknown, limit: number, allowShortVideos =
   return webTracks;
 }
 
-async function fetchPipedOrInvidiousVideos(query: string, limit = 16, deadline = Date.now()+6500, allowShortVideos = false): Promise<TrackMetadata[]> {
+async function fetchPipedOrInvidiousVideos(query: string, limit = 16, deadline = Date.now()+6500, preserveCandidates = false): Promise<TrackMetadata[]> {
   const q = encodeURIComponent(query.trim());
   const endpoints = [
     { url: `https://pipedapi.kavin.rocks/search?q=${q}&filter=videos`, type: 'piped' as const },
@@ -846,9 +850,10 @@ async function fetchPipedOrInvidiousVideos(query: string, limit = 16, deadline =
           item.videoId ||
             (urlStr.match(/(?:v=|\/watch\?v=|\/)([a-zA-Z0-9_-]{11})(?:[&?]|$)/)?.[1] ?? '')
         ).trim();
-        if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId) || seen.has(videoId)) continue;
+        const validId = /^[a-zA-Z0-9_-]{11}$/.test(videoId);
+        if (!preserveCandidates && (!validId || seen.has(videoId))) continue;
         const title = decodeHtmlEntities(String(item.title || '').trim());
-        if (!title) continue;
+        if (!preserveCandidates && !title) continue;
         const rawAuthor = decodeHtmlEntities(
           String(item.uploaderName || item.author || 'YouTube').trim()
         );
@@ -856,12 +861,12 @@ async function fetchPipedOrInvidiousVideos(query: string, limit = 16, deadline =
           String(item.shortDescription || item.description || '').trim()
         );
         const isTopic =
-          /\s*[-–—]\s*Topic\b/i.test(rawAuthor) ||
+          !preserveCandidates && (/\s*[-–—]\s*Topic\b/i.test(rawAuthor) ||
           /\b(?:Provided to YouTube by|Auto-generated by YouTube)\b/i.test(rawDesc) ||
-          /\b(?:official\s+audio|audio\s+only|full\s+audio|audio\s+track)\b/i.test(title);
+          /\b(?:official\s+audio|audio\s+only|full\s+audio|audio\s+track)\b/i.test(title));
         const artist = rawAuthor.replace(/\s*[-–—]\s*Topic\b/i, '').trim() || 'YouTube';
         const duration = Number(item.duration ?? item.lengthSeconds ?? 0);
-        if (!allowShortVideos && duration > 0 && duration < 45) continue;
+        if (!preserveCandidates && duration > 0 && duration < 45) continue;
         const views = Number(item.views ?? item.viewCount ?? 0);
         seen.add(videoId);
         const trackId = `yt_${videoId}`;
@@ -870,18 +875,19 @@ async function fetchPipedOrInvidiousVideos(query: string, limit = 16, deadline =
           rawId: videoId,
           provider: 'youtube',
           title,
-          artist: isTopic ? `${artist} - Topic` : artist,
-          album: isTopic ? 'Audio Track' : '',
+          artist: preserveCandidates ? rawAuthor : isTopic ? `${artist} - Topic` : artist,
+          album: preserveCandidates && typeof item.album==='string' ? item.album : isTopic ? 'Audio Track' : '',
           duration: Number.isFinite(duration) && duration > 0 ? duration : 0,
           viewCount: Number.isFinite(views) && views > 0 ? views : undefined,
-          videoType: isTopic ? 'ATV' : 'UGC',
-          metadataSource:'mirror',visualContent:isTopic?'static':'unknown',
+          videoType: isTopic||item.videoType==='ATV' ? 'ATV' : 'UGC',
+          metadataSource:'mirror',visualContent:isTopic||item.visualContent==='static'?'static':'unknown',
+          embeddable:typeof item.embeddable==='boolean'?item.embeddable:undefined,
           channelVerified:item.uploaderVerified===true||item.authorVerified===true,
           channelId:typeof item.authorId==='string'&&item.authorId.startsWith('UC')?item.authorId:undefined,
-          sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
-          artwork: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+          sourceUrl: validId ? `https://www.youtube.com/watch?v=${videoId}` : '',
+          artwork: validId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : undefined,
         };
-        setTrackMetaCache(trackId, meta);
+        if (validId) setTrackMetaCache(trackId, meta);
         tracks.push(meta);
         if (tracks.length >= limit) break;
       }
@@ -897,7 +903,7 @@ async function runYouTubeWebSearch(
   upstreamQuery: string,
   limit = 20,
   ytAuth?: YouTubeAuthContext,
-  allowShortVideos = false,
+  preserveCandidates = false,
 ): Promise<TrackMetadata[]> {
   const deadline=Date.now()+10000;
   const authHeaders = buildYouTubeAuthHeaders(ytAuth, 'https://www.youtube.com');
@@ -952,7 +958,7 @@ async function runYouTubeWebSearch(
       });
       if (!ytRes.ok) continue;
       const rawJson = await ytRes.json();
-      const tracks = parseYouTubeSearchTree(rawJson, Math.max(limit, 20), allowShortVideos);
+      const tracks = parseYouTubeSearchTree(rawJson, Math.max(limit, 20), preserveCandidates);
       if (tracks.length > 0) return tracks;
     } catch {
       // Try next Innertube client
@@ -960,32 +966,29 @@ async function runYouTubeWebSearch(
   }
 
   // 3. Fallback to Piped / Invidious public video search mirrors if YouTube Innertube is rate-limited
-  return fetchPipedOrInvidiousVideos(upstreamQuery, Math.max(limit, 20),deadline,allowShortVideos);
+  return fetchPipedOrInvidiousVideos(upstreamQuery, Math.max(limit, 20),deadline,preserveCandidates);
 }
 
 const videoSearchCache = new VideoSearchCache<TrackMetadata[]>();
 async function searchBackgroundVideos(title:string,artist:string,ytAuth?:YouTubeAuthContext){
-  const query = `${title} ${artist} video`;
+  const query = [title,artist,"video"].filter(Boolean).join(" ");
   const scope = createHash('sha256').update(JSON.stringify(ytAuth||{})).digest('hex');
   const region = process.env.YOUTUBE_REGION||'IN';
   return videoSearchCache.get(JSON.stringify(['background',scope,region,title,artist]),async()=>{
-    const pool = await runYouTubeWebSearch(query,40,ytAuth,true);
-    const matches = pool.filter(video =>
-      matchesYouTubeVideoTitle(video.videoTitle||video.title,{title,artist}) &&
-      isYouTubeVideoCandidate({...video,provider:'resolver',youtubeVideoId:video.rawId})
-    );
-    const hydrated = await hydrateVideoMetadata(matches,buildYouTubeAuthHeaders(ytAuth),scope,true);
+    const pool = await runYouTubeWebSearch(query,Infinity,ytAuth,true);
+    const firstCandidates = pool.slice(0,AUTO_VIDEO_ATTEMPT_LIMIT).filter(video=>/^[\w-]{11}$/.test(video.rawId));
+    const hydrated = await hydrateVideoMetadata(firstCandidates,buildYouTubeAuthHeaders(ytAuth),scope,true);
     const details = new Map(hydrated.map(video=>[video.rawId,video]));
     return pool.map(video=>details.get(video.rawId)??video);
   });
 }
-async function runSingleYouTubeWebSearch(query:string,limit=40,ytAuth?:YouTubeAuthContext,{refresh=false,allowShortVideos=false}={}):Promise<TrackMetadata[]> {
+async function runSingleYouTubeWebSearch(query:string,limit=40,ytAuth?:YouTubeAuthContext,{refresh=false}={}):Promise<TrackMetadata[]> {
   const scope=createHash('sha256').update(JSON.stringify(ytAuth||{})).digest('hex');
   const region=process.env.YOUTUBE_REGION||'IN';
   const load=async()=>{
     const [music,web]=await Promise.all([
       searchMusicVideos(query,buildYouTubeAuthHeaders(ytAuth,'https://music.youtube.com'),region),
-      runYouTubeWebSearch(query,Math.max(limit,40),ytAuth,allowShortVideos),
+      runYouTubeWebSearch(query,Math.max(limit,40),ytAuth),
     ]);
     const decodedMusic=music.map(v=>({...v,title:decodeHtmlEntities(v.title),artist:decodeHtmlEntities(v.artist),artistCredits:v.artistCredits?.map(decodeHtmlEntities)}));
     const pooled=mergeVideoMetadata<TrackMetadata>(refresh?[web,decodedMusic as TrackMetadata[]]:[decodedMusic as TrackMetadata[],web]);
@@ -2862,14 +2865,9 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
             : rawProvider === 'youtube' || rawProvider === 'resolver'
               ? 'youtube'
               : 'jiosaavn';
-    const titleOnly = provider === 'youtube' && req.query.titleOnly === '1';
-    const refresh = provider === 'youtube' && (req.query.refresh === '1' || titleOnly);
+    const refresh = provider === 'youtube' && req.query.refresh === '1';
     const backgroundTitle = provider === 'youtube' ? String(req.query.backgroundTitle || '').trim() : '';
     const backgroundArtist = primaryVideoArtist(String(req.query.backgroundArtist || ''));
-    if (backgroundTitle && !backgroundArtist) {
-      res.status(400).json({ detail: 'Enter the primary artist for the background video search.' });
-      return;
-    }
     if (q.length < (refresh ? 1 : 2)) {
       res.status(400).json({ detail: refresh ? 'Enter a YouTube search query.' : 'Enter at least 2 characters.' });
       return;
@@ -2887,9 +2885,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
         if (refresh) res.setHeader('Cache-Control', 'no-store');
         results = backgroundTitle
           ? await searchBackgroundVideos(backgroundTitle,backgroundArtist,ytAuth)
-          : titleOnly
-            ? await runSingleYouTubeWebSearch(q,28,ytAuth,{refresh:true,allowShortVideos:true})
-            : await searchYouTubeMusic(q, provider, provider === 'youtube' ? 28 : 20, ytAuth, refresh);
+          : await searchYouTubeMusic(q, provider, provider === 'youtube' ? 28 : 20, ytAuth, refresh);
       } else if (provider === 'audius') {
         results = await searchAudius(q, 12);
       }
@@ -3224,17 +3220,6 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
   app.get(['/music/romanize', '/romanize'], handleRomanize);
   app.get(['/music/yt-subtitles', '/yt-subtitles', '/music/yt-subtitles/:videoId'], handleYouTubeSubtitles);
   app.get(['/music/sponsorblock/:videoId', '/sponsorblock/:videoId', '/music/sponsorblock'], handleSponsorBlock);
-  app.get(['/music/video-counterparts','/video-counterparts'],async(req:Request,res:Response)=>{
-    const title=String(req.query.title||'').trim(),artist=String(req.query.artist||'').trim(),album=String(req.query.album||'').trim();
-    const duration=Number(req.query.duration||0);
-    if(title.length<2||title.length>300||artist.length>500||album.length>300||!Number.isFinite(duration)||duration<0||duration>86400){res.status(400).json({detail:'Invalid song metadata.'});return;}
-    const auth=extractRequestYouTubeAuth(req),scope=createHash('sha256').update(JSON.stringify(auth||{})).digest('hex');
-    const videos=await findSongVideoCounterparts({title,artist,album,duration},buildYouTubeAuthHeaders(auth,'https://music.youtube.com'),scope,process.env.YOUTUBE_REGION||'IN');
-    const enriched=await hydrateVideoMetadata(videos,buildYouTubeAuthHeaders(auth),scope);
-    for(const video of enriched)setTrackMetaCache(video.id,video);
-    res.setHeader('Cache-Control','no-store');
-    res.json({data:enriched.map(video=>({...video,provider:'resolver',youtubeVideoId:video.rawId}))});
-  });
   app.get(['/music/search', '/search'], handleSearch);
   app.get(['/music/resolve/:trackId', '/resolve/:trackId'], handleResolve);
   app.get(['/music/audio/:trackId', '/audio/:trackId'], handleAudio);

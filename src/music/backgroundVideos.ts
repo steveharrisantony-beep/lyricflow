@@ -1,17 +1,12 @@
-import {filterYouTubeVideoChoices,primaryVideoArtist,relevantYouTubeVideoChoices,type VideoTarget} from './videoMatching';
+import {primaryVideoArtist,type VideoTarget} from './videoMatching';
 import {searchStashCatalog} from './providers';
 
 export async function findYouTubeBackgrounds(track:VideoTarget,base:string,signal?:AbortSignal){
  const title=track.title.trim();
+ if(!title)return {candidates:[],candidateCount:0};
  const artist=primaryVideoArtist(track.artist);
- if(!title||!artist)return {candidates:[],candidateCount:0};
- const found=await searchStashCatalog(`${title} ${artist} video`,'resolver',base,signal,{background:{title,artist}});
+ const query=[title,artist,'video'].filter(Boolean).join(' ');
+ const candidates=await searchStashCatalog(query,'resolver',base,signal,{background:{title,artist}});
  signal?.throwIfAborted();
- return {candidates:relevantYouTubeVideoChoices(found,track),candidateCount:found.length};
-}
-
-export async function findYouTubeBackgroundsByTitle(title:string,base:string,signal?:AbortSignal){
- const found=await searchStashCatalog(title.trim(),'resolver',base,signal,{titleOnly:true});
- signal?.throwIfAborted();
- return {candidates:filterYouTubeVideoChoices(found),candidateCount:found.length};
+ return {candidates,candidateCount:candidates.length};
 }

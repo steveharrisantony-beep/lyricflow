@@ -22,6 +22,7 @@ import {drawInstrumentalMark} from './typography';
 import {GraphicCompositions,type GraphicSystem} from './procedural/GraphicCompositions';
 import {useYouTubeAuth} from '../../music/youtubeAuth';
 import {useNativePlaybackPolicy} from '../../audio/nativePlaybackPolicy';
+import {isYouTubeTopicChannel} from '../../music/videoMatching';
 
 export type Quality='High'|'Balanced'|'Performance';
 export const CAMERA_VIEWS=['Front'] as const;
@@ -80,7 +81,7 @@ export interface CinematicProps{
  onLoadAnotherVideo?:(videoId:string)=>void;
  loadingAnotherVideo?:boolean;
  videoRecoveryMessage?:string;
- onRejectBackgroundVideo?:(videoId:string)=>void;
+ onRejectBackgroundVideo?:(videoId:string,reason:string)=>void;
  recordingKey?:string;
  externalPlayer?:boolean;
  videoSearchPending?:boolean;
@@ -705,6 +706,11 @@ export default function CinematicStage(props:CinematicProps){
     syncYtPlayerState();
    }else if(evt==='onError'){
     const code=Number(data.info);
+     const current=latestPropsRef.current;
+     if((code===101||code===150)&&current.youtubeVideoId&&current.onRejectBackgroundVideo){
+      current.onRejectBackgroundVideo(current.youtubeVideoId,'Embedding blocked');
+      return;
+     }
      setCanReplaceVideo(true);
      setPlaybackError(code===101||code===150?'This video does not allow embedded playback. Choose another video.':code===153?'YouTube could not verify this player. Try reloading or choose another video.':'YouTube could not play this video. Try reloading or choose another video.');
    }else if(evt==='onAutoplayBlocked'){
@@ -745,16 +751,12 @@ export default function CinematicStage(props:CinematicProps){
      // A reused iframe can report the previous video while loadVideoById is pending.
      // Ignore that clock; it is not evidence of an advertisement.
      if(playingVidId&&playingVidId!==latestPropsRef.current.youtubeVideoId)return;
-     if(latestPropsRef.current.hasSeparateAudioStream&&videoData){
+     if(latestPropsRef.current.hasSeparateAudioStream&&latestPropsRef.current.onRejectBackgroundVideo&&videoData){
       const vdAuthor=typeof videoData.author==='string'?videoData.author:'';
-      const vdTitle=typeof videoData.title==='string'?videoData.title:'';
-      if(
-       /(?:^|[\s\-–—])Topic\b/i.test(vdAuthor)||
-       /\b(?:official\s+audio|audio\s+only|full\s+audio|audio\s+track|provided\s+to\s+youtube\s+by|auto-generated\s+by\s+youtube)\b/i.test(`${vdTitle} ${vdAuthor}`)
-      ){
+      if(isYouTubeTopicChannel(vdAuthor)){
        sendYouTubeCommand(ytIframeRef.current,'pauseVideo');
        const rejectedId=playingVidId||latestPropsRef.current.youtubeVideoId||'';
-       if(rejectedId)latestPropsRef.current.onRejectBackgroundVideo?.(rejectedId);
+       if(rejectedId)latestPropsRef.current.onRejectBackgroundVideo?.(rejectedId,'Topic channel');
        return;
       }
      }
@@ -1034,3 +1036,4 @@ export default function CinematicStage(props:CinematicProps){
   </div>}
  </div>;
 }
+

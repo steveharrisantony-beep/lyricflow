@@ -6,11 +6,10 @@ const sample = new Uint8Array([1, 2, 3, 4]);
 let rangeForwarded = false;
 let captionRequests=0;
 let youtubeSearchRequests=0;
-let youtubeDirectLookups=0;
 const backgroundTitle='Apna Bana Le - Bhediya';
 const backgroundArtist='Sachin-Jigar';
 const backgroundQuery=`${backgroundTitle} ${backgroundArtist} video`;
-const backgroundIds=['ElZfdU54Cp8',...Array.from({length:7},(_,i)=>`bg${String(i).padStart(9,'0')}`)];
+const backgroundIds=['ElZfdU54Cp8',...Array.from({length:21},(_,i)=>`bg${String(i).padStart(9,'0')}`)];
 const lookedUpBackgroundIds=[];
 let wordLyricsAvailable=false,wordLookupCount=0;
 let completeAccountCheck;
@@ -19,10 +18,6 @@ const verifiedAccount = {actions:[{openPopupAction:{popup:{multiPageMenuRenderer
 }}}}}]};
 globalThis.fetch = async (input, options) => {
   const url = new URL(String(input));
-  if(url.hostname==='www.youtube.com'&&url.pathname==='/oembed'){
-    youtubeDirectLookups++;
-    return Response.json({title:'Direct lookup fixture',author_name:'Fixture author'});
-  }
   if(url.hostname==='lrc.red'&&url.pathname==='/api/v1'){
     wordLookupCount++;
     return Response.json({results:wordLyricsAvailable?[{isrc:'TEST00000001',title:'Example Song',artist:'Example Artist',duration:180,timing_type:'word'}]:[]});
@@ -49,17 +44,7 @@ globalThis.fetch = async (input, options) => {
     }});
   }
   if(url.hostname==='music.youtube.com'&&url.pathname==='/youtubei/v1/search'){
-    const body=JSON.parse(options.body);
-    if(body.params==='EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D')return Response.json({contents:[{musicResponsiveListItemRenderer:{
-      playlistItemData:{videoId:'catalogue01'},
-      flexColumns:[{musicResponsiveListItemFlexColumnRenderer:{text:{runs:[{text:'Example Song',navigationEndpoint:{watchEndpoint:{videoId:'catalogue01',watchEndpointMusicSupportedConfigs:{watchEndpointMusicConfig:{musicVideoType:'MUSIC_VIDEO_TYPE_ATV'}}}}}]}}},
-       {musicResponsiveListItemFlexColumnRenderer:{text:{runs:[{text:'Example Artist',navigationEndpoint:{browseEndpoint:{browseId:'UCexample'}}},{text:'3:00'}]}}}]
-    }}]});
     return Response.json({contents:[]});
-  }
-  if(url.hostname==='music.youtube.com'&&url.pathname==='/youtubei/v1/next'){
-    const body=JSON.parse(options.body);assert.equal(body.videoId,'catalogue01');
-    return Response.json({contents:[{playlistPanelVideoWrapperRenderer:{primaryRenderer:{playlistPanelVideoRenderer:{videoId:'catalogue01'}},counterpart:[{counterpartRenderer:{playlistPanelVideoRenderer:{videoId:'linkedVid01',title:{simpleText:'Example Artist Example Song Official Music Video'},lengthText:{simpleText:'3:40'},navigationEndpoint:{watchEndpoint:{watchEndpointMusicSupportedConfigs:{watchEndpointMusicConfig:{musicVideoType:'MUSIC_VIDEO_TYPE_OMV'}}}}}}}]}}]});
   }
   if(url.hostname==='music.youtube.com'&&url.pathname==='/youtubei/v1/account/account_menu'){
     const cookie=options?.headers?.Cookie||'';
@@ -80,8 +65,6 @@ globalThis.fetch = async (input, options) => {
         lengthSeconds:'30', viewCount:videoId==='ElZfdU54Cp8'?'629000000':'1000',
       }});
     }
-    if(videoId==='wrongSong01')lookedUpBackgroundIds.push(videoId);
-    if(videoId==='linkedVid01')return Response.json({playabilityStatus:{status:'OK',playableInEmbed:true},videoDetails:{videoId,channelId:'UCn4rEMqKtwBQ6-oEwbd4PcA',author:'Sony Music South',title:'Example Song Official Music Video',lengthSeconds:'220',viewCount:'123456'}});
     return Response.json({videoDetails:{videoId},playabilityStatus:{status:'OK'},captions:{playerCaptionsTracklistRenderer:{captionTracks:[{baseUrl:'https://www.youtube.com/api/timedtext?v='+videoId+'&fmt=srv3',vssId:'.en',languageCode:'en',name:{runs:[{text:'English [CC]'}]}}]}}});
   }
   if(url.hostname==='www.youtube.com'&&url.pathname==='/api/timedtext'){
@@ -92,15 +75,10 @@ globalThis.fetch = async (input, options) => {
   if(url.hostname==='www.youtube.com'&&url.pathname==='/youtubei/v1/search'){
     youtubeSearchRequests++;
     const {query}=JSON.parse(options.body);
-    if(query==='Unbreakable'){
-      return Response.json({contents:[{videoRenderer:{
-        videoId:'shortSong01',title:{simpleText:'Unbreakable (Lyric Video)'},lengthText:{simpleText:'0:30'},
-      }}]});
-    }
     if(query===backgroundQuery){
-      return Response.json({contents:[...backgroundIds,'wrongSong01'].map(videoId=>({videoRenderer:{
+      return Response.json({contents:['invalid',...backgroundIds].map(videoId=>({videoRenderer:{
         videoId,
-        title:{simpleText:videoId==='wrongSong01'?'Apna Bana Le | Bhediya | Different Artist':'Apna Bana Le | Sachin-Jigar | Bhediya'},
+        title:{simpleText:videoId==='invalid'?'Apna malformed result':'Apna Bana Le Official Audio Visualizer'},
         lengthText:{simpleText:'0:30'},
       }}))});
     }
@@ -205,26 +183,19 @@ try {
     assert.ok((await online.json()).data.length);
     assert.equal(youtubeSearchRequests, afterPreload + attempt, 'Each online search must query YouTube again');
   }
-  const counterpart=await (await request('/music/video-counterparts?title=Example+Song&artist=Example+Artist&duration=180')).json();
-  assert.equal(counterpart.data[0].youtubeVideoId,'linkedVid01');
-  assert.equal(counterpart.data[0].counterpartOf,'catalogue01');
-  assert.equal(counterpart.data[0].uploaderName,'Sony Music South');
-  assert.equal(counterpart.data[0].duration,220,'Video duration can exceed its catalogue recording');
-  assert.equal((await request('/music/video-counterparts?title=x')).status,400);
   const beforeBackgroundSearch = youtubeSearchRequests;
   const backgroundParams = new URLSearchParams({
     q:backgroundQuery,provider:'youtube',backgroundTitle,backgroundArtist,
   });
   const backgrounds = await (await request('/music/search?'+backgroundParams)).json();
   assert.equal(youtubeSearchRequests,beforeBackgroundSearch+1,'Automatic matching uses one title/primary artist query');
-  assert.deepEqual([...lookedUpBackgroundIds].sort(),[...backgroundIds].sort(),'Look up every matching ID, including candidates after the old six-video limit');
-  assert.equal(backgrounds.data.find(video=>video.youtubeVideoId==='ElZfdU54Cp8')?.viewCount,629000000);
-  assert.equal(backgrounds.data.find(video=>video.youtubeVideoId==='wrongSong01')?.viewCount,undefined);
-  const directLookupsBeforeTitleSearch = youtubeDirectLookups;
-  const byTitle = await (await request('/music/search?q=Unbreakable&provider=youtube&titleOnly=1')).json();
-  assert.equal(byTitle.data[0]?.youtubeVideoId,'shortSong01');
-  assert.equal(byTitle.data[0]?.duration,30);
-  assert.equal(youtubeDirectLookups,directLookupsBeforeTitleSearch,'An eleven-character title is a query, never a direct video lookup');
+  assert.deepEqual([...lookedUpBackgroundIds].sort(),backgroundIds.slice(0,19).sort(),'The first twenty ranks include malformed rows and later rows are not probed');
+  assert.equal(backgrounds.data[0].title,'Apna malformed result');
+  assert.equal(backgrounds.data[0].youtubeVideoId,undefined);
+  assert.deepEqual(backgrounds.data.slice(1).map(video=>video.youtubeVideoId),backgroundIds);
+  assert.equal(backgrounds.data[1].viewCount,629000000);
+  assert.equal(backgrounds.data.at(-1).duration,30);
+  assert.equal(backgrounds.data.at(-1).videoType,'UGC','Title words must not invent an audio-only classification');
   const resolved = await (await request('/music/resolve/saavn_fixture')).json();
   assert.equal(resolved.format, 'audio');
   const audio = await request('/music' + resolved.streamPath, {Range: 'bytes=0-3'});
