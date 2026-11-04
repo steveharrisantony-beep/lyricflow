@@ -52,7 +52,7 @@ export function useVideoRecovery({selectionKey,track,candidates,preference,exclu
    let candidate=choose([...candidates,...current.candidates]);
    if(!candidate){
     const base=localStorage.getItem('lyricflow.resolver')||import.meta.env.VITE_MUSIC_RESOLVER||'';
-    const result=await findYouTubeBackgrounds(track,preference,base,controller.signal);
+    const result=await findYouTubeBackgrounds(track,base,controller.signal);
     if(controller.signal.aborted)return;
     current.candidates=result.candidates;
     onMatchedSearch?.(result.candidates,result.candidateCount);

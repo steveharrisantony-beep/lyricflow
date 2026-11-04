@@ -16,8 +16,9 @@ with `YOUTUBE_REGION` in the embedded/backend environment.
   use the search view count if available.
 - Wait for the searches and view lookups to finish, then choose the highest-viewed
   candidate with a known count. In Lyrics video mode, require `lyric`, `lyrics`,
-  or `lyrical` in the title. Personal mappings take precedence. Recovery uses the
-  same order and skips failed videos.
+  or `lyrical` in the title. Changing the preference reselects from the completed
+  results. Personal mappings take precedence. Recovery uses the same order and
+  skips failed videos.
 
 ## Mapping picker
 

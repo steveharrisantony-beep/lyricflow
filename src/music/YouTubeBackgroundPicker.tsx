@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import {formatViewCount,isLyricalVideo,searchStashCatalog,type SongResult} from './providers';
-import {compareYouTubeVideoViews,filterYouTubeVideoChoices} from './videoMatching';
+import {compareYouTubeVideoViews,filterYouTubeVideoChoices,matchesVideoPreference} from './videoMatching';
 import { extractYouTubeVideoId, type TrackInfo } from "../metadata/trackInfo";
 import type { YouTubeBackgroundMode } from "../visualization/cinematic/CinematicStage";
 import { findYouTubeBackgrounds } from "./backgroundVideos";
@@ -42,9 +42,9 @@ export default function YouTubeBackgroundPicker({
   const [sort, setSort] = useState<"relevance" | "views">("relevance");
   // App supplies the completed order used by playback. Render it directly.
   const preloadedResults = showCached ? cachedCandidates : undefined;
-  const visibleResults = preloadedResults ?? (searchOnlineOpen && sort === "views"
-    ? [...results].sort(compareYouTubeVideoViews)
-    : results);
+  const visibleResults = preloadedResults ?? (searchOnlineOpen
+    ? (sort === "views" ? [...results].sort(compareYouTubeVideoViews) : results)
+    : results.filter(song => matchesVideoPreference(song,preference)));
   const statusMessage = preloadedResults
     ? automaticSearchPending
       ? "Finding video candidates…"
@@ -55,7 +55,7 @@ export default function YouTubeBackgroundPicker({
     setShowCached(false);setResults([]);setMessage('');setBusy(false);
     setSearchOnlineOpen(false);setCustomQuery(track.title);setSort("relevance");
     searchingCallback.current?.(false);
-  },[track.title,track.artist,track.album,track.duration,preference]);
+  },[track.title,track.artist,track.album,track.duration]);
   const searchingCallback = useRef(onSearchingChange);
   searchingCallback.current = onSearchingChange;
   useEffect(
@@ -84,7 +84,6 @@ export default function YouTubeBackgroundPicker({
         ? null
         : await findYouTubeBackgrounds(
             track,
-            preference,
             base,
             controller.signal,
           );

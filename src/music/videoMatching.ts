@@ -5,7 +5,8 @@ export {isUnwantedVideoVariant};
 export type VideoTarget={title:string;artist:string};
 export const primaryVideoArtist=(artist:string)=>artist.split(/[,;]|\s+(?:feat\.?|featuring|ft\.?)\s+/i)[0].trim();
 
-export const isLyricalVideo=(song:SongResult)=>/\b(?:lyric(?:s|al)?|lirics?)\b/i.test(`${song.title} ${song.videoTitle||''}`);
+export const isLyricalVideo=(song:SongResult)=>/\b(?:lyrics?|lyrical)\b/i.test(song.videoTitle||song.title);
+export const matchesVideoPreference=(song:SongResult,preference:'music'|'lyrics')=>preference==='music'||isLyricalVideo(song);
 export function isYouTubeVideoCandidate(song:SongResult){
  const label=`${song.title} ${song.videoTitle||''}`;
  if(!extractYouTubeVideoId(song)||song.embeddable===false||song.visualContent==='static'||song.videoType==='ATV'||/(?:^|[\s\-–—])Topic\b/i.test(song.uploaderName||song.artist)||/^Audio Track$/i.test(song.album))return false;
@@ -39,7 +40,7 @@ export function matchesYouTubeVideoTitle(videoTitle:string,track:VideoTarget):bo
 export function relevantYouTubeVideoChoices(songs:SongResult[],track:VideoTarget,preference:'music'|'lyrics'='music'):SongResult[]{
  return sortYouTubeVideoChoicesByViews(songs,song=>{
   const title=song.videoTitle||song.title;
-  return matchesYouTubeVideoTitle(title,track)&&(preference!=='lyrics'||/\b(?:lyrics?|lyrical)\b/i.test(title));
+  return matchesYouTubeVideoTitle(title,track)&&matchesVideoPreference(song,preference);
  });
 }
 export const hasYouTubeViewCount=(song:SongResult)=>song.viewCount!==undefined;

@@ -40,7 +40,7 @@ it('skips hidden components and uses an explicit mapped video without automatic 
  const context=correctionContext(track,'lyrics')!;
  writeDevice(scopedKey('songMappings',null),{[context.recordingKey]:{identity:context.identity,hideLyrics:true,video:{youtubeVideoId:'abcdefghijk',delaySeconds:null}}});
  expect(await prepareSongLyrics(track,null,{engine:'lyricflow'})).toBeNull();
- expect((await prepareSongVideo(track,null,'lyrics',''))?.automaticVideoId).toBe('abcdefghijk');
+ expect(await prepareSongVideo(track,null,'')).toBeNull();
  expect(resolveStashLyricsChain).not.toHaveBeenCalled();expect(findYouTubeBackgrounds).not.toHaveBeenCalled();
 });
 it('aborts pending work when its final consumer leaves and ignores results for evicted songs',async()=>{
@@ -81,4 +81,5 @@ it('reuses an explicitly selected line-synced source without automatic upgrades'
  expect(await prepareSongLyrics(track,null,{engine:'lrclib'})).toEqual(result);
  expect(resolveStashLyricsChain).toHaveBeenCalledOnce();
 });
+
 

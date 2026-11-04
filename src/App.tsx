@@ -1,4 +1,4 @@
-import {hasYouTubeViewCount} from './music/videoMatching';
+import {hasYouTubeViewCount,matchesVideoPreference} from './music/videoMatching';
 import {isSyncedLyricsSource,lyricProviderName,normalizeLyricSource} from './lyrics/sourceLabels';
 import {selectedPaletteIds,togglePaletteSelection,enableAllPaletteSelections,enableAllPalettesForTheme,type ThemePaletteSelections} from './visualization/cinematic/themeSelection';
 import {normalizeLyricLayout,type LyricLayoutSettings} from './lyrics/lyricLayout';
@@ -519,7 +519,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const [localLoaded, setLocalLoaded] = useState(false);
   const [localTrack, setLocalTrack] = useState<TrackInfo | null>(null);
   const [songQueue,setSongQueue]=useState<TrackInfo[]>([]);
-  useSongPreloader(localTrack,songQueue,uid,preferredVideoType);
+  useSongPreloader(localTrack,songQueue,uid);
   const [incoming, setIncoming] = useState<IncomingLyrics | null>(null);
   const [activeLyrics, setActiveLyrics] = useState({
     recordingKey: "",
@@ -1242,16 +1242,15 @@ export default function App({ user = null }: { user?: User | null }) {
         localTrack.album || "",
         Math.round(localTrack.duration),
         localTrack.provider,
-        preferredVideoType,
       ].join("|")
     : "";
   const preloadedVideoChoices = useMemo(() => {
     if (!localTrack || autoVideoMatch.key !== videoSearchKey || autoVideoMatch.pending) return [];
     return autoVideoMatch.candidates.filter(candidate => {
       const id = extractYouTubeVideoId(candidate);
-      return id && !rejectedBgVideoIds.includes(id);
+      return id && !rejectedBgVideoIds.includes(id) && matchesVideoPreference(candidate,preferredVideoType);
     });
-  }, [autoVideoMatch, localTrack, videoSearchKey, rejectedBgVideoIds]);
+  }, [autoVideoMatch, localTrack, videoSearchKey, rejectedBgVideoIds, preferredVideoType]);
   const autoYoutubeVideoId = extractYouTubeVideoId(preloadedVideoChoices.find(hasYouTubeViewCount));
   const acceptMatchedVideos = (candidates: SongResult[], candidateCount: number) => {
     setAutoVideoMatch(previous => previous.key === videoSearchKey
@@ -1306,7 +1305,6 @@ export default function App({ user = null }: { user?: User | null }) {
     void prepareSongVideo(
       localTrack,
       uid,
-      preferredVideoType,
       base,
       controller.signal,
     )
@@ -1336,7 +1334,6 @@ export default function App({ user = null }: { user?: User | null }) {
     songMapping.hideVideo,
     mappedYoutubeVideoId,
     hasSeparateAudioStream,
-    preferredVideoType,
   ]);
 
   // Android External Player: listen for notification media sessions & sync song metadata + playback position
