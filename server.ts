@@ -1,6 +1,6 @@
 import {convertTtmlToEnhancedLrc} from './src/lyrics/ttml';
 import {hasWordTiming} from './src/lyrics/lyricsQuality';
-import { searchLyricsStageProvider } from './server/lyricsStage';
+import { LYRICS_USER_AGENT, searchLrcRedRecordings, searchLyricsStageProvider } from './server/lyricsStage';
 import { lyricsStageProviders, type LyricsStageProvider } from './src/lyrics/searchPlan';
 import {searchMusicVideos,mergeVideoMetadata,hydrateVideoMetadata,VideoSearchCache,youtubeViews} from './server/youtubeSearch';
 import {AUTO_VIDEO_ATTEMPT_LIMIT} from './src/music/videoMatching';
@@ -67,6 +67,7 @@ export interface ServerLyricsResponse {
   sourceUrl?: string;
   title?: string;
   artist?: string;
+  duration?: number;
   hasWordSync: boolean;
   subtitleTracks?: Array<{
     id: string;
@@ -1575,7 +1576,7 @@ async function fetchIsrcWordSyncedTtml(
   rawOverride = false,
   preferredProvider = ''
 ): Promise<ServerLyricsResponse | null> {
-  const isrcCandidates: Array<{ isrc: string; title: string; artist: string }> = [];
+  const isrcCandidates: Array<{ isrc: string; title: string; artist: string; duration?: number }> = [];
   const effectiveArtist = isYouTube && !rawOverride ? '' : artist;
   const matchCtx = {
     cleanTitle: title,
@@ -1586,56 +1587,24 @@ async function fetchIsrcWordSyncedTtml(
     rawOverride,
   };
 
-  // Step 1: Resolve ISRC via lrc.red/api/v1 (Stash IsrcResolver.kt primary)
-  try {
-    const params = new URLSearchParams({ track: title });
-    if (effectiveArtist) params.set('artist', effectiveArtist);
-    const searchUrl = 'https://lrc.red/api/v1?' + params.toString();
-
-    const searchRes = await fetch(searchUrl, {
-      headers: {
-        'User-Agent': STASH_ANDROID_UA,
-        Accept: 'application/json',
-      },
-      signal: AbortSignal.timeout(5000),
-    });
-
-    if (searchRes.ok) {
-      const body = (await searchRes.json()) as { results?: Array<Record<string, unknown>> };
-      const results = Array.isArray(body.results) ? body.results : [];
-      const scored = results
-        .map(item => {
-          const isrc = String(item.isrc || '').trim().toUpperCase();
-          if (isrc.length !== 12) return { isrc: '', title: '', artist: '', score: -1 };
-          const rawDur = Number(item.duration || 0);
-          const itemDurSec = rawDur > 1500 ? rawDur / 1000 : rawDur;
-          const itemTitle = String(item.title || item.name || item.track || title);
-          const itemArtist = String(item.artist || item.artist_name || '');
-          const itemAlbum = String(item.album || item.album_name || '');
-          const hasWordSync = String(item.timing_type || '').toLowerCase() === 'word';
-          const score = scoreServerCandidateAgainstContext(
-            {
-              title: itemTitle,
-              artist: itemArtist,
-              album: itemAlbum,
-              duration: itemDurSec,
-              hasWordSync,
-            },
-            matchCtx
-          );
-          return { isrc, title: itemTitle, artist: itemArtist, score };
-        })
-        .filter(entry => entry.score >= 45 && entry.isrc.length === 12)
-        .sort((a, b) => b.score - a.score);
-
-      for (const entry of scored) {
-        if (!isrcCandidates.some(c => c.isrc === entry.isrc)) {
-          isrcCandidates.push({ isrc: entry.isrc, title: entry.title, artist: entry.artist });
-        }
-      }
+  // Get recording metadata before scoring or downloading lyrics by ISRC.
+  const recordings = await searchLrcRedRecordings(title, effectiveArtist, async url => {
+    try {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': LYRICS_USER_AGENT, Accept: 'application/json' },
+        signal: AbortSignal.timeout(5000),
+      });
+      return response.ok ? await response.json() : null;
+    } catch {
+      return null;
     }
-  } catch {
-    // Continue to MusicBrainz ISRC fallback
+  });
+  const scored = recordings.map(item => ({
+    ...item,
+    score: scoreServerCandidateAgainstContext({ ...item, duration: item.duration ?? 0 }, matchCtx),
+  })).filter(item => item.score >= 45).sort((a, b) => b.score - a.score);
+  for (const { isrc, title, artist, duration } of scored) {
+    if (!isrcCandidates.some(item => item.isrc === isrc)) isrcCandidates.push({ isrc, title, artist, duration });
   }
 
   // Step 2: MusicBrainz ISRC fallback (Stash IsrcResolver.kt secondary)
@@ -1681,16 +1650,16 @@ async function fetchIsrcWordSyncedTtml(
               { title: recTitle, artist: recArtist, album: recAlbum, duration: recDurSec },
               matchCtx
             );
-            return { rec, recTitle, recArtist, score };
+            return { rec, recTitle, recArtist, recDurSec, score };
           })
-          .filter(x => x.score >= 45)
+          .filter(x => x.recTitle.trim() && x.recArtist.trim() && x.score >= 45)
           .sort((a, b) => b.score - a.score);
 
-        for (const { rec, recTitle, recArtist } of scoredRecs) {
+        for (const { rec, recTitle, recArtist, recDurSec } of scoredRecs) {
           for (const rawIsrc of rec.isrcs || []) {
             const cleanIsrc = String(rawIsrc || '').trim().toUpperCase();
-            if (cleanIsrc.length === 12 && !isrcCandidates.some(c => c.isrc === cleanIsrc)) {
-              isrcCandidates.push({ isrc: cleanIsrc, title: recTitle || title, artist: recArtist || artist });
+            if (/^[A-Z0-9]{12}$/.test(cleanIsrc) && !isrcCandidates.some(c => c.isrc === cleanIsrc)) {
+              isrcCandidates.push({ isrc: cleanIsrc, title: recTitle, artist: recArtist, duration: recDurSec || undefined });
             }
           }
         }
@@ -1713,7 +1682,7 @@ async function fetchIsrcWordSyncedTtml(
       if(preferredProvider&&!provider.name.toLowerCase().startsWith(preferredProvider))continue;
       try {
         const ttmlRes = await fetch(provider.url, {
-          headers: { 'User-Agent': STASH_ANDROID_UA },
+          headers: { 'User-Agent': LYRICS_USER_AGENT },
           signal: AbortSignal.timeout(5000),
         });
         if (!ttmlRes.ok) continue;
@@ -1724,8 +1693,9 @@ async function fetchIsrcWordSyncedTtml(
             ttml: xml,
             source: hasWordSync?provider.name:provider.name.replace('Word-Synced TTML','TTML'),
             sourceUrl: provider.url,
-            title: cand.title || title,
-            artist: cand.artist || undefined,
+            title: cand.title,
+            artist: cand.artist,
+            duration: cand.duration,
             hasWordSync,
           };
         }
@@ -2299,13 +2269,13 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
         rawArtist,
         true
       ).catch(() => null);
-      if (isrcMatch?.ttml) {
+      if (isrcMatch?.ttml && isrcMatch.title && isrcMatch.artist) {
         candidates.push({
           id: -1001,
-          title: rawTitle,
-          artist: isrcMatch.artist || rawArtist || 'Unknown artist',
+          title: isrcMatch.title,
+          artist: isrcMatch.artist,
           album: '',
-          duration: duration || 200,
+          duration: isrcMatch.duration ?? duration,
           instrumental: false,
           hasSynced: true,
           hasWordSync: isrcMatch.hasWordSync,

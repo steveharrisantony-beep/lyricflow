@@ -8,12 +8,41 @@ const duration = (value: unknown) => {
   const seconds = Number(value);
   return Number.isFinite(seconds) && seconds > 0 ? seconds : undefined;
 };
-const userAgent = 'LyricFlow Android (https://github.com/steveharrisantony-beep/lyricsflow-android)';
+export const LYRICS_USER_AGENT = 'LyricFlow Android (https://github.com/steveharrisantony-beep/lyricsflow-android)';
 
 function queryUrl(base: string, fields: Record<string, string>, artistKey: string, artist?: string) {
   const query = new URLSearchParams(fields);
   if (artist) query.set(artistKey, artist);
   return base + '?' + query;
+}
+
+function lrcRedRecording(item: Row) {
+  return {
+    isrc: str(item.isrc).trim().toUpperCase(),
+    title: str(item.title).trim(),
+    artist: str(item.artist).trim(),
+    album: str(item.album).trim(),
+    duration: duration(item.duration),
+  };
+}
+
+export async function searchLrcRedRecordings(title: string, artist: string | undefined, read: (url: string) => Promise<unknown>) {
+  const query = new URLSearchParams({ q: [title, artist].filter(Boolean).join(' ') });
+  const catalog = row(await read('https://lrc.red/search.json?' + query));
+  const hits = rows(catalog.hits).map(lrcRedRecording).filter(item => /^[A-Z0-9]{12}$/.test(item.isrc));
+  const recordings = await Promise.all(hits.map(async (item, index) => {
+    if (index >= 5 || (item.title && item.artist && item.duration !== undefined)) return item;
+    const metadata = lrcRedRecording(row(await read('https://lrc.red/s/' + item.isrc + '.json')));
+    if (metadata.isrc !== item.isrc) return item;
+    return {
+      isrc: item.isrc,
+      title: item.title || metadata.title,
+      artist: item.artist || metadata.artist,
+      album: item.album || metadata.album,
+      duration: item.duration ?? metadata.duration,
+    };
+  }));
+  return recordings.filter(item => item.title && item.artist);
 }
 
 function catalogOrder(items: ProviderLyric[], query: StageQuery) {
@@ -37,7 +66,7 @@ export async function searchLyricsStageProvider(provider: LyricsStageProvider, q
       try {
         signal.throwIfAborted();
         const response = await fetch(url, {
-          headers: { 'User-Agent': userAgent, Accept: format === 'json' ? 'application/json' : '*/*' },
+          headers: { 'User-Agent': LYRICS_USER_AGENT, Accept: format === 'json' ? 'application/json' : '*/*' },
           signal: AbortSignal.any([signal, AbortSignal.timeout(4200)]),
         });
         if (response.status === 404 || response.status === 204) return null;
@@ -74,13 +103,10 @@ export async function searchLyricsStageProvider(provider: LyricsStageProvider, q
       });
     }
   } else if (provider === 'isrc') {
-    const result = row(await read(queryUrl('https://lrc.red/api/v1', { track: title }, 'artist', artist), 'lrc.red catalog'));
-    let tracks: ProviderLyric[] = rows(result.results).map(item => ({
-      id: str(item.isrc).trim().toUpperCase(), title: str(item.title || item.name || item.track),
-      artist: str(item.artist || item.artist_name),
-      duration: duration(item.duration) && Number(item.duration) / (Number(item.duration) > 1500 ? 1000 : 1),
-      source: 'lrc.red',
-    })).filter(item => /^[A-Z0-9]{12}$/.test(item.id));
+    const recordings = await searchLrcRedRecordings(title, artist, url => read(url, 'lrc.red catalog'));
+    let tracks: ProviderLyric[] = recordings.map(({ isrc, title, artist, duration }) => ({
+      id: isrc, title, artist, duration, source: 'lrc.red',
+    }));
     if (!tracks.length && !signal.aborted) {
       // This is an alternate ISRC catalog using the same stage title and artist.
       const quoted = (value: string) => '"' + value.replace(/[\\"]/g, '\\$&') + '"';
@@ -89,9 +115,11 @@ export async function searchLyricsStageProvider(provider: LyricsStageProvider, q
       tracks = rows(mb.recordings).flatMap(item => (Array.isArray(item.isrcs) ? item.isrcs : []).slice(0, 3).flatMap(code => {
         const id = str(code).toUpperCase();
         if (!/^[A-Z0-9]{12}$/.test(id)) return [];
+        const title = str(item.title).trim();
+        const artist = rows(item['artist-credit']).map(credit => str(credit.name).trim()).filter(Boolean).join(', ');
+        if (!title || !artist) return [];
         const length = duration(item.length);
-        return [{ id, title: str(item.title), artist: rows(item['artist-credit']).map(credit => str(credit.name)).filter(Boolean).join(', '),
-          duration: length ? length / 1000 : undefined, source: 'lrc.red' }];
+        return [{ id, title, artist, duration: length ? length / 1000 : undefined, source: 'lrc.red' }];
       }));
     }
     const distinct = [...new Map(tracks.map(track => [track.id, track])).values()];

@@ -19,9 +19,12 @@ const verifiedAccount = {actions:[{openPopupAction:{popup:{multiPageMenuRenderer
 }}}}}]};
 globalThis.fetch = async (input, options) => {
   const url = new URL(String(input));
-  if(url.hostname==='lrc.red'&&url.pathname==='/api/v1'){
+  if(url.hostname==='lrc.red'&&url.pathname==='/search.json'){
     wordLookupCount++;
-    return Response.json({results:wordLyricsAvailable?[{isrc:'TEST00000001',title:'Example Song',artist:'Example Artist',duration:180,timing_type:'word'}]:[]});
+    return Response.json({hits:wordLyricsAvailable?[{isrc:'TEST00000001'}]:[]});
+  }
+  if(url.hostname==='lrc.red'&&url.pathname==='/s/TEST00000001.json'){
+    return Response.json({isrc:'TEST00000001',title:'Example Song',artist:'Example Artist',duration:180,sync:'word'});
   }
   if(url.hostname==='lrc.red'&&url.pathname.endsWith('.ttml')){
     return new Response('<tt><body><p begin="1s" end="3s"><span begin="1s" end="2s">Example </span><span begin="2s" end="3s">words</span></p></body></tt>');
@@ -160,6 +163,11 @@ try {
   assert.equal(stageResult.candidates[0].duration,180);
   assert.ok(stageResult.candidates[0].ttml.includes('Example'));
   assert.deepEqual(stageResult.failures,[]);
+  const manualLyrics = await request('/music/apple-candidates?title=example+song&artist=Example+Artist&duration=181');
+  assert.equal(manualLyrics.status,200);
+  const manualIsrc = (await manualLyrics.json()).candidates.find(candidate => candidate.id === -1001);
+  assert.equal(manualIsrc.title,'Example Song');
+  assert.equal(manualIsrc.duration,180);
   wordLyricsAvailable=false;
 
   const setYouTubeAuth = (credentials) => originalFetch(base+'/music/yt-auth', {

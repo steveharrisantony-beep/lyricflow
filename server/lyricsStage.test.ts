@@ -13,7 +13,7 @@ function fixtures() {
   vi.stubGlobal('fetch', vi.fn(async (input: string) => {
     const url = new URL(input);
     urls.push(url);
-    if (url.hostname === 'lrc.red' && url.pathname === '/api/v1') return Response.json({ results: [{ ...track, isrc: 'TEST00000001' }] });
+    if (url.hostname === 'lrc.red' && url.pathname === '/search.json') return Response.json({ hits: [{ ...track, isrc: 'TEST00000001' }] });
     if (url.pathname.endsWith('.ttml') || url.pathname.startsWith('/apple-music/cache/')) return new Response(ttml);
     if (url.hostname === 'itunes.apple.com') return Response.json({ results: [{ trackId: 12, trackName: title, artistName: artist, trackTimeMillis: 191000 }] });
     if (url.hostname === 'lrclib.net') return Response.json([{ id: 3, trackName: title, artistName: artist, duration: 191, syncedLyrics: '[00:01]Fixture' }]);
@@ -29,9 +29,10 @@ it.each(lyricsStageProviders)('%s preserves exact stage title and artist and ret
   expect(result.candidates[0]).toMatchObject({ title, artist, duration: 191 });
   const query = urls[0].searchParams;
   if (provider === 'paxsenix') expect(query.get('term')).toBe(title + ' ' + artist);
+  else if (provider === 'isrc') expect(query.get('q')).toBe(title + ' ' + artist);
   else {
-    expect(query.get(provider === 'lrclib' ? 'track_name' : 'track')).toBe(title);
-    expect(query.get(provider === 'lrclib' ? 'artist_name' : 'artist')).toBe(artist);
+    expect(query.get('track_name')).toBe(title);
+    expect(query.get('artist_name')).toBe(artist);
   }
   if (provider === 'isrc') expect(result.candidates.map(item => item.source)).toEqual(['lrc.red', 'Binimum']);
 });
@@ -43,6 +44,44 @@ it.each(lyricsStageProviders)('%s uses a title-only query when the artist is unk
   expect(query.has('artist')).toBe(false);
   expect(query.has('artist_name')).toBe(false);
   if (provider === 'paxsenix') expect(query.get('term')).toBe(title);
+  if (provider === 'isrc') expect(query.get('q')).toBe(title);
+});
+
+it('recovers missing recording metadata by ISRC for both lyrics files', async () => {
+  const fetcher = vi.fn(async (input: string) => {
+    const url = new URL(input);
+    if (url.pathname === '/search.json') return Response.json({ hits: [{ isrc: 'TEST00000001' }] });
+    if (url.pathname === '/s/TEST00000001.json') return Response.json({ ...track, isrc: 'TEST00000001', duration: 191.4 });
+    if (url.pathname.endsWith('/TEST00000001.ttml')) return new Response(ttml);
+    throw new Error('Unexpected fixture URL');
+  });
+  vi.stubGlobal('fetch', fetcher);
+  const result = await searchLyricsStageProvider('isrc', track, new AbortController().signal);
+  expect(result.failures).toEqual([]);
+  expect(result.candidates.map(({ source, title, artist, duration }) => ({ source, title, artist, duration }))).toEqual(
+    ['lrc.red', 'Binimum'].map(source => ({ ...track, source, duration: 191.4 })),
+  );
+  expect(fetcher.mock.calls.filter(([url]) => url.endsWith('/s/TEST00000001.json'))).toHaveLength(1);
+});
+
+it('tries MusicBrainz when the catalog cannot identify the recording for an ISRC', async () => {
+  const fetcher = vi.fn(async (input: string) => {
+    const url = new URL(input);
+    if (url.pathname === '/search.json') return Response.json({ hits: [{ isrc: 'TEST00000001' }] });
+    if (url.pathname === '/s/TEST00000001.json') return Response.json({ ...track, isrc: 'TEST00000002' });
+    if (url.hostname === 'musicbrainz.org') return Response.json({ recordings: [{
+      title, 'artist-credit': [{ name: artist }], length: 191000, isrcs: ['TEST00000003'],
+    }] });
+    if (url.pathname.endsWith('/TEST00000003.ttml')) return new Response(ttml);
+    throw new Error('Unexpected fixture URL');
+  });
+  vi.stubGlobal('fetch', fetcher);
+  const result = await searchLyricsStageProvider('isrc', track, new AbortController().signal);
+  expect(result.failures).toEqual([]);
+  expect(result.candidates).toMatchObject([
+    { ...track, id: 'lrc.red:TEST00000003' }, { ...track, id: 'Binimum:TEST00000003' },
+  ]);
+  expect(fetcher.mock.calls.some(([url]) => url.endsWith('/TEST00000001.ttml'))).toBe(false);
 });
 
 it('retries a transient failure with the identical query, but keeps a terminal error distinct from no match', async () => {
