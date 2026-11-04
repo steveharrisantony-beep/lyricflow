@@ -26,6 +26,7 @@ globalThis.fetch = async (input, options) => {
   if(url.hostname==='lrc.red'&&url.pathname.endsWith('.ttml')){
     return new Response('<tt><body><p begin="1s" end="3s"><span begin="1s" end="2s">Example </span><span begin="2s" end="3s">words</span></p></body></tt>');
   }
+  if(url.hostname==='lyrics-storage.binimum.org')return new Response('',{status:404});
   if(url.hostname==='musicbrainz.org')return Response.json({recordings:[]});
   if(url.hostname==='itunes.apple.com')return Response.json({results:[{trackId:123,trackName:'Example Song',artistName:'Example Artist',trackTimeMillis:180000}]});
   if(url.hostname==='lyrics.paxsenix.org')return new Response('<tt><body><p begin="1s" end="3s">Example line lyrics</p></body></tt>');
@@ -144,6 +145,19 @@ try {
   assert.equal((await request('/')).status, 404);
   assert.equal((await request('/music/yt-subtitles?videoId=invalid')).status, 400);
   assert.equal((await request('/music/lyrics?title=')).status, 400);
+  assert.equal((await request('/music/lyrics-stage?provider=invalid&title=Example')).status,400);
+  assert.equal((await originalFetch(base+'/music/lyrics-stage?provider=lrclib&title=Example')).status,403);
+  wordLyricsAvailable=true;
+  const stage = await request('/music/lyrics-stage?provider=isrc&title=Example+Song&duration=180');
+  assert.equal(stage.status,200);
+  assert.equal(stage.headers.get('cache-control'),'no-store');
+  const stageResult=await stage.json();
+  assert.equal(stageResult.candidates[0].title,'Example Song');
+  assert.equal(stageResult.candidates[0].duration,180);
+  assert.ok(stageResult.candidates[0].ttml.includes('Example'));
+  assert.deepEqual(stageResult.failures,[]);
+  wordLyricsAvailable=false;
+
   const setYouTubeAuth = (credentials) => originalFetch(base+'/music/yt-auth', {
     method:'POST',headers:{'X-LyricFlow-Token':token,'Content-Type':'application/json'},body:JSON.stringify(credentials),
   });

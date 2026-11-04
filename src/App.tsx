@@ -1,3 +1,5 @@
+import {LyricsSearchLogs,PreloadedLyrics,useLyricsSearchReport} from './lyrics/LyricsSearchDetails';
+import {lyricsFromSearchCandidate} from './lyrics/providers';
 import {evaluateBackgroundVideos} from './music/videoMatching';
 import {findYouTubeBackgrounds} from './music/backgroundVideos';
 import {isSyncedLyricsSource,lyricProviderName,normalizeLyricSource} from './lyrics/sourceLabels';
@@ -244,6 +246,7 @@ export default function App({ user = null }: { user?: User | null }) {
     null,
   );
   const [mappingSearchOpen, setMappingSearchOpen] = useState(false);
+  const [openPreloadedLyrics, setOpenPreloadedLyrics] = useState("");
   const [settingsSession,setSettingsSession]=useState(0);
   const [playerOverlayOpen, setPlayerOverlayOpen] = useState(false);
   const [showFps, setShowFps] = useState(
@@ -254,6 +257,7 @@ export default function App({ user = null }: { user?: User | null }) {
     setSettingsPage("mapping");
     setSettingsSession(session=>session+1);
     setMappingSearchOpen(false);
+    setOpenPreloadedLyrics("");
     setCustomEditOpen(false);
     setCinemaControlsOpen(true);
   }, []);
@@ -1019,7 +1023,13 @@ export default function App({ user = null }: { user?: User | null }) {
     const saved=local.text;
     const legacy=mapped?.sourceFile.name.startsWith('LyricFlow Engine')&&!saved;
     if(mapped&&!legacy&&lyricFingerprint(lyrics.original||lyrics.plain||'',lyrics.sourceUrl||'')!==mapped.sourceFile.revision&&lyrics.mappingRevision!==mapped.sourceFile.revision)return;
-    setIncoming({ ...lyrics, token: ++incomingRevision.current });
+    const token=++incomingRevision.current;
+    setIncoming(current=>{
+      const sameFile=current?.sourceUrl===lyrics.sourceUrl&&
+        (current?.original||current?.plain)===(lyrics.original||lyrics.plain);
+      return {...lyrics,title:sameFile?current?.title||lyrics.title:lyrics.title,
+        artist:sameFile?current?.artist||lyrics.artist:lyrics.artist,token};
+    });
   };
 
   useEffect(() => {
@@ -1471,6 +1481,17 @@ export default function App({ user = null }: { user?: User | null }) {
     stageYoutubeVideoId && effectiveYoutubeBackgroundMode === "video",
   );
 
+  const [verifiedBackground, setVerifiedBackground] = useState<{key:string;id:string|null}>();
+  const noteVerifiedBackground = useCallback((key:string,id:string|null) => {
+    setVerifiedBackground(previous => previous?.key===key&&previous.id===id ? previous : {key,id});
+  }, []);
+  const lyricsSearchContext = {
+    backgroundVideoId: isYtVideoBackgroundActive&&verifiedBackground?.key===recordingKey&&verifiedBackground.id===stageYoutubeVideoId
+      ? verifiedBackground.id||undefined : undefined,
+  };
+  const lyricsSearchReport = useLyricsSearchReport(localTrack,uid,lyricsSearchContext);
+  const preloadedLyricsKey=JSON.stringify([recordingKey,lyricsSearchContext.backgroundVideoId]);
+  const preloadedLyricsOpen=openPreloadedLyrics===preloadedLyricsKey;
   const matchedVideoCandidate = stageYoutubeVideoId
     ? preloadedVideoChoices.find(v => extractYouTubeVideoId(v) === stageYoutubeVideoId)
     : undefined;
@@ -1581,7 +1602,9 @@ export default function App({ user = null }: { user?: User | null }) {
   ));
   const currentLyricsTitle=hasLoadedLyrics
     ?incoming?.title||localTrack?.title||"Untitled lyrics"
-    :lyricsLoading?"Loading…":"Not found";
+    :lyricsSearchReport?.status==='failed'?"Search failed"
+      :lyricsSearchReport?.status==='searching'?"Automatic search in progress"
+        :lyricsSearchReport?.status==='empty'?"Lyrics not found":lyricsLoading?"Loading…":"Not found";
   const currentLyricsLibrary=hasLoadedLyrics
     ?describeLyricProvider(activeLyrics.name,/<\d+:/.test(activeLyrics.original),Boolean(activeLyrics.original.trim()),true,activeLyrics.url).providerName
     :"";
@@ -1696,6 +1719,7 @@ export default function App({ user = null }: { user?: User | null }) {
                 videoFitMode={videoFitMode}
                 audioPaused={Boolean(localLoaded && !localPlaying)}
                 youtubeVideoId={stageYoutubeVideoId}
+                onVerifiedBackground={noteVerifiedBackground}
                 videoDelaySeconds={videoDelaySeconds}
                 youtubeBackgroundMode={effectiveYoutubeBackgroundMode}
                 hideVideo={songMapping.hideVideo}
@@ -1867,8 +1891,14 @@ export default function App({ user = null }: { user?: User | null }) {
             mapping: (
               <>
                 <div className="current-song">
-                  <span>Current lyrics title{currentLyricsLibrary&&<> · {currentLyricsLibrary}</>}</span>
+                  <span>{hasLoadedLyrics?"Current lyrics title":"Lyrics search"}{currentLyricsLibrary&&<> · {currentLyricsLibrary}</>}</span>
                   <strong>{currentLyricsTitle}</strong>
+                  {hasLoadedLyrics && !savedCustomLrc && !preferredLyricsSource && lyricsSearchReport && lyricsSearchReport.status!=='cancelled' && !incoming?.hasWordSync && (
+                    <small>{lyricsSearchReport.status==='searching'?"Searching for word by word sync":
+                      lyricsSearchReport.selected?.quality===3?"Word sync found · switching after the current line":
+                        lyricsSearchReport.stages.some(stage=>stage.failures.length)?"Word sync lookup incomplete · some providers failed":
+                          "Word by word sync not found"}</small>
+                  )}
                   {hasLoadedLyrics && (incoming?.artist || localTrack?.artist) && (
                     <small>{incoming?.artist || localTrack?.artist}</small>
                   )}
@@ -2238,7 +2268,8 @@ export default function App({ user = null }: { user?: User | null }) {
                             (o) =>
                               o.id === effectiveLyricsEngine ||
                               o.id === "lyricflow" ||
-                              availableLyricEngines.includes(o.id),
+                              availableLyricEngines.includes(o.id) ||
+                              (o.id==='youtube' ? Boolean(lyricsSearchContext.backgroundVideoId||(!hasSeparateAudioStream&&stageYoutubeVideoId)) : Boolean(localTrack)),
                           ).map((o) => (
                             <option key={o.id} value={o.id}>
                               {o.label}
@@ -2280,11 +2311,26 @@ export default function App({ user = null }: { user?: User | null }) {
                             ? "Close search"
                             : "Search lyrics online"}
                         </button>
+                        <button type="button" className="text-button" aria-expanded={preloadedLyricsOpen}
+                          disabled={!localTrack || isAdPlaying}
+                          onClick={() => setOpenPreloadedLyrics(preloadedLyricsOpen?'':preloadedLyricsKey)}>
+                          {preloadedLyricsOpen?"Hide preloaded lyrics":"Show preloaded lyrics"}
+                        </button>
                       </div>
+                      {preloadedLyricsOpen && !isAdPlaying && (
+                        <PreloadedLyrics report={lyricsSearchReport} loaded={hasLoadedLyrics?incoming:null}
+                          onChoose={candidate=>{
+                            const lyrics=lyricsFromSearchCandidate(candidate);
+                            const id=candidate.id.startsWith('lrclib:')?Number(candidate.id.slice(7)):null;
+                            const engine=lyrics.availableEngines?.[1]||'lyricflow';
+                            saveMappedLyrics(lyrics,{engine,lrclibId:id,subtitleTrackId:null});
+                          }} />
+                      )}
                       {!isAdPlaying && (
                         <TrackFinder
                           key={"finder-" + fileEpoch}
                           track={localTrack}
+                          searchContext={lyricsSearchContext}
                           accountId={uid}
                           enabled={!songMapping.hideLyrics}
                           preferredSelection={preferredLyricsSelection}
@@ -2523,6 +2569,11 @@ export default function App({ user = null }: { user?: User | null }) {
                   </a>
                 </footer>
               </>
+            ),
+            logs: (
+              <SettingGroup title="Lyrics logs">
+                <LyricsSearchLogs report={lyricsSearchReport}/>
+              </SettingGroup>
             ),
           }}
         </SettingsPanel>

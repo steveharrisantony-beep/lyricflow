@@ -1,6 +1,6 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import {BUILTIN_PLAYER_SOURCES,parseSongs,resolveSong,searchSongs,resolverBase,type SongResult} from '../music/providers';
-import {isAutomaticLyricMatch,resolveAutomaticLyrics,resolveStashLyricsChain} from '../lyrics/providers';
+import {resolveStashLyricsChain} from '../lyrics/providers';
 import {convertTtmlToEnhancedLrc,convertStructuredAppleJsonToLrc} from '../lyrics/appleLyrics';
 import {describeLyricProvider,describeAudioSource,splitLyricIntoBalancedLines} from '../lyrics/ManualLyrics';
 import {buildCinematicSchedule,TEMPLATES} from '../visualization/cinematic/catalog';
@@ -10,9 +10,8 @@ import {romanizeText,hasDistinctRomanized} from '../romanization/romanize';
 import {buildCues} from '../lyrics/lyricTimeline';
 import {getAudioSensitivity,getSpectrumSensitivity,setSpectrumSensitivity,spectrumResponse} from '../audio/audioSignal';
 import {motionChannel,objectDrive} from '../visualization/cinematic/procedural/audioMotion';
-import {extractYouTubeVideoId,isLyricVideoTrack,type TrackInfo,type TrackCandidate} from '../metadata/trackInfo';
+import {extractYouTubeVideoId,isLyricVideoTrack,type TrackInfo} from '../metadata/trackInfo';
 const track:TrackInfo={title:'Original rain',artist:'Test Artist',album:'Demo',duration:180,source:'provider',confidence:1};
-const candidate:TrackCandidate={id:1,title:track.title,artist:track.artist,album:track.album,duration:180,hasSynced:true,hasWordSync:false,instrumental:false,url:'https://lrclib.net/api/get/1',confidence:1};
 const song:SongResult={id:'abcdefghijk',title:track.title,artist:track.artist,album:'',duration:180,provider:'resolver',sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk'};
 afterEach(()=>{vi.unstubAllGlobals();setSpectrumSensitivity(.35)});
 describe('music source boundaries',()=>{
@@ -55,26 +54,6 @@ describe('music source boundaries',()=>{
  });
 });
 describe('automatic lyric recording matching & Apple Music TTML word-sync',()=>{
- it('requires the correct title, artist, timing and duration',()=>{
-  expect(isAutomaticLyricMatch(track,candidate)).toBe(true);
-  for(const change of [{artist:'Cover artist'},{title:'Original rain live'},{duration:200},{instrumental:true},{hasSynced:false}])expect(isAutomaticLyricMatch(track,{...candidate,...change})).toBe(false);
-  expect(isAutomaticLyricMatch({...track,artist:''},candidate)).toBe(false);
- });
- it('uses exact get first and returns timestamps unchanged',async()=>{
-  const raw={id:1,trackName:track.title,artistName:track.artist,albumName:'Demo',duration:180,syncedLyrics:'[00:01.00]Original test line',instrumental:false};
-  const mock=vi.fn().mockResolvedValue({ok:true,json:async()=>raw});vi.stubGlobal('fetch',mock);
-  const result=await resolveAutomaticLyrics(track);
-  expect(result?.original).toBe(raw.syncedLyrics);expect(mock).toHaveBeenCalledTimes(1);
- });
- it('distinguishes a temporary provider failure from a missing lyric',async()=>{
-  vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:429}));
-  await expect(resolveAutomaticLyrics(track)).rejects.toThrow('429');
- });
- it('falls back to search on 404 and rejects competing exact versions',async()=>{
-  const raw={id:1,trackName:track.title,artistName:track.artist,albumName:'Demo',duration:180,syncedLyrics:'[00:01.00]Original test',instrumental:false};
-  const mock=vi.fn().mockResolvedValueOnce({ok:false,status:404}).mockResolvedValueOnce({ok:true,json:async()=>[raw,{...raw,id:2}]});vi.stubGlobal('fetch',mock);
-  expect(await resolveAutomaticLyrics(track)).toBeNull();expect(mock).toHaveBeenCalledTimes(2);
- });
  it('requests an explicitly selected YouTube caption track without waiting on Apple or LRCLIB',async()=>{
   vi.stubGlobal('window',{location:{origin:'https://lyricflow.test'}});
   const subtitleTracks=[{id:'.en',languageCode:'en',label:'English',lrc:'[00:01.00]Original caption',lineCount:1},{id:'.es',languageCode:'es',label:'Spanish',lrc:'[00:02.00]Otra frase',lineCount:1}];

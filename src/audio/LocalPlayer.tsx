@@ -170,7 +170,8 @@ function LocalPlayer(
   queueRef.current = queue;
   useEffect(()=>{
     onQueueChange?.(queue.map(({song})=>({...song,source:'provider',sourceTrackId:song.id,
-      videoId:song.youtubeVideoId||extractYouTubeVideoId(song)||undefined,confidence:1})));
+      videoId:song.youtubeVideoId||extractYouTubeVideoId(song)||undefined,
+      lyricsAudioSource:song.format==='youtube'?'youtube':'stream',confidence:1})));
   },[queue,onQueueChange]);
   const historyRef = useRef<PlayableSong[]>([]);
   const lastRemoteSongRef = useRef<PlayableSong | null>(null);
@@ -405,6 +406,7 @@ function LocalPlayer(
       provider: song.provider,
       sourceTrackId: song.id,
       audioSource: audioSourceLabel,
+      lyricsAudioSource: song.format === "youtube" ? "youtube" : "stream",
       sourceUrl: song.sourceUrl,
       youtubeVideoId: ytId,
       videoId: ytId,

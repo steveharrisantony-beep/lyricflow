@@ -11,7 +11,7 @@ import {writeDevice,scopedKey} from '../firebase/deviceStore';
 const track={title:'Song',artist:'Artist',album:'',duration:200,source:'provider' as const,provider:'jiosaavn' as const,confidence:1};
 const result:StashResolvedLyrics={original:'[00:01]Prepared words',romanized:'',source:'LRCLIB',hasWordSync:false,candidates:[]};
 beforeEach(()=>{localStorage.clear();temporarySongs.clear();vi.resetAllMocks();});
-it('shares queue and foreground work, then restores prepared lyrics across music providers without another request',async()=>{
+it('shares queue and foreground work, then restores prepared lyrics across equivalent metadata sources without another request',async()=>{
  let finish!:(value:StashResolvedLyrics)=>void;
  vi.mocked(resolveStashLyricsChain).mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
  const queued=prepareSongLyrics(track,null,{engine:'lyricflow'});
@@ -19,7 +19,7 @@ it('shares queue and foreground work, then restores prepared lyrics across music
  const wordResult={...result,original:'[00:01]<00:01>Prepared <00:02>words',hasWordSync:true};
  await vi.waitFor(()=>expect(resolveStashLyricsChain).toHaveBeenCalledOnce());finish(wordResult);
  expect(await queued).toEqual(wordResult);expect(await foreground).toEqual(wordResult);
- expect(await prepareSongLyrics({...track,provider:'local'},null,{engine:'lyricflow'})).toEqual(wordResult);
+ expect(await prepareSongLyrics({...track,provider:'audius'},null,{engine:'lyricflow'})).toEqual(wordResult);
  expect(resolveStashLyricsChain).toHaveBeenCalledOnce();expect(localStorage.length).toBe(0);
 });
 it('tries the saved link, saved service, then automatic sources and never overwrites the saved mapping',async()=>{
@@ -83,3 +83,18 @@ it('reuses an explicitly selected line-synced source without automatic upgrades'
 });
 
 
+
+it('uses the planner’s duration decision instead of reranking by word quality',async()=>{
+ const widerWord={...result,original:'[00:01]<00:01>Provisional <00:02>words',hasWordSync:true,searchComplete:false};
+ const closestLine={...result,original:'[00:01]Closest recording line',searchComplete:true};
+ vi.mocked(resolveStashLyricsChain).mockImplementation(async(_track,_signal,_engine,_offset,_selected,onProgress)=>{
+  onProgress?.(widerWord);
+  onProgress?.(closestLine);
+  return closestLine;
+ });
+ const progress=vi.fn();
+ expect(await prepareSongLyrics(track,null,{engine:'lyricflow'},undefined,progress)).toEqual(closestLine);
+ expect(progress.mock.calls.map(([value])=>value.original)).toEqual([widerWord.original,closestLine.original]);
+ expect(await prepareSongLyrics(track,null,{engine:'lyricflow'})).toEqual(closestLine);
+ expect(resolveStashLyricsChain).toHaveBeenCalledOnce();
+});

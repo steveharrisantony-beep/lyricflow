@@ -11,11 +11,12 @@ import {providerRequest} from '../network/request';
 import {backendOrigin} from '../network/backend';
 import {findYouTubeBackgrounds} from '../music/backgroundVideos';
 import {localSongData} from './localSongData';
-import {temporarySongs,TEMPORARY_SONG_EVENT,type TemporarySong} from './temporarySongs';
+import {buildLyricsSearchPlan,type LyricsSearchContext,type LyricsSearchReport} from '../lyrics/searchPlan';
+import {LYRICS_SEARCH_EVENT,temporarySongs,TEMPORARY_SONG_EVENT,type TemporarySong} from './temporarySongs';
 
 export interface LyricsPreparationOptions {
  engine:LyricEngineOption;selection?:LyricsSelection|null;source?:LyricsSourceReference|null;
- leadingOffset?:number;subtitleId?:string;
+ leadingOffset?:number;subtitleId?:string;context?:LyricsSearchContext;
 }
 interface Work<T>{controller:AbortController;promise:Promise<T>;listeners:Set<(value:T)=>void>;users:number;latest?:T}
 const work=new Map<string,Work<unknown>>();
@@ -48,14 +49,16 @@ function shared<T>(id:string,entry:TemporarySong,signal:AbortSignal|undefined,st
   if(signal?.aborted)abort();
  });
 }
-function lyricsKey(options:LyricsPreparationOptions){return JSON.stringify([options.engine,options.selection,options.source,options.subtitleId,options.leadingOffset||0]);}
+function lyricsKey(track:TrackInfo,options:LyricsPreparationOptions){
+ return JSON.stringify([buildLyricsSearchPlan(track,options.context).key,options.engine,options.selection,options.source,options.subtitleId,options.leadingOffset||0]);
+}
 export function preparedLyricsNeedWordSync(value:StashResolvedLyrics,options:LyricsPreparationOptions){
- return (options.engine==='lyricflow'||options.engine==='apple')&&!options.source&&!options.selection&&
+ return !value.searchComplete&&(options.engine==='lyricflow'||options.engine==='apple')&&!options.source&&!options.selection&&
   lyricsQuality(value.original||value.plain,value.hasWordSync)<3;
 }
 export function peekPreparedLyrics(track:TrackInfo|null,uid:string|null,options:LyricsPreparationOptions){
  const entry=localSongData(track,uid).session;
- return entry?.lyrics?.key===lyricsKey(options)?entry.lyrics.value:null;
+ return track&&entry?.lyrics?.key===lyricsKey(track,options)?entry.lyrics.value:null;
 }
 function resolvedText(text:string,source:string,sourceUrl:string,track:TrackInfo):StashResolvedLyrics{
  const timed=hasValidLrcTimestamps(text);
@@ -90,7 +93,7 @@ async function savedSource(track:TrackInfo,options:LyricsPreparationOptions,sign
   if(candidate){const found=await retrievePermittedLyrics(candidate,signal);return resolvedText(found.synced||found.plain,found.source,found.sourceUrl,track);}
   return null;
  }
- if(name==='YouTube Subtitles')return resolveStashLyricsChain(track,signal,'youtube',options.leadingOffset,options.subtitleId);
+ if(name==='YouTube Subtitles')return resolveStashLyricsChain(track,signal,'youtube',options.leadingOffset,options.subtitleId,undefined,options.context);
  const provider:Record<string,string>={'lrc.red':'lrc.red',Binimum:'binimum',Paxsenix:'paxsenix',MusixMatch:'musixmatch',KuGou:'kugou'};
  if(!provider[name])return null;
  const params=new URLSearchParams({title:track.title,artist:track.artist,duration:String(Math.round(track.duration)),source:provider[name]});
@@ -103,16 +106,18 @@ async function savedSource(track:TrackInfo,options:LyricsPreparationOptions,sign
 export function prepareSongLyrics(track:TrackInfo,uid:string|null,options:LyricsPreparationOptions,signal?:AbortSignal,progress?:(value:StashResolvedLyrics)=>void):Promise<StashResolvedLyrics|null>{
  const local=localSongData(track,uid),entry=local.session;
  if(!entry||local.mapping?.hideLyrics||isAdvertisementTrack(track))return Promise.resolve(null);
- const key=lyricsKey(options),id=`${uid}:${entry.id}:lyrics:${entry.generation}:${key}`;
+ const key=lyricsKey(track,options),id=`${uid}:${entry.id}:lyrics:${entry.generation}:${key}`;
  const active=work.has(id);
  const cached=entry.lyrics?.key===key?entry.lyrics.value:null;
  if(!active&&cached&&!preparedLyricsNeedWordSync(cached,{...options,source:options.source||local.mapping?.lyrics?.sourceFile}))return Promise.resolve(cached);
+ if(!active&&!cached&&entry.lyricSearch?.key===key&&entry.lyricSearch.value.status==='empty')return Promise.resolve(null);
  if(cached)progress?.(cached);
  return shared(id,entry,signal,async(request,publish)=>{
   let result:StashResolvedLyrics|null=null;
   let best=cached;
   const prefer=(value:StashResolvedLyrics)=>{
-   if(!best||lyricsQuality(value.original||value.plain,value.hasWordSync)>=lyricsQuality(best.original||best.plain,best.hasWordSync))best=value;
+   // Planned results have already been ranked by verified recording and timing.
+   if(value.searchComplete!==undefined||!best||lyricsQuality(value.original||value.plain,value.hasWordSync)>=lyricsQuality(best.original||best.plain,best.hasWordSync))best=value;
    return best;
   };
   const source=options.source||local.mapping?.lyrics?.sourceFile;
@@ -126,7 +131,27 @@ export function prepareSongLyrics(track:TrackInfo,uid:string|null,options:Lyrics
    if(found)result=resolvedText(found.synced||found.plain,found.source,found.sourceUrl,track);
   }
   if(!result&&(source||selectedId))result=await savedSource(track,{...options,source},request).catch(error=>{if(request.aborted)throw error;return null;});
-  if(!result)result=await resolveStashLyricsChain(track,request,options.engine,options.leadingOffset,options.subtitleId,value=>publish(prefer(source?{...value,mappingRevision:source.revision}:value)));
+  if(!result){
+   const generation=entry.generation;
+   let latestReport:LyricsSearchReport|undefined;
+   const updateReport=(report:LyricsSearchReport)=>{
+    if(!temporarySongs.has(entry)||entry.generation!==generation)return;
+    latestReport=report;
+    entry.lyricSearch={key,value:report};
+    window.dispatchEvent(new Event(LYRICS_SEARCH_EVENT));
+   };
+   try{
+    result=await resolveStashLyricsChain(
+     track,request,options.engine,options.leadingOffset,options.subtitleId,
+     value=>publish(prefer(source?{...value,mappingRevision:source.revision}:value)),options.context,
+     report=>{if(!request.aborted)updateReport(report);}
+    );
+   }finally{
+    if(request.aborted&&latestReport?.status==='searching'&&entry.lyricSearch?.value===latestReport){
+     updateReport({...latestReport,status:'cancelled'});
+    }
+   }
+  }
   request.throwIfAborted();
   if(!source)result=result?prefer(result):best;
   if(result){if(source)result={...result,mappingRevision:source.revision};entry.lyrics={key,value:result};}return result;

@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Link2, Layers, Type, Gauge, Settings2, X } from "lucide-react";
+import { Link2, Layers, Type, Gauge, Settings2, List, X } from "lucide-react";
 
 export type SettingsPage =
   | "mapping"
   | "background"
   | "lyrics"
   | "engine"
-  | "others";
+  | "others"
+  | "logs";
 const pages = [
   { id: "mapping", label: "Song Mapping", icon: Link2 },
   { id: "background", label: "Background", icon: Layers },
   { id: "lyrics", label: "Lyrics", icon: Type },
   { id: "engine", label: "Render Engine", icon: Gauge },
   { id: "others", label: "Others", icon: Settings2 },
+  { id: "logs", label: "Logs", icon: List },
 ] as const;
 
 export function SettingGroup({

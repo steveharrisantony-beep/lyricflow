@@ -82,6 +82,7 @@ export interface CinematicProps{
  loadingAnotherVideo?:boolean;
  videoRecoveryMessage?:string;
  onRejectBackgroundVideo?:(videoId:string,reason:string)=>void;
+ onVerifiedBackground?:(recordingKey:string,videoId:string|null)=>void;
  recordingKey?:string;
  externalPlayer?:boolean;
  videoSearchPending?:boolean;
@@ -623,6 +624,11 @@ export default function CinematicStage(props:CinematicProps){
  const pastVideoDuration=Boolean(props.hasSeparateAudioStream&&ytVideoDuration>15&&syncTarget.time>=ytVideoDuration-0.35);
  const videoEndedEarly=Boolean(props.hasSeparateAudioStream&&(ytVideoEnded||pastVideoDuration));
  const showThemes=Boolean(props.hideVideo)||!ytId||props.youtubeBackgroundMode==='theme'||Boolean(props.videoSearchPending)||Boolean(props.advertisementPlaying)||!nativePolicy.allowed||Boolean(playbackError)||playingVideoKey!==playbackKey||syncTarget.waiting||videoEndedEarly;
+ useEffect(()=>{
+  if(!props.recordingKey)return;
+  const verified=playingVideoKey===playbackKey&&!playbackError&&nativePolicy.allowed;
+  props.onVerifiedBackground?.(props.recordingKey,verified?ytId:null);
+ },[ytId,props.recordingKey,playingVideoKey,playbackKey,playbackError,nativePolicy.allowed,props.onVerifiedBackground]);
  const [themeExitPending,setThemeExitPending]=useState(true);
  useEffect(()=>{
   if(showThemes){setThemeExitPending(true);return;}

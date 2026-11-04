@@ -3,8 +3,8 @@ import {act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 vi.mock('../lyrics/appleLyrics',()=>({fetchAppleMusicWordSyncedLyrics:vi.fn(),fetchYouTubeSubtitlesForTrack:vi.fn(),fetchAppleMusicCandidates:vi.fn()}));
-import {fetchAppleMusicWordSyncedLyrics,fetchYouTubeSubtitlesForTrack,fetchAppleMusicCandidates} from '../lyrics/appleLyrics';
-import {resolveStashLyricsChain,type StashResolvedLyrics} from '../lyrics/providers';
+import {fetchAppleMusicWordSyncedLyrics,fetchAppleMusicCandidates} from '../lyrics/appleLyrics';
+import {type StashResolvedLyrics} from '../lyrics/providers';
 import TrackFinder from '../metadata/TrackFinder';
 import {buildCues,getLyricState,setLyricTimeline} from '../lyrics/lyricTimeline';
 import {setVirtualMediaTime} from '../audio/audioSignal';
@@ -94,49 +94,6 @@ it('retries the mapped source before automatic fallback when a mapped LRCLIB fil
 });
 function deferred<T>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(r=>{resolve=r;});return {promise,resolve};}
 afterEach(()=>{temporarySongs.clear();localStorage.clear();vi.restoreAllMocks();vi.unstubAllGlobals();vi.useRealTimers();setVirtualMediaTime(null);setLyricTimeline([]);});
-it('publishes LRCLIB before a slower Apple request, then prefers Apple without refetching either library',async()=>{
- const apple=deferred<Awaited<ReturnType<typeof fetchAppleMusicWordSyncedLyrics>>>();
- vi.mocked(fetchAppleMusicWordSyncedLyrics).mockReturnValue(apple.promise);
- const fetcher=vi.fn().mockResolvedValue(new Response(JSON.stringify({id:1,trackName:track.title,artistName:track.artist,duration:200,instrumental:false,syncedLyrics:lrc})));
- vi.stubGlobal('fetch',fetcher);
- const progress=vi.fn();
- const result=resolveStashLyricsChain(track,undefined,'lyricflow',0,undefined,progress);
- await vi.waitFor(()=>expect(progress).toHaveBeenCalled());
- expect(progress.mock.calls[0][0].source).toContain('LRC Library');
- expect(fetchAppleMusicWordSyncedLyrics).toHaveBeenCalledTimes(1);
- expect(fetcher).toHaveBeenCalledTimes(1);
- apple.resolve({lrc:'[00:01.00]<00:01.00>Preferred <00:02.00>Apple',hasWordSync:true,source:'lrc.red',sourceUrl:'https://music.apple.com/fixture'});
- expect((await result)?.source).toContain('lrc.red');
- expect(progress.mock.calls.at(-1)?.[0].hasWordSync).toBe(true);
-});
-it('does not downgrade an Apple result when LRCLIB finishes later',async()=>{
- vi.mocked(fetchAppleMusicWordSyncedLyrics).mockResolvedValue({lrc:'[00:01]<00:01>Preferred <00:02>words',hasWordSync:true,source:'lrc.red'});
- const pending=deferred<Response>();vi.stubGlobal('fetch',vi.fn(()=>pending.promise));
- const progress=vi.fn();const request=resolveStashLyricsChain(track,undefined,'lyricflow',0,undefined,progress);
- await vi.waitFor(()=>expect(progress).toHaveBeenCalled());
- pending.resolve(new Response(JSON.stringify({id:1,trackName:track.title,artistName:track.artist,duration:200,syncedLyrics:lrc})));
- expect((await request)?.source).toContain('lrc.red');
- expect(progress.mock.calls.every(([result])=>result.source.includes('lrc.red'))).toBe(true);
-});
-it('keeps sourced LRCLIB word timestamps ahead of a slower line-only provider result',async()=>{
- const words='[00:01]<00:01>Preferred <00:02>words';
- vi.mocked(fetchAppleMusicWordSyncedLyrics).mockResolvedValue({lrc,hasWordSync:false,source:'Paxsenix'});
- vi.stubGlobal('fetch',vi.fn(async()=>Response.json({id:1,trackName:track.title,artistName:track.artist,duration:200,syncedLyrics:words})));
- const progress=vi.fn();
- expect(await resolveStashLyricsChain(track,undefined,'lyricflow',0,undefined,progress)).toMatchObject({original:words,hasWordSync:true});
- const firstWord=progress.mock.calls.findIndex(([value])=>value.hasWordSync);
- expect(firstWord).toBeGreaterThanOrEqual(0);
- expect(progress.mock.calls.slice(firstWord).every(([value])=>value.hasWordSync)).toBe(true);
-});
-it('keeps separate-source song metadata authoritative even when a YouTube background ID is attached',async()=>{
- vi.mocked(fetchYouTubeSubtitlesForTrack).mockClear();
- vi.mocked(fetchAppleMusicWordSyncedLyrics).mockResolvedValue(null);
- vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({id:1,trackName:track.title,artistName:track.artist,duration:200,syncedLyrics:lrc}))));
- const result=await resolveStashLyricsChain({...track,provider:'jiosaavn',youtubeVideoId:'abcdefghijk',videoTitle:'Another Video Title'});
- expect(result?.original).toBe(lrc);
- expect(fetchYouTubeSubtitlesForTrack).not.toHaveBeenCalled();
- expect(vi.mocked(fetchAppleMusicWordSyncedLyrics).mock.calls.at(-1)?.[0].artist).toBe('Test Artist');
-});
 it('waits for the current line, including overlapping singers, and cancels on a song change',async()=>{
  vi.useFakeTimers();
  const cues=buildCues([{time:1,text:'First line'},{time:5,text:'Second line'}],[]);

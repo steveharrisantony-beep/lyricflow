@@ -1,11 +1,13 @@
 import {correctionContext, type Correction, type RecordingIdentity} from '../firebase/correctionModel';
 import type {SongMapping} from '../firebase/songMappings';
 import type {TrackInfo} from '../metadata/trackInfo';
+import type {LyricsSearchReport} from '../lyrics/searchPlan';
 import type {StashResolvedLyrics} from '../lyrics/providers';
 import type {findYouTubeBackgrounds} from '../music/backgroundVideos';
 
 export const TEMPORARY_SONG_LIMIT=10;
 export const TEMPORARY_SONG_EVENT='lyricflow:temporarySongs';
+export const LYRICS_SEARCH_EVENT='lyricflow:lyricsSearch';
 export interface TemporarySong {
  id:string;
  identity:RecordingIdentity;
@@ -15,6 +17,7 @@ export interface TemporarySong {
  draftText?:string;
  corrections:Record<string,Correction|null>;
  lyrics?:{key:string;value:StashResolvedLyrics};
+ lyricSearch?:{key:string;value:LyricsSearchReport};
  videos?:{key:string;value:Awaited<ReturnType<typeof findYouTubeBackgrounds>>};
  generation:number;
 }
@@ -45,7 +48,7 @@ export class TemporarySongs {
   const entry=this.get(track,uid,true);if(!entry)return;
   if(entry.revision!==undefined&&entry.revision!==revision){
    delete entry.draftMapping;delete entry.draftText;entry.corrections={};
-   delete entry.lyrics;delete entry.videos;entry.generation=++this.counter;
+   delete entry.lyrics;delete entry.lyricSearch;delete entry.videos;entry.generation=++this.counter;
   }
   entry.revision=revision;return entry;
  }

@@ -22,8 +22,8 @@ export function afterCurrentLyricLine(apply:()=>void,signal?:AbortSignal){
 }
 
 /** Keep the original line boundary while newer provider results replace the queued payload. */
-export function createLyricHandoff(signal?:AbortSignal){
- let appliedSignature='',pendingSignature='',waiting=false;
+export function createLyricHandoff(signal?:AbortSignal,initialSignature=''){
+ let appliedSignature=initialSignature,pendingSignature='',waiting=false;
  let queuedCommit:(()=>void)|undefined,cancelWait:(()=>void)|undefined;
  const cancel=()=>{
   cancelWait?.();cancelWait=undefined;waiting=false;

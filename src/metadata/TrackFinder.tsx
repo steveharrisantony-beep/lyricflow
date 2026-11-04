@@ -1,5 +1,6 @@
 import {prepareSongLyrics,peekPreparedLyrics,preparedLyricsNeedWordSync} from '../data/songPreparation';
 import {lyricsQuality} from '../lyrics/lyricsQuality';
+import {buildLyricsSearchPlan,type LyricsSearchContext} from '../lyrics/searchPlan';
 import {lyricProviderName,normalizeLyricSource} from '../lyrics/sourceLabels';
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {IncomingLyrics} from '../lyrics/ManualLyrics';
@@ -14,7 +15,6 @@ import {
 } from "../lyrics/appleLyrics";
 import {
   LYRIC_ENGINE_OPTIONS,
-  cleanYouTubeTitleForLyrics,
   type LyricEngineOption,
   type YouTubeSubtitleTrackItem,
 } from "../lyrics/lyricFlowEngine";
@@ -28,14 +28,13 @@ import { findUserLyrics, type LibraryEntry } from "../lyrics/userLibrary";
 import {
   hasValidLrcTimestamps,
   isAdvertisementTrack,
-  isYouTubeAudioTrack,
-  normalizeTrackForLyricsLookup,
   type TrackCandidate,
   type TrackInfo,
 } from "../metadata/trackInfo";
 
 export default function TrackFinder({
   track,
+  searchContext,
   accountId=null,
   enabled=true,
   preferredSelection,
@@ -55,6 +54,7 @@ export default function TrackFinder({
   onStatusChange,
 }: {
   track: TrackInfo | null;
+  searchContext?: LyricsSearchContext;
   accountId?:string|null;
   enabled?:boolean;
   preferredSelection?: LyricsSelection | null;
@@ -84,30 +84,14 @@ export default function TrackFinder({
   onStatusChange?: (status: string) => void;
   onLyricsMapped?:(lyrics:FoundLyrics,selection:LyricsSelection|null)=>void;
 }) {
-  const getAutoSearchedFields = (t: TrackInfo | null) => {
-    if (!t) return { title: "", artist: "", isYt: false };
-    const isYt = isYouTubeAudioTrack(t);
-    const autoNorm = normalizeTrackForLyricsLookup(t, false);
-    const searchedTitle = isYt
-      ? cleanYouTubeTitleForLyrics(t.videoTitle || t.title, t.artist) || t.title
-      : autoNorm.title || t.title;
-    const searchedArtist = autoNorm.artist || t.artist || "";
-    return { title: searchedTitle, artist: searchedArtist, isYt };
-  };
-  const initialAuto = getAutoSearchedFields(track);
   const [candidates, setCandidates] = useState<TrackCandidate[]>([]);
   const [, setAvailableEngines] = useState<LyricEngineOption[]>([]);
   const [, setSubtitleTracks] = useState<YouTubeSubtitleTrackItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [manualTitle, setManualTitle] = useState(() => initialAuto.title);
-  const [manualArtist, setManualArtist] = useState(() => initialAuto.artist);
+  const [manualTitle, setManualTitle] = useState(() => track?.title || "");
+  const [manualArtist, setManualArtist] = useState(() => track?.artist || "");
   const [overrideBracketFilter, setOverrideBracketFilter] = useState(true);
-  const [autoSearchedSummary, setAutoSearchedSummary] = useState<{
-    title: string;
-    artist: string;
-    isYt: boolean;
-  }>(initialAuto);
 
   const latestLyrics = useRef(onLyricsFound);
   latestLyrics.current = onLyricsFound;
@@ -158,18 +142,18 @@ export default function TrackFinder({
 
   const latestLeadingOffset = useRef(leadingNonMusicOffsetSec);
   latestLeadingOffset.current = leadingNonMusicOffsetSec;
-  const requestKey=useMemo(()=>JSON.stringify([autoTrackKey,enabled,accountId,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,
+  const searchKey=track?buildLyricsSearchPlan(track,searchContext).key:'';
+  const requestKey=useMemo(()=>JSON.stringify([autoTrackKey,searchKey,enabled,accountId,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,
     preferredSelection?.engine,preferredSelection?.lrclibId,preferredSourceFile?.url,preferredSourceFile?.revision]),
-    [autoTrackKey,enabled,accountId,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,preferredSelection?.engine,preferredSelection?.lrclibId,preferredSourceFile?.url,preferredSourceFile?.revision]);
+    [autoTrackKey,searchKey,enabled,accountId,savedCustomLrc,lyricEngineOption,selectedSubtitleTrackId,preferredSelection?.engine,preferredSelection?.lrclibId,preferredSourceFile?.url,preferredSourceFile?.revision]);
   const latestRequestKey=useRef(requestKey);latestRequestKey.current=requestKey;
+  const lastAutomaticLyrics=useRef<{trackKey:string;signature:string}|undefined>(undefined);
 
-  // Pre-fill the manual search box with what was searched automatically before whenever a new automatic song loads
+  // Manual search starts with the source metadata and has its own filter control.
   useEffect(() => {
     if (!track || track.source === "manual") return;
-    const fields = getAutoSearchedFields(track);
-    setAutoSearchedSummary(fields);
-    setManualTitle(fields.title || track.title);
-    setManualArtist(fields.artist || track.artist || "");
+    setManualTitle(track.title);
+    setManualArtist(track.artist);
   }, [autoTrackKey]);
 
   // Automatic lyrics lookup across the 4 selectable Lyrics Engine options
@@ -234,15 +218,8 @@ export default function TrackFinder({
     const engineLabel =
       LYRIC_ENGINE_OPTIONS.find((o) => o.id === lyricEngineOption)?.label ||
       "LyricFlow Engine";
-    const isYtTrack = isYouTubeAudioTrack(track);
-    const cleanedYtTitle = isYtTrack
-      ? cleanYouTubeTitleForLyrics(
-          track.videoTitle || track.title,
-          track.channelHint || track.artist,
-        )
-      : track.title;
-
-    const handoff = createLyricHandoff(controller.signal);
+    const handoff = createLyricHandoff(controller.signal,lastAutomaticLyrics.current?.trackKey===autoTrackKey
+      ?lastAutomaticLyrics.current.signature:undefined);
     const applyResolved = (resolved: StashResolvedLyrics | null) => {
       if (controller.signal.aborted||latestRequestKey.current!==requestKey) return;
       if (resolved) {
@@ -261,7 +238,6 @@ export default function TrackFinder({
         ) {
           latestEngineChange.current?.(nextEngines[0]);
         }
-        setCandidates(resolved.candidates);
         const hasTimedLines = hasValidLrcTimestamps(resolved.original);
         const payload = {
           mappingRevision:resolved.mappingRevision,
@@ -275,11 +251,13 @@ export default function TrackFinder({
           source: resolved.source,
           sourceUrl: resolved.sourceUrl,
           hasWordSync: hasTimedLines && resolved.hasWordSync,
-          title: resolved.title || cleanedYtTitle || track.title,
+          title: resolved.title || track.title,
           artist: resolved.artist || track.artist,
         };
+        const signature=JSON.stringify(payload);
         const commit = () => {
           if (controller.signal.aborted||latestRequestKey.current!==requestKey) return;
+          lastAutomaticLyrics.current={trackKey:autoTrackKey,signature};
           latestLyrics.current(payload);
           updateStatus(
             hasTimedLines && resolved.hasWordSync
@@ -290,9 +268,9 @@ export default function TrackFinder({
           );
         };
         const disposition = handoff.publish(
-          JSON.stringify(payload),
+          signature,
           commit,
-          lyricEngineOption === "lyricflow" || lyricEngineOption === "apple",
+          true,
         );
         if (disposition === "pending") {
           updateStatus("Preferred lyrics ready · switching after the current line finishes…");
@@ -309,21 +287,17 @@ export default function TrackFinder({
     };
 
     const cached=peekPreparedLyrics(track,accountId,{engine:lyricEngineOption,selection:preferredSelection||null,
-      source:preferredSourceFile||null,leadingOffset:latestLeadingOffset.current,subtitleId:selectedSubtitleTrackId});
+      source:preferredSourceFile||null,leadingOffset:latestLeadingOffset.current,subtitleId:selectedSubtitleTrackId,context:searchContext});
     if(cached){
       applyResolved(cached);
       if(!preparedLyricsNeedWordSync(cached,{engine:lyricEngineOption,selection:preferredSelection,source:preferredSourceFile}))return()=>{handoff.cancel();controller.abort();};
     }
 
     const timer = setTimeout(() => {
-      updateStatus(
-        isYtTrack
-          ? `[${engineLabel}] Searching lyrics for "${cleanedYtTitle}" (artist/album skipped for YouTube)…`
-          : `[${engineLabel}] Searching synced lyrics for "${track.title}"…`,
-      );
+      updateStatus(`[${engineLabel}] Searching lyrics for "${track.title}"…`);
       const resolvePreferred=()=>prepareSongLyrics(track,accountId,{
         engine:lyricEngineOption,selection:preferredSelection||null,source:preferredSourceFile||null,
-        leadingOffset:latestLeadingOffset.current,subtitleId:selectedSubtitleTrackId,
+        leadingOffset:latestLeadingOffset.current,subtitleId:selectedSubtitleTrackId,context:searchContext,
       },controller.signal,applyResolved);
       void resolvePreferred()
         .then(applyResolved)
@@ -579,9 +553,6 @@ export default function TrackFinder({
             <span>
               Metadata source: {track.source} ·{" "}
               {track.duration ? Math.round(track.duration) + "s" : ""}
-              {autoSearchedSummary.title
-                ? ` · Auto Query: "${autoSearchedSummary.title}"`
-                : ""}
             </span>
             <button
               type="button"

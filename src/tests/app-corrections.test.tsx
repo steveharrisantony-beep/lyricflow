@@ -889,3 +889,49 @@ it('includes the selected video channel and view count beside its title',async()
  expect(video.textContent).toContain('Official Lyrics Video');expect(video.textContent).toContain('Test artist');expect(video.textContent).toContain('5.4M views');
 });
 
+
+it('opens last-stage preloaded lyrics without searching and keeps the chosen version as a draft',async()=>{
+ const {prepareSongLyrics}=await import('../data/songPreparation');
+ const metadata={title:'Original test song',artist:'Test artist',album:'Studio',duration:200,
+  provider:'jiosaavn' as const,sourceTrackId:'saavn_123',source:'provider' as const,confidence:1};
+ const available=(id:string,title:string,lyrics:string,duration=200)=>({id,title,artist:metadata.artist,duration,
+  source:'LRCLIB',sourceUrl:'https://lrclib.net/api/get/'+id.slice(7),lrc:lyrics});
+ const requests=vi.fn(async(input:string)=>{
+  const url=new URL(input,location.origin);
+  if(url.pathname!=='/music/lyrics-stage')return new Response('',{status:404});
+  const artist=url.searchParams.get('artist');
+  const candidates=url.searchParams.get('provider')!=='lrclib'?[]:artist===metadata.artist
+   ?[available('lrclib:31',metadata.title,'[00:01]Early line')]
+   :[available('lrclib:32',metadata.title,'[00:01]<00:01>Final <00:02>words'),
+     available('lrclib:33',metadata.title,'[00:01]Alternate last-stage lyrics',202)];
+  return Response.json({candidates,failures:[]});
+ });
+ vi.stubGlobal('fetch',requests);
+ await act(async()=>click('Load JioSaavn fixture'));
+ await act(async()=>{await prepareSongLyrics(metadata,null,{engine:'lyricflow'});});
+ const lyricRequests=()=>requests.mock.calls.filter(([url])=>new URL(url,location.origin).pathname==='/music/lyrics-stage').length;
+ const count=lyricRequests();
+ await act(async()=>click('Show preloaded lyrics'));
+ const list=()=>host.querySelector('[aria-label="Preloaded lyrics"]');
+ expect(list()?.textContent).toContain('Stage 2');
+ expect(list()?.textContent).toContain('Word-synced');
+ expect(list()?.textContent).toContain('+2.0s');
+ expect(list()?.querySelectorAll('.candidate')).toHaveLength(2);
+ expect(lyricRequests()).toBe(count);
+ await act(async()=>click('Hide preloaded lyrics'));
+ await act(async()=>click('Show preloaded lyrics'));
+ expect(list()?.querySelectorAll('.candidate')).toHaveLength(2);
+ expect(lyricRequests()).toBe(count);
+ await act(async()=>list()!.querySelectorAll<HTMLButtonElement>('button')[1].click());
+ expect(getLyricTimelineSnapshot().cues[0]?.text).toBe('Alternate last-stage lyrics');
+ expect(localStorage.getItem('lyricflow.v3.guest.songMappings')).toBeNull();
+ expect(localStorage.getItem('lyricflow.v3.guest.customLyrics')).toBeNull();
+ await act(async()=>click('Hide preloaded lyrics'));
+ await act(async()=>click('Show preloaded lyrics'));
+ expect(list()?.textContent).toContain('Currently loaded');
+ await act(async()=>click('Load next JioSaavn fixture'));
+ expect(list()).toBeNull();
+ await act(async()=>click('Show preloaded lyrics'));
+ expect(list()?.textContent).toContain('No candidates found');
+ expect(lyricRequests()).toBe(count);
+},20000);

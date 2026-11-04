@@ -823,6 +823,7 @@ summary > span {
 }
 .mapping-source {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   justify-content: space-between;
   align-items: center;
@@ -1878,7 +1879,7 @@ summary > span {
     position: static;
   }
   .settings-nav {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
   .settings-nav button {
     min-height: 56px;

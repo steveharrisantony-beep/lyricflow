@@ -1,3 +1,5 @@
+import { isScrambledMusixmatch, normalizeKugouLrc, searchLyricsStageProvider } from './server/lyricsStage';
+import { lyricsStageProviders, type LyricsStageProvider } from './src/lyrics/searchPlan';
 import {searchMusicVideos,mergeVideoMetadata,hydrateVideoMetadata,VideoSearchCache,youtubeViews} from './server/youtubeSearch';
 import {AUTO_VIDEO_ATTEMPT_LIMIT} from './src/music/videoMatching';
 import {fetchYouTubeCaptions,CaptionFetchError} from './server/youtubeCaptions';
@@ -1997,16 +1999,6 @@ async function fetchLrclibServerLyrics(
 }
 
 // 5C-2. MusixMatch Lyrics via Paxsenix (with strict scramble rejection)
-function isScrambledMusixmatch(text: string): boolean {
-  const lower = text.toLowerCase();
-  return (
-    lower.includes('wob gopini') ||
-    lower.includes('gopini den') ||
-    lower.includes('musixmatch.com/verify') ||
-    lower.includes('unfortunately we are not licensed')
-  );
-}
-
 async function fetchMusixmatchServerLyrics(
   title: string,
   artist: string
@@ -2041,22 +2033,6 @@ async function fetchMusixmatchServerLyrics(
 }
 
 // 5D. KuGou Synced LRC (Stash KugouLyricsSource.kt)
-const KUGOU_CREDIT_LINE =
-  /^\s*(?:作词|作詞|作曲|编曲|編曲|制作人|製作人|混音|母带|母帶|吉他|贝斯|貝斯|鼓|弦乐|弦樂|和声|和聲|录音|錄音|监制|監製|出品|发行|發行|OP|SP|Lyrics by|Composed by|Arranged by|Produced by)\s*[:：]/i;
-
-function normalizeKugouLrc(raw: string): string {
-  const cleaned = raw
-    .replace(/^\uFEFF/, '')
-    .split(/\r?\n/)
-    .filter(line => {
-      const textAfterTimestamps = line.replace(/^\s*(?:\[\d{1,2}:\d{2}(?:\.\d{1,3})?\])+/, '').trim();
-      return !KUGOU_CREDIT_LINE.test(textAfterTimestamps);
-    })
-    .join('\n')
-    .trim();
-  return /\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]/.test(cleaned) ? cleaned : '';
-}
-
 async function fetchKugouSyncedLrc(
   title: string,
   artist: string,
@@ -3218,6 +3194,26 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
   app.post(['/music/adblock/sync', '/adblock/sync', '/music/adblock/status', '/adblock/status'], handleAdBlockSync);
   app.get(['/music/adblock/sync', '/adblock/sync', '/music/adblock/status', '/adblock/status'], handleAdBlockSync);
   app.get(['/music/lyrics', '/lyrics'], handleLyrics);
+  app.get(['/music/lyrics-stage', '/lyrics-stage'], async (req, res) => {
+    const title = typeof req.query.title === 'string' ? req.query.title : '';
+    const artist = typeof req.query.artist === 'string' && req.query.artist.trim() ? req.query.artist : undefined;
+    const duration = Number(req.query.duration) || 0;
+    const provider = req.query.provider as LyricsStageProvider;
+    if (title.trim().length < 2 || title.length > 500 || (artist?.length ?? 0) > 500 ||
+        !Number.isFinite(duration) || duration < 0 || !lyricsStageProviders.includes(provider)) {
+      res.status(400).json({ detail: 'Invalid lyrics search stage.' });
+      return;
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    const controller = new AbortController();
+    res.once('close', () => controller.abort());
+    try {
+      res.json(await searchLyricsStageProvider(provider, { title, artist, duration }, controller.signal));
+    } catch {
+      if (!controller.signal.aborted) res.status(502).json({ detail: 'Lyrics provider request failed.' });
+    }
+  });
+
   app.get(['/music/apple-candidates', '/apple-candidates'], handleAppleCandidates);
   app.post(['/music/romanize', '/romanize'], handleRomanize);
   app.get(['/music/romanize', '/romanize'], handleRomanize);
