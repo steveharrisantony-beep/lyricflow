@@ -19,7 +19,7 @@ export function videoAvailabilityRejections(song:SongResult):string[]{
  return reasons;
 }
 
-const rejectedKeywords=['jukebox','cover','reaction','karoke','reply'];
+const rejectedKeywords=['jukebox','cover','reaction','karaoke','reply'];
 export function evaluateBackgroundVideos(songs:SongResult[],songTitle:string,preference:'music'|'lyrics',playbackRejections:Readonly<Record<string,string>>={}){
  const songWords=new Set(identityWords(songTitle));
  return songs.map((song,index)=>{
