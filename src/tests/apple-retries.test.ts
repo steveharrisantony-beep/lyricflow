@@ -16,8 +16,6 @@ function fixture(successAttempt=Infinity,first?:Promise<Response>,candidates:unk
    return attempts.length===successAttempt?Response.json(appleResult):new Response('',{status:404});
   }
   if(url.pathname==='/music/apple-candidates')return Response.json({candidates});
-  if(url.hostname==='itunes.apple.com')return Response.json({results:[]});
-  if(url.hostname==='lyrics-api.boidu.dev')return new Response('',{status:404});
   if(url.hostname==='lrclib.net')return Response.json({id:1,trackName:track.title,artistName:track.artist,duration:200,instrumental:false,syncedLyrics:lrc});
   throw new Error('Unexpected request '+url.pathname);
  });

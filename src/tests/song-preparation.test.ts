@@ -36,6 +36,24 @@ it('tries the saved link, saved service, then automatic sources and never overwr
   expect(JSON.parse(localStorage.getItem(scopedKey('songMappings',null))!)[id].lyrics.sourceFile).toEqual(source);
  }finally{fetcher.mockRestore();}
 });
+it('preserves snapshots from retired services and uses automatic lookup when only an old link remains',async()=>{
+ const {recordingKey,identity}=correctionContext(track,'lyrics')!;
+ const text='[00:01]Saved words';
+ const url='https://lyrics.paxsenix.org/musixmatch/lyrics?title=Song';
+ const source={name:'Paxsenix',url,revision:lyricFingerprint(text,url)};
+ const customKey=scopedKey('customLyrics',null);
+ writeDevice(customKey,{[recordingKey]:{identity,text}});
+ const fetcher=vi.spyOn(globalThis,'fetch').mockResolvedValue(new Response('',{status:404}));
+ vi.mocked(resolveStashLyricsChain).mockResolvedValue(result);
+ try{
+  expect(await prepareSongLyrics(track,null,{engine:'lyricflow',source})).toMatchObject({original:text});
+  expect(resolveStashLyricsChain).not.toHaveBeenCalled();
+  writeDevice(customKey,{});
+  expect(await prepareSongLyrics(track,null,{engine:'lyricflow',source})).toMatchObject({original:result.original});
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(resolveStashLyricsChain).toHaveBeenCalledOnce();
+ }finally{fetcher.mockRestore();}
+});
 it('skips hidden components and uses an explicit mapped video without automatic searching',async()=>{
  const context=correctionContext(track,'lyrics')!;
  writeDevice(scopedKey('songMappings',null),{[context.recordingKey]:{identity:context.identity,hideLyrics:true,video:{youtubeVideoId:'abcdefghijk',delaySeconds:null}}});

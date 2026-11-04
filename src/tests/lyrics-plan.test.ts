@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import type { TrackInfo } from '../metadata/trackInfo';
 import { resolveStashLyricsChain } from '../lyrics/providers';
-import { buildLyricsSearchPlan, cleanTitleForLyrics, firstArtistWord, type LyricsSearchReport, type ProviderLyric } from '../lyrics/searchPlan';
+import { buildLyricsSearchPlan, cleanTitleForLyrics, firstArtistWord, lyricsStageProviders, type LyricsSearchReport, type ProviderLyric } from '../lyrics/searchPlan';
 
 const track: TrackInfo = {
   title: 'Apna Bana Le (From "Bhediya")', artist: 'Arijit Singh, Sachin-Jigar',
@@ -83,7 +83,7 @@ it('waits for the active stage and sends all five original/filtered queries in o
   const calls = fetchStages(query => query.get('artist') === track.artist && query.get('title') === track.title ? first.then(() => reply()) : reply());
   const report = vi.fn();
   const result = resolveStashLyricsChain(track, undefined, 'lyricflow', 0, undefined, undefined, {}, report);
-  expect(calls).toHaveLength(6);
+  expect(calls.map(query => query.get('provider'))).toEqual(lyricsStageProviders);
   await Promise.resolve();
   expect(calls.every(query => query.get('title') === track.title && query.get('artist') === track.artist)).toBe(true);
   finish(reply());
@@ -92,7 +92,7 @@ it('waits for the active stage and sends all five original/filtered queries in o
     [track.title, track.artist], [track.title, 'Arijit'],
     ['Apna Bana Le', track.artist], ['Apna Bana Le', 'Arijit'], ['Apna Bana Le', null],
   ]);
-  expect(calls.slice(-6).every(query => !query.has('artist'))).toBe(true);
+  expect(calls.slice(-lyricsStageProviders.length).every(query => !query.has('artist'))).toBe(true);
   expect(report.mock.calls.at(-1)?.[0].status).toBe('empty');
 });
 
@@ -137,7 +137,7 @@ it('keeps a Paxsenix line end from winning as word sync', async () => {
   const result=await resolveStashLyricsChain(track,undefined,'lyricflow',0,undefined,progress);
   expect(progress.mock.calls[0][0]).toMatchObject({source:'Paxsenix',hasWordSync:false});
   expect(result).toMatchObject({source:'lrc.red',hasWordSync:true});
-  expect(calls).toHaveLength(12);
+  expect(calls).toHaveLength(2 * lyricsStageProviders.length);
 });
 
 it('shows the first valid line while providers finish and upgrades only after a later stage finds valid words', async () => {
@@ -155,7 +155,7 @@ it('shows the first valid line while providers finish and upgrades only after a 
   const result = await resolveStashLyricsChain(track, undefined, 'lyricflow', 0, undefined, progress, {}, report);
   expect(progress.mock.calls[0][0].original).toBe(lines);
   expect(result).toMatchObject({ original: words, hasWordSync: true, searchComplete: true });
-  expect(calls).toHaveLength(12);
+  expect(calls).toHaveLength(2 * lyricsStageProviders.length);
   const last = (report.mock.calls.at(-1)![0] as LyricsSearchReport).stages.at(-1)!;
   expect(last.candidates.filter(item => item.rejection)).toHaveLength(3);
   expect(last.selectedId).toBe('word');
@@ -169,6 +169,27 @@ it.each([[185, 191, 191], [188, 192, 192], [189, 195, 189]])(
     expect(reports.mock.calls.at(-1)?.[0].selected.duration).toBe(expected);
   },
 );
+
+it.each([
+  ['Binimum', 'Binimum'], [null, 'Paxsenix'],
+])('uses provider preference for equally timed recordings (ISRC result: %s)', async (isrcSource, expected) => {
+  fetchStages(query => {
+    const provider = query.get('provider');
+    const source = provider === 'isrc' ? isrcSource : provider === 'paxsenix' ? 'Paxsenix' : 'LRCLIB';
+    return reply(source ? [{ ...candidate, id: source, source, lrc: words }] : []);
+  });
+  expect((await resolveStashLyricsChain(track, undefined, 'lyricflow'))?.source).toBe(expected);
+});
+
+it('keeps the verified duration and word timing ahead of provider preference', async () => {
+  fetchStages(query => {
+    const provider = query.get('provider');
+    if (provider === 'isrc') return reply([{ ...candidate, source: 'lrc.red', lrc: words, duration: 193 }]);
+    if (provider === 'paxsenix') return reply([{ ...candidate, source: 'Paxsenix', lrc: lines }]);
+    return reply([{ ...candidate, lrc: words, duration: 188 }]);
+  });
+  expect(await resolveStashLyricsChain(track, undefined, 'lyricflow')).toMatchObject({ source: 'LRCLIB', hasWordSync: true });
+});
 
 it('keeps validated line lyrics when another recording has word timing', async () => {
   const calls = fetchStages(() => reply([
@@ -194,7 +215,7 @@ it('cancels current provider requests and never starts a later stage after a son
   const check = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
   controller.abort();
   await check;
-  expect(calls).toHaveLength(6);
+  expect(calls.map(query => query.get('provider'))).toEqual(lyricsStageProviders);
   expect(progress).not.toHaveBeenCalled();
 });
 

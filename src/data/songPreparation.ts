@@ -5,7 +5,7 @@ import {lyricFingerprint} from '../firebase/correctionModel';
 import {resolveStashLyricsChain,retrievePermittedLyrics,lrclibProvider,type StashResolvedLyrics} from '../lyrics/providers';
 import {convertTtmlToEnhancedLrc,convertStructuredAppleJsonToLrc} from '../lyrics/appleLyrics';
 import type {LyricEngineOption} from '../lyrics/lyricFlowEngine';
-import {lyricProviderName,normalizeLyricSource} from '../lyrics/sourceLabels';
+import {isRetiredLyricSource,lyricProviderName,normalizeLyricSource} from '../lyrics/sourceLabels';
 import {hasWordTiming,lyricsQuality} from '../lyrics/lyricsQuality';
 import {providerRequest} from '../network/request';
 import {backendOrigin} from '../network/backend';
@@ -66,7 +66,7 @@ function resolvedText(text:string,source:string,sourceUrl:string,track:TrackInfo
   title:track.title,artist:track.artist,hasWordSync:hasWordTiming(timed?text:undefined),candidates:[]};
 }
 async function savedLink(track:TrackInfo,source:LyricsSourceReference,signal:AbortSignal):Promise<StashResolvedLyrics|null>{
- if(!/^https?:\/\//i.test(source.url))return null;
+ if(isRetiredLyricSource(source.name,source.url)||!/^https?:\/\//i.test(source.url))return null;
  const response=await providerRequest(source.url,signal);if(!response.ok)return null;
  const body=await response.text();
  if(body.includes('<p')){const parsed=convertTtmlToEnhancedLrc(body);if(parsed.lrc)return resolvedText(parsed.lrc,source.name,source.url,track);}
@@ -84,6 +84,7 @@ async function savedLink(track:TrackInfo,source:LyricsSourceReference,signal:Abo
  return null;
 }
 async function savedSource(track:TrackInfo,options:LyricsPreparationOptions,signal:AbortSignal):Promise<StashResolvedLyrics|null>{
+ if(options.source&&isRetiredLyricSource(options.source.name,options.source.url))return null;
  const name=lyricProviderName(options.source?.name||'',options.source?.url||'')||
   (options.selection?.engine==='lrclib'?'LRCLIB':options.selection?.engine==='youtube'?'YouTube Subtitles':'');
  if(name==='LRCLIB'){
@@ -94,7 +95,7 @@ async function savedSource(track:TrackInfo,options:LyricsPreparationOptions,sign
   return null;
  }
  if(name==='YouTube Subtitles')return resolveStashLyricsChain(track,signal,'youtube',options.leadingOffset,options.subtitleId,undefined,options.context);
- const provider:Record<string,string>={'lrc.red':'lrc.red',Binimum:'binimum',Paxsenix:'paxsenix',MusixMatch:'musixmatch',KuGou:'kugou'};
+ const provider:Record<string,string>={'lrc.red':'lrc.red',Binimum:'binimum',Paxsenix:'paxsenix'};
  if(!provider[name])return null;
  const params=new URLSearchParams({title:track.title,artist:track.artist,duration:String(Math.round(track.duration)),source:provider[name]});
  const response=await providerRequest(`${backendOrigin()}/music/lyrics?${params}`,signal);if(!response.ok)return null;

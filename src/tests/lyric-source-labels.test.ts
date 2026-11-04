@@ -14,12 +14,17 @@ it.each([
  ['lrc.red','https://lrc.red/s/TEST00000001.ttml'],
  ['Binimum','https://lyrics-storage.binimum.org/TEST00000001.ttml'],
  ['Paxsenix','https://lyrics.paxsenix.org/apple-music/cache/123'],
- ['Boidu','https://lyrics-api.boidu.dev/getLyrics?s=Sample'],
 ])('shows %s for both new responses and legacy saved labels', (name,url)=>{
  const badge=describeLyricProvider('Apple Music · Word-Synced TTML ('+name+')',true,true,false,url);
  expect(badge.providerName).toBe(name);expect(badge.detail).toBe(name+' · Word-Synced TTML');
  expect(describeLyricProvider('Apple Library',true,true,false,url).providerName).toBe(name);
  expect(isSyncedLyricsSource(name,url)).toBe(true);
+});
+
+it('keeps attribution on saved Boidu lyrics outside the active synced provider group',()=>{
+ const url='https://lyrics-api.boidu.dev/getLyrics?s=Sample';
+ expect(describeLyricProvider('Apple Library',true,true,false,url).providerName).toBe('Boidu');
+ expect(isSyncedLyricsSource('Boidu',url)).toBe(false);
 });
 
 it('keeps the real provider when the LyricFlow engine aligns to subtitles',()=>{

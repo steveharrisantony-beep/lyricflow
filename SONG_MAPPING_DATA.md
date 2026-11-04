@@ -56,8 +56,9 @@ public queries; private collection access uses the existing owner rules.
 Use a valid saved lyric snapshot, otherwise try the saved file link. A broken
 link retries the named original provider before the general automatic chain.
 Provider-specific recovery routes support lrc.red, Binimum, Paxsenix, LRCLIB,
-YouTube subtitles, MusixMatch and KuGou. Recovery results remain temporary; only
-the Save button can replace the saved lyric reference. Lyrics and video resolve
+and YouTube subtitles. Lyrics saved from retired providers are still usable as
+snapshots. Recovery results remain temporary. Only the Save button can replace
+the saved lyric reference. Lyrics and video resolve
 independently, and hidden components skip preparation.
 
 Prepared data carries its lookup options and mapping revision. Save, import and

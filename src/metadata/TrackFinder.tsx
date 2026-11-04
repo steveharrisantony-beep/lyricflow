@@ -1,7 +1,7 @@
 import {prepareSongLyrics,peekPreparedLyrics,preparedLyricsNeedWordSync} from '../data/songPreparation';
 import {hasWordTiming,lyricsQuality} from '../lyrics/lyricsQuality';
 import {buildLyricsSearchPlan,type LyricsSearchContext} from '../lyrics/searchPlan';
-import {lyricProviderName,normalizeLyricSource} from '../lyrics/sourceLabels';
+import {lyricProviderName,lyricProviderPriority,normalizeLyricSource} from '../lyrics/sourceLabels';
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {IncomingLyrics} from '../lyrics/ManualLyrics';
 export type FoundLyrics=Omit<IncomingLyrics,'token'>;
@@ -370,12 +370,20 @@ export default function TrackFinder({
     };
     const publishAvailable = (finished = false) => {
       if (controller.signal.aborted) return;
+      const candidatePriority = (candidate: TrackCandidate) =>
+        lyricProviderPriority(candidate.sourceLabel || (candidate.provider === "lrclib" ? "LRCLIB" : ""), candidate.url);
       const combinedCandidates = [...appleCands, ...lrcCands].sort((a,b)=>
-        lyricsQuality(b.syncedLyrics||b.plainLyrics)-lyricsQuality(a.syncedLyrics||a.plainLyrics)||b.confidence-a.confidence);
+        lyricsQuality(b.syncedLyrics||b.plainLyrics)-lyricsQuality(a.syncedLyrics||a.plainLyrics)||
+        candidatePriority(a)-candidatePriority(b)||b.confidence-a.confidence);
       const bestCandidate=combinedCandidates.find(c=>!c.instrumental&&(c.syncedLyrics||c.plainLyrics));
       setCandidates(combinedCandidates);
-      if (appleDirect && (appleDirect.lrc || appleDirect.plain) &&
-        lyricsQuality(appleDirect.lrc||appleDirect.plain)>=lyricsQuality(bestCandidate?.syncedLyrics||bestCandidate?.plainLyrics)) {
+      const directQuality = lyricsQuality(appleDirect?.lrc || appleDirect?.plain);
+      const candidateQuality = lyricsQuality(bestCandidate?.syncedLyrics || bestCandidate?.plainLyrics);
+      if (appleDirect && (appleDirect.lrc || appleDirect.plain) && (
+        directQuality > candidateQuality ||
+        (directQuality === candidateQuality && (!bestCandidate ||
+          lyricProviderPriority(appleDirect.source, appleDirect.sourceUrl) <= candidatePriority(bestCandidate)))
+      )) {
         const hasTimed = hasValidLrcTimestamps(appleDirect.lrc);
         publishLyrics({
           original: hasTimed ? appleDirect.lrc : "",

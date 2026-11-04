@@ -112,7 +112,7 @@ export interface StashResolvedLyrics {
 export function lyricsFromSearchCandidate(candidate:LyricsSearchCandidate):StashResolvedLyrics{
  const provider=lyricProviderName(candidate.source,candidate.sourceUrl||'');
  const engine=provider==='LRCLIB'?'lrclib':
-  ['lrc.red','Binimum','Paxsenix','Boidu'].includes(provider||'')?'apple':null;
+  ['lrc.red','Binimum','Paxsenix'].includes(provider||'')?'apple':null;
  return {
   original:candidate.lrc||'',romanized:candidate.romanized||'',plain:candidate.plain,
   source:normalizeLyricSource(candidate.source,candidate.sourceUrl),sourceUrl:candidate.sourceUrl,

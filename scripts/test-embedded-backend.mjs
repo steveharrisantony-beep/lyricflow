@@ -146,6 +146,10 @@ try {
   assert.equal((await request('/music/yt-subtitles?videoId=invalid')).status, 400);
   assert.equal((await request('/music/lyrics?title=')).status, 400);
   assert.equal((await request('/music/lyrics-stage?provider=invalid&title=Example')).status,400);
+  for (const source of ['musixmatch', 'kugou', 'boidu']) {
+    assert.equal((await request('/music/lyrics-stage?provider=' + source + '&title=Example')).status, 400);
+    assert.equal((await request('/music/lyrics?source=' + source + '&title=Example')).status, 400);
+  }
   assert.equal((await originalFetch(base+'/music/lyrics-stage?provider=lrclib&title=Example')).status,403);
   wordLyricsAvailable=true;
   const stage = await request('/music/lyrics-stage?provider=isrc&title=Example+Song&duration=180');

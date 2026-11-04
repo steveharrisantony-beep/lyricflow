@@ -10,20 +10,6 @@ const duration = (value: unknown) => {
 };
 const userAgent = 'LyricFlow Android (https://github.com/steveharrisantony-beep/lyricsflow-android)';
 
-export function isScrambledMusixmatch(text: string): boolean {
-  return /wob gopini|gopime den|gopini den|musixmatch\.com\/verify|unfortunately we are not licensed/i.test(text);
-}
-
-const KUGOU_CREDIT_LINE =
-  /^\s*(?:作词|作詞|作曲|编曲|編曲|制作人|製作人|混音|母带|母帶|吉他|贝斯|貝斯|鼓|弦乐|弦樂|和声|和聲|录音|錄音|监制|監製|出品|发行|發行|OP|SP|Lyrics by|Composed by|Arranged by|Produced by)\s*[:：]/i;
-
-export function normalizeKugouLrc(raw: string): string {
-  const cleaned = raw.replace(/^\uFEFF/, '').split(/\r?\n/)
-    .filter(line => !KUGOU_CREDIT_LINE.test(line.replace(/^\s*(?:\[\d{1,2}:\d{2}(?:\.\d{1,3})?\])+/, '').trim()))
-    .join('\n').trim();
-  return /\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]/.test(cleaned) ? cleaned : '';
-}
-
 function queryUrl(base: string, fields: Record<string, string>, artistKey: string, artist?: string) {
   const query = new URLSearchParams(fields);
   if (artist) query.set(artistKey, artist);
@@ -141,53 +127,6 @@ export async function searchLyricsStageProvider(provider: LyricsStageProvider, q
         if (/<p\b/.test(ttml)) return { ...track, id: 'paxsenix:' + track.id, sourceUrl: url, ttml };
       }
       return null;
-    }));
-    candidates.push(...files.filter((item): item is NonNullable<typeof item> => item !== null));
-  } else if (provider === 'musixmatch' || provider === 'boidu') {
-    const isMusixmatch = provider === 'musixmatch';
-    const source = isMusixmatch ? 'MusixMatch' : 'Boidu';
-    // The MusixMatch adapter requires artist data. Do not substitute a fabricated credit.
-    if (isMusixmatch && !artist) return { candidates, failures: [], unavailable: 'Requires an artist' };
-    const url = isMusixmatch
-      ? queryUrl('https://lyrics.paxsenix.org/musixmatch/lyrics', { title }, 'artist', artist)
-      : queryUrl('https://lyrics-api.boidu.dev/getLyrics', { s: title, d: String(query.duration) }, 'a', artist);
-    const body = str(await read(url, source, 'text'));
-    if (body && (!isMusixmatch || !isScrambledMusixmatch(body))) {
-      let data: unknown;
-      if (/^[{\[]/.test(body.trim())) {
-        try { data = JSON.parse(body); } catch { /* LRC also begins with a bracket. */ }
-      }
-      const value = row(data);
-      const lrc = str(value.synced || value.lrc || value.syncedLyrics);
-      const tagged = (tag: string) => lrc.match(new RegExp('\\[' + tag + ':([^\\]]+)\\]', 'i'))?.[1];
-      candidates.push({
-        id: provider, source, sourceUrl: url, title: str(value.title || value.trackName) || tagged('ti'),
-        artist: str(value.artist || value.artistName) || tagged('ar'), duration: duration(value.duration),
-        lrc, plain: str(value.plain || value.plainLyrics), ttml: /<p\b/.test(body) ? body : str(value.ttml),
-        structured: isMusixmatch ? undefined : data,
-      });
-    }
-  } else {
-    const keyword = [title, artist].filter(Boolean).join(' - ');
-    const catalog = row(await read(queryUrl('http://mobilecdn.kugou.com/api/v3/search/song',
-      { format: 'json', page: '1', pagesize: '10', showtype: '1', keyword }, 'artist'), 'KuGou catalog'));
-    const tracks = rows(row(catalog.data).info).filter(item => item.hash).map(item => ({
-      id: String(item.hash), title: str(item.songname), artist: str(item.singername),
-      duration: duration(item.duration), source: 'KuGou',
-    }));
-    const files = await Promise.all(catalogOrder(tracks, query).map(async track => {
-      const lookup = queryUrl('https://krcs.kugou.com/search', {
-        ver: '1', man: 'yes', client: 'pc', keyword, hash: track.id,
-        duration: String(Math.max(1000, (track.duration || query.duration) * 1000)),
-      }, 'artist');
-      const result = rows(row(await read(lookup, 'KuGou lyrics catalog')).candidates)[0];
-      if (!result?.id || !result.accesskey) return null;
-      const url = queryUrl('https://krcs.kugou.com/download', {
-        ver: '1', client: 'pc', id: String(result.id), accesskey: String(result.accesskey), fmt: 'lrc', charset: 'utf8',
-      }, 'artist');
-      const content = str(row(await read(url, 'KuGou lyrics')).content);
-      const lrc = normalizeKugouLrc(Buffer.from(content, 'base64').toString('utf8'));
-      return lrc ? { ...track, id: 'kugou:' + result.id, sourceUrl: lookup, lrc } : null;
     }));
     candidates.push(...files.filter((item): item is NonNullable<typeof item> => item !== null));
   }

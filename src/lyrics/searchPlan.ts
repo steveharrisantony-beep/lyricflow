@@ -1,6 +1,7 @@
 import type { TrackInfo } from '../metadata/trackInfo';
+import { lyricProviderPriority } from './sourceLabels';
 
-export const lyricsStageProviders = ['isrc', 'paxsenix', 'lrclib', 'musixmatch', 'kugou', 'boidu'] as const;
+export const lyricsStageProviders = ['isrc', 'paxsenix', 'lrclib'] as const;
 export type LyricsStageProvider = typeof lyricsStageProviders[number];
 
 export interface LyricsSearchContext {
@@ -39,11 +40,10 @@ export interface ProviderLyric {
   lrc?: string;
   ttml?: string;
   plain?: string;
-  structured?: unknown;
   instrumental?: boolean;
 }
 
-export interface LyricsSearchCandidate extends Omit<ProviderLyric, 'ttml' | 'structured'> {
+export interface LyricsSearchCandidate extends Omit<ProviderLyric, 'ttml'> {
   romanized?: string;
   quality: number;
   confidence: number;
@@ -55,7 +55,6 @@ export interface LyricsStageReport {
   query: LyricsQuery;
   candidates: LyricsSearchCandidate[];
   failures: string[];
-  notes?: string[];
   providerCounts?: Record<string,number>;
   selectedId?: string;
   selectionReason?: string;
@@ -246,5 +245,6 @@ export function compareLyricCandidates(a: LyricsSearchCandidate, b: LyricsSearch
   return Number(Boolean(a.rejection)) - Number(Boolean(b.rejection)) ||
     Number(a.difference === undefined) - Number(b.difference === undefined) ||
     timingPriority(b) - timingPriority(a) || durationDelta(a) - durationDelta(b) ||
+    lyricProviderPriority(a.source, a.sourceUrl) - lyricProviderPriority(b.source, b.sourceUrl) ||
     (b.difference ?? 0) - (a.difference ?? 0) || b.confidence - a.confidence;
 }

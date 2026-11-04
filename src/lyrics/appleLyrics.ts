@@ -3,7 +3,6 @@ export {convertTtmlToEnhancedLrc,parseTtmlTime} from './ttml';
 import {normalizeLyricSource} from './sourceLabels';
 import {hasWordTiming,lyricsQuality} from './lyricsQuality';
 import {backendOrigin} from '../network/backend';
-import { providerRequest } from '../network/request';
 import {getYouTubeRequestHeaders} from '../music/youtubeAuth';
 import { isYouTubeAudioTrack, hasValidLrcTimestamps, type TrackCandidate, type TrackInfo } from '../metadata/trackInfo';
 import { cleanLyricMetadata } from './providers';
@@ -172,16 +171,6 @@ export async function fetchYouTubeSubtitlesForTrack(
   return null;
 }
 
-/**
- * Stash-style Apple Music & Multi-Source word-synced lyrics lookup:
- * 1. Queries our server-side Stash lyrics pipeline (/music/lyrics) which resolves:
- *    - lrc.red & Binimum ISRC Word-Synced Apple Music TTML
- *    - iTunes Search API + Paxsenix Apple Music TTML
- *    - Musixmatch RichSync word-synced & synced subtitles
- *    - KuGou synced LRC
- *    - Creator-uploaded YouTube Subtitles
- * 2. Falls back to direct client-side lookup if running in offline/test mode.
- */
 /** Keep line/plain lyrics usable while retrying for the preferred word timestamps. */
 export async function fetchAppleMusicWordSyncedLyrics(
   track: TrackInfo,
@@ -319,117 +308,7 @@ async function fetchAppleMusicWordSyncedLyricsOnce(
       }
     } catch (err) {
       if (signal?.aborted) throw err;
-      // Fall through to direct client lookup if server route is unavailable
-    }
-  }
-
-  let appleTrackName = title;
-  let appleArtistName = artist;
-  let appleDuration = track.duration || 0;
-
-  // Step 2: Canonicalize track against Apple Music / iTunes catalog and rank against full raw video title
-  try {
-    const term = [title, artist].filter(Boolean).join(' ');
-    const itunesUrl =
-      'https://itunes.apple.com/search?' +
-      new URLSearchParams({
-        term,
-        media: 'music',
-        entity: 'song',
-        limit: '15',
-      }).toString();
-    const res = await providerRequest(itunesUrl, signal);
-    if (res.ok) {
-      const data = (await res.json()) as { results?: Array<Record<string, unknown>> };
-      const results = Array.isArray(data.results) ? data.results : [];
-      const scored = results
-        .map(item => {
-          const durSec = Number(item.trackTimeMillis || 0) / 1000;
-          const score = scoreCandidateAgainstRawMetadata(
-            {
-              title: String(item.trackName || ''),
-              artist: String(item.artistName || ''),
-              album: String(item.collectionName || ''),
-              duration: durSec,
-              hasWordSync: true,
-              hasSynced: true,
-            },
-            {
-              cleanTitle: title,
-              rawTitle: rawOriginalTitle,
-              artistHint,
-              albumHint: '',
-              duration: track.duration,
-              isYouTube: isYt,
-            }
-          );
-          return { item, score };
-        })
-        .filter(x => rawOverride || x.score >= 0.45)
-        .sort((a, b) => b.score - a.score);
-
-      const best = scored[0]?.item;
-      if (best) {
-        appleTrackName = String(best.trackName || title);
-        appleArtistName = String(best.artistName || artist);
-        if (Number(best.trackTimeMillis) > 0) {
-          appleDuration = Math.round(Number(best.trackTimeMillis) / 1000);
-        }
-      } else if (results.length > 0 && !rawOverride) {
-        // iTunes returned candidates, but none matched the cleaned title — abort so wrong lyrics aren't fetched
-        return null;
-      }
-    }
-  } catch {
-    // Proceed with user-supplied track metadata if iTunes lookup fails
-  }
-
-  // Step 3: Fallback direct endpoints
-  const endpoints = [
-    'https://lyrics-api.boidu.dev/getLyrics?' +
-      new URLSearchParams({
-        s: appleTrackName,
-        a: appleArtistName,
-        d: String(Math.round(appleDuration || track.duration || 0)),
-      }).toString(),
-  ];
-
-  for (const url of endpoints) {
-    try {
-      signal?.throwIfAborted();
-      const response = await providerRequest(url, signal);
-      if (!response.ok) continue;
-      const contentType = response.headers.get('content-type') || '';
-      if (contentType.includes('xml') || contentType.includes('ttml')) {
-        const xml = await response.text();
-        const parsed = convertTtmlToEnhancedLrc(xml);
-        if (parsed.lrc && hasValidLrcTimestamps(parsed.lrc)) {
-          return {
-            lrc: parsed.lrc,
-            romanizedLrc: parsed.romanizedLrc,
-            hasWordSync: parsed.hasWordSync,
-            source: parsed.hasWordSync ? 'Boidu · Word-Synced TTML' : 'Boidu · Timed Lyrics',
-            sourceUrl: url,
-            title: appleTrackName,
-            artist: appleArtistName || undefined,
-          };
-        }
-      } else {
-        const json = await response.json();
-        const parsed = convertStructuredAppleJsonToLrc(json);
-        if (parsed.lrc && hasValidLrcTimestamps(parsed.lrc)) {
-          return {
-            lrc: parsed.lrc,
-            hasWordSync: parsed.hasWordSync,
-            source: parsed.hasWordSync ? 'Boidu · Word-Synced' : 'Boidu · Synced',
-            sourceUrl: url,
-            title: appleTrackName,
-            artist: appleArtistName || undefined,
-          };
-        }
-      }
-    } catch (err) {
-      if (signal?.aborted) throw err;
+      // A failed lookup can be retried by the caller.
     }
   }
 

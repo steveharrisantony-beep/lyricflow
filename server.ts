@@ -1,6 +1,6 @@
 import {convertTtmlToEnhancedLrc} from './src/lyrics/ttml';
 import {hasWordTiming} from './src/lyrics/lyricsQuality';
-import { isScrambledMusixmatch, normalizeKugouLrc, searchLyricsStageProvider } from './server/lyricsStage';
+import { searchLyricsStageProvider } from './server/lyricsStage';
 import { lyricsStageProviders, type LyricsStageProvider } from './src/lyrics/searchPlan';
 import {searchMusicVideos,mergeVideoMetadata,hydrateVideoMetadata,VideoSearchCache,youtubeViews} from './server/youtubeSearch';
 import {AUTO_VIDEO_ATTEMPT_LIMIT} from './src/music/videoMatching';
@@ -1282,12 +1282,11 @@ async function searchAudius(query: string, limit = 12): Promise<TrackMetadata[]>
 
 // ============================================================================
 // 5. STASH MULTI-SOURCE LYRICS RESOLVER
-//    Exact Stash LyricsModule.kt chain:
+//    Provider lookup order:
 //    1. isrcTtml (lrc.red + MusicBrainz ISRC -> lrc.red/s/{isrc}.ttml & lyrics-storage.binimum.org/{isrc}.ttml)
 //    2. appleTtml (itunes.apple.com -> lyrics.paxsenix.org)
 //    3. lrclib (lrclib.net/api/get & /api/search)
-//    4. kugou (mobilecdn.kugou.com -> krcs.kugou.com)
-//    5. innerTube (music.youtube.com/youtubei/v1/next -> MPLY* browse)
+//    4. innerTube (music.youtube.com/youtubei/v1/next -> MPLY* browse)
 // ============================================================================
 let paxsenixConsecutiveTimeouts = 0;
 let paxsenixSkipUntilMs = 0;
@@ -2001,149 +2000,6 @@ async function fetchLrclibServerLyrics(
   return null;
 }
 
-// 5C-2. MusixMatch Lyrics via Paxsenix (with strict scramble rejection)
-async function fetchMusixmatchServerLyrics(
-  title: string,
-  artist: string
-): Promise<ServerLyricsResponse | null> {
-  if (!artist || Date.now() < paxsenixSkipUntilMs) return null;
-  try {
-    const url =
-      'https://lyrics.paxsenix.org/musixmatch/lyrics?' +
-      new URLSearchParams({ title, artist }).toString();
-    const res = await fetch(url, {
-      headers: { 'User-Agent': STASH_ANDROID_UA, Accept: 'application/json' },
-      signal: AbortSignal.timeout(4500),
-    });
-    if (!res.ok) return null;
-    const rawText = await res.text();
-    if (!rawText || isScrambledMusixmatch(rawText)) return null;
-    if (rawText.trim().startsWith('{') || rawText.trim().startsWith('[')) {
-      const parsed = JSON.parse(rawText) as Record<string, unknown>;
-      const synced = String(parsed.synced || parsed.lrc || '').trim();
-      if (synced.includes('[') && !isScrambledMusixmatch(synced)) {
-        return {
-          lrc: synced,
-          source: hasWordTiming(synced) ? 'MusixMatch · Word-Synced' : 'MusixMatch · Synced LRC',
-          hasWordSync: hasWordTiming(synced),
-        };
-      }
-    }
-  } catch {
-    // Ignore MusixMatch error
-  }
-  return null;
-}
-
-// 5D. KuGou Synced LRC (Stash KugouLyricsSource.kt)
-async function fetchKugouSyncedLrc(
-  title: string,
-  artist: string,
-  durationSec: number,
-  isYouTube = false
-): Promise<ServerLyricsResponse | null> {
-  const effectiveArtist = isYouTube ? '' : artist;
-  try {
-    const keyword = effectiveArtist ? `${title} - ${effectiveArtist}` : title;
-    const searchUrl =
-      'http://mobilecdn.kugou.com/api/v3/search/song?' +
-      new URLSearchParams({
-        format: 'json',
-        page: '1',
-        pagesize: '10',
-        showtype: '1',
-        keyword,
-      }).toString();
-
-    const searchRes = await fetch(searchUrl, {
-      headers: { 'User-Agent': USER_AGENT },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!searchRes.ok) return null;
-    const searchJson = (await searchRes.json()) as {
-      data?: { info?: Array<Record<string, unknown>> };
-    };
-    const infoList = Array.isArray(searchJson.data?.info) ? searchJson.data!.info! : [];
-    const matching = infoList
-      .filter(item => {
-        const songName = String(item.songname || '');
-        const singerName = String(item.singername || '');
-        const dur = Number(item.duration || 0);
-        if (!sameVersionSignature(title, songName)) return false;
-        if (effectiveArtist && singerName && !hasArtistOverlap(effectiveArtist, singerName)) return false;
-        if (!isDurationCompatible(dur, durationSec, isYouTube)) return false;
-        return Boolean(item.hash);
-      })
-      .sort((a, b) => {
-        const aDur = Number(a.duration || 0);
-        const bDur = Number(b.duration || 0);
-        return (
-          durationDistanceScore(aDur, durationSec, isYouTube) -
-          durationDistanceScore(bDur, durationSec, isYouTube)
-        );
-      });
-
-    const bestSong = matching[0];
-    if (!bestSong?.hash) return null;
-
-    const hash = String(bestSong.hash);
-    const durMs = Math.max(1000, Number(bestSong.duration || durationSec || 180) * 1000);
-    const krcSearchUrl =
-      'https://krcs.kugou.com/search?' +
-      new URLSearchParams({
-        ver: '1',
-        man: 'yes',
-        client: 'pc',
-        keyword,
-        duration: String(durMs),
-        hash,
-      }).toString();
-
-    const krcRes = await fetch(krcSearchUrl, {
-      headers: { 'User-Agent': USER_AGENT },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!krcRes.ok) return null;
-    const krcJson = (await krcRes.json()) as {
-      candidates?: Array<{ id?: string; accesskey?: string }>;
-    };
-    const cand = krcJson.candidates?.[0];
-    if (!cand?.id || !cand?.accesskey) return null;
-
-    const dlUrl =
-      'https://krcs.kugou.com/download?' +
-      new URLSearchParams({
-        ver: '1',
-        client: 'pc',
-        id: String(cand.id),
-        accesskey: String(cand.accesskey),
-        fmt: 'lrc',
-        charset: 'utf8',
-      }).toString();
-
-    const dlRes = await fetch(dlUrl, {
-      headers: { 'User-Agent': USER_AGENT },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!dlRes.ok) return null;
-    const dlJson = (await dlRes.json()) as { content?: string };
-    if (!dlJson.content) return null;
-
-    const decoded = Buffer.from(dlJson.content, 'base64').toString('utf8');
-    const normalized = normalizeKugouLrc(decoded);
-    if (normalized) {
-      return {
-        lrc: normalized,
-        source: 'KuGou · Synced LRC',
-        hasWordSync: hasWordTiming(normalized),
-      };
-    }
-  } catch {
-    // Ignore KuGou failure
-  }
-  return null;
-}
-
 // 5E. YouTube Music InnerTube Lyrics (Stash InnerTubeLyricsGatewayImpl.kt)
 async function fetchInnerTubePlainLyrics(videoId: string): Promise<ServerLyricsResponse | null> {
   if (!videoId || !/^[\w-]{6,20}$/.test(videoId)) return null;
@@ -2272,7 +2128,6 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
         'paxsenix-ttml',
         'lrclib',
         'youtube-subtitles',
-        'kugou',
         'innertube',
       ],
     });
@@ -2566,6 +2421,10 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       !rawOverride &&
       (req.query.isYouTube === '1' || req.query.isYouTube === 'true' || Boolean(videoId));
     const requestedSource = String(req.query.source || 'all').toLowerCase();
+    if (!['all', 'apple', 'lrclib', 'youtube', 'lrc.red', 'binimum', 'paxsenix'].includes(requestedSource)) {
+      res.status(400).json({ detail: 'Unsupported lyrics source.' });
+      return;
+    }
 
     // When rawOverride is true (Manual Search), do NOT delete brackets or wipe artist
     const title = rawOverride
@@ -2620,12 +2479,10 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       }
 
       // A broken mapped file retries its original service before the general chain.
-      if(['lrc.red','binimum','paxsenix','musixmatch','kugou'].includes(requestedSource)){
+      if(['lrc.red','binimum','paxsenix'].includes(requestedSource)){
         let result:ServerLyricsResponse|null=null;
         if(requestedSource==='lrc.red'||requestedSource==='binimum')result=await fetchIsrcWordSyncedTtml(title,artist,duration,isYouTube,rawTitle,rawArtist,rawOverride,requestedSource);
-        else if(requestedSource==='paxsenix')result=(await fetchItunesPaxsenixLyrics(title,artist,duration,isYouTube,rawTitle,rawArtist,rawOverride)).lyrics||null;
-        else if(requestedSource==='musixmatch')result=await fetchMusixmatchServerLyrics(title,artist);
-        else result=await fetchKugouSyncedLrc(title,artist,duration,isYouTube);
+        else result=(await fetchItunesPaxsenixLyrics(title,artist,duration,isYouTube,rawTitle,rawArtist,rawOverride)).lyrics||null;
         if(result){res.json(setLyricsCache(cacheKey,result));}
         else res.status(404).json({detail:'No matching lyrics available from the mapped source.'});
         return;
@@ -2684,21 +2541,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
         return;
       }
 
-      // 4. MusixMatch synced / word-synced lyrics (strictly unscrambled)
-      const mmResult = await fetchMusixmatchServerLyrics(title, artist);
-      if (mmResult) {
-        res.json(setLyricsCache(cacheKey, mmResult));
-        return;
-      }
-
-      // 5. KuGou Synced LRC
-      const kugouResult = await fetchKugouSyncedLrc(title, artist, duration, isYouTube);
-      if (kugouResult) {
-        res.json(setLyricsCache(cacheKey, kugouResult));
-        return;
-      }
-
-      // 6. YouTube Subtitles / InnerTube plain lyrics (if videoId is provided)
+      // 4. YouTube Subtitles / InnerTube plain lyrics (if videoId is provided)
       if (videoId) {
         const ytSub = await fetchYouTubeSubtitlesLrc(videoId,extractRequestYouTubeAuth(req));
         if (ytSub) {

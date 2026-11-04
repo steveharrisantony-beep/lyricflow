@@ -20,6 +20,28 @@ export function lyricProviderName(source:string,sourceUrl=''):string|undefined{
  return namedProvider?.[0]||providers.find(([,pattern])=>pattern.test(sourceUrl))?.[0];
 }
 
+export function lyricProviderPriority(source:string,sourceUrl=''):number{
+ switch(lyricProviderName(source,sourceUrl)){
+  case 'lrc.red':
+  case 'Binimum': return 0;
+  case 'Paxsenix': return 1;
+  case 'LRCLIB': return 2;
+  default: return 3;
+ }
+}
+
+// Keep attribution for saved lyrics while preventing new requests to retired services.
+export function isRetiredLyricSource(source:string,sourceUrl:string):boolean{
+ if(['MusixMatch','KuGou','Boidu'].includes(lyricProviderName(source)||''))return true;
+ try{
+  const url=new URL(sourceUrl);
+  return /(^|\.)(musixmatch\.com|kugou\.com|boidu\.dev)\.?$/i.test(url.hostname)||
+   (url.hostname==='lyrics.paxsenix.org'&&/^\/musixmatch(?:\/|$)/i.test(url.pathname));
+ }catch{
+  return false;
+ }
+}
+
 export function normalizeLyricSource(source:string,sourceUrl='',wordTiming?:boolean):string{
  const raw=(source||'').trim(),provider=lyricProviderName(raw,sourceUrl);
  if(!raw)return provider||'Synced lyrics';
@@ -35,5 +57,5 @@ export function normalizeLyricSource(source:string,sourceUrl='',wordTiming?:bool
 
 export function isSyncedLyricsSource(source:string,sourceUrl=''){
  const name=lyricProviderName(source,sourceUrl);
- return ['lrc.red','Binimum','Paxsenix','Boidu'].includes(name||'')||/\bapple\b|\bsynced lyrics\b/i.test(source);
+ return ['lrc.red','Binimum','Paxsenix'].includes(name||'')||/\bapple\b|\bsynced lyrics\b/i.test(source);
 }

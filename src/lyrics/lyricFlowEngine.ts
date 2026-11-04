@@ -23,7 +23,7 @@ export const LYRIC_ENGINE_OPTIONS: readonly {
     label: SYNCED_LYRIC_SOURCES_LABEL,
     shortLabel: 'Synced sources',
     badge: 'Word-by-Word TTML',
-    description: 'Timed lyrics from lrc.red, Binimum and Paxsenix, with a Boidu fallback',
+    description: 'Timed lyrics from lrc.red, Binimum and Paxsenix',
   },
   {
     id: 'lrclib',

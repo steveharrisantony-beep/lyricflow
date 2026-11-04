@@ -81,11 +81,11 @@ export function LyricsSearchLogs({ report }: { report?: LyricsSearchReport }) {
       <p className="quiet-status">{stage.pending ? 'Waiting for providers · ' : ''}
         {stage.candidates.length} candidates · {stage.candidates.filter(candidate => !candidate.rejection).length} valid</p>
       {Object.entries(stage.providerCounts || {}).map(([name,count]) => <p key={name} className="quiet-status">
-        {({isrc:'lrc.red / Binimum',paxsenix:'Paxsenix',lrclib:'LRCLIB',musixmatch:'MusixMatch',kugou:'KuGou',boidu:'Boidu'} as Record<string,string>)[name]||name}
+        {({isrc:'lrc.red / Binimum',paxsenix:'Paxsenix',lrclib:'LRCLIB'} as Record<string,string>)[name]||name}
         {' · '}{count ? count + ' candidates' : 'No candidates'}
       </p>)}
       {stage.selectionReason && <p className="quiet-status">{stage.selectionReason}</p>}
-      {[...stage.failures, ...(stage.notes || [])].map((message, index) => <p key={index} className="quiet-status">{message}</p>)}
+      {stage.failures.map((message, index) => <p key={index} className="quiet-status">{message}</p>)}
       {stage.candidates.map((candidate, index) => <p key={candidate.id + ':' + index} className="quiet-status">
         {candidate.source} · {candidate.title || 'Title unavailable'} · {candidate.rejection ||
           (candidate.id === stage.selectedId ? 'Stage winner' : 'Valid alternative')}
