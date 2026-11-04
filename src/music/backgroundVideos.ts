@@ -1,4 +1,4 @@
-import {primaryVideoArtist,relevantYouTubeVideoChoices,type VideoTarget} from './videoMatching';
+import {filterYouTubeVideoChoices,primaryVideoArtist,relevantYouTubeVideoChoices,type VideoTarget} from './videoMatching';
 import {searchStashCatalog} from './providers';
 
 export async function findYouTubeBackgrounds(track:VideoTarget,base:string,signal?:AbortSignal){
@@ -8,4 +8,10 @@ export async function findYouTubeBackgrounds(track:VideoTarget,base:string,signa
  const found=await searchStashCatalog(`${title} ${artist} video`,'resolver',base,signal,{background:{title,artist}});
  signal?.throwIfAborted();
  return {candidates:relevantYouTubeVideoChoices(found,track),candidateCount:found.length};
+}
+
+export async function findYouTubeBackgroundsByTitle(title:string,base:string,signal?:AbortSignal){
+ const found=await searchStashCatalog(title.trim(),'resolver',base,signal,{titleOnly:true});
+ signal?.throwIfAborted();
+ return {candidates:filterYouTubeVideoChoices(found),candidateCount:found.length};
 }

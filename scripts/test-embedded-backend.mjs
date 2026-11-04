@@ -6,6 +6,7 @@ const sample = new Uint8Array([1, 2, 3, 4]);
 let rangeForwarded = false;
 let captionRequests=0;
 let youtubeSearchRequests=0;
+let youtubeDirectLookups=0;
 const backgroundTitle='Apna Bana Le - Bhediya';
 const backgroundArtist='Sachin-Jigar';
 const backgroundQuery=`${backgroundTitle} ${backgroundArtist} video`;
@@ -18,6 +19,10 @@ const verifiedAccount = {actions:[{openPopupAction:{popup:{multiPageMenuRenderer
 }}}}}]};
 globalThis.fetch = async (input, options) => {
   const url = new URL(String(input));
+  if(url.hostname==='www.youtube.com'&&url.pathname==='/oembed'){
+    youtubeDirectLookups++;
+    return Response.json({title:'Direct lookup fixture',author_name:'Fixture author'});
+  }
   if(url.hostname==='lrc.red'&&url.pathname==='/api/v1'){
     wordLookupCount++;
     return Response.json({results:wordLyricsAvailable?[{isrc:'TEST00000001',title:'Example Song',artist:'Example Artist',duration:180,timing_type:'word'}]:[]});
@@ -86,7 +91,13 @@ globalThis.fetch = async (input, options) => {
   }
   if(url.hostname==='www.youtube.com'&&url.pathname==='/youtubei/v1/search'){
     youtubeSearchRequests++;
-    if(JSON.parse(options.body).query===backgroundQuery){
+    const {query}=JSON.parse(options.body);
+    if(query==='Unbreakable'){
+      return Response.json({contents:[{videoRenderer:{
+        videoId:'shortSong01',title:{simpleText:'Unbreakable (Lyric Video)'},lengthText:{simpleText:'0:30'},
+      }}]});
+    }
+    if(query===backgroundQuery){
       return Response.json({contents:[...backgroundIds,'wrongSong01'].map(videoId=>({videoRenderer:{
         videoId,
         title:{simpleText:videoId==='wrongSong01'?'Apna Bana Le | Bhediya | Different Artist':'Apna Bana Le | Sachin-Jigar | Bhediya'},
@@ -209,6 +220,11 @@ try {
   assert.deepEqual([...lookedUpBackgroundIds].sort(),[...backgroundIds].sort(),'Look up every matching ID, including candidates after the old six-video limit');
   assert.equal(backgrounds.data.find(video=>video.youtubeVideoId==='ElZfdU54Cp8')?.viewCount,629000000);
   assert.equal(backgrounds.data.find(video=>video.youtubeVideoId==='wrongSong01')?.viewCount,undefined);
+  const directLookupsBeforeTitleSearch = youtubeDirectLookups;
+  const byTitle = await (await request('/music/search?q=Unbreakable&provider=youtube&titleOnly=1')).json();
+  assert.equal(byTitle.data[0]?.youtubeVideoId,'shortSong01');
+  assert.equal(byTitle.data[0]?.duration,30);
+  assert.equal(youtubeDirectLookups,directLookupsBeforeTitleSearch,'An eleven-character title is a query, never a direct video lookup');
   const resolved = await (await request('/music/resolve/saavn_fixture')).json();
   assert.equal(resolved.format, 'audio');
   const audio = await request('/music' + resolved.streamPath, {Range: 'bytes=0-3'});

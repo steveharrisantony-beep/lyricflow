@@ -8,6 +8,7 @@ type Options={
  selectionKey:string;
  track:TrackInfo|null;
  candidates:SongResult[];
+ candidateOrder?:'views'|'relevance';
  preference:'music'|'lyrics';
  excludedVideoIds?:readonly string[];
  onMatchedSearch?:(candidates:SongResult[],candidateCount:number)=>void;
@@ -16,7 +17,7 @@ type Recovery={key:string;videoId:string|null;candidate:SongResult|null;pending:
 const empty:Recovery={key:'',videoId:null,candidate:null,pending:false,message:''};
 
 /** Recovery is temporary for this selection; saved song mappings are never changed. */
-export function useVideoRecovery({selectionKey,track,candidates,preference,excludedVideoIds,onMatchedSearch}:Options){
+export function useVideoRecovery({selectionKey,track,candidates,candidateOrder='views',preference,excludedVideoIds,onMatchedSearch}:Options){
  const [state,setState]=useState<Recovery>(empty);
  const session=useRef<{key:string;excluded:Set<string>;candidates:SongResult[];controller:AbortController|null}|null>(null);
  useEffect(()=>{
@@ -41,15 +42,15 @@ export function useVideoRecovery({selectionKey,track,candidates,preference,exclu
   const controller=new AbortController();
   current.controller=controller;
   setState(previous=>({... (previous.key===selectionKey?previous:empty),key:selectionKey,pending:true,message:''}));
-  const choose=(pool:SongResult[])=>{
-   const eligible=pool.filter(candidate=>{
+  const remaining=(pool:SongResult[])=>pool.filter(candidate=>{
     const id=extractYouTubeVideoId(candidate);
     return id&&!current.excluded.has(id)&&!excludedVideoIds?.includes(id);
-   });
-   return relevantYouTubeVideoChoices(eligible, track, preference).find(hasYouTubeViewCount) ?? null;
-  };
+  });
+  const choose=(pool:SongResult[])=>relevantYouTubeVideoChoices(remaining(pool),track,preference).find(hasYouTubeViewCount) ?? null;
   try{
-   let candidate=choose([...candidates,...current.candidates]);
+   let candidate=candidateOrder==='relevance'
+     ? remaining(candidates)[0] ?? choose(current.candidates)
+     : choose([...candidates,...current.candidates]);
    if(!candidate){
     const base=localStorage.getItem('lyricflow.resolver')||import.meta.env.VITE_MUSIC_RESOLVER||'';
     const result=await findYouTubeBackgrounds(track,base,controller.signal);

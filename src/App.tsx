@@ -1,4 +1,5 @@
 import {hasYouTubeViewCount,matchesVideoPreference} from './music/videoMatching';
+import {findYouTubeBackgroundsByTitle} from './music/backgroundVideos';
 import {isSyncedLyricsSource,lyricProviderName,normalizeLyricSource} from './lyrics/sourceLabels';
 import {selectedPaletteIds,togglePaletteSelection,enableAllPaletteSelections,enableAllPalettesForTheme,type ThemePaletteSelections} from './visualization/cinematic/themeSelection';
 import {normalizeLyricLayout,type LyricLayoutSettings} from './lyrics/lyricLayout';
@@ -262,8 +263,10 @@ export default function App({ user = null }: { user?: User | null }) {
   const [autoVideoMatch, setAutoVideoMatch] = useState<{
     key: string;
     pending: boolean;
+    completed?: boolean;
     candidates: SongResult[];
     candidateCount: number;
+    fallback?: Awaited<ReturnType<typeof findYouTubeBackgroundsByTitle>>;
   }>({ key: "", pending: false, candidates: [], candidateCount: 0 });
   const [manualVideoSearchKey, setManualVideoSearchKey] = useState("");
   const [selectedVideoMetadata,setSelectedVideoMetadata]=useState<SongResult|null>(null);
@@ -1244,17 +1247,26 @@ export default function App({ user = null }: { user?: User | null }) {
         localTrack.provider,
       ].join("|")
     : "";
+  const canSearchBackground = Boolean(localTrack?.title.trim() && hasSeparateAudioStream && !isAdPlaying &&
+    !isAdvertisementTrack(localTrack) && !songMapping.hideVideo && !mappedYoutubeVideoId &&
+    (localTrack.provider === "jiosaavn" || localTrack.provider === "external" || localTrack.provider === "local"));
+  const usingTitleFallback = autoVideoMatch.key === videoSearchKey && autoVideoMatch.completed &&
+    !autoVideoMatch.candidates.some(candidate => matchesVideoPreference(candidate,preferredVideoType));
+  const titleFallbackPending = canSearchBackground && usingTitleFallback && !autoVideoMatch.fallback;
   const preloadedVideoChoices = useMemo(() => {
     if (!localTrack || autoVideoMatch.key !== videoSearchKey || autoVideoMatch.pending) return [];
-    return autoVideoMatch.candidates.filter(candidate => {
+    const candidates = usingTitleFallback ? (autoVideoMatch.fallback?.candidates ?? []) : autoVideoMatch.candidates;
+    return candidates.filter(candidate => {
       const id = extractYouTubeVideoId(candidate);
       return id && !rejectedBgVideoIds.includes(id) && matchesVideoPreference(candidate,preferredVideoType);
     });
-  }, [autoVideoMatch, localTrack, videoSearchKey, rejectedBgVideoIds, preferredVideoType]);
-  const autoYoutubeVideoId = extractYouTubeVideoId(preloadedVideoChoices.find(hasYouTubeViewCount));
+  }, [autoVideoMatch, localTrack, videoSearchKey, rejectedBgVideoIds, preferredVideoType, usingTitleFallback]);
+  const autoYoutubeVideoId = extractYouTubeVideoId(usingTitleFallback
+    ? preloadedVideoChoices[0]
+    : preloadedVideoChoices.find(hasYouTubeViewCount));
   const acceptMatchedVideos = (candidates: SongResult[], candidateCount: number) => {
     setAutoVideoMatch(previous => previous.key === videoSearchKey
-      ? { key: videoSearchKey, pending: false, candidates, candidateCount }
+      ? { ...previous, pending: false, completed: true, candidates, candidateCount }
       : previous);
   };
   const videoSearchPending =
@@ -1264,7 +1276,7 @@ export default function App({ user = null }: { user?: User | null }) {
         localTrack &&
         !isAdPlaying &&
         !activeYoutubeVideoId &&
-        (autoVideoMatch.key !== videoSearchKey || autoVideoMatch.pending),
+        (autoVideoMatch.key !== videoSearchKey || autoVideoMatch.pending || titleFallbackPending),
     );
 
   // Find a background for the current recording; stale results never carry into another song.
@@ -1274,15 +1286,7 @@ export default function App({ user = null }: { user?: User | null }) {
         {key:videoSearchKey,pending:false,candidates:[],candidateCount:0});
       return;
     }
-    if (
-      !localTrack ||
-      isAdPlaying ||
-      isAdvertisementTrack(localTrack) ||
-      !hasSeparateAudioStream ||
-      (localTrack.provider !== "jiosaavn" &&
-        localTrack.provider !== "external" &&
-        localTrack.provider !== "local")
-    ) {
+    if (!localTrack || !canSearchBackground) {
       setAutoVideoMatch({
         key: videoSearchKey,
         pending: false,
@@ -1312,13 +1316,13 @@ export default function App({ user = null }: { user?: User | null }) {
         if (controller.signal.aborted) return;
         const { candidates, candidateCount } = result ?? { candidates: [], candidateCount: 0 };
         setAutoVideoMatch(previous => previous.key === videoSearchKey && previous.pending
-          ? { key: videoSearchKey, pending: false, candidates, candidateCount }
+          ? { key: videoSearchKey, pending: false, completed: true, candidates, candidateCount }
           : previous);
       })
       .catch(() => {
         if (!controller.signal.aborted) {
           setAutoVideoMatch(previous => previous.key === videoSearchKey && previous.pending
-            ? { key: videoSearchKey, pending: false, candidates: [], candidateCount: 0 }
+            ? { key: videoSearchKey, pending: false, completed: true, candidates: [], candidateCount: 0 }
             : previous);
         }
       });
@@ -1330,11 +1334,25 @@ export default function App({ user = null }: { user?: User | null }) {
     localTrack?.duration,
     localTrack?.provider,
     localTrack?.isAd,
-    isAdPlaying,
+    canSearchBackground,
     songMapping.hideVideo,
     mappedYoutubeVideoId,
-    hasSeparateAudioStream,
   ]);
+
+  useEffect(() => {
+    if (!titleFallbackPending || !localTrack?.title.trim()) return;
+    const controller = new AbortController();
+    const base = localStorage.getItem("lyricflow.resolver") || import.meta.env.VITE_MUSIC_RESOLVER || "";
+    void findYouTubeBackgroundsByTitle(localTrack.title,base,controller.signal)
+      .catch(() => ({candidates:[],candidateCount:0}))
+      .then(fallback => {
+        if (controller.signal.aborted) return;
+        setAutoVideoMatch(previous => previous.key === videoSearchKey && !previous.pending
+          ? {...previous,fallback}
+          : previous);
+      });
+    return () => controller.abort();
+  }, [titleFallbackPending, localTrack?.title, videoSearchKey]);
 
   // Android External Player: listen for notification media sessions & sync song metadata + playback position
   useEffect(() => {
@@ -1485,6 +1503,7 @@ export default function App({ user = null }: { user?: User | null }) {
     selectionKey: [recordingKey, mappedYoutubeVideoId, extractYouTubeVideoId(localTrack), preferredVideoType, hasSeparateAudioStream, isAdPlaying, songMapping.hideVideo].join('|'),
     track: localTrack,
     candidates: preloadedVideoChoices,
+    candidateOrder: usingTitleFallback ? "relevance" : "views",
     preference: preferredVideoType,
     excludedVideoIds: rejectedBgVideoIds,
     onMatchedSearch: acceptMatchedVideos,
@@ -2023,14 +2042,15 @@ export default function App({ user = null }: { user?: User | null }) {
                           activeVideoId={stageYoutubeVideoId}
                           preference={preferredVideoType}
                           cachedCandidates={preloadedVideoChoices}
+                          cachedCandidateOrder={usingTitleFallback ? "relevance" : "views"}
                           cachedCandidateCount={
                             autoVideoMatch.key === videoSearchKey
-                              ? autoVideoMatch.candidateCount
+                              ? (usingTitleFallback ? autoVideoMatch.fallback?.candidateCount : autoVideoMatch.candidateCount)
                               : 0
                           }
                           automaticSearchPending={
                             autoVideoMatch.key !== videoSearchKey ||
-                            autoVideoMatch.pending
+                            autoVideoMatch.pending || titleFallbackPending
                           }
                           captionStatus={bgCaptionStatus}
                           onMatchedSearch={(candidates, count) => {

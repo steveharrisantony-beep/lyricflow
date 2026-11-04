@@ -979,13 +979,13 @@ async function searchBackgroundVideos(title:string,artist:string,ytAuth?:YouTube
     return pool.map(video=>details.get(video.rawId)??video);
   });
 }
-async function runSingleYouTubeWebSearch(query:string,limit=40,ytAuth?:YouTubeAuthContext,refresh=false):Promise<TrackMetadata[]> {
+async function runSingleYouTubeWebSearch(query:string,limit=40,ytAuth?:YouTubeAuthContext,{refresh=false,allowShortVideos=false}={}):Promise<TrackMetadata[]> {
   const scope=createHash('sha256').update(JSON.stringify(ytAuth||{})).digest('hex');
   const region=process.env.YOUTUBE_REGION||'IN';
   const load=async()=>{
     const [music,web]=await Promise.all([
       searchMusicVideos(query,buildYouTubeAuthHeaders(ytAuth,'https://music.youtube.com'),region),
-      runYouTubeWebSearch(query,Math.max(limit,40),ytAuth),
+      runYouTubeWebSearch(query,Math.max(limit,40),ytAuth,allowShortVideos),
     ]);
     const decodedMusic=music.map(v=>({...v,title:decodeHtmlEntities(v.title),artist:decodeHtmlEntities(v.artist),artistCredits:v.artistCredits?.map(decodeHtmlEntities)}));
     const pooled=mergeVideoMetadata<TrackMetadata>(refresh?[web,decodedMusic as TrackMetadata[]]:[decodedMusic as TrackMetadata[],web]);
@@ -1013,7 +1013,7 @@ async function fetchYouTubeWebVideos(
   }
 
   const trimmed = query.trim();
-  if (refresh) return runSingleYouTubeWebSearch(trimmed, limit, ytAuth, true);
+  if (refresh) return runSingleYouTubeWebSearch(trimmed, limit, ytAuth, {refresh});
 
   const baseQuery = trimmed
     .replace(/\s+\b(?:official\s+(?:music\s+)?video|music\s+video)$/i, '')
@@ -2862,7 +2862,8 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
             : rawProvider === 'youtube' || rawProvider === 'resolver'
               ? 'youtube'
               : 'jiosaavn';
-    const refresh = provider === 'youtube' && req.query.refresh === '1';
+    const titleOnly = provider === 'youtube' && req.query.titleOnly === '1';
+    const refresh = provider === 'youtube' && (req.query.refresh === '1' || titleOnly);
     const backgroundTitle = provider === 'youtube' ? String(req.query.backgroundTitle || '').trim() : '';
     const backgroundArtist = primaryVideoArtist(String(req.query.backgroundArtist || ''));
     if (backgroundTitle && !backgroundArtist) {
@@ -2886,7 +2887,9 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
         if (refresh) res.setHeader('Cache-Control', 'no-store');
         results = backgroundTitle
           ? await searchBackgroundVideos(backgroundTitle,backgroundArtist,ytAuth)
-          : await searchYouTubeMusic(q, provider, provider === 'youtube' ? 28 : 20, ytAuth, refresh);
+          : titleOnly
+            ? await runSingleYouTubeWebSearch(q,28,ytAuth,{refresh:true,allowShortVideos:true})
+            : await searchYouTubeMusic(q, provider, provider === 'youtube' ? 28 : 20, ytAuth, refresh);
       } else if (provider === 'audius') {
         results = await searchAudius(q, 12);
       }

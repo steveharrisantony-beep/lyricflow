@@ -123,16 +123,16 @@ export async function searchStashCatalog(
  provider:SongResult['provider'],
  base:string,
  signal?:AbortSignal,
- {refresh=false,background}: {refresh?:boolean;background?:{title:string;artist:string}}={}
+ {refresh=false,background,titleOnly=false}: {refresh?:boolean;background?:{title:string;artist:string};titleOnly?:boolean}={}
 ):Promise<SongResult[]>{
- const refreshYouTubeSearch=provider==='resolver'&&refresh;
+ const refreshYouTubeSearch=provider==='resolver'&&(refresh||titleOnly);
  if(query.trim().length<(refreshYouTubeSearch?1:2))return [];
  const effectiveBase=base.trim()||musicBackendBase();
 
  if(effectiveBase){
   try{
    const params=new URLSearchParams({q:query.trim(),provider:provider==='resolver'?'youtube':provider});
-   if(refreshYouTubeSearch)params.set('refresh','1');
+   if(refreshYouTubeSearch)params.set(titleOnly?'titleOnly':'refresh','1');
    if(background){
     params.set('backgroundTitle',background.title);
     params.set('backgroundArtist',background.artist);
@@ -146,7 +146,7 @@ export async function searchStashCatalog(
     const payload=await res.json();
     const parsed=parseSongs(payload,provider);
     if(background)return parsed;
-    const available=parsed.filter(s=>s.duration===0||s.duration>=45);
+    const available=titleOnly?parsed:parsed.filter(s=>s.duration===0||s.duration>=45);
     if(available.length>0)return available;
    }
   }catch(e){
@@ -157,7 +157,7 @@ export async function searchStashCatalog(
 
  if(provider==='resolver'){
   // Fallback A: Direct YouTube URL or 11-char Video ID pasted into manual search
-  const directId=extractYouTubeVideoId({id:query.trim(),provider:'resolver',sourceUrl:query.trim()});
+  const directId=titleOnly?null:extractYouTubeVideoId({id:query.trim(),provider:'resolver',sourceUrl:query.trim()});
   if(directId){
    try{
     const oembed=await fetch(
@@ -222,7 +222,7 @@ export async function searchStashCatalog(
      const title=string(item.title);
      if(!vid||!title)continue;
      const dur=typeof item.duration==='number'&&Number.isFinite(item.duration)?Math.max(0,item.duration):0;
-     if(dur>0&&dur<45)continue;
+     if(!titleOnly&&dur>0&&dur<45)continue;
      const views=typeof item.views==='number'&&Number.isFinite(item.views)&&item.views>0?Math.round(item.views):undefined;
      const rawArtist=string(item.uploaderName)||'YouTube';
      const desc=string(item.shortDescription)||string(item.description);

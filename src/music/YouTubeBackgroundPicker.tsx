@@ -16,6 +16,7 @@ export default function YouTubeBackgroundPicker({
   captionStatus,
   cachedCandidates,
   cachedCandidateCount,
+  cachedCandidateOrder = "views",
   automaticSearchPending,
 }: {
   track: TrackInfo;
@@ -30,6 +31,7 @@ export default function YouTubeBackgroundPicker({
   captionStatus?: string;
   cachedCandidates?: SongResult[];
   cachedCandidateCount?: number;
+  cachedCandidateOrder?: "views" | "relevance";
   automaticSearchPending?: boolean;
 }) {
   const [results, setResults] = useState<SongResult[]>([]),
@@ -48,7 +50,7 @@ export default function YouTubeBackgroundPicker({
   const statusMessage = preloadedResults
     ? automaticSearchPending
       ? "Finding video candidates…"
-      : `${cachedCandidateCount ?? preloadedResults.length} search results · ${preloadedResults.length} relevant videos · sorted by views.${preloadedResults.length ? "" : " Search again with a different query."}`
+      : `${cachedCandidateCount ?? preloadedResults.length} search results · ${preloadedResults.length} relevant videos · sorted by ${cachedCandidateOrder}.${preloadedResults.length ? "" : " Search again with a different query."}`
     : message;
   useEffect(()=>{
     pending.current?.abort();

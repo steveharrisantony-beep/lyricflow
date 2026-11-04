@@ -19,10 +19,13 @@ with `YOUTUBE_REGION` in the embedded/backend environment.
   or `lyrical` in the title. Changing the preference reselects from the completed
   results. Personal mappings take precedence. Recovery uses the same order and
   skips failed videos.
+- If the first search has zero matches for the current preference, search for
+  the title alone. Choose the first eligible result in YouTube relevance order,
+  including results with an unknown view count.
 
 ## Mapping picker
 
-Show preloaded videos filters for the current recording before sorting by views.
+Show preloaded videos displays the same order used by autoplay.
 The status shows both the search pool size and the number of relevant choices.
 The list follows the active video preference. Search online starts a fresh
 YouTube search with the current song title in an editable field. Relevance shows
