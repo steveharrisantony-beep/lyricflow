@@ -18,6 +18,7 @@ import '@fontsource/space-grotesk/700.css';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import AccountRoot from './auth/AccountRoot';
+import {FirstVisit} from './ui/WelcomePage';
 import './styles.css';
 import {initializeEmbeddedBackend} from './network/embeddedBackend';
 import {preloadLyricFonts} from './visualization/cinematic/fonts';
@@ -33,5 +34,5 @@ void Promise.all([
   }),
   fontsReadyPromise,
 ]).finally(() => {
-  createRoot(document.getElementById('root')!).render(<React.StrictMode><AccountRoot /></React.StrictMode>);
+  createRoot(document.getElementById('root')!).render(<React.StrictMode><FirstVisit><AccountRoot /></FirstVisit></React.StrictMode>);
 });

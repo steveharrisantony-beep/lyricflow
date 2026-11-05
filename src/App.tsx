@@ -151,6 +151,7 @@ import SettingsPanel, {
   type SettingsPage,
 } from "./ui/SettingsPanel";
 import DataTransferSettings from './data/DataTransferSettings';
+import {AboutDialog} from './ui/WelcomePage';
 import type {SettingsBackupData} from './data/backupData';
 
 const choices = TEMPLATES;
@@ -244,6 +245,7 @@ export default function App({ user = null }: { user?: User | null }) {
   }, [resolvedTheme]);
 
   const [settingsPage, setSettingsPage] = useState<SettingsPage>("mapping");
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [mappingTarget, setMappingTarget] = useState<HTMLDivElement | null>(
     null,
   );
@@ -2569,6 +2571,9 @@ export default function App({ user = null }: { user?: User | null }) {
                     <Instagram size={20} aria-hidden="true" />
                   </a>
                 </footer>
+                <button type="button" className="upload-button welcome-about-button" onClick={() => setAboutOpen(true)}>
+                  About LyricFlow
+                </button>
               </>
             ),
             logs: (
@@ -2584,6 +2589,7 @@ export default function App({ user = null }: { user?: User | null }) {
           }}
         </SettingsPanel>
         {optionPreview && <OptionPreview spec={optionPreview} onClose={closeOptionPreview} reducedMotion={reducedMotion} lyricLayout={lyricLayout}/>}
+        {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
       </main>
       <AudioSourceHub
         ref={audioHubRef}

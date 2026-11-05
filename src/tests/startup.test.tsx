@@ -27,5 +27,8 @@ it('keeps the initial loading screen until fonts and the on-device service finis
  expect(document.getElementById('app-startup')).not.toBeNull();
  await act(async()=>fontsReady());
  expect(document.getElementById('app-startup')).toBeNull();
+ expect(document.querySelector('[data-testid="loaded-app"]')).toBeNull();
+ const start=[...document.querySelectorAll('button')].find(button=>button.textContent?.includes('Start visualizer'))!;
+ await act(async()=>start.click());
  expect(document.querySelector('[data-testid="loaded-app"]')?.textContent).toBe('Your music');
 });

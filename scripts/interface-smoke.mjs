@@ -100,7 +100,24 @@ const assertFits = async (label) => {
 };
 try {
   await page.goto("http://127.0.0.1:" + server.address().port);
+  await page.getByRole("heading", { name: "See the music. Feel every word." }).waitFor();
+  for (const width of [320, 390, 768, 1440]) {
+    await page.setViewportSize({ width, height: width < 600 ? 568 : 900 });
+    const start = page.getByRole("button", { name: "Start visualizer", exact: true });
+    const bounds = await start.boundingBox();
+    assert.ok(bounds && bounds.y >= 0 && bounds.y + bounds.height <= page.viewportSize().height, "Start is visible without scrolling at " + width);
+    await assertFits("welcome " + width);
+    if (width === 390 || width === 1440) await screenshot("welcome-" + width);
+  }
+  await page.setViewportSize({ width: 780, height: 360 });
+  const landscapeStart = await page.getByRole("button", { name: "Start visualizer", exact: true }).boundingBox();
+  assert.ok(landscapeStart && landscapeStart.y + landscapeStart.height <= 360, "Start is visible in landscape");
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole("button", { name: "Start visualizer", exact: true }).click();
   await page.locator("canvas.cinematic-canvas").waitFor();
+  await page.reload();
+  await page.locator("canvas.cinematic-canvas").waitFor();
+  assert.equal(await page.locator(".welcome-page").count(), 0, "Welcome stays dismissed after reload");
   await page.waitForFunction(
     () =>
       Number(document.querySelector(".cinematic-canvas")?.dataset.frame) > 0 ||
@@ -126,6 +143,21 @@ try {
         await page.locator(".shell").getAttribute("data-theme"),
         theme.toLowerCase(),
       );
+      if (width === 390 || width === 1440) {
+        const about = page.getByRole("button", { name: "About LyricFlow", exact: true });
+        assert.equal(await page.locator(".settings-page:not([hidden]) button").last().innerText(), "About LyricFlow");
+        await about.click();
+        await page.getByRole("dialog", { name: "About LyricFlow" }).waitFor();
+        assert.equal(await page.locator("audio").count(), 1, "About preserves the mounted player");
+        await assertFits("about " + theme + " " + width);
+        await screenshot("about-" + theme.toLowerCase() + "-" + width);
+        await page.keyboard.press("Escape");
+        await page.locator(".welcome-dialog").waitFor({ state: "detached" });
+        assert.ok(await about.evaluate(element => document.activeElement === element), "About restores focus");
+        await about.click();
+        await page.getByRole("button", { name: "Start visualizer", exact: true }).click();
+        await page.locator(".welcome-dialog").waitFor({ state: "detached" });
+      }
       assert.deepEqual(
         await page.getByRole("tab").allTextContents(),
         expectedTabs,
