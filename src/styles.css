@@ -2009,3 +2009,128 @@ summary > span {
   background: var(--surface);
   overflow-wrap: anywhere;
 }
+
+
+/* Android TV: 10-foot interface. Applied only after the native TV device check. */
+html.android-tv,
+html.android-tv body {
+  min-width: 0;
+  scroll-behavior: auto;
+  font-size: 18px;
+}
+html.android-tv .shell {
+  max-width: none;
+  padding: clamp(24px, 3vw, 64px);
+}
+html.android-tv .workspace {
+  grid-template-columns: minmax(0, 1.55fr) minmax(410px, 0.75fr);
+  gap: clamp(20px, 2vw, 40px);
+}
+html.android-tv .stage {
+  aspect-ratio: 16 / 9;
+}
+html.android-tv h2 { font-size: 26px; }
+html.android-tv h3 { font-size: 19px; }
+html.android-tv h4 { font-size: 17px; }
+html.android-tv small,
+html.android-tv .section-caption,
+html.android-tv .live-theme {
+  font-size: 15px;
+}
+html.android-tv button,
+html.android-tv [role="button"],
+html.android-tv summary {
+  min-height: 54px;
+  font-size: 17px;
+}
+html.android-tv button {
+  padding: 10px 17px;
+}
+html.android-tv input:not([type="range"]):not([type="checkbox"]):not([type="file"]):not([type="radio"]),
+html.android-tv select,
+html.android-tv textarea {
+  min-height: 52px;
+  font-size: 18px;
+}
+html.android-tv input[type="range"] {
+  height: 46px;
+}
+html.android-tv input[type="checkbox"] {
+  width: 23px;
+  height: 23px;
+}
+html.android-tv .settings-panel {
+  top: 24px;
+  max-height: calc(100dvh - 48px);
+}
+html.android-tv .settings-heading h2 {
+  font-size: 22px;
+}
+html.android-tv .settings-nav button {
+  min-height: 72px;
+  font-size: 15px;
+  padding: 10px 6px;
+}
+html.android-tv .settings-pages {
+  scroll-padding-block: 24px;
+}
+html.android-tv .spotify-player-card {
+  padding: 24px;
+  gap: 18px;
+}
+html.android-tv .song-cover-box,
+html.android-tv .player-art-placeholder {
+  width: 78px;
+  height: 78px;
+}
+html.android-tv .source-backdrop {
+  padding: 36px;
+}
+html.android-tv .source-modal {
+  width: min(1180px, 94vw);
+  max-height: 88dvh;
+  padding: 32px;
+  scroll-padding-block: 28px;
+}
+html.android-tv .welcome-dialog {
+  max-width: min(1150px, 92vw);
+  max-height: 88dvh;
+  overflow-y: auto;
+}
+html.android-tv .performance-mode {
+  padding: 0;
+}
+html.android-tv .performance-mode .stage {
+  aspect-ratio: auto;
+}
+html.android-tv .performance-mode .player-section {
+  width: min(940px, calc(100% - 80px));
+  bottom: 40px;
+  max-height: 68dvh;
+}
+html.android-tv .fullscreen-toolbar {
+  top: 32px;
+  right: 32px;
+  gap: 16px;
+}
+/* Remote focus must be unmistakable at normal TV viewing distance. */
+html.android-tv :is(button,a,input,select,textarea,summary,[tabindex]):focus {
+  outline: 4px solid #b8edcf !important;
+  outline-offset: 4px;
+  box-shadow: 0 0 0 8px rgba(13, 31, 24, 0.76),
+              0 0 0 11px rgba(184, 237, 207, 0.3);
+  scroll-margin: 42px;
+}
+html.android-tv :is(button,a,input,select,textarea,summary,[tabindex]):focus:not(:disabled) {
+  position: relative;
+  z-index: 2;
+}
+@media (max-width: 1050px) {
+  html.android-tv .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  html.android-tv .settings-panel {
+    position: static;
+    max-height: none;
+  }
+}
