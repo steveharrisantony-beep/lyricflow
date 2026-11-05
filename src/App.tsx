@@ -547,7 +547,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const [localLoaded, setLocalLoaded] = useState(false);
   const [localTrack, setLocalTrack] = useState<TrackInfo | null>(null);
   const [songQueue,setSongQueue]=useState<TrackInfo[]>([]);
-  useSongPreloader(localTrack,songQueue,uid,preferredVideoType);
+  useSongPreloader(localTrack,songQueue,uid,preferredVideoType,sourceMode !== 'external');
   const [incoming, setIncoming] = useState<IncomingLyrics | null>(null);
   const [activeLyrics, setActiveLyrics] = useState({
     recordingKey: "",
@@ -1387,6 +1387,7 @@ export default function App({ user = null }: { user?: User | null }) {
           const nextTitle = media.title.trim();
           const nextArtist = (media.artist || "").trim();
           const nextAlbum = (media.album || "").trim();
+          const nextArtwork = media.artwork || undefined;
           const packageName = (media.packageName || "").trim();
           const sameRecording = prev?.provider === "external" &&
             prev.externalPackageName === packageName && prev.title === nextTitle &&
@@ -1397,8 +1398,8 @@ export default function App({ user = null }: { user?: User | null }) {
             ? `External Player (${media.appName})`
             : "External Player (Android)";
           if (sameRecording) {
-            return prev.duration === nextDur && prev.audioSource === nextAudioSource
-              ? prev : { ...prev, duration: nextDur, audioSource: nextAudioSource };
+            return prev.duration === nextDur && prev.audioSource === nextAudioSource && prev.artwork === nextArtwork
+              ? prev : { ...prev, duration: nextDur, audioSource: nextAudioSource, artwork: nextArtwork };
           }
           setFileEpoch((e) => e + 1);
           setIncoming(null);
@@ -1410,6 +1411,7 @@ export default function App({ user = null }: { user?: User | null }) {
             title: nextTitle,
             artist: nextArtist,
             album: nextAlbum,
+            artwork: nextArtwork,
             duration: nextDur,
             source: "provider",
             provider: "external",
@@ -1419,6 +1421,13 @@ export default function App({ user = null }: { user?: User | null }) {
             isAd: adDetected,
           };
         });
+      } else {
+        setLocalLoaded(false);
+        setLocalPlaying(false);
+        setLocalTrack(null);
+        setLocalTime(0);
+        setVirtualMediaTime(null);
+        setIncoming(null);
       }
     }).then((fn) => {
       if (disposed) fn();
@@ -1850,6 +1859,7 @@ export default function App({ user = null }: { user?: User | null }) {
               externalTrack={sourceMode === "external" ? localTrack : null}
               externalTime={localTime}
               externalPlaying={localPlaying}
+              externalMedia={sourceMode === 'external' ? externalMedia : null}
               onFullscreen={() => void togglePerformance()}
               fullscreen={performance}
               onOverlayChange={setPlayerOverlayOpen}

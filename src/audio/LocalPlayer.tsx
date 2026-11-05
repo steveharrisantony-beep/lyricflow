@@ -45,6 +45,7 @@ import {
   setVirtualMediaTime,
 } from "./audioSignal";
 import type { AudioSourceMode } from "./AudioSourceHub";
+import { controlExternalMedia, type ExternalMediaCommand, type ExternalMediaState } from './externalPlayer';
 
 const format = (seconds: number) =>
   Number.isFinite(seconds) && seconds >= 0
@@ -88,6 +89,7 @@ type Props = {
   externalTrack?: TrackInfo | null;
   externalTime?: number;
   externalPlaying?: boolean;
+  externalMedia?: ExternalMediaState | null;
   sponsorBlockEnabled?: boolean;
   onSponsorBlockOffsetChange?: (leadingOffsetSec: number) => void;
   youtubeBackgroundMode?: "theme" | "video";
@@ -113,6 +115,7 @@ function LocalPlayer(
     externalTrack,
     externalTime = 0,
     externalPlaying = false,
+    externalMedia,
     sponsorBlockEnabled = true,
     onSponsorBlockOffsetChange,
     youtubeBackgroundMode = "video",
@@ -140,6 +143,15 @@ function LocalPlayer(
     if (audioRef.current) audioRef.current.volume = preferredVolume / 100;
   }, [preferredVolume]);
   const [error, setError] = useState("");
+  const isExternal = sourceMode === 'external';
+  const displayedArtwork = isExternal ? externalTrack?.artwork : artwork;
+  const displayedVolume = isExternal ? externalMedia?.volume ?? 0 : volume;
+  const sendExternalCommand = async (command: ExternalMediaCommand, value?: number) => {
+    if (!externalMedia) return;
+    setError('');
+    try { await controlExternalMedia(externalMedia, command, value); }
+    catch (error) { setError(error instanceof Error ? error.message : 'External player control failed.'); }
+  };
   const [, setRemote] = useState(false);
   const [inlineOnlineOpen, setInlineOnlineOpen] = useState(false);
   useEffect(() => {
@@ -239,6 +251,7 @@ function LocalPlayer(
   };
 
   const playNextFromQueue = (): boolean => {
+    if (isExternal) return false;
     const currentQ = queueRef.current;
     if (currentQ.length === 0) {
       if (repeatEnabledRef.current && name) {
@@ -260,6 +273,10 @@ function LocalPlayer(
   };
 
   const playPreviousTrack = () => {
+    if (isExternal) {
+      void sendExternalCommand('previous');
+      return;
+    }
     if (time > 3) {
       seekPlayback(0);
       return;
@@ -510,6 +527,10 @@ function LocalPlayer(
   };
 
   const play = async () => {
+    if (isExternal) {
+      await sendExternalCommand('play');
+      return;
+    }
     if (youtubeOnlyClock) {
       setError("");
       setActive(true);
@@ -532,6 +553,10 @@ function LocalPlayer(
   };
 
   const pausePlayback = () => {
+    if (isExternal) {
+      void sendExternalCommand('pause');
+      return;
+    }
     if (youtubeOnlyClock) {
       setActive(false);
       onActiveChange(false);
@@ -543,6 +568,10 @@ function LocalPlayer(
   };
 
   const seekPlayback = (nextTime: number) => {
+    if (isExternal) {
+      void sendExternalCommand('seek', Math.max(0, Math.min(externalTrack?.duration || 0, nextTime)));
+      return;
+    }
     const clamped = Math.max(
       0,
       duration > 0 ? Math.min(duration, nextTime) : nextTime,
@@ -700,6 +729,9 @@ function LocalPlayer(
       onActiveChange,
       onTimeChange,
       onDurationChange,
+      isExternal,
+      externalMedia,
+      externalTrack?.duration,
     ],
   );
 
@@ -791,9 +823,9 @@ function LocalPlayer(
       >
         {/* 1. Top Row: Bold Title + Artist Subtitle on Left */}
         <div className="spotify-header-row">
-          {artwork && !externalTrack ? (
+          {displayedArtwork ? (
             <div className="song-cover-box spotify-mini-art">
-              <img src={artwork} alt="" referrerPolicy="no-referrer" />
+              <img src={displayedArtwork} alt="" referrerPolicy="no-referrer" />
             </div>
           ) : (
             <div className="player-art-placeholder">
@@ -819,7 +851,7 @@ function LocalPlayer(
             </span>
           </div>
 
-          {name && (
+          {name && !isExternal && (
             <div className="spotify-header-actions">
               <button
                 type="button"
@@ -846,7 +878,7 @@ function LocalPlayer(
               (Number.isFinite(duration) && duration > 0 ? duration : 100)
             }
             step=".1"
-            disabled={!name}
+            disabled={isExternal ? !externalMedia?.controls?.seek || !externalTrack?.duration : !name}
             value={
               externalTrack
                 ? Math.min(externalTime, externalTrack.duration || 0)
@@ -871,11 +903,16 @@ function LocalPlayer(
         <div className="spotify-transport-row">
           <button
             type="button"
-            className={"spotify-aux-btn " + (shuffleEnabled ? "is-active" : "")}
+            className={"spotify-aux-btn " + ((isExternal ? externalMedia?.shuffleEnabled : shuffleEnabled) ? "is-active" : "")}
             aria-label="Shuffle queue"
-            aria-pressed={shuffleEnabled}
+            aria-pressed={isExternal ? Boolean(externalMedia?.shuffleEnabled) : shuffleEnabled}
+            disabled={isExternal && !externalMedia?.controls?.shuffle}
             title="Shuffle queue"
             onClick={() => {
+              if (isExternal) {
+                void sendExternalCommand('shuffle', externalMedia?.shuffleEnabled ? 0 : 1);
+                return;
+              }
               setShuffleEnabled((v) => {
                 const next = !v;
                 if (next && queue.length > 1) {
@@ -891,9 +928,9 @@ function LocalPlayer(
           <button
             type="button"
             className="spotify-skip-btn"
-            disabled={!name && historyRef.current.length === 0}
+            disabled={isExternal ? !externalMedia?.controls?.previous : !name && historyRef.current.length === 0}
             aria-label="Previous track"
-            title="Previous / Restart track"
+            title={isExternal ? 'Previous track' : 'Previous / Restart track'}
             onClick={playPreviousTrack}
           >
             <SkipBack size={26} fill="currentColor" />
@@ -902,13 +939,13 @@ function LocalPlayer(
           <button
             type="button"
             className="player-round spotify-play-circle"
-            disabled={!name}
+            disabled={isExternal ? !externalMedia?.controls?.[externalPlaying ? 'pause' : 'play'] : !name}
             aria-label={
               (externalTrack ? externalPlaying : active)
                 ? "Pause track"
                 : "Play track"
             }
-            onClick={() => (active ? pausePlayback() : void play())}
+            onClick={() => ((isExternal ? externalPlaying : active) ? pausePlayback() : void play())}
           >
             {(externalTrack ? externalPlaying : active) ? (
               <Pause size={26} fill="currentColor" />
@@ -920,14 +957,18 @@ function LocalPlayer(
           <button
             type="button"
             className="spotify-skip-btn"
-            disabled={queue.length === 0 && !name}
+            disabled={isExternal ? !externalMedia?.controls?.next : queue.length === 0 && !name}
             aria-label="Next track"
             title={
-              queue.length > 0
+              isExternal ? 'Next track' : queue.length > 0
                 ? "Play next song in Queue"
                 : "Open search to add next song"
             }
             onClick={() => {
+              if (isExternal) {
+                void sendExternalCommand('next');
+                return;
+              }
               if (!playNextFromQueue()) {
                 setInlineOnlineOpen(true);
               }
@@ -938,11 +979,16 @@ function LocalPlayer(
 
           <button
             type="button"
-            className={"spotify-aux-btn " + (repeatEnabled ? "is-active" : "")}
+            className={"spotify-aux-btn " + ((isExternal ? externalMedia?.repeatEnabled : repeatEnabled) ? "is-active" : "")}
             aria-label="Repeat track"
-            aria-pressed={repeatEnabled}
+            aria-pressed={isExternal ? Boolean(externalMedia?.repeatEnabled) : repeatEnabled}
+            disabled={isExternal && !externalMedia?.controls?.repeat}
             title="Repeat track"
             onClick={() => {
+              if (isExternal) {
+                void sendExternalCommand('repeat', externalMedia?.repeatEnabled ? 0 : 1);
+                return;
+              }
               setRepeatEnabled((v) => {
                 const next = !v;
                 if (audioRef.current) audioRef.current.loop = next;
@@ -1004,15 +1050,20 @@ function LocalPlayer(
               type="range"
               min="0"
               max="100"
-              value={volume}
+              value={displayedVolume}
+              disabled={isExternal && !externalMedia?.controls?.volume}
               onChange={(e) => {
                 const n = Number(e.target.value);
+                if (isExternal) {
+                  void sendExternalCommand('volume', n);
+                  return;
+                }
                 setVolume(n);
                 onVolumeChange?.(n);
                 if (audioRef.current) audioRef.current.volume = n / 100;
               }}
             />
-            <span>{volume}%</span>
+            <span>{displayedVolume}%</span>
           </label>
         </div>
 

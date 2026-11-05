@@ -394,6 +394,47 @@ it('switches external advertisements to themes, aborts video search and unmounts
   }finally{external.setAndroidAppOverrideForTest(null);subscribe.mockRestore();capture.mockRestore();stop.mockRestore();find.mockRestore();draw.mockRestore();}
 });
 
+it('keeps external cover updates separate from song searches and cancels searches for ads with unchanged metadata',async()=>{
+ const external=await import('../audio/externalPlayer');
+ const player=await import('../audio/LocalPlayer');
+ const finder=await import('../metadata/TrackFinder');
+ let deliver:Parameters<typeof external.subscribeExternalMedia>[0]|undefined;
+ let playerProps:Parameters<typeof player.default>[0]|undefined;
+ const subscribe=vi.spyOn(external,'subscribeExternalMedia').mockImplementation(async callback=>{deliver=callback;return()=>{};});
+ const displayed=vi.spyOn(player,'default').mockImplementation(props=>{playerProps=props;return <button onClick={props.onOpenSourceSelector}>Select source</button>;});
+ const lyrics=vi.spyOn(finder,'default').mockImplementation(()=> <span data-testid="external-lyrics"/>);
+ const search=vi.mocked(searchStashCatalog),originalSearch=search.getMockImplementation()!;
+ let finish!:(value:Awaited<ReturnType<typeof searchStashCatalog>>)=>void;
+ search.mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+ external.setAndroidAppOverrideForTest(true);
+ try{
+  await act(async()=>click('Select source'));
+  await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('.source-option-card')].find(b=>b.textContent?.includes('External player'))!.click());
+  const media={title:'External song',artist:'Artist',album:'Album',duration:200,position:1,playing:true,
+   packageName:'fixture.player',appName:'Fixture',updatedAt:1,artwork:'data:image/jpeg;base64,first',sessionId:'session-one'};
+  const before=search.mock.calls.length;
+  await act(async()=>deliver!(media,true));
+  expect(playerProps?.externalTrack?.artwork).toBe(media.artwork);
+  const requested=search.mock.calls.length;
+  expect(requested).toBeGreaterThan(before);
+  const signal=search.mock.calls.at(-1)![3]!;
+  await act(async()=>deliver!({...media,artwork:'data:image/jpeg;base64,second',position:2},true));
+  expect(playerProps?.externalTrack?.artwork).toBe('data:image/jpeg;base64,second');
+  expect(search.mock.calls.length).toBe(requested);
+  await act(async()=>deliver!({...media,isAd:true},true));
+  expect(signal.aborted).toBe(true);
+  expect(host.querySelector('[data-testid="external-lyrics"]')).toBeNull();
+  expect(search.mock.calls.length).toBe(requested);
+  await act(async()=>finish([]));
+  await act(async()=>deliver!({...media,position:3},true));
+  expect(host.querySelector('[data-testid="external-lyrics"]')).not.toBeNull();
+  await act(async()=>deliver!(null,true));
+  expect(playerProps?.externalTrack).toBeNull();
+ }finally{
+  external.setAndroidAppOverrideForTest(null);subscribe.mockRestore();displayed.mockRestore();lyrics.mockRestore();search.mockImplementation(originalSearch);
+ }
+});
+
 it('waits for the full search and switches the active video from the completed list', async () => {
  const stage = await import('../visualization/cinematic/CinematicStage');
  const draw = vi.spyOn(stage, 'default').mockImplementation(props =>

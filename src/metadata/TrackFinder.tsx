@@ -322,7 +322,7 @@ export default function TrackFinder({
     };
   }, [requestKey]);
 
-  const canSearch = Boolean(track && manualTitle.trim().length >= 2);
+  const canSearch = Boolean(enabled && track && !isAdvertisementTrack(track) && manualTitle.trim().length >= 2);
 
   useEffect(() => {
     if (!autoTrackKey) return;

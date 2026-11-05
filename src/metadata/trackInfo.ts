@@ -65,8 +65,6 @@ export function isAdvertisementTrack(
  const isSpotify=pkg.includes('spotify')||app.includes('spotify')||src.includes('spotify');
  if(isSpotify){
   if(title.toLowerCase()==='spotify'||artist.toLowerCase()==='spotify')return true;
-  const dur=typeof item.duration==='number'?item.duration:0;
-  if(dur>0&&dur<=35&&(!artist||/^(?:spotify|advertisement|sponsored)$/i.test(artist)))return true;
  }
  return false;
 }

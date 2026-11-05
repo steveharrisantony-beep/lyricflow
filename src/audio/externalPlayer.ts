@@ -6,6 +6,8 @@ import {
 } from './audioSignal';
 
 export type ExternalAudioCaptureMode = 'mic' | 'internal';
+export type ExternalMediaCommand = 'play' | 'pause' | 'previous' | 'next' | 'seek' | 'shuffle' | 'repeat' | 'volume';
+export type ExternalMediaControls = Record<ExternalMediaCommand, boolean>;
 
 export interface ExternalMediaState {
   title: string;
@@ -18,9 +20,16 @@ export interface ExternalMediaState {
   appName: string;
   updatedAt: number;
   isAd?: boolean;
+  artwork?: string;
+  sessionId?: string;
+  controls?: ExternalMediaControls;
+  shuffleEnabled?: boolean;
+  repeatEnabled?: boolean;
+  volume?: number;
 }
 
 export interface ExternalMediaPluginInterface {
+  control(options: { sessionId: string; command: ExternalMediaCommand; value?: number }): Promise<{ sent: boolean }>;
   checkNotificationAccess(): Promise<{ granted: boolean; androidSdk?: number }>;
   openAppInfoSettings(): Promise<{ opened: boolean }>;
   openNotificationSettings(): Promise<{ opened: boolean }>;
@@ -44,6 +53,14 @@ export interface ExternalMediaPluginInterface {
 }
 
 export const ExternalMedia = registerPlugin<ExternalMediaPluginInterface>('ExternalMedia');
+
+export async function controlExternalMedia(media: ExternalMediaState, command: ExternalMediaCommand, value?: number): Promise<void> {
+  if (!isAndroidApp() || !media.sessionId || !media.controls?.[command]) {
+    throw new Error('This control is unavailable in the external player.');
+  }
+  const result = await ExternalMedia.control({ sessionId: media.sessionId, command, value });
+  if (!result.sent) throw new Error('The external player could not accept this control.');
+}
 
 let androidOverrideForTest: boolean | null = null;
 
@@ -127,9 +144,7 @@ export async function subscribeExternalMedia(
   try {
     handle = await ExternalMedia.addListener('mediaChange', state => {
       if (cancelled) return;
-      if (state && typeof state.title === 'string' && state.title.trim()) {
-        onMediaChange(state, true);
-      }
+      onMediaChange(state && typeof state.title === 'string' && state.title.trim() ? state : null, true);
     });
     stopWatching=await watchExternalNotificationAccess(()=>{
       void getCurrentExternalMedia().then(result=>{if(!cancelled)onMediaChange(result.media,result.granted);});

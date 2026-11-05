@@ -342,6 +342,25 @@ public class ExternalMediaPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void control(PluginCall call) {
+        if (!hasNotificationListenerAccess()) {
+            call.reject("Enable notification listening to control the external player.");
+            return;
+        }
+        handler.post(() -> {
+            try {
+                MediaNotificationService.control(getContext(), call.getString("sessionId", ""),
+                    call.getString("command", ""), call.getDouble("value"));
+                JSObject result = new JSObject();
+                result.put("sent", true);
+                call.resolve(result);
+            } catch (Exception error) {
+                call.reject(error.getMessage(), error);
+            }
+        });
+    }
+
+    @PluginMethod
     public void getCurrentMedia(PluginCall call) {
         boolean granted = hasNotificationListenerAccess();
         JSObject media = granted ? MediaNotificationService.getLastKnownMedia(getContext()) : null;

@@ -215,6 +215,8 @@ it('detects Spotify advertisements and pauses lyrics lookup during ads',async()=
   expect(isAdvertisementTrack({title:'Spotify',artist:'Spotify',packageName:'com.spotify.music',duration:30})).toBe(true);
   expect(isAdvertisementTrack({title:'Sponsored Message',artist:'',packageName:'com.spotify.music',duration:20})).toBe(true);
   expect(isAdvertisementTrack({title:'Starboy',artist:'The Weeknd',packageName:'com.spotify.music',duration:230})).toBe(false);
+  expect(isAdvertisementTrack({title:'Short intro',artist:'',packageName:'com.spotify.music',duration:20})).toBe(false);
+  expect(isAdvertisementTrack({title:'Starboy',artist:'The Weeknd',isAd:true})).toBe(true);
 
   const {default:TrackFinder}=await import('../metadata/TrackFinder');
   const onLyricsFound=vi.fn();
