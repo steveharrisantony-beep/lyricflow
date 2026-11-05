@@ -1,9 +1,9 @@
 import type {TrackInfo} from '../metadata/trackInfo';
 import {searchStashCatalog} from './providers';
 import {backgroundVideoQuery} from './backgroundQuery';
-import {logVideoSearch} from './videoSearchHistory';
+import {logVideoSearch,videoSearchLogKey} from './videoSearchHistory';
 
-type VideoTarget=Pick<TrackInfo,'title'|'artist'|'primaryArtist'|'featuredArtist'>;
+type VideoTarget=Pick<TrackInfo,'title'|'artist'|'primaryArtist'|'featuredArtist'> & Partial<Pick<TrackInfo,'provider'|'sourceTrackId'|'externalPackageName'>>;
 
 function splitFeatureCredit(value:string){
  const bracketed=value.match(/\s*[\[(]\s*(?:featuring|feat|ft)(?:\.\s*|\s+)([^)\]]+)[)\]]\s*/i);
@@ -14,15 +14,15 @@ function splitFeatureCredit(value:string){
 
 const firstListedArtist=(value:string)=>value.split(/[,;]|\s+&\s+/).map(name=>name.trim()).find(Boolean);
 
-export async function findYouTubeBackgrounds(track:VideoTarget,base:string,signal?:AbortSignal,preference:'music'|'lyrics'='music'){
+export async function findYouTubeBackgrounds(track:VideoTarget,base:string,signal?:AbortSignal,preference:'music'|'lyrics'='music',mode:'Autoplay'|'Search online'='Autoplay'){
  const title=track.title;
  if(!title.trim())return {candidates:[],candidateCount:0};
  const artistCredit=splitFeatureCredit(track.artist);
  const artist=track.primaryArtist?.trim()||firstListedArtist(artistCredit.text)||'';
  const query=backgroundVideoQuery(title,artist,preference);
- const candidates=await logVideoSearch(query,'Autoplay',()=>searchStashCatalog(query,'resolver',base,signal,{
+ const candidates=await logVideoSearch(query,mode,()=>searchStashCatalog(query,'resolver',base,signal,{
   background:{title,artist,...(preference==='lyrics'?{preference}:{})},
- }),signal);
+ }),signal,videoSearchLogKey(track));
  signal?.throwIfAborted();
  return {candidates,candidateCount:candidates.length};
 }
