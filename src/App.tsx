@@ -647,8 +647,13 @@ export default function App({ user = null }: { user?: User | null }) {
   const lyricsFix = useCorrection(localTrack, "lyrics", uid);
   const videoFix = useCorrection(localTrack, "video", uid);
   const recordingKey = lyricsFix.context?.recordingKey || "";
+  // Use stable track identity for the theme-song streak; duration/album updates
+  // from the current recording must not count as another song.
+  const themeRecordingIdentity=localTrack?.title?.trim()
+    ? JSON.stringify([localTrack.provider||'',localTrack.sourceTrackId||'',localTrack.title.trim(),localTrack.artist.trim(),localTrack.externalPackageName||''])
+    : '';
   const {suspended:themeVideoSearchSuspended} = useThemeVideoSearchGate(
-    recordingKey, youtubeBackgroundMode, Boolean(localTrack?.title?.trim()&&!isAdvertisementTrack(localTrack))
+    themeRecordingIdentity, youtubeBackgroundMode, Boolean(themeRecordingIdentity&&!isAdvertisementTrack(localTrack))
   );
   // Always preload lyrics; only prefetch queued videos when the user has selected Video.
   useSongPreloader(localTrack,songQueue,uid,preferredVideoType,sourceMode !== "external",youtubeBackgroundMode === "video");
