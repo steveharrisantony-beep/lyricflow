@@ -96,6 +96,7 @@ import {
 import CinematicStage, {
   type Quality,
   type VideoFitMode,
+  type BackgroundVideoMetadata,
   type YouTubeBackgroundMode,
 } from "./visualization/cinematic/CinematicStage";
 import {
@@ -292,6 +293,7 @@ export default function App({ user = null }: { user?: User | null }) {
     candidateCount: number;
   }>({ key: "", pending: false, candidates: [], candidateCount: 0 });
   const [selectedVideoMetadata,setSelectedVideoMetadata]=useState<SongResult|null>(null);
+  const [playingVideoMetadata,setPlayingVideoMetadata]=useState<(BackgroundVideoMetadata&{key:string})|null>(null);
   const [initialExternalAudio] = useState(()=>readDevice<{mode?:unknown;enabled?:unknown}>(
     'lyricflow.externalAudio.v1',{},
   ));
@@ -1519,6 +1521,11 @@ export default function App({ user = null }: { user?: User | null }) {
   const noteVerifiedBackground = useCallback((key:string,id:string|null) => {
     setVerifiedBackground(previous => previous?.key===key&&previous.id===id ? previous : {key,id});
   }, []);
+  const noteBackgroundVideoMetadata=useCallback((key:string,metadata:BackgroundVideoMetadata)=>{
+    if(key!==recordingKey||metadata.videoId!==stageYoutubeVideoId)return;
+    setPlayingVideoMetadata(previous=>previous?.key===key&&previous.videoId===metadata.videoId&&previous.title===metadata.title&&previous.author===metadata.author
+      ?previous:{key,...metadata});
+  },[recordingKey,stageYoutubeVideoId]);
   const lyricsSearchContext = {
     backgroundVideoId: isYtVideoBackgroundActive&&verifiedBackground?.key===recordingKey&&verifiedBackground.id===stageYoutubeVideoId
       ? verifiedBackground.id||undefined : undefined,
@@ -1529,13 +1536,18 @@ export default function App({ user = null }: { user?: User | null }) {
   const matchedVideoCandidate = stageYoutubeVideoId
     ? preloadedVideoChoices.find(v => extractYouTubeVideoId(v) === stageYoutubeVideoId)
     : undefined;
-  const isActiveVideoLyrical = Boolean(
-    isYtVideoBackgroundActive &&
-      (matchedVideoCandidate
-        ? isLyricVideoTrack(matchedVideoCandidate)
-        : isLyricVideoTrack(localTrack) ||
-          (!activeYoutubeVideoId && hasSeparateAudioStream && preferredVideoType === "lyrics")),
-  );
+  const activePlayerMetadata=playingVideoMetadata?.key===recordingKey&&playingVideoMetadata.videoId===stageYoutubeVideoId
+    ?playingVideoMetadata:null;
+  const currentVideoMetadata=selectedVideoMetadata&&extractYouTubeVideoId(selectedVideoMetadata)===stageYoutubeVideoId
+    ?selectedVideoMetadata:matchedVideoCandidate;
+  const videoIsAudioTrack=Boolean(stageYoutubeVideoId&&extractYouTubeVideoId(localTrack)===stageYoutubeVideoId);
+  const currentVideoTitle=stageYoutubeVideoId
+    ?activePlayerMetadata?.title||currentVideoMetadata?.videoTitle||currentVideoMetadata?.title||(videoIsAudioTrack?localTrack?.videoTitle||localTrack?.title:undefined)||`YouTube video (${stageYoutubeVideoId})`
+    :"No video selected";
+  const currentVideoChannel=activePlayerMetadata?.author||currentVideoMetadata?.uploaderName||currentVideoMetadata?.artist||(videoIsAudioTrack?localTrack?.channelHint||localTrack?.artist:undefined)||"Channel unavailable";
+  const currentVideoViewCount=currentVideoMetadata?.viewCount??(videoIsAudioTrack?localTrack?.viewCount:undefined);
+  const currentVideoViews=currentVideoViewCount===0?"0 views":formatViewCount(currentVideoViewCount)||"Views unavailable";
+  const isActiveVideoLyrical=isYtVideoBackgroundActive&&isLyricVideoTrack({title:currentVideoTitle});
   const shouldHideStageLyrics = Boolean(
     songMapping.hideLyrics || isAdPlaying || (autoHideYoutubeLyrics && isActiveVideoLyrical),
   );
@@ -1663,16 +1675,6 @@ export default function App({ user = null }: { user?: User | null }) {
   const currentLyricsLibrary=hasLoadedLyrics
     ?describeLyricProvider(activeLyrics.name,activeLyricsHaveWordTiming,Boolean(activeLyrics.original.trim()),true,activeLyrics.url).providerName
     :"";
-  const currentVideoMetadata=selectedVideoMetadata&&extractYouTubeVideoId(selectedVideoMetadata)===stageYoutubeVideoId
-    ?selectedVideoMetadata:matchedVideoCandidate;
-  const videoIsAudioTrack=Boolean(stageYoutubeVideoId&&extractYouTubeVideoId(localTrack)===stageYoutubeVideoId);
-  const currentVideoTitle=stageYoutubeVideoId
-    ?currentVideoMetadata?.videoTitle||currentVideoMetadata?.title||(videoIsAudioTrack?localTrack?.videoTitle||localTrack?.title:undefined)||`YouTube video (${stageYoutubeVideoId})`
-    :"No video selected";
-  const currentVideoChannel=currentVideoMetadata?.uploaderName||currentVideoMetadata?.artist||(videoIsAudioTrack?localTrack?.channelHint||localTrack?.artist:undefined)||"Channel unavailable";
-  const currentVideoViewCount=currentVideoMetadata?.viewCount??(videoIsAudioTrack?localTrack?.viewCount:undefined);
-  const currentVideoViews=currentVideoViewCount===0?"0 views":formatViewCount(currentVideoViewCount)||"Views unavailable";
-
   const saveVideoChoice = (id: string, seconds: number | null) => {
     if(videoFix.context)discardSongCorrections(uid,videoFix.context.identity,['video'],correctionKey(videoFix.context));
     setRejectedBgVideos(previous => {
@@ -1776,6 +1778,7 @@ export default function App({ user = null }: { user?: User | null }) {
                 youtubeVideoId={stageYoutubeVideoId}
                 videoReloadNonce={videoReloadNonce}
                 onVerifiedBackground={noteVerifiedBackground}
+                onBackgroundVideoMetadata={noteBackgroundVideoMetadata}
                 videoDelaySeconds={videoDelaySeconds}
                 youtubeBackgroundMode={effectiveYoutubeBackgroundMode}
                 hideVideo={songMapping.hideVideo}

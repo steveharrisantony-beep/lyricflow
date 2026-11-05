@@ -16,6 +16,23 @@ beforeEach(() => {
 });
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.useRealTimers();vi.restoreAllMocks();});
 
+it.each(['initialDelivery','infoDelivery'])('reports the active video title from %s and rejects stale, ad and untrusted messages',async(event)=>{
+ const changed=vi.fn();
+ await act(async()=>root.render(<CinematicStage {...base} recordingKey="song-one" onBackgroundVideoMetadata={changed}/>));
+ const frame=host.querySelector('iframe')!;
+ const title='Rathinamo (Male Version) - Lyric Video | Saurav Srisan | Tamil Indie Pop';
+ const deliver=async(id:string,extra:Record<string,unknown>={},origin='https://www.youtube.com')=>{
+  await act(async()=>window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,origin,
+   data:JSON.stringify({event,info:{videoData:{video_id:id,title,author:'Saurav Srisan'},...extra}})})));
+ };
+ await deliver('bbbbbbbbbbb');await deliver('abcdefghijk',{adState:1});await deliver('abcdefghijk',{isAdPlaying:true});
+ await deliver('abcdefghijk',{},'https://untrusted.example');
+ expect(changed).not.toHaveBeenCalled();
+ await deliver('abcdefghijk');await deliver('abcdefghijk');
+ expect(changed).toHaveBeenCalledExactlyOnceWith('song-one',{videoId:'abcdefghijk',title,author:'Saurav Srisan'});
+});
+
+
 it.each([
  [true,false], [false,false], [true,true], [false,true],
 ])('reloads the selected video at the current position (separate audio %s, paused %s)',async(separate,paused)=>{

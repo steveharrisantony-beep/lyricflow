@@ -26,6 +26,55 @@ import {createBackup} from '../data/backupData';
 import {temporarySongs} from '../data/temporarySongs';
 import {getLyricTimelineSnapshot} from '../lyrics/lyricTimeline';
 let root: Root, host: HTMLDivElement;
+const rathinamoTitle='Rathinamo (Male Version) - Lyric Video | Saurav Srisan | Tamil Indie Pop';
+
+it('hides overlay lyrics for a manually selected Lyric Video outside the preloaded results',async()=>{
+ const stage=await import('../visualization/cinematic/CinematicStage');
+ let stageProps:Parameters<typeof stage.default>[0]|undefined;
+ const draw=vi.spyOn(stage,'default').mockImplementation(value=>{stageProps=value;return null;});
+ const search=vi.mocked(searchStashCatalog),original=search.getMockImplementation()!;
+ const video=(id:string,title:string)=>({id:'yt_'+id,youtubeVideoId:id,title,artist:'Saurav Srisan',album:'',duration:200,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v='+id});
+ search.mockImplementation(async(_q,_provider,_base,_signal,options)=>options?.refresh
+  ?[video('bbbbbbbbbbb',rathinamoTitle)]:[video('abcdefghijk','Original test song Official Music Video')]);
+ try{
+  await act(async()=>click('Load JioSaavn fixture'));
+  expect(stageProps?.hideStageLyrics).toBe(false);
+  await act(async()=>click('Search online'));
+  await act(async()=>click('Use video'));
+  expect(stageProps?.youtubeVideoId).toBe('bbbbbbbbbbb');
+  expect(stageProps?.hideStageLyrics).toBe(true);
+  const toggle=host.querySelector<HTMLInputElement>('[aria-label="Hide overlay lyrics on lyrical videos"]')!;
+  await act(async()=>toggle.click());expect(stageProps?.hideStageLyrics).toBe(false);
+  await act(async()=>toggle.click());expect(stageProps?.hideStageLyrics).toBe(true);
+ }finally{draw.mockRestore();search.mockImplementation(original);}
+},20000);
+
+it('uses the playing video title for a saved background link and ignores metadata from another recording',async()=>{
+ const stage=await import('../visualization/cinematic/CinematicStage');
+ let stageProps:Parameters<typeof stage.default>[0]|undefined;
+ const draw=vi.spyOn(stage,'default').mockImplementation(value=>{stageProps=value;return null;});
+ try{
+  await act(async()=>click('Load JioSaavn fixture'));
+  const input=host.querySelector<HTMLInputElement>('[aria-label="Background video URL"]')!;
+  await act(async()=>{
+   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'bbbbbbbbbbb');
+   input.dispatchEvent(new Event('input',{bubbles:true}));
+  });
+  await act(async()=>click('Save background video'));
+  const key=stageProps!.recordingKey!;
+  await act(async()=>stageProps!.onBackgroundVideoMetadata!(key,{videoId:'bbbbbbbbbbb',title:rathinamoTitle,author:'Saurav Srisan'}));
+  expect(stageProps?.hideStageLyrics).toBe(true);
+  await act(async()=>stageProps!.onBackgroundVideoMetadata!(key,{videoId:'bbbbbbbbbbb',title:'Rathinamo Official Music Video',author:'Saurav Srisan'}));
+  expect(stageProps?.hideStageLyrics).toBe(false);
+  await act(async()=>stageProps!.onBackgroundVideoMetadata!(key,{videoId:'bbbbbbbbbbb',title:rathinamoTitle,author:'Saurav Srisan'}));
+  expect(stageProps?.hideStageLyrics).toBe(true);
+  await act(async()=>stageProps!.onBackgroundVideoMetadata!('previous-recording',{videoId:'bbbbbbbbbbb',title:'Old Music Video',author:'Other artist'}));
+  expect(stageProps?.hideStageLyrics).toBe(true);
+  await act(async()=>stageProps!.onBackgroundVideoMetadata!(key,{videoId:'ccccccccccc',title:'Different Music Video',author:'Other artist'}));
+  expect(stageProps?.hideStageLyrics).toBe(true);
+ }finally{draw.mockRestore();}
+},20000);
+
 it('loads another matching background without changing the saved video or the audio clock',async()=>{
  const stage=await import('../visualization/cinematic/CinematicStage');
  let props:Parameters<typeof stage.default>[0]|undefined;

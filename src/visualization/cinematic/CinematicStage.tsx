@@ -30,6 +30,7 @@ export type CameraView=typeof CAMERA_VIEWS[number];
 export type CameraMode='Automatic'|'Front';
 export type YouTubeBackgroundMode='video'|'theme';
 export type VideoFitMode='default'|'stretch';
+export interface BackgroundVideoMetadata {videoId:string;title:string;author:string}
 
 export interface CinematicProps{
  quality:Quality;intensity:number;speed:number;reducedMotion:boolean;
@@ -84,6 +85,7 @@ export interface CinematicProps{
  videoRecoveryMessage?:string;
  onRejectBackgroundVideo?:(videoId:string,reason:string)=>void;
  onVerifiedBackground?:(recordingKey:string,videoId:string|null)=>void;
+ onBackgroundVideoMetadata?:(recordingKey:string,metadata:BackgroundVideoMetadata)=>void;
  recordingKey?:string;
  externalPlayer?:boolean;
  videoSearchPending?:boolean;
@@ -600,6 +602,7 @@ export default function CinematicStage(props:CinematicProps){
  const ytPlayerStateRef=useRef<number|null>(null);
  const latestPropsRef=useRef(props);
  latestPropsRef.current=props;
+ const reportedVideoMetadata=useRef('');
  const ytAuth=useYouTubeAuth();
  const [playbackError,setPlaybackError]=useState('');
  const [canReplaceVideo,setCanReplaceVideo]=useState(false);
@@ -742,6 +745,20 @@ export default function CinematicStage(props:CinematicProps){
     return;
    }
    const evt=String(data.event||'');
+   if((evt==='initialDelivery'||evt==='infoDelivery')&&data.info&&typeof data.info==='object'){
+    const info=data.info as Record<string,unknown>;
+    const video=info.videoData&&typeof info.videoData==='object'?info.videoData as Record<string,unknown>:undefined;
+    const current=latestPropsRef.current;
+    // Only the mounted video can identify itself; ignore old-video and advertisement messages.
+    if(info.adState!==1&&info.isAdPlaying!==true&&video?.video_id===mountedVideoId&&video.video_id===current.youtubeVideoId&&typeof video.title==='string'&&video.title.trim()&&current.recordingKey){
+     const metadata={videoId:mountedVideoId,title:video.title.trim().slice(0,1000),author:typeof video.author==='string'?video.author.trim().slice(0,500):''};
+     const signature=JSON.stringify([current.recordingKey,metadata]);
+     if(reportedVideoMetadata.current!==signature){
+      reportedVideoMetadata.current=signature;
+      current.onBackgroundVideoMetadata?.(current.recordingKey,metadata);
+     }
+    }
+   }
    if(evt==='onReady'||evt==='initialDelivery'){
     ytReadyRef.current=true;
     if(pollId)window.clearInterval(pollId);
