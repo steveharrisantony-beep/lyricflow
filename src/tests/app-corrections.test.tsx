@@ -589,6 +589,41 @@ it('plays the most-viewed of the first five passing results and reports all reje
  }
 });
 
+it.each([false,true])('applies the final channel check and shows preloaded reasons (all five blocked: %s)',async(allBlocked)=>{
+ const stage=await import('../visualization/cinematic/CinematicStage');
+ const draw=vi.spyOn(stage,'default').mockImplementation(props=>
+  <span data-testid="channel-choice" data-video={props.youtubeVideoId||''} data-searching={String(props.videoSearchPending)}/>);
+ const search=vi.mocked(searchStashCatalog),original=search.getMockImplementation()!;
+ const channels=['7clouds rocks','Official label','Cakes & Eclairs Video','New Dan Music','Another label','Music distributor'];
+ const candidates=channels.map((uploaderName,index)=>{
+  const id=String(index+1).padStart(11,'0');
+  return {id:'yt_'+id,youtubeVideoId:id,title:`Original Video ${index}`,sourceUrl:'https://www.youtube.com/watch?v='+id,
+   artist:'Uploader',uploaderName:allBlocked&&index<5?'Royal Music':uploaderName,album:'',duration:200,
+   provider:'resolver' as const,viewCount:[500,200,900,800,100,1e9][index]};
+ });
+ search.mockResolvedValue(candidates);
+ const before=search.mock.calls.length;
+ try{
+  await act(async()=>click('Load JioSaavn fixture'));
+  const current=host.querySelector('[data-testid="channel-choice"]');
+  expect(current?.getAttribute('data-searching')).toBe('false');
+  expect(current?.getAttribute('data-video')).toBe(allBlocked?'':candidates[1].youtubeVideoId);
+  await act(async()=>click('Show preloaded videos'));
+  const rows=[...host.querySelectorAll('.video-candidate')];
+  expect(rows.map(row=>row.querySelector('strong')?.textContent)).toEqual(candidates.map(song=>song.title));
+  if(allBlocked){
+   expect(rows.slice(0,5).every(row=>row.textContent?.includes('Blocked channel: Royal Music'))).toBe(true);
+  }else{
+   expect(rows[0].textContent).toContain('Blocked channel: 7clouds');
+   expect(rows[2].textContent).toContain('Blocked channel: Cakes & Eclairs');
+   expect(rows[3].textContent).toContain('Blocked channel: Dan Music');
+   expect(rows[1].getAttribute('aria-current')).toBe('true');
+  }
+  expect(rows[5].textContent).not.toContain('Blocked channel:');
+  expect(search.mock.calls).toHaveLength(before+1);
+ }finally{draw.mockRestore();search.mockImplementation(original);}
+});
+
 it.each([
  [[undefined,undefined],0],
  [[10,10],0],

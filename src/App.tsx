@@ -1,7 +1,7 @@
 import {hasWordTiming} from './lyrics/lyricsQuality';
 import {LyricsSearchLogs,PreloadedLyrics,useLyricsSearchReport} from './lyrics/LyricsSearchDetails';
 import {lyricsFromSearchCandidate} from './lyrics/providers';
-import {evaluateBackgroundVideos} from './music/videoMatching';
+import {selectAutomaticBackgroundVideo} from './music/videoMatching';
 import {findYouTubeBackgrounds} from './music/backgroundVideos';
 import {musicResolverBase} from './network/backend';
 import VideoSearchLogs from './music/VideoSearchLogs';
@@ -1312,10 +1312,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const preloadedVideoChoices = autoVideoMatch.key === videoSearchKey ? autoVideoMatch.candidates : [];
   const automaticVideo = useMemo(() => {
     if (!canSearchBackground || automaticSearchPending || !localTrack) return undefined;
-    return evaluateBackgroundVideos(preloadedVideoChoices,localTrack.title,preferredVideoType,playbackRejections)
-      .filter(choice => choice.withinLimit && !choice.reasons.length)
-      .slice(0,5)
-      .sort((a,b)=>(b.song.viewCount??-1)-(a.song.viewCount??-1))[0]?.song;
+    return selectAutomaticBackgroundVideo(preloadedVideoChoices,localTrack.title,preferredVideoType,playbackRejections).selected;
   },[canSearchBackground,automaticSearchPending,localTrack,preloadedVideoChoices,preferredVideoType,playbackRejections]);
 
   // Find a background for the current recording; stale results never carry into another song.
@@ -1350,7 +1347,7 @@ export default function App({ user = null }: { user?: User | null }) {
       .then((result) => {
         if (controller.signal.aborted) return;
         const { candidates, candidateCount } = result ?? { candidates: [], candidateCount: 0 };
-        const passed=evaluateBackgroundVideos(candidates,localTrack.title,preferredVideoType)
+        const passed=selectAutomaticBackgroundVideo(candidates,localTrack.title,preferredVideoType).choices
           .filter(candidate=>candidate.withinLimit&&!candidate.reasons.length).length;
         logVideoFiltering(themeRecordingIdentity,candidateCount,passed);
         setAutoVideoMatch(previous => previous.key === videoSearchKey && previous.pending

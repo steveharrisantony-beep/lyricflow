@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import {formatViewCount,isLyricalVideo,searchStashCatalog,type SongResult} from './providers';
-import {AUTO_VIDEO_ATTEMPT_LIMIT,compareYouTubeVideoViews,evaluateBackgroundVideos,filterYouTubeVideoChoices} from './videoMatching';
+import {AUTO_VIDEO_ATTEMPT_LIMIT,compareYouTubeVideoViews,evaluateBackgroundVideos,filterYouTubeVideoChoices,selectAutomaticBackgroundVideo} from './videoMatching';
 import { extractYouTubeVideoId, type TrackInfo } from "../metadata/trackInfo";
 import type { YouTubeBackgroundMode } from "../visualization/cinematic/CinematicStage";
 import { findYouTubeBackgrounds } from "./backgroundVideos";
@@ -41,7 +41,7 @@ export default function YouTubeBackgroundPicker({
   const [searchOnlineOpen, setSearchOnlineOpen] = useState(false);
   const [sort, setSort] = useState<"relevance" | "views">("relevance");
   const preloaded = showCached
-    ? evaluateBackgroundVideos(cachedCandidates ?? results,track.title,preference,playbackRejections)
+    ? selectAutomaticBackgroundVideo(cachedCandidates ?? results,track.title,preference,playbackRejections).choices
     : undefined;
   const visibleResults = preloaded
     ? preloaded.map(choice => ({song:choice.song,choice}))

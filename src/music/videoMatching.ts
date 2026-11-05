@@ -36,6 +36,26 @@ export function evaluateBackgroundVideos(songs:SongResult[],songTitle:string,_pr
 }
 export type BackgroundVideoChoice=ReturnType<typeof evaluateBackgroundVideos>[number];
 
+const rejectedBackgroundChannels=[
+ '7clouds','DopeLyrics','LatinHype','The Vibe Guide','SyrebralVibes','Vibe Music',
+ 'Shadow Music','Cakes & Eclairs','Unique Vibes','Taj Tracks','Dan Music','WaveMusic',
+ 'BangersOnly','Royal Music',
+];
+
+/** Apply the channel check in view order, without refilling the first-five shortlist. */
+export function selectAutomaticBackgroundVideo(songs:SongResult[],songTitle:string,preference:'music'|'lyrics',playbackRejections:Readonly<Record<string,string>>={}){
+ const choices=evaluateBackgroundVideos(songs,songTitle,preference,playbackRejections);
+ const shortlist=choices.filter(choice=>choice.withinLimit&&!choice.reasons.length)
+  .slice(0,5).sort((a,b)=>(b.song.viewCount??-1)-(a.song.viewCount??-1));
+ for(const choice of shortlist){
+  const channel=(choice.song.uploaderName||choice.song.artist).toLowerCase();
+  const blocked=rejectedBackgroundChannels.find(name=>channel.includes(name.toLowerCase()));
+  if(blocked){choice.reasons.push(`Blocked channel: ${blocked}`);continue;}
+  return {choices,selected:choice.song};
+ }
+ return {choices,selected:undefined};
+}
+
 /** Manual online search keeps provider relevance order and allows sorting by views. */
 export function filterYouTubeVideoChoices(songs: SongResult[]): SongResult[] {
  const blocked=new Set(songs.filter(song=>videoAvailabilityRejections(song).length).map(song=>extractYouTubeVideoId(song)));
