@@ -924,9 +924,10 @@ export default function CinematicStage(props:CinematicProps){
       }
      }
      const pState=typeof info.playerState==='number'?info.playerState:undefined;
+     const previousPlayerState=ytPlayerStateRef.current;
      if(pState!==undefined)ytPlayerStateRef.current=pState;
      if(pState===1){
-      if(ytPlayerStateRef.current!==1)videoRecoveryRef.current.progressAt=Date.now();
+      if(previousPlayerState!==1)videoRecoveryRef.current.progressAt=Date.now();
       setPlaybackError('');
       setPlayingVideoKey(playbackKey);
       ytEndedEarlyRef.current=false;
