@@ -31,7 +31,7 @@ const rathinamoTitle='Rathinamo (Male Version) - Lyric Video | Saurav Srisan | T
 it('hides overlay lyrics for a manually selected Lyric Video outside the preloaded results',async()=>{
  const stage=await import('../visualization/cinematic/CinematicStage');
  let stageProps:Parameters<typeof stage.default>[0]|undefined;
- const draw=vi.spyOn(stage,'default').mockImplementation(value=>{stageProps=value;return null;});
+ const draw=vi.spyOn(stage,'default').mockImplementation(value=>{stageProps=value;return <></>;});
  const search=vi.mocked(searchStashCatalog),original=search.getMockImplementation()!;
  const video=(id:string,title:string)=>({id:'yt_'+id,youtubeVideoId:id,title,artist:'Saurav Srisan',album:'',duration:200,provider:'resolver' as const,sourceUrl:'https://www.youtube.com/watch?v='+id});
  search.mockImplementation(async(_q,_provider,_base,_signal,options)=>options?.refresh
@@ -52,7 +52,7 @@ it('hides overlay lyrics for a manually selected Lyric Video outside the preload
 it('uses the playing video title for a saved background link and ignores metadata from another recording',async()=>{
  const stage=await import('../visualization/cinematic/CinematicStage');
  let stageProps:Parameters<typeof stage.default>[0]|undefined;
- const draw=vi.spyOn(stage,'default').mockImplementation(value=>{stageProps=value;return null;});
+ const draw=vi.spyOn(stage,'default').mockImplementation(value=>{stageProps=value;return <></>;});
  try{
   await act(async()=>click('Load JioSaavn fixture'));
   const input=host.querySelector<HTMLInputElement>('[aria-label="Background video URL"]')!;
