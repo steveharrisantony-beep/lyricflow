@@ -850,8 +850,10 @@ export default function CinematicStage(props:CinematicProps){
       ytEndedEarlyRef.current=false;
       setYtVideoEnded(false);
      }
-     if(data.info===2&&!latestPropsRef.current.audioPaused&&latestPropsRef.current.youtubeBackgroundMode==='video')
+     if(data.info===2&&!latestPropsRef.current.audioPaused&&latestPropsRef.current.youtubeBackgroundMode==='video'){
+      videoRecoveryRef.current.attemptAt=Date.now();
       setPlayingVideoKey('');
+     }
      if(data.info===0){
       ytEndedEarlyRef.current=true;
       setYtVideoEnded(true);
@@ -933,8 +935,10 @@ export default function CinematicStage(props:CinematicProps){
       ytEndedEarlyRef.current=false;
       setYtVideoEnded(false);
      }
-     if(pState===2&&!latestPropsRef.current.audioPaused&&latestPropsRef.current.youtubeBackgroundMode==='video')
+     if(pState===2&&!latestPropsRef.current.audioPaused&&latestPropsRef.current.youtubeBackgroundMode==='video'){
+      videoRecoveryRef.current.attemptAt=Date.now();
       setPlayingVideoKey('');
+     }
      if(pState===0){
       ytEndedEarlyRef.current=true;
       setYtVideoEnded(true);
