@@ -79,6 +79,7 @@ import {useSongPreloader} from './data/useSongPreloader';
 import {TEMPORARY_SONG_EVENT} from './data/temporarySongs';
 import {formatViewCount,type SongResult} from "./music/providers";
 import { useVideoAutoSync } from "./music/useVideoAutoSync";
+import {useThemeVideoSearchGate} from "./music/themeSearchGate";
 import {
   getEnabledRomanizationLanguages,
   getRomanizationMasterEnabled,
@@ -552,7 +553,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const [localLoaded, setLocalLoaded] = useState(false);
   const [localTrack, setLocalTrack] = useState<TrackInfo | null>(null);
   const [songQueue,setSongQueue]=useState<TrackInfo[]>([]);
-  useSongPreloader(localTrack,songQueue,uid,preferredVideoType,sourceMode !== 'external');
+
   const [incoming, setIncoming] = useState<IncomingLyrics | null>(null);
   const [activeLyrics, setActiveLyrics] = useState({
     recordingKey: "",
@@ -644,6 +645,11 @@ export default function App({ user = null }: { user?: User | null }) {
   const lyricsFix = useCorrection(localTrack, "lyrics", uid);
   const videoFix = useCorrection(localTrack, "video", uid);
   const recordingKey = lyricsFix.context?.recordingKey || "";
+  const {suspended:themeVideoSearchSuspended} = useThemeVideoSearchGate(
+    recordingKey, youtubeBackgroundMode, Boolean(localTrack?.title?.trim()&&!isAdvertisementTrack(localTrack))
+  );
+  // Always preload lyrics; only prefetch queued videos when the user has selected Video.
+  useSongPreloader(localTrack,songQueue,uid,preferredVideoType,sourceMode !== "external",youtubeBackgroundMode === "video");
   const [savedMappingKey,setSavedMappingKey]=useState('');
   const [mappingSaveError,setMappingSaveError]=useState('');
   useEffect(()=>{setSavedMappingKey('');setMappingSaveError('');},[recordingKey]);
@@ -1286,7 +1292,7 @@ export default function App({ user = null }: { user?: User | null }) {
         preferredVideoType,
       ].join("|")
     : "";
-  const canSearchBackground = Boolean(localTrack?.title.trim() && hasSeparateAudioStream && !isAdPlaying &&
+  const canSearchBackground = Boolean(!themeVideoSearchSuspended && localTrack?.title.trim() && hasSeparateAudioStream && !isAdPlaying &&
     !isAdvertisementTrack(localTrack) && !songMapping.hideVideo && !activeYoutubeVideoId &&
     (localTrack.provider === "jiosaavn" || localTrack.provider === "external" || localTrack.provider === "local"));
   const automaticSearchPending = canSearchBackground &&
@@ -1354,6 +1360,7 @@ export default function App({ user = null }: { user?: User | null }) {
     localTrack?.provider,
     localTrack?.isAd,
     canSearchBackground,
+    themeVideoSearchSuspended,
     songMapping.hideVideo,
     mappedYoutubeVideoId,
     activeYoutubeVideoId,
