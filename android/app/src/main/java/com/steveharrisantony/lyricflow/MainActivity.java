@@ -18,6 +18,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(DataTransferPlugin.class);
         registerPlugin(TvDevicePlugin.class);
         registerPlugin(PlaybackAwakePlugin.class);
+        registerPlugin(DisplayChromePlugin.class);
         registerPlugin(GoogleSignInPlugin.class);
         super.onCreate(savedInstanceState);
         boolean tv = getPackageManager().hasSystemFeature("android.software.leanback")
