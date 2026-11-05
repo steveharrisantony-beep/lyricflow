@@ -7,7 +7,7 @@ import {temporarySongs} from './temporarySongs';
 import {localSongData} from './localSongData';
 import {prepareSongLyrics,prepareSongVideo} from './songPreparation';
 
-export function useSongPreloader(current:TrackInfo|null,queue:TrackInfo[],uid:string|null,preference:'music'|'lyrics'='music',enabled=true){
+export function useSongPreloader(current:TrackInfo|null,queue:TrackInfo[],uid:string|null,preference:'music'|'lyrics'='music',enabled=true,preloadVideos=true){
  const [,refresh]=useState(0);
  useEffect(()=>{
   const changed=()=>refresh(value=>value+1);
@@ -33,7 +33,7 @@ export function useSongPreloader(current:TrackInfo|null,queue:TrackInfo[],uid:st
      await Promise.allSettled([
       prepareSongLyrics(track,uid,{engine:local.mapping?.lyrics?.selection?.engine||'lyricflow',
        selection:local.mapping?.lyrics?.selection||null,source:local.mapping?.lyrics?.sourceFile||null},controller.signal),
-      !extractYouTubeVideoId(track)?prepareSongVideo(track,uid,base,controller.signal,preference):Promise.resolve(null),
+      preloadVideos&&!extractYouTubeVideoId(track)?prepareSongVideo(track,uid,base,controller.signal,preference):Promise.resolve(null),
      ]);
     }finally{controllers.delete(controller);}
    }
@@ -41,6 +41,6 @@ export function useSongPreloader(current:TrackInfo|null,queue:TrackInfo[],uid:st
   // At most two queued songs are being prepared; foreground playback never waits for them.
   void next();void next();
   return()=>{stopped=true;for(const controller of controllers)controller.abort();};
- },[currentId,queueKey,uid,revisions,preference,enabled]);
+ },[currentId,queueKey,uid,revisions,preference,enabled,preloadVideos]);
 }
 
