@@ -692,6 +692,15 @@ export default function CinematicStage(props:CinematicProps){
   videoEnded:pastVideoDuration,
   pageVisible:videoPageVisible,
  });
+ const recoveryWasEligibleRef=useRef(false);
+ useEffect(()=>{
+  // A pause, song intro, offscreen app or Themes mode is not a failed attempt.
+  if(recoveryEligible&&!recoveryWasEligibleRef.current){
+   videoRecoveryRef.current.attemptAt=Date.now();
+   videoRecoveryRef.current.progressAt=Date.now();
+  }
+  recoveryWasEligibleRef.current=recoveryEligible;
+ },[recoveryEligible]);
  useEffect(()=>{
   if(!recoveryEligible||!ytId||videoRecoveryRef.current.finished)return;
   const timer=window.setInterval(()=>{
