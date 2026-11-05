@@ -61,6 +61,17 @@ it('skips hidden components and uses an explicit mapped video without automatic 
  expect(await prepareSongVideo(track,null,'')).toBeNull();
  expect(resolveStashLyricsChain).not.toHaveBeenCalled();expect(findYouTubeBackgrounds).not.toHaveBeenCalled();
 });
+
+it('keeps music and lyrical preparation results separate',async()=>{
+ const search=vi.mocked(findYouTubeBackgrounds);
+ const music={candidates:[],candidateCount:0},lyrics={candidates:[],candidateCount:1};
+ search.mockResolvedValueOnce(music).mockResolvedValueOnce(lyrics);
+ expect(await prepareSongVideo(track,null,'')).toBe(music);
+ expect(await prepareSongVideo(track,null,'',undefined,'lyrics')).toBe(lyrics);
+ expect(await prepareSongVideo(track,null,'',undefined,'lyrics')).toBe(lyrics);
+ expect(search).toHaveBeenCalledTimes(2);
+ expect(search.mock.calls.map(call=>call[3])).toEqual(['music','lyrics']);
+});
 it('aborts pending work when its final consumer leaves and ignores results for evicted songs',async()=>{
  let signal:AbortSignal|undefined,finish!:(value:StashResolvedLyrics)=>void;
  vi.mocked(resolveStashLyricsChain).mockImplementation((_track,next)=>{signal=next;return new Promise(resolve=>{finish=resolve;});});

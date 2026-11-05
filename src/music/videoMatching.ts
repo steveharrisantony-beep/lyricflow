@@ -18,7 +18,7 @@ export function videoAvailabilityRejections(song:SongResult):string[]{
 }
 
 const rejectedKeywords=['jukebox','cover','reaction','karaoke','reply'];
-export function evaluateBackgroundVideos(songs:SongResult[],songTitle:string,preference:'music'|'lyrics',playbackRejections:Readonly<Record<string,string>>={}){
+export function evaluateBackgroundVideos(songs:SongResult[],songTitle:string,_preference:'music'|'lyrics',playbackRejections:Readonly<Record<string,string>>={}){
  const songWords=new Set(identityWords(songTitle));
  return songs.map((song,index)=>{
   const id=extractYouTubeVideoId(song);
@@ -29,7 +29,6 @@ export function evaluateBackgroundVideos(songs:SongResult[],songTitle:string,pre
   for(const keyword of rejectedKeywords){
    if(words.has(keyword)&&!songWords.has(keyword))reasons.push(`Rejected keyword: ${keyword}`);
   }
-  if(preference==='lyrics'&&!isLyricalVideo(song))reasons.push('Video title needs lyric, lyrics, or lyrical');
   const playbackRejection=id&&Object.hasOwn(playbackRejections,id)?playbackRejections[id]:undefined;
   if(playbackRejection)reasons.push(playbackRejection);
   return {song,id,reasons,withinLimit:index<AUTO_VIDEO_ATTEMPT_LIMIT,canUse:!availability.length&&!playbackRejection};

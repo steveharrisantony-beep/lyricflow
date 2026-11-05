@@ -336,7 +336,7 @@ it('finds a music or lyrical YouTube background for JioSaavn and saves both sour
   expect(host.querySelector('#settings-page-background select[aria-label="Preferred YouTube background"]')).toBeNull();
   await act(async () => { select.value = 'lyrics'; select.dispatchEvent(new Event('change',{bubbles:true})); });
   await act(async () => click('Show preloaded videos'));
-  expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Music Video', 'resolver', location.origin+'/music', expect.any(AbortSignal), {background:{title:'Original test song',artist:'Test artist'}});
+  expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Lyric Video', 'resolver', location.origin+'/music', expect.any(AbortSignal), {background:{title:'Original test song',artist:'Test artist',preference:'lyrics'}});
   await act(async () => click('Use video'));
   expect(localStorage.getItem('lyricflow.lastSourceMode')).toBe('online');
   await act(async () => click('Edit or import lyrics'));
@@ -402,7 +402,7 @@ it('waits for the full search and switches the active video from the completed l
   provider: 'resolver' as const, viewCount: 27_300_000, channelVerified: true, channelId: 'UCfixture',
  };
  const late = {...early, id: 'yt_bbbbbbbbbbb', youtubeVideoId: 'bbbbbbbbbbb', sourceUrl: 'https://www.youtube.com/watch?v=bbbbbbbbbbb',
-  title: 'Original test song Test artist Official Lyric Video', artist: 'Other uploader', viewCount: 22_600_000, channelVerified: false};
+  title: 'Original test song Test artist Sing Along', artist: 'Other uploader', viewCount: 22_600_000, channelVerified: false};
  const unrelated = {...early, id: 'yt_ccccccccccc', youtubeVideoId: 'ccccccccccc', title: 'Different track Official Music Video', artist: 'Other Test Musician', album: 'Different Album', viewCount: 10000000};
  let finish!: (songs: Awaited<ReturnType<typeof searchStashCatalog>>) => void;
  search.mockImplementation(async () => new Promise(resolve => {finish = resolve;}));
@@ -424,17 +424,25 @@ it('waits for the full search and switches the active video from the completed l
   });
   const searches = search.mock.calls.length;
   await select('lyrics');
+  expect(search.mock.lastCall?.[0]).toBe('Original test song Lyric Video');
+  expect(current()?.getAttribute('data-searching')).toBe('true');
+  expect(current()?.getAttribute('data-video')).toBe('');
+  await act(async () => finish([unrelated,late,early]));
   expect(current()?.getAttribute('data-searching')).toBe('false');
   expect(current()?.getAttribute('data-video')).toBe(late.youtubeVideoId);
   expect(host.querySelector('.video-candidate[aria-current=true] strong')?.textContent).toBe(late.title);
   expect(host.querySelectorAll('.video-candidate')).toHaveLength(3);
   await select('music');
+  expect(search.mock.lastCall?.[0]).toBe('Original test song Music Video');
+  expect(current()?.getAttribute('data-searching')).toBe('true');
+  expect(current()?.getAttribute('data-video')).toBe('');
+  await act(async () => finish([early,unrelated,late]));
   expect(current()?.getAttribute('data-video')).toBe(early.youtubeVideoId);
   expect(host.querySelectorAll('.video-candidate')).toHaveLength(3);
   await act(async () => host.querySelector<HTMLButtonElement>('.video-candidate button')!.click());
   await select('lyrics');
   expect(current()?.getAttribute('data-video')).toBe(early.youtubeVideoId);
-  expect(search.mock.calls).toHaveLength(searches);
+  expect(search.mock.calls).toHaveLength(searches+2);
  } finally {
   draw.mockRestore();
   search.mockImplementation(original);

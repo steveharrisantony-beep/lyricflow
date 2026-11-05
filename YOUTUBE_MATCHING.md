@@ -1,7 +1,8 @@
 # YouTube video matching
 
 The automatic background search preserves the source song title and appends the
-first primary artist and `Music Video`. If any complete word of that artist
+first primary artist and `Music Video`, or `Lyric Video` when lyrics videos are
+preferred. If any complete word of that artist
 already appears in the title, ignoring symbols and case, the artist is omitted.
 Featured artists are kept when present in the source title. They are not appended
 from artist metadata. The browser and embedded backend use the same query builder.
@@ -13,8 +14,8 @@ title, ignoring symbols and case. Videos with invalid IDs, explicit embedding
 blocks, static content, audio-track classifications, Topic channels, or an
 `Audio Track` album are rejected. Titles containing `jukebox`, `cover`,
 `reaction`, `karoke`, or `reply` are rejected unless the word is in the song
-title. Lyrical mode additionally requires `lyric`, `lyrics`, or `lyrical` in the
-video title.
+title. Both preferences use these same filters. Lyrical mode does not require
+`lyric`, `lyrics`, or `lyrical` in the video title.
 
 A personal mapping takes priority. If no result passes, the app leaves autoplay
 off. Playback discoveries such as an embedding block are recorded for the

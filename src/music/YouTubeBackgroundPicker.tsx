@@ -74,6 +74,7 @@ export default function YouTubeBackgroundPicker({
             track,
             base,
             controller.signal,
+            preference,
           );
       if (controller.signal.aborted) return;
       const searchTerms = (query ?? track.title).trim();

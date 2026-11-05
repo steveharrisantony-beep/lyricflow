@@ -126,7 +126,7 @@ export async function searchStashCatalog(
  provider:SongResult['provider'],
  base:string,
  signal?:AbortSignal,
- {refresh=false,background}: {refresh?:boolean;background?:{title:string;artist:string}}={}
+ {refresh=false,background}: {refresh?:boolean;background?:{title:string;artist:string;preference?:'music'|'lyrics'}}={}
 ):Promise<SongResult[]>{
  const refreshYouTubeSearch=provider==='resolver'&&refresh;
  if(query.trim().length<(refreshYouTubeSearch?1:2))return [];
@@ -139,6 +139,7 @@ export async function searchStashCatalog(
    if(background){
     params.set('backgroundTitle',background.title);
     params.set('backgroundArtist',background.artist);
+    if(background.preference)params.set('backgroundPreference',background.preference);
    }
    const res=await providerRequest(
     `${effectiveBase.replace(/\/$/,'')}/search?`+params,

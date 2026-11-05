@@ -14,14 +14,14 @@ function splitFeatureCredit(value:string){
 
 const firstListedArtist=(value:string)=>value.split(/[,;]|\s+&\s+/).map(name=>name.trim()).find(Boolean);
 
-export async function findYouTubeBackgrounds(track:VideoTarget,base:string,signal?:AbortSignal){
+export async function findYouTubeBackgrounds(track:VideoTarget,base:string,signal?:AbortSignal,preference:'music'|'lyrics'='music'){
  const title=track.title;
  if(!title.trim())return {candidates:[],candidateCount:0};
  const artistCredit=splitFeatureCredit(track.artist);
  const artist=track.primaryArtist?.trim()||firstListedArtist(artistCredit.text)||'';
- const query=backgroundVideoQuery(title,artist);
+ const query=backgroundVideoQuery(title,artist,preference);
  const candidates=await logVideoSearch(query,'Autoplay',()=>searchStashCatalog(query,'resolver',base,signal,{
-  background:{title,artist},
+  background:{title,artist,...(preference==='lyrics'?{preference}:{})},
  }),signal);
  signal?.throwIfAborted();
  return {candidates,candidateCount:candidates.length};

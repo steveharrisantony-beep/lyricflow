@@ -483,7 +483,7 @@ it('renders the supplied preloaded order and clears the list when the track chan
  const rows=Array.from(host.querySelectorAll('.video-candidate'));
  expect(rows).toHaveLength(130);expect(rows[0].querySelector('img')?.getAttribute('src')).toContain('00000000000');
  expect(rows[0].getAttribute('aria-current')).toBe('true');
- expect(rows[0].textContent).toContain('Video title needs lyric, lyrics, or lyrical');
+ expect(rows[0].textContent).not.toContain('Video title needs lyric, lyrics, or lyrical');
  expect(host.textContent).toContain('130 search results · sorted by relevance');expect(search).not.toHaveBeenCalled();
  await act(async()=>root.render(render('Different Song')));
  expect(host.querySelector('.video-candidate')).toBeNull();

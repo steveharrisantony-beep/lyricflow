@@ -158,13 +158,13 @@ export function prepareSongLyrics(track:TrackInfo,uid:string|null,options:Lyrics
   if(result){if(source)result={...result,mappingRevision:source.revision};entry.lyrics={key,value:result};}return result;
  },value=>{if(value)progress?.(value);});
 }
-export function prepareSongVideo(track:TrackInfo,uid:string|null,base:string,signal?:AbortSignal){
+export function prepareSongVideo(track:TrackInfo,uid:string|null,base:string,signal?:AbortSignal,preference:'music'|'lyrics'='music'){
  const local=localSongData(track,uid),entry=local.session;
  if(!entry||local.mapping?.hideVideo||local.mapping?.video||isAdvertisementTrack(track))return Promise.resolve(null);
- const key=JSON.stringify([track.title,track.artist,track.primaryArtist,track.featuredArtist,base]);
+ const key=JSON.stringify([track.title,track.artist,track.primaryArtist,track.featuredArtist,base,preference]);
  if(entry.videos?.key===key)return Promise.resolve(entry.videos.value);
  return shared(`${uid}:${entry.id}:video:${entry.generation}:${key}`,entry,signal,async(request)=>{
-  const result=await findYouTubeBackgrounds(track,base,request);
+  const result=await findYouTubeBackgrounds(track,base,request,preference);
   request.throwIfAborted();entry.videos={key,value:result};return result;
  });
 }

@@ -34,9 +34,12 @@ it('reports each structural rejection independently',()=>{
  for(const [fields,reason] of cases)expect(check(video('Ocean Road',fields))).toEqual([reason]);
  expect(check(video('Ocean Road',{album:'Audio Track 2',artist:'Topic Records',duration:10}))).toEqual([]);
 });
-it('checks lyric words in the actual video title after the other filters',()=>{
+it('uses the same filters in lyrical mode without requiring lyric words in the title',()=>{
  for(const word of ['lyric','lyrics','lyrical'])expect(check(video(`Road (${word})`),'Ocean Road','lyrics')).toEqual([]);
  expect(check(video('Ocean Road Lyrics',{videoTitle:'Road Official Visualizer'}),'Ocean Road','lyrics'))
-  .toEqual(['Video title needs lyric, lyrics, or lyrical']);
- expect(check(video('Ocean Lyricist'),'Ocean Road','lyrics')).toEqual(['Video title needs lyric, lyrics, or lyrical']);
+  .toEqual([]);
+ expect(check(video('Ocean Lyricist'),'Ocean Road','lyrics')).toEqual([]);
+ expect(check(video('Road Official Video'),'Ocean Road','lyrics')).toEqual([]);
+ expect(check(video('Road Cover'),'Ocean Road','lyrics')).toEqual(['Rejected keyword: cover']);
+ expect(check(video('Road Official Video',{embeddable:false}),'Ocean Road','lyrics')).toEqual(['Embedding blocked']);
 });

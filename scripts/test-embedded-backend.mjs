@@ -10,6 +10,7 @@ const backgroundTitle='Apna Bana Le - Bhediya';
 const backgroundArtist='Sachin-Jigar';
 const backgroundFeaturedArtist='Guest One';
 const backgroundQuery=`${backgroundTitle} ${backgroundArtist} Music Video`;
+const backgroundLyricQuery=`${backgroundTitle} ${backgroundArtist} Lyric Video`;
 const backgroundIds=['ElZfdU54Cp8',...Array.from({length:21},(_,i)=>`bg${String(i).padStart(9,'0')}`)];
 const lookedUpBackgroundIds=[];
 let wordLyricsAvailable=false,wordLookupCount=0;
@@ -83,7 +84,7 @@ globalThis.fetch = async (input, options) => {
   if(url.hostname==='www.youtube.com'&&url.pathname==='/youtubei/v1/search'){
     youtubeSearchRequests++;
     const {query}=JSON.parse(options.body);
-    if(query===backgroundQuery){
+    if(query===backgroundQuery||query===backgroundLyricQuery){
       return Response.json({contents:['invalid',...backgroundIds].map(videoId=>({videoRenderer:{
         videoId,
         title:{simpleText:videoId==='invalid'?'Apna malformed result':'Apna Bana Le Official Audio Visualizer'},
@@ -228,6 +229,11 @@ try {
   assert.equal(backgrounds.data[1].viewCount,629000000);
   assert.equal(backgrounds.data.at(-1).duration,30);
   assert.equal(backgrounds.data.at(-1).videoType,'UGC','Title words must not invent an audio-only classification');
+  backgroundParams.set('q',backgroundLyricQuery);
+  backgroundParams.set('backgroundPreference','lyrics');
+  const lyricalBackgrounds=await (await request('/music/search?'+backgroundParams)).json();
+  assert.equal(youtubeSearchRequests,beforeBackgroundSearch+2,'Lyrical preference sends a separate Lyric Video query to YouTube');
+  assert.deepEqual(lyricalBackgrounds.data.map(video=>video.youtubeVideoId),backgrounds.data.map(video=>video.youtubeVideoId));
   const resolved = await (await request('/music/resolve/saavn_fixture')).json();
   assert.equal(resolved.format, 'audio');
   assert.equal(resolved.track.primaryArtist,'Example Artist');

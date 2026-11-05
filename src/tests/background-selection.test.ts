@@ -1,6 +1,7 @@
 import {afterEach,expect,it,vi} from 'vitest';
 import {findYouTubeBackgrounds} from '../music/backgroundVideos';
 import type {SongResult} from '../music/providers';
+import {getVideoSearchLogs} from '../music/videoSearchHistory';
 
 const track={title:'Apna Bana Le - Bhediya',artist:'Sachin-Jigar, Arijit Singh',album:'Bhediya',duration:261};
 const video=(youtubeVideoId:string,title:string,viewCount?:number,extra:Partial<SongResult>={}):SongResult=>({
@@ -44,6 +45,22 @@ it('keeps short and malformed results for diagnostics',async()=>{
  expect(candidates.map(song=>song.duration)).toEqual([12,18]);
  expect(candidates[0].youtubeVideoId).toBeUndefined();
  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+ ['Song Remix (feat. Guest)','Song Remix (feat. Guest) Lead Singer Lyric Video'],
+ ['Lead - Song Remix (feat. Guest)','Lead - Song Remix (feat. Guest) Lyric Video'],
+])('uses the lyrical query while preserving the title %s',async(title,query)=>{
+ const fetcher=mockSearch([official]);
+ await findYouTubeBackgrounds({title,artist:'Lead Singer, Second Artist',featuredArtist:'Extra Guest'},'https://resolver.example',undefined,'lyrics');
+ expect(fetcher).toHaveBeenCalledTimes(1);
+ const params=new URL(fetcher.mock.calls[0][0]).searchParams;
+ expect(params.get('q')).toBe(query);
+ expect(params.get('backgroundTitle')).toBe(title);
+ expect(params.get('backgroundArtist')).toBe('Lead Singer');
+ expect(params.get('backgroundPreference')).toBe('lyrics');
+ expect(params.has('backgroundFeaturedArtist')).toBe(false);
+ expect(getVideoSearchLogs()[0].query).toBe(query);
 });
 
 it.each([

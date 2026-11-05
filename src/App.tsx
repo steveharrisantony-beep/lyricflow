@@ -530,7 +530,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const [localLoaded, setLocalLoaded] = useState(false);
   const [localTrack, setLocalTrack] = useState<TrackInfo | null>(null);
   const [songQueue,setSongQueue]=useState<TrackInfo[]>([]);
-  useSongPreloader(localTrack,songQueue,uid);
+  useSongPreloader(localTrack,songQueue,uid,preferredVideoType);
   const [incoming, setIncoming] = useState<IncomingLyrics | null>(null);
   const [activeLyrics, setActiveLyrics] = useState({
     recordingKey: "",
@@ -1261,6 +1261,7 @@ export default function App({ user = null }: { user?: User | null }) {
         localTrack.album || "",
         Math.round(localTrack.duration),
         localTrack.provider,
+        preferredVideoType,
       ].join("|")
     : "";
   const canSearchBackground = Boolean(localTrack?.title.trim() && hasSeparateAudioStream && !isAdPlaying &&
@@ -1301,8 +1302,8 @@ export default function App({ user = null }: { user?: User | null }) {
     });
     const base = musicResolverBase();
     const search = mappedYoutubeVideoId
-      ? findYouTubeBackgrounds(localTrack,base,controller.signal)
-      : prepareSongVideo(localTrack,uid,base,controller.signal);
+      ? findYouTubeBackgrounds(localTrack,base,controller.signal,preferredVideoType)
+      : prepareSongVideo(localTrack,uid,base,controller.signal,preferredVideoType);
     void search
       .then((result) => {
         if (controller.signal.aborted) return;
@@ -1332,6 +1333,7 @@ export default function App({ user = null }: { user?: User | null }) {
     songMapping.hideVideo,
     mappedYoutubeVideoId,
     activeYoutubeVideoId,
+    preferredVideoType,
   ]);
 
   // Android External Player: listen for notification media sessions & sync song metadata + playback position
