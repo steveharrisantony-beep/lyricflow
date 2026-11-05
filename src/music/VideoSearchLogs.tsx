@@ -9,11 +9,11 @@ export default function VideoSearchLogs({recordingKey,title,suspended=false}:{
  const all=useSyncExternalStore(subscribeVideoSearchLogs,getVideoSearchLogs);
  if(!recordingKey)return <p className="quiet-status">Play a song to see its video search logs.</p>;
  const entries=all.filter(item=>item.recordingKey===recordingKey);
- const auto=entries.find(item=>item.mode==='Autoplay');
+ const search=entries.find(item=>item.mode==='Autoplay'||item.mode==='Search online');
  const filtered=entries.find(item=>item.mode==='Filter');
- const count=auto?.resultCount??filtered?.resultCount;
- const passed=auto?.passedFilterCount??filtered?.passedFilterCount;
- const query=auto?.query;
+ const count=search?.resultCount??filtered?.resultCount;
+ const passed=search?.passedFilterCount??filtered?.passedFilterCount;
+ const query=search?.query;
  return <section className="video-log-current" aria-label="Current song video logs">
   <div className="video-log-summary">
    <strong>{title||'Current song'}</strong>
@@ -23,7 +23,7 @@ export default function VideoSearchLogs({recordingKey,title,suspended=false}:{
     <span>Passed filters: <strong>{passed??'Not evaluated'}</strong></span>
    </div>
    {query&&<div>
-    <small>Automatic search query</small>
+    <small>Latest video search query</small>
     <code className="video-log-query">{query}</code>
    </div>}
    {suspended&&<p role="status">Automatic video search suspended: Themes mode has remained selected for more than 3 consecutive songs. Switching to Video resumes searching.</p>}
