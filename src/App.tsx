@@ -6,7 +6,7 @@ import {findYouTubeBackgrounds} from './music/backgroundVideos';
 import {musicResolverBase} from './network/backend';
 import VideoSearchLogs from './music/VideoSearchLogs';
 import RomanizationLogs from './romanization/RomanizationLogs';
-import {logSponsorBlockSkip} from './music/videoSearchHistory';
+import {logSponsorBlockSkip,logVideoFiltering,logVideoPlaybackError,logThemeVideoSearchSuspended,videoSearchLogKey} from './music/videoSearchHistory';
 import {isSyncedLyricsSource,lyricProviderName,normalizeLyricSource} from './lyrics/sourceLabels';
 import {selectedPaletteIds,togglePaletteSelection,enableAllPaletteSelections,enableAllPalettesForTheme,type ThemePaletteSelections} from './visualization/cinematic/themeSelection';
 import {normalizeLyricLayout,type LyricLayoutSettings} from './lyrics/lyricLayout';
@@ -294,6 +294,7 @@ export default function App({ user = null }: { user?: User | null }) {
     candidates: SongResult[];
     candidateCount: number;
   }>({ key: "", pending: false, candidates: [], candidateCount: 0 });
+  const [failedAutoBackground,setFailedAutoBackground]=useState<{recording:string;videoId:string}|null>(null);
   const [selectedVideoMetadata,setSelectedVideoMetadata]=useState<SongResult|null>(null);
   const [playingVideoMetadata,setPlayingVideoMetadata]=useState<(BackgroundVideoMetadata&{key:string})|null>(null);
   const [initialExternalAudio] = useState(()=>readDevice<{mode?:unknown;enabled?:unknown}>(
@@ -649,12 +650,14 @@ export default function App({ user = null }: { user?: User | null }) {
   const recordingKey = lyricsFix.context?.recordingKey || "";
   // Use stable track identity for the theme-song streak; duration/album updates
   // from the current recording must not count as another song.
-  const themeRecordingIdentity=localTrack?.title?.trim()
-    ? JSON.stringify([localTrack.provider||'',localTrack.sourceTrackId||'',localTrack.title.trim(),localTrack.artist.trim(),localTrack.externalPackageName||''])
-    : '';
+  const themeRecordingIdentity=videoSearchLogKey(localTrack);
   const {suspended:themeVideoSearchSuspended} = useThemeVideoSearchGate(
     themeRecordingIdentity, youtubeBackgroundMode, Boolean(themeRecordingIdentity&&!isAdvertisementTrack(localTrack))
   );
+  useEffect(()=>{
+    if(themeVideoSearchSuspended&&themeRecordingIdentity)logThemeVideoSearchSuspended(themeRecordingIdentity);
+  },[themeVideoSearchSuspended,themeRecordingIdentity]);
+  const autoBackgroundAbandoned=failedAutoBackground?.recording===themeRecordingIdentity;
   // Always preload lyrics; only prefetch queued videos when the user has selected Video.
   useSongPreloader(localTrack,songQueue,uid,preferredVideoType,sourceMode !== "external",youtubeBackgroundMode === "video");
   const [savedMappingKey,setSavedMappingKey]=useState('');
@@ -1299,7 +1302,7 @@ export default function App({ user = null }: { user?: User | null }) {
         preferredVideoType,
       ].join("|")
     : "";
-  const canSearchBackground = Boolean(!themeVideoSearchSuspended && localTrack?.title.trim() && hasSeparateAudioStream && !isAdPlaying &&
+  const canSearchBackground = Boolean(!themeVideoSearchSuspended && !autoBackgroundAbandoned && localTrack?.title.trim() && hasSeparateAudioStream && !isAdPlaying &&
     !isAdvertisementTrack(localTrack) && !songMapping.hideVideo && !activeYoutubeVideoId &&
     (localTrack.provider === "jiosaavn" || localTrack.provider === "external" || localTrack.provider === "local"));
   const automaticSearchPending = canSearchBackground &&
@@ -1345,6 +1348,9 @@ export default function App({ user = null }: { user?: User | null }) {
       .then((result) => {
         if (controller.signal.aborted) return;
         const { candidates, candidateCount } = result ?? { candidates: [], candidateCount: 0 };
+        const passed=evaluateBackgroundVideos(candidates,localTrack.title,preferredVideoType)
+          .filter(candidate=>candidate.withinLimit&&!candidate.reasons.length).length;
+        logVideoFiltering(themeRecordingIdentity,candidateCount,passed);
         setAutoVideoMatch(previous => previous.key === videoSearchKey && previous.pending
           ? { key: videoSearchKey, pending: false, completed: true, candidates, candidateCount }
           : previous);
@@ -1368,6 +1374,8 @@ export default function App({ user = null }: { user?: User | null }) {
     localTrack?.isAd,
     canSearchBackground,
     themeVideoSearchSuspended,
+    autoBackgroundAbandoned,
+    themeRecordingIdentity,
     songMapping.hideVideo,
     mappedYoutubeVideoId,
     activeYoutubeVideoId,
@@ -1515,8 +1523,9 @@ export default function App({ user = null }: { user?: User | null }) {
     return () => window.clearInterval(id);
   }, [sourceMode, localPlaying, localTrack?.duration]);
 
-  const stageYoutubeVideoId = isAdPlaying ? null : activeYoutubeVideoId || extractYouTubeVideoId(automaticVideo);
+  const stageYoutubeVideoId = isAdPlaying ? null : activeYoutubeVideoId || (autoBackgroundAbandoned?null:extractYouTubeVideoId(automaticVideo));
   const rejectBackgroundVideo = (id: string, reason: string) => {
+    logVideoPlaybackError(id,reason,themeRecordingIdentity);
     setRejectedBgVideos(previous => {
       const reasons = previous.key === recordingKey ? previous.reasons : {};
       return reasons[id] === reason ? previous : {key:recordingKey,reasons:{...reasons,[id]:reason}};
@@ -1670,7 +1679,7 @@ export default function App({ user = null }: { user?: User | null }) {
       loggedSponsorBlockCut.current.seconds===cut)return;
     loggedSponsorBlockCut.current={key:backgroundSyncKey,seconds:cut};
     logSponsorBlockSkip({videoId:stageYoutubeVideoId,title:matchedVideoCandidate?.videoTitle||matchedVideoCandidate?.title||localTrack?.title||'',
-      start:0,end:cut,category:'Leading non-music intro'});
+      start:0,end:cut,category:'Leading non-music intro',recordingKey:themeRecordingIdentity});
   },[backgroundSyncKey,sponsorBlockCutSeconds,stageYoutubeVideoId,localPlaying,isYtVideoBackgroundActive,
     verifiedBackground?.key,verifiedBackground?.id,recordingKey,localTrack?.title,
     matchedVideoCandidate?.videoTitle,matchedVideoCandidate?.title]);
@@ -1690,6 +1699,8 @@ export default function App({ user = null }: { user?: User | null }) {
     ?describeLyricProvider(activeLyrics.name,activeLyricsHaveWordTiming,Boolean(activeLyrics.original.trim()),true,activeLyrics.url).providerName
     :"";
   const saveVideoChoice = (id: string, seconds: number | null) => {
+    // A deliberate manual video selection overrides this song's failed auto-match.
+    setFailedAutoBackground(null);
     if(videoFix.context)discardSongCorrections(uid,videoFix.context.identity,['video'],correctionKey(videoFix.context));
     setRejectedBgVideos(previous => {
       if (previous.key !== recordingKey || !previous.reasons[id]) return previous;
@@ -1815,6 +1826,11 @@ export default function App({ user = null }: { user?: User | null }) {
                   playerRef.current?.playNextFromQueue();
                 }}
                 onRejectBackgroundVideo={automaticVideo && !activeYoutubeVideoId ? rejectBackgroundVideo : undefined}
+                onAutoPlaybackExhausted={automaticVideo && !activeYoutubeVideoId ? id=>{
+                  if(id!==extractYouTubeVideoId(automaticVideo)||!themeRecordingIdentity)return;
+                  setFailedAutoBackground({recording:themeRecordingIdentity,videoId:id});
+                }:undefined}
+                videoLogKey={themeRecordingIdentity}
               />
               {showFps && <span className="fps-badge">{fps} FPS</span>}
               {performance && (
@@ -2653,7 +2669,7 @@ export default function App({ user = null }: { user?: User | null }) {
                   <LyricsSearchLogs report={lyricsSearchReport}/>
                 </SettingGroup>
                 <SettingGroup title="Video search logs">
-                  <VideoSearchLogs/>
+                  <VideoSearchLogs recordingKey={themeRecordingIdentity} title={localTrack?.title} suspended={themeVideoSearchSuspended}/>
                 </SettingGroup>
                 <SettingGroup title="Romanization logs">
                   <RomanizationLogs/>
