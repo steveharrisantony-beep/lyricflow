@@ -228,6 +228,7 @@ try {
   await assertFits("long track title");
   await openSettings();
   await page.getByRole("tab", { name: "Song Mapping", exact: true }).click();
+  await page.locator(".lyrics-mapping-section > summary").click();
   await page
     .getByRole("button", { name: "Edit or import lyrics", exact: true })
     .click();
@@ -242,7 +243,7 @@ try {
     });
   await page.getByLabel("Lyrics delay seconds", { exact: true }).fill("-1.25");
   await page
-    .getByRole("button", { name: "Save for current song", exact: true })
+    .getByRole("button", { name: "Save mapping for current song", exact: true })
     .click();
   await page.getByRole("tab", { name: "Lyrics", exact: true }).click();
   await page.getByLabel("Lyrics font size scale").press("ArrowRight");
