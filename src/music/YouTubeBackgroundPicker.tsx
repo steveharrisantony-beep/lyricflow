@@ -5,7 +5,7 @@ import {AUTO_VIDEO_ATTEMPT_LIMIT,compareYouTubeVideoViews,evaluateBackgroundVide
 import { extractYouTubeVideoId, type TrackInfo } from "../metadata/trackInfo";
 import type { YouTubeBackgroundMode } from "../visualization/cinematic/CinematicStage";
 import { findYouTubeBackgrounds } from "./backgroundVideos";
-import { logVideoSearch,videoSearchLogKey } from "./videoSearchHistory";
+import { logVideoSearch,logVideoFiltering,videoSearchLogKey } from "./videoSearchHistory";
 import { musicResolverBase } from '../network/backend';
 
 export default function YouTubeBackgroundPicker({
@@ -83,6 +83,9 @@ export default function YouTubeBackgroundPicker({
         searchStashCatalog(searchTerms,'resolver',base,controller.signal,{refresh:true}),controller.signal,videoSearchLogKey(track));
       if (controller.signal.aborted) return;
       const compared = search?.candidateCount ?? found.length;
+      const passed=evaluateBackgroundVideos(found,track.title,preference,playbackRejections)
+        .filter(choice=>choice.withinLimit&&!choice.reasons.length).length;
+      logVideoFiltering(videoSearchLogKey(track),compared,passed,'Search online');
       const videos = search ? found : filterYouTubeVideoChoices(found);
       setResults(videos);
       if (search) setShowCached(true);
