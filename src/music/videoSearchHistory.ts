@@ -12,6 +12,10 @@ type VideoSearchLog = {
  start:number;
  end:number;
  category:string;
+} | {
+ mode:'Playback recovery';
+ query?:never;
+ videoId:string;
 });
 
 let entries: VideoSearchLog[] = [];
@@ -40,6 +44,13 @@ export function logSponsorBlockSkip({videoId,title,start,end,category}:{
  if(!videoId||!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<=start)return;
  const entry:VideoSearchLog={id:++nextId,time:Date.now(),mode:'SponsorBlock',
   status:`Skipped ${category}`,videoId,title,start,end,category};
+ publish([entry,...entries].slice(0,30));
+}
+
+/** Log bounded reloads and failed playback without leaking account or media URLs. */
+export function logVideoPlaybackRecovery(videoId:string,status:string):void {
+ if(!videoId||!status)return;
+ const entry:VideoSearchLog={id:++nextId,time:Date.now(),mode:'Playback recovery',videoId,status};
  publish([entry,...entries].slice(0,30));
 }
 
