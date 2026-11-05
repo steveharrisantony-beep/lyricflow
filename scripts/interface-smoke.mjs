@@ -114,6 +114,7 @@ try {
     "Lyrics",
     "Render Engine",
     "Others",
+    "Logs",
   ];
   for (const theme of ["Dark", "Light"]) {
     for (const width of [320, 390, 768, 1024, 1440, 1920]) {
