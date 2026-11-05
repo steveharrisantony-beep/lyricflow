@@ -21,8 +21,11 @@ import AccountRoot from './auth/AccountRoot';
 import {FirstVisit} from './ui/WelcomePage';
 import './styles.css';
 import {initializeEmbeddedBackend} from './network/embeddedBackend';
+import {initializeTvExperience} from './tv/tvExperience';
 import {preloadLyricFonts} from './visualization/cinematic/fonts';
 
+// Detect Android TV before the first interactive screen is presented.
+void initializeTvExperience();
 const fontsReadyPromise = preloadLyricFonts();
 void Promise.all([
   initializeEmbeddedBackend().catch(error => {
