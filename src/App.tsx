@@ -1502,9 +1502,10 @@ export default function App({ user = null }: { user?: User | null }) {
     : undefined;
   const isActiveVideoLyrical = Boolean(
     isYtVideoBackgroundActive &&
-      ((hasSeparateAudioStream && preferredVideoType === "lyrics") ||
-        isLyricVideoTrack(matchedVideoCandidate) ||
-        isLyricVideoTrack(localTrack)),
+      (matchedVideoCandidate
+        ? isLyricVideoTrack(matchedVideoCandidate)
+        : isLyricVideoTrack(localTrack) ||
+          (!activeYoutubeVideoId && hasSeparateAudioStream && preferredVideoType === "lyrics")),
   );
   const shouldHideStageLyrics = Boolean(
     songMapping.hideLyrics || isAdPlaying || (autoHideYoutubeLyrics && isActiveVideoLyrical),
@@ -1954,23 +1955,23 @@ export default function App({ user = null }: { user?: User | null }) {
                     className="mapping-lyrics-controls"
                   />
                 </details>
-                <label className="field-row">
-                  Video preference
-                  <select
-                    aria-label="Preferred YouTube background"
-                    value={preferredVideoType}
-                    onChange={(e) =>
-                      setPreferredVideoType(
-                        e.target.value as "music" | "lyrics",
-                      )
-                    }
-                  >
-                    <option value="music">Music video</option>
-                    <option value="lyrics">Lyrical video</option>
-                  </select>
-                </label>
                 <details className="disclosure video-mapping-section">
                   <summary>Video mapping</summary>
+                  <label className="field-row">
+                    Video preference
+                    <select
+                      aria-label="Preferred YouTube background"
+                      value={preferredVideoType}
+                      onChange={(e) =>
+                        setPreferredVideoType(
+                          e.target.value as "music" | "lyrics",
+                        )
+                      }
+                    >
+                      <option value="music">Music video</option>
+                      <option value="lyrics">Lyrical video</option>
+                    </select>
+                  </label>
                   <SwitchSetting label="Hide video for this song" checked={songMapping.hideVideo} disabled={!localTrack}
                     onChange={hidden=>songMapping.savePart('hideVideo',hidden)}/>
                   <CorrectionControls

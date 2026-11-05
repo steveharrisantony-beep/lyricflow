@@ -1,4 +1,4 @@
-import {normalizePaletteSelections,type ThemePaletteSelections} from '../visualization/cinematic/themeSelection';
+import {enableAllPaletteSelections,normalizePaletteSelections,type ThemePaletteSelections} from '../visualization/cinematic/themeSelection';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { initializeApp } from 'firebase/app';
 import {
@@ -99,7 +99,7 @@ export interface DisplayPreferences {
 }
 export const DEFAULT_DISPLAY_PREFERENCES: DisplayPreferences = {
   preferredVideoType: 'music', scene: 'holographic-tide', reducedMotion: false, youtubeBackgroundMode: 'video', videoOverlayOpacity: 0,
-  autoHideYoutubeLyrics: false, playerVolume: 100, sponsorBlockEnabled: true, lyricPlacementMode: 'auto',
+  autoHideYoutubeLyrics: true, playerVolume: 100, sponsorBlockEnabled: true, lyricPlacementMode: 'auto',
   lyricColorMode: 'auto', lyricFillPaceMode: 'letter', lyricDisplayMode: 'both',
 };
 export interface UserPreferencesData {
@@ -173,7 +173,7 @@ export const DEFAULT_USER_PREFERENCES: UserPreferencesData = {
   cameraShakeSensitivity: 50,
   lyricMinFontSize: 30,
   lyricMaxFontSize: 100,
-  themePalettes: {},
+  themePalettes: enableAllPaletteSelections(),
 };
 
 const clampNum = (v: unknown, min: number, max: number, fallback: number) => {
@@ -190,7 +190,7 @@ function sanitizeDisplay(raw: Partial<DisplayPreferences> | null | undefined): D
     reducedMotion: typeof r.reducedMotion === 'boolean' ? r.reducedMotion : false,
     youtubeBackgroundMode: oneOf(r.youtubeBackgroundMode, ['video', 'theme'], 'video'),
     videoOverlayOpacity: clampNum(r.videoOverlayOpacity, 0, 1, DEFAULT_DISPLAY_PREFERENCES.videoOverlayOpacity),
-    autoHideYoutubeLyrics: typeof r.autoHideYoutubeLyrics === 'boolean' ? r.autoHideYoutubeLyrics : false,
+    autoHideYoutubeLyrics: typeof r.autoHideYoutubeLyrics === 'boolean' ? r.autoHideYoutubeLyrics : DEFAULT_DISPLAY_PREFERENCES.autoHideYoutubeLyrics,
     playerVolume: clampNum(r.playerVolume, 0, 100, DEFAULT_DISPLAY_PREFERENCES.playerVolume),
     sponsorBlockEnabled: typeof r.sponsorBlockEnabled === 'boolean' ? r.sponsorBlockEnabled : true,
     lyricPlacementMode: oneOf(r.lyricPlacementMode, ['auto','left','right','bottom-right','bottom-left','top-left','diagonal','center'], 'auto'),
@@ -219,7 +219,8 @@ export function sanitizePreferences(raw: (Partial<Omit<UserPreferencesData,'them
     ? raw.quality
     : 'Balanced';
   const cameraMode: CameraMode = 'Front';
-  const cleanPalettes=normalizePaletteSelections(raw.themePalettes);
+  const normalizedPalettes = normalizePaletteSelections(raw.themePalettes);
+  const cleanPalettes = Object.keys(normalizedPalettes).length > 0 ? normalizedPalettes : enableAllPaletteSelections();
   const minFont = clampNum(raw.lyricMinFontSize, 16, 72, DEFAULT_USER_PREFERENCES.lyricMinFontSize);
   const maxFont = Math.max(minFont, clampNum(raw.lyricMaxFontSize, 32, 130, DEFAULT_USER_PREFERENCES.lyricMaxFontSize));
 

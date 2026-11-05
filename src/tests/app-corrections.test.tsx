@@ -162,6 +162,8 @@ it('saves visibility in the respective song mapping sections and restores it per
  const output=()=>host.querySelector('[data-testid="visibility-stage"]')!;
  try{
   expect(flag('Hide lyrics for this song').disabled).toBe(true);
+  expect(flag('Hide overlay lyrics on lyrical videos').checked).toBe(true);
+  await act(async()=>flag('Hide overlay lyrics on lyrical videos').click());
   await act(async()=>click('Load JioSaavn fixture'));
   expect(flag('Hide lyrics for this song').closest('.lyrics-mapping-section')).not.toBeNull();
   expect(flag('Hide video for this song').closest('.video-mapping-section')).not.toBeNull();
@@ -333,6 +335,7 @@ it('finds a music or lyrical YouTube background for JioSaavn and saves both sour
   expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Music Video', 'resolver', location.origin+'/music', expect.any(AbortSignal), {background:{title:'Original test song',artist:'Test artist'}});
   const select = host.querySelector<HTMLSelectElement>('select[aria-label="Preferred YouTube background"]')!;
   expect(select.closest('[role="tabpanel"]')?.id).toBe('settings-page-mapping');
+  expect(select.closest('.video-mapping-section')).not.toBeNull();
   expect(host.querySelector('#settings-page-background select[aria-label="Preferred YouTube background"]')).toBeNull();
   await act(async () => { select.value = 'lyrics'; select.dispatchEvent(new Event('change',{bubbles:true})); });
   await act(async () => click('Show preloaded videos'));
@@ -864,13 +867,14 @@ it('supports multiple palette switches without randomization controls and restor
  expect(host.textContent).not.toContain('Auto-randomize colour palette');
  const palette=(name:string)=>host.querySelector<HTMLInputElement>(`input[aria-label="Color Riot · ${name}"]`)!;
  expect(palette('Peach Sorbet').checked).toBe(true);
+ expect(palette('Lavender Milk').checked).toBe(true);
  expect(palette('Lavender Milk').type).toBe('checkbox');
- await act(async()=>palette('Lavender Milk').click());
- expect(palette('Peach Sorbet').checked).toBe(true);expect(palette('Lavender Milk').checked).toBe(true);
- await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App/>));
- expect(palette('Peach Sorbet').checked).toBe(true);expect(palette('Lavender Milk').checked).toBe(true);
  await act(async()=>palette('Peach Sorbet').click());
  expect(palette('Peach Sorbet').checked).toBe(false);expect(palette('Lavender Milk').checked).toBe(true);
+ await act(async()=>root.unmount());root=createRoot(host);await act(async()=>root.render(<App/>));
+ expect(palette('Peach Sorbet').checked).toBe(false);expect(palette('Lavender Milk').checked).toBe(true);
+ await act(async()=>palette('Peach Sorbet').click());
+ expect(palette('Peach Sorbet').checked).toBe(true);expect(palette('Lavender Milk').checked).toBe(true);
 });
 it('derives automatic theme rotation from the enabled set',async()=>{
  const switches=[...host.querySelectorAll<HTMLInputElement>('.theme-selection > .preview-setting input')];
@@ -922,13 +926,21 @@ it('starts with the requested video, placement, lyric, rendering and language de
  expect([...host.querySelectorAll('button')].find(b=>b.textContent==='Fill')?.getAttribute('aria-pressed')).toBe('true');
  expect(host.querySelector<HTMLSelectElement>('[aria-label="Lyric fill pace"]')?.value).toBe('letter');
  expect(input('Show FPS on visualizer').checked).toBe(true);
+ expect(input('Hide overlay lyrics on lyrical videos').checked).toBe(true);
  expect(JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!).display.playerVolume).toBe(100);
+ expect(JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!).display.autoHideYoutubeLyrics).toBe(true);
+ expect(Object.keys(JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!).themePalettes).length).toBe(28);
+ const paletteInputs=[...host.querySelectorAll<HTMLInputElement>('.theme-selection details input[type="checkbox"]')];
+ expect(paletteInputs.length).toBeGreaterThan(0);
+ expect(paletteInputs.every(i=>i.checked)).toBe(true);
  const enabled=(kind:string)=>[...host.querySelectorAll<HTMLInputElement>(`input[aria-label^="${kind} · "]`)].filter(i=>i.checked).map(i=>i.getAttribute('aria-label'));
  expect(enabled('Video')).toEqual(['Video · Left Stage Sweep','Video · Right Stage Sweep','Video · Bottom-Right Cinema','Video · Bottom-Left Editorial']);
  expect(enabled('Theme')).toEqual(['Theme · Center Stage']);
  expect(host.textContent).not.toContain('Alternating Left ↔ Right');
  expect([...host.querySelectorAll('label')].some(l=>/^Genre/.test(l.textContent?.trim()||''))).toBe(false);
- for(const language of ['Japanese','Korean','Chinese','Russian / Cyrillic','Arabic','Hebrew','Thai'])expect(host.querySelector(`[aria-label="Romanize ${language}"]`)?.getAttribute('aria-checked'),language).toBe('false');
+ const romanizationToggles=[...host.querySelectorAll<HTMLElement>('[aria-label^="Romanize "]')].filter(el=>el.getAttribute('aria-label')!=='Romanize Non-English Lyrics');
+ expect(romanizationToggles.length).toBe(16);
+ for(const toggle of romanizationToggles)expect(toggle.getAttribute('aria-checked'),toggle.getAttribute('aria-label')||'').toBe('true');
 });
 it('shows loading or not found until actual lyrics load, then includes their source library',async()=>{
  const summary=()=>host.querySelector('#settings-page-mapping .current-song')!;
