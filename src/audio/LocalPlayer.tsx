@@ -11,6 +11,7 @@ import {
   Pause,
   Play,
   RefreshCw,
+  RotateCw,
   Repeat,
   Shuffle,
   SkipBack,
@@ -84,6 +85,7 @@ type Props = {
   sourceMode: AudioSourceMode | null;
   onOpenSourceSelector: () => void;
   onFullscreen?: () => void;
+  onReloadBackgroundVideo?: () => void;
   fullscreen?: boolean;
   onOverlayChange?: (open: boolean) => void;
   externalTrack?: TrackInfo | null;
@@ -110,6 +112,7 @@ function LocalPlayer(
     sourceMode,
     onOpenSourceSelector,
     onFullscreen,
+    onReloadBackgroundVideo,
     fullscreen = false,
     onOverlayChange,
     externalTrack,
@@ -1031,6 +1034,18 @@ function LocalPlayer(
             <ListMusic size={14} />
             <span>Queue{queue.length > 0 ? ` (${queue.length})` : ""}</span>
             {queueOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </button>
+
+          <button
+            type="button"
+            className="upload-button"
+            onClick={onReloadBackgroundVideo}
+            disabled={!onReloadBackgroundVideo}
+            aria-label="Reload background video"
+            title="Reload background video"
+          >
+            <RotateCw size={14} />
+            <span>Reload video</span>
           </button>
 
           <button

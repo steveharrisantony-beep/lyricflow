@@ -16,6 +16,31 @@ beforeEach(() => {
 });
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.useRealTimers();vi.restoreAllMocks();});
 
+it.each([
+ [true,false], [false,false], [true,true], [false,true],
+])('reloads the selected video at the current position (separate audio %s, paused %s)',async(separate,paused)=>{
+ vi.spyOn(document,'visibilityState','get').mockReturnValue('visible');
+ const clock=vi.fn(),ended=vi.fn();
+ const render=(nonce:number)=><CinematicStage {...base} playbackTime={40} videoDelaySeconds={2}
+  hasSeparateAudioStream={separate} audioPaused={paused} playerVolume={55} videoReloadNonce={nonce}
+  onYoutubeTimeUpdate={clock} onYoutubeEnded={ended}/>;
+ await act(async()=>root.render(render(0)));
+ const original=host.querySelector('iframe')!;
+ await act(async()=>window.dispatchEvent(new MessageEvent('message',{source:original.contentWindow,data:JSON.stringify({event:'onReady'})})));
+ // A reload must also work after an earlier foreground recovery.
+ await act(async()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
+ await act(async()=>root.render(render(1)));
+ const reloaded=host.querySelector('iframe')!,send=vi.spyOn(reloaded.contentWindow!,'postMessage');
+ expect(reloaded).not.toBe(original);expect(reloaded.src).toBe(original.src);
+ await act(async()=>window.dispatchEvent(new MessageEvent('message',{source:reloaded.contentWindow,data:JSON.stringify({event:'onReady'})})));
+ const commands=send.mock.calls.map(args=>JSON.parse(String(args[0])));
+ expect(commands).toContainEqual({event:'command',func:'seekTo',args:[separate?38:40,true]});
+ expect(commands).toContainEqual({event:'command',func:separate?'mute':'unMute',args:[]});
+ expect(commands).toContainEqual({event:'command',func:'setVolume',args:[separate?0:55]});
+ expect(commands.some(command=>command.func===(paused?'pauseVideo':'playVideo'))).toBe(true);
+ expect(clock).not.toHaveBeenCalled();expect(ended).not.toHaveBeenCalled();
+});
+
 it('resumes the same muted background at the current song time after returning to the app',async()=>{
  vi.useFakeTimers();
  const visibility=vi.spyOn(document,'visibilityState','get').mockReturnValue('visible');

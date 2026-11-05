@@ -522,6 +522,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const [renderStatus, setRenderStatus] = useState("VOXELWALL 2D ENGINE");
   const spectrumCanvas = useRef<HTMLCanvasElement>(null);
   const playerRef = useRef<LocalPlayerHandle>(null);
+  const [videoReloadNonce, setVideoReloadNonce] = useState(0);
   const audioHubRef = useRef<AudioSourceHubHandle>(null);
   const [cinemaControlsOpen, setCinemaControlsOpen] = useState(false);
   const [fullscreenPlayerOpen, setFullscreenPlayerOpen] = useState(false);
@@ -1752,6 +1753,7 @@ export default function App({ user = null }: { user?: User | null }) {
                 videoFitMode={videoFitMode}
                 audioPaused={Boolean(localLoaded && !localPlaying)}
                 youtubeVideoId={stageYoutubeVideoId}
+                videoReloadNonce={videoReloadNonce}
                 onVerifiedBackground={noteVerifiedBackground}
                 videoDelaySeconds={videoDelaySeconds}
                 youtubeBackgroundMode={effectiveYoutubeBackgroundMode}
@@ -1863,6 +1865,8 @@ export default function App({ user = null }: { user?: User | null }) {
               externalPlaying={localPlaying}
               externalMedia={sourceMode === 'external' ? externalMedia : null}
               onFullscreen={() => void togglePerformance()}
+              onReloadBackgroundVideo={stageYoutubeVideoId && !songMapping.hideVideo
+                ? () => setVideoReloadNonce(nonce => nonce + 1) : undefined}
               fullscreen={performance}
               onOverlayChange={setPlayerOverlayOpen}
               onOpenSourceSelector={() => setSourceOpen(true)}

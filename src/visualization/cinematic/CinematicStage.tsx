@@ -69,6 +69,7 @@ export interface CinematicProps{
  videoFitMode?:VideoFitMode;
  audioPaused?:boolean;
  youtubeVideoId?:string|null;
+ videoReloadNonce?:number;
  videoDelaySeconds?:number;
  youtubeBackgroundMode?:YouTubeBackgroundMode;
  hideStageLyrics?:boolean;
@@ -610,14 +611,21 @@ export default function CinematicStage(props:CinematicProps){
  // A background-only player can be removed; the main audio player must keep running.
  const ytId=props.hideVideo&&props.hasSeparateAudioStream?null:props.youtubeVideoId||null;
  const mountedVideoId=ytId;
- const playbackKey=[props.recordingKey,ytId,Boolean(props.hasSeparateAudioStream),ytAuth.useNoCookieDomain,ytAuth.reloadNonce,errorRetryNonce].join('|');
+ const reloadKey=[ytAuth.reloadNonce,errorRetryNonce,props.videoReloadNonce??0].join('|');
+ const previousReloadKey=useRef(reloadKey);
+ const reloadSeekTime=useRef<number|null>(null);
+ const playbackKey=[props.recordingKey,ytId,Boolean(props.hasSeparateAudioStream),ytAuth.useNoCookieDomain,reloadKey].join('|');
  const [playingVideoKey,setPlayingVideoKey]=useState('');
  useEffect(()=>{
+  reloadSeekTime.current=previousReloadKey.current!==reloadKey&&!props.hasSeparateAudioStream
+   ?videoSyncTarget(props.playbackTime??0,0,false).time:null;
+  previousReloadKey.current=reloadKey;
   setPlaybackError('');
   setCanReplaceVideo(false);
   ytDurationRef.current=0;
   ytEndedEarlyRef.current=false;
   ytPlayerStateRef.current=null;
+  ytReadyRef.current=false;
   lastControlSigRef.current='';
   setYtVideoDuration(0);
   setYtVideoEnded(false);
@@ -661,10 +669,12 @@ export default function CinematicStage(props:CinematicProps){
   const target=videoSyncTarget(cur.playbackTime??0,cur.videoDelaySeconds,Boolean(cur.hasSeparateAudioStream));
   const dur=ytDurationRef.current;
   const endedEarly=Boolean(cur.hasSeparateAudioStream&&(ytEndedEarlyRef.current||(dur>15&&target.time>=dur-0.35)));
-  if(cur.hasSeparateAudioStream&&!endedEarly){
-   sendYouTubeCommand(iframe,'seekTo',[target.time,true]);
-   lastSyncTimeRef.current=target.time;
-   lastTargetTimeRef.current=target.time;
+  if(!endedEarly&&(cur.hasSeparateAudioStream||reloadSeekTime.current!==null)){
+   const seekTime=cur.hasSeparateAudioStream?target.time:reloadSeekTime.current!;
+   sendYouTubeCommand(iframe,'seekTo',[seekTime,true]);
+   lastSyncTimeRef.current=seekTime;
+   lastTargetTimeRef.current=seekTime;
+   if(ytReadyRef.current)reloadSeekTime.current=null;
   }
   if(mustPauseVideo(cur,target.waiting,endedEarly)){
    sendYouTubeCommand(iframe,'pauseVideo');
@@ -1039,7 +1049,7 @@ export default function CinematicStage(props:CinematicProps){
    <div ref={ytWrapRef} className="youtube-stage-backdrop" data-layer="video" data-video-fit={fitMode}
     style={{position:'absolute',inset:0,width:'100%',height:'100%',overflow:'hidden',zIndex:0,background:'#04070f',opacity:props.hideVideo?0:1,pointerEvents:allowIframePointer?'auto':'none'}}>
     <iframe ref={ytIframeRef}
-     key={`yt-${props.recordingKey||''}-${mountedVideoId||ytId}-${ytAuth.reloadNonce}-${ytAuth.useNoCookieDomain?'nc':'std'}-${errorRetryNonce}-${props.hasSeparateAudioStream?'muted':'audio'}`}
+     key={playbackKey}
      src={embedSrc} title="YouTube video background" referrerPolicy="strict-origin-when-cross-origin"
      allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
      style={{position:'absolute',top:'50%',left:'50%',width:playerWidthStyle,height:playerHeightStyle,transform:'translate(-50%, -50%)',border:0,pointerEvents:allowIframePointer?'auto':'none'}}
