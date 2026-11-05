@@ -596,6 +596,7 @@ export default function CinematicStage(props:CinematicProps){
  const ytEndedFiredRef=useRef<boolean>(false);
  const ytDurationRef=useRef<number>(0);
  const ytEndedEarlyRef=useRef<boolean>(false);
+ const ytPlayerStateRef=useRef<number|null>(null);
  const latestPropsRef=useRef(props);
  latestPropsRef.current=props;
  const ytAuth=useYouTubeAuth();
@@ -616,6 +617,7 @@ export default function CinematicStage(props:CinematicProps){
   setCanReplaceVideo(false);
   ytDurationRef.current=0;
   ytEndedEarlyRef.current=false;
+  ytPlayerStateRef.current=null;
   lastControlSigRef.current='';
   setYtVideoDuration(0);
   setYtVideoEnded(false);
@@ -671,13 +673,7 @@ export default function CinematicStage(props:CinematicProps){
   }
  };
 
- // Establish YouTube IFrame API postMessage handshake ("listening") and receive real-time currentTime / duration
- useEffect(()=>{
-  ytReadyRef.current=false;
-  ytEndedFiredRef.current=false;
-  if(!mountedVideoId)return;
-
-  const sendListening=()=>{
+ const sendListening=()=>{
    const iframe=ytIframeRef.current;
    if(!iframe?.contentWindow)return;
    try{
@@ -692,7 +688,37 @@ export default function CinematicStage(props:CinematicProps){
    }catch{
     // Ignore before iframe ready
    }
+ };
+
+ // WebViews can pause an unchanged iframe while the app is in the background.
+ useEffect(()=>{
+  if(!nativePolicy.resumeVersion||!mountedVideoId||!nativePolicy.allowed)return;
+  const iframe=ytIframeRef.current;
+  if(!iframe)return;
+  ytPlayerStateRef.current=null;
+  const restore=()=>{
+   if(document.visibilityState==='hidden'||ytIframeRef.current!==iframe)return;
+   sendListening();
+   syncYtPlayerState();
   };
+  restore();
+  // A resume event may arrive before the iframe has resumed its own media process.
+  const retries=[300,1200].map(delay=>window.setTimeout(()=>{
+   if(ytPlayerStateRef.current!==1)restore();
+  },delay));
+  const cancelRetries=()=>{if(document.visibilityState==='hidden')retries.forEach(id=>window.clearTimeout(id));};
+  document.addEventListener('visibilitychange',cancelRetries);
+  return()=>{
+   retries.forEach(id=>window.clearTimeout(id));
+   document.removeEventListener('visibilitychange',cancelRetries);
+  };
+ },[nativePolicy.resumeVersion,mountedVideoId,playbackKey,nativePolicy.allowed]);
+
+ // Establish YouTube IFrame API postMessage handshake ("listening") and receive real-time currentTime / duration
+ useEffect(()=>{
+  ytReadyRef.current=false;
+  ytEndedFiredRef.current=false;
+  if(!mountedVideoId)return;
 
   let pollId=0;
   const onMessage=(event:MessageEvent)=>{
@@ -723,6 +749,7 @@ export default function CinematicStage(props:CinematicProps){
      setCanReplaceVideo(false);
      setPlaybackError('YouTube blocked automatic playback. Use the player controls or reload the video.');
     }else if(evt==='onStateChange'&&typeof data.info==='number'){
+     ytPlayerStateRef.current=data.info;
      if(data.info===1){
       setPlaybackError('');
       setPlayingVideoKey(playbackKey);
@@ -793,6 +820,7 @@ export default function CinematicStage(props:CinematicProps){
       }
      }
      const pState=typeof info.playerState==='number'?info.playerState:undefined;
+     if(pState!==undefined)ytPlayerStateRef.current=pState;
      if(pState===1){
       setPlaybackError('');
       setPlayingVideoKey(playbackKey);

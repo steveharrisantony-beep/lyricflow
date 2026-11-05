@@ -14,7 +14,81 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockReturnValue(null);
   host=document.createElement('div');document.body.append(host);root=createRoot(host);
 });
-afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.restoreAllMocks();});
+afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.useRealTimers();vi.restoreAllMocks();});
+
+it('resumes the same muted background at the current song time after returning to the app',async()=>{
+ vi.useFakeTimers();
+ const visibility=vi.spyOn(document,'visibilityState','get').mockReturnValue('visible');
+ await act(async()=>root.render(<CinematicStage {...base} videoDelaySeconds={2}/>));
+ const frame=host.querySelector('iframe')!,send=vi.spyOn(frame.contentWindow!,'postMessage');
+ const message=async(event:string,info?:number)=>{
+  await act(async()=>window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,data:JSON.stringify({event,info})})));
+ };
+ await message('onReady');await message('onStateChange',1);
+ visibility.mockReturnValue('hidden');
+ await act(async()=>document.dispatchEvent(new Event('visibilitychange')));
+ await message('onStateChange',2);
+ await act(async()=>root.render(<CinematicStage {...base} playbackTime={70} videoDelaySeconds={2}/>));
+ send.mockClear();visibility.mockReturnValue('visible');
+ await act(async()=>document.dispatchEvent(new Event('visibilitychange')));
+ const commands=send.mock.calls.map(args=>JSON.parse(String(args[0])));
+ expect(host.querySelector('iframe')).toBe(frame);
+ expect(commands).toContainEqual({event:'command',func:'mute',args:[]});
+ expect(commands).toContainEqual({event:'command',func:'setVolume',args:[0]});
+ expect(commands).toContainEqual({event:'command',func:'seekTo',args:[68,true]});
+ expect(commands).toContainEqual({event:'command',func:'playVideo',args:[]});
+ await message('onStateChange',1);send.mockClear();
+ await act(async()=>vi.advanceTimersByTime(1500));
+ expect(send.mock.calls.some(args=>JSON.parse(String(args[0])).func==='playVideo')).toBe(false);
+});
+
+it.each([
+ {audioPaused:true},
+ {youtubeBackgroundMode:'theme' as const},
+ {advertisementPlaying:true},
+ {videoSearchPending:true},
+ {videoDelaySeconds:20},
+])('keeps a background paused on return when its current playback settings require it (%j)',async settings=>{
+ vi.useFakeTimers();
+ const visibility=vi.spyOn(document,'visibilityState','get').mockReturnValue('visible');
+ await act(async()=>root.render(<CinematicStage {...base} {...settings}/>));
+ const frame=host.querySelector('iframe')!,send=vi.spyOn(frame.contentWindow!,'postMessage');
+ await act(async()=>window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,data:JSON.stringify({event:'onReady'})})));
+ visibility.mockReturnValue('hidden');
+ await act(async()=>document.dispatchEvent(new Event('visibilitychange')));
+ send.mockClear();visibility.mockReturnValue('visible');
+ await act(async()=>document.dispatchEvent(new Event('visibilitychange')));
+ await act(async()=>vi.advanceTimersByTime(1500));
+ const commands=send.mock.calls.map(args=>JSON.parse(String(args[0])));
+ expect(commands.some(command=>command.func==='playVideo')).toBe(false);
+ expect(commands.some(command=>command.func==='pauseVideo')).toBe(true);
+});
+
+it('retries foreground recovery while the iframe is suspended and removes retries on unmount',async()=>{
+ vi.useFakeTimers();vi.spyOn(document,'visibilityState','get').mockReturnValue('visible');
+ await act(async()=>root.render(<CinematicStage {...base}/>));
+ const frame=host.querySelector('iframe')!,send=vi.spyOn(frame.contentWindow!,'postMessage');
+ await act(async()=>window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,data:JSON.stringify({event:'onReady'})})));
+ send.mockClear();
+ await act(async()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
+ await act(async()=>vi.advanceTimersByTime(300));
+ expect(send.mock.calls.filter(args=>JSON.parse(String(args[0])).func==='playVideo')).toHaveLength(2);
+ await act(async()=>root.unmount());root=createRoot(host);send.mockClear();
+ await act(async()=>vi.advanceTimersByTime(1500));
+ expect(send).not.toHaveBeenCalled();
+});
+
+it('resumes primary YouTube audio without seeking it to the separate song clock',async()=>{
+ vi.spyOn(document,'visibilityState','get').mockReturnValue('visible');
+ await act(async()=>root.render(<CinematicStage {...base} hasSeparateAudioStream={false} playerVolume={45}/>));
+ const frame=host.querySelector('iframe')!,send=vi.spyOn(frame.contentWindow!,'postMessage');
+ await act(async()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
+ const commands=send.mock.calls.map(args=>JSON.parse(String(args[0])));
+ expect(commands).toContainEqual({event:'command',func:'unMute',args:[]});
+ expect(commands).toContainEqual({event:'command',func:'setVolume',args:[45]});
+ expect(commands.some(command=>command.func==='playVideo')).toBe(true);
+ expect(commands.some(command=>command.func==='seekTo')).toBe(false);
+});
 it.each([101,150])('offers a different video for embedding error %s and removes Play video',async(code)=>{
  const replace=vi.fn();
  await act(async()=>root.render(<CinematicStage {...base} onLoadAnotherVideo={replace}/>));

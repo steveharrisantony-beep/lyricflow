@@ -11,6 +11,12 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 /** External-player mode has no audible WebView media and must not take Android audio focus. */
 @CapacitorPlugin(name = "MediaPlaybackPolicy")
 public class MediaPlaybackPolicyPlugin extends Plugin {
+    @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        notifyListeners("appResume", new JSObject(), false);
+    }
+
     @PluginMethod
     public void configure(PluginCall call) {
         boolean external = Boolean.TRUE.equals(call.getBoolean("externalPlayer", false));
