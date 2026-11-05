@@ -829,6 +829,9 @@ export default function CinematicStage(props:CinematicProps){
     return;
    }
    const evt=String(data.event||'');
+   // After retries are exhausted, ignore late iframe errors that could trigger
+   // the old next-candidate selection path before React removes this iframe.
+   if(videoRecoveryRef.current.finished)return;
    if((evt==='initialDelivery'||evt==='infoDelivery')&&data.info&&typeof data.info==='object'){
     const info=data.info as Record<string,unknown>;
     const video=info.videoData&&typeof info.videoData==='object'?info.videoData as Record<string,unknown>:undefined;
