@@ -862,6 +862,10 @@ export default function CinematicStage(props:CinematicProps){
       setPlayingVideoKey('');
      }
      if(data.info===0){
+      if(priorState!==0&&latestPropsRef.current.hasSeparateAudioStream){
+       videoRecoveryRef.current.attemptAt=Date.now();
+       setPlayingVideoKey('');
+      }
       ytEndedEarlyRef.current=true;
       setYtVideoEnded(true);
       if(!ytEndedFiredRef.current){
@@ -947,6 +951,10 @@ export default function CinematicStage(props:CinematicProps){
       setPlayingVideoKey('');
      }
      if(pState===0){
+      if(previousPlayerState!==0&&latestPropsRef.current.hasSeparateAudioStream){
+       videoRecoveryRef.current.attemptAt=Date.now();
+       setPlayingVideoKey('');
+      }
       ytEndedEarlyRef.current=true;
       setYtVideoEnded(true);
       if(!ytEndedFiredRef.current){
