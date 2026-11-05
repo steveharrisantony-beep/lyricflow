@@ -24,7 +24,7 @@ import {useYouTubeAuth} from '../../music/youtubeAuth';
 import {useNativePlaybackPolicy} from '../../audio/nativePlaybackPolicy';
 import {isYouTubeTopicChannel} from '../../music/videoMatching';
 import {logVideoPlaybackRecovery,logVideoPlaybackError} from '../../music/videoSearchHistory';
-import {AUTO_VIDEO_START_TIMEOUT_MS,AUTO_VIDEO_STALL_TIMEOUT_MS,MAX_AUTO_VIDEO_RELOADS,shouldMonitorAutoVideo} from '../../music/videoPlaybackRecovery';
+import {AUTO_VIDEO_START_TIMEOUT_MS,AUTO_VIDEO_STALL_TIMEOUT_MS,MAX_AUTO_VIDEO_RELOADS,shouldMonitorAutoVideo,nextAutoVideoRecoveryAction} from '../../music/videoPlaybackRecovery';
 
 export type Quality='High'|'Balanced'|'Performance';
 export const CAMERA_VIEWS=['Front'] as const;
@@ -716,7 +716,7 @@ export default function CinematicStage(props:CinematicProps){
    const threshold=verified?AUTO_VIDEO_STALL_TIMEOUT_MS:AUTO_VIDEO_START_TIMEOUT_MS;
    const elapsed=Date.now()-(verified?state.progressAt:state.attemptAt);
    if(elapsed<threshold)return;
-   if(state.reloads<MAX_AUTO_VIDEO_RELOADS){
+   if(nextAutoVideoRecoveryAction(state.reloads)==='reload'){
     state.reloads++;
     state.attemptAt=Date.now();
     state.progressAt=Date.now();
