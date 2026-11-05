@@ -1,7 +1,6 @@
 package com.steveharrisantony.lyricflow;
 
 import android.app.Activity;
-import android.os.Build;
 import android.view.View;
 import android.view.Window;
 import androidx.core.view.ViewCompat;
@@ -48,10 +47,17 @@ public class DisplayChromePlugin extends Plugin {
                     "status_bar_height", "dimen", "android");
                 if (statusBarId > 0) top = activity.getResources().getDimensionPixelSize(statusBarId);
             }
+            // Measure actual overlap instead of assuming an Android version:
+            // older devices can also use edge-to-edge, and fitted content must
+            // not get an unnecessary second status-bar inset.
+            View content = activity.findViewById(android.R.id.content);
+            int[] location = new int[]{0, 0};
+            if (content != null) content.getLocationOnScreen(location);
+            int overlapPx = Math.max(0, top - location[1]);
             float density = activity.getResources().getDisplayMetrics().density;
             JSObject result = new JSObject();
             result.put("statusInsetCssPixels",
-                Build.VERSION.SDK_INT >= 35 && density > 0 ? (int)Math.ceil(top / density) : 0);
+                density > 0 ? (int)Math.ceil(overlapPx / density) : 0);
             result.put("cinema", cinema);
             call.resolve(result);
         });
