@@ -41,6 +41,7 @@ import {
 } from "./audio/externalPlayer";
 import LocalPlayer, { type LocalPlayerHandle } from "./audio/LocalPlayer";
 import {usePlaybackScreenAwake} from "./audio/usePlaybackScreenAwake";
+import {useAndroidDisplayChrome} from "./ui/useAndroidDisplayChrome";
 import {
   ALL_FONT_PACKS,
   ALL_KINETIC_MOTIONS,
@@ -569,6 +570,7 @@ export default function App({ user = null }: { user?: User | null }) {
   });
   const [fileEpoch, setFileEpoch] = useState(0);
   const [performance, setPerformance] = useState(false);
+  useAndroidDisplayChrome(performance);
 
   // Full screen mode: show controls on tap/click, hide on second tap/click, and auto-hide after 2 seconds (2000ms)
   const clearCinemaHudTimer = useCallback(() => {
