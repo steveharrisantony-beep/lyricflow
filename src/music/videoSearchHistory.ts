@@ -69,14 +69,14 @@ export async function logVideoSearch(
 }
 
 /** Called after the existing background filtering logic has evaluated candidates. */
-export function logVideoFiltering(recordingKey:string,resultCount:number,passedFilterCount:number){
+export function logVideoFiltering(recordingKey:string,resultCount:number,passedFilterCount:number,mode:'Autoplay'|'Search online'='Autoplay'){
  if(!recordingKey)return;
- const search=entries.find(item=>item.recordingKey===recordingKey&&item.mode==='Autoplay');
+ const search=entries.find(item=>item.recordingKey===recordingKey&&item.mode===mode);
  if(search&&search.passedFilterCount!==passedFilterCount){
   publish(entries.map(item=>item.id===search.id
    ?{...item,resultCount,passedFilterCount,status:`${resultCount} results · ${passedFilterCount} passed filters`}:item));
  }else if(!search && !entries.some(item=>item.mode==='Filter'&&item.recordingKey===recordingKey&&item.resultCount===resultCount&&item.passedFilterCount===passedFilterCount)){
-  append({recordingKey,mode:'Filter',status:'Cached/preloaded candidates evaluated',resultCount,passedFilterCount});
+  append({recordingKey,mode:'Filter',status:`${mode} cached/preloaded candidates evaluated`,resultCount,passedFilterCount});
  }
 }
 
