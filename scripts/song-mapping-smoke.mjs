@@ -239,6 +239,8 @@ await page.addInitScript(() => {
 });
 try {
   await page.goto("http://127.0.0.1:5175");
+  await page.getByRole("button", { name: "Start visualizer", exact: true }).click();
+  await page.getByRole("button", { name: "No thanks", exact: true }).click();
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await page.getByLabel("Search songs", { exact: true }).fill("Test Song");
   await page.locator(".song-search-form button[type=submit]").click();

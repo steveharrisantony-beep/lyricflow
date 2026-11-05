@@ -8,7 +8,7 @@ vi.mock('../music/sponsorBlock',async original=>({
 import LocalPlayer,{type LocalPlayerHandle} from '../audio/LocalPlayer';
 import {fetchSponsorBlockSegments} from '../music/sponsorBlock';
 import VideoSearchLogs from '../music/VideoSearchLogs';
-import {getVideoSearchLogs,logVideoSearch} from '../music/videoSearchHistory';
+import {getVideoSearchLogs,logVideoSearch,videoSearchLogKey} from '../music/videoSearchHistory';
 
 let root:Root,host:HTMLDivElement;
 beforeEach(()=>{
@@ -24,11 +24,11 @@ beforeEach(()=>{
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.useRealTimers();vi.restoreAllMocks();});
 
 it.each([true,false])('logs a playback cut only when SponsorBlock applies it (enabled %s)',async(enabled)=>{
- const ref=createRef<LocalPlayerHandle>(),timeChanged=vi.fn(),unchanged=vi.fn();
+ const ref=createRef<LocalPlayerHandle>(),timeChanged=vi.fn(),unchanged=vi.fn(),trackChanged=vi.fn();
  const before=getVideoSearchLogs()[0]?.id||0;
  const skips=()=>getVideoSearchLogs().filter(entry=>entry.id>before&&entry.mode==='SponsorBlock');
  await act(async()=>root.render(<LocalPlayer ref={ref} sourceMode="online" sponsorBlockEnabled={enabled}
-  onActiveChange={unchanged} onTimeChange={timeChanged} onFileChange={unchanged} onTrackChange={unchanged}
+  onActiveChange={unchanged} onTimeChange={timeChanged} onFileChange={unchanged} onTrackChange={trackChanged}
   onDurationChange={unchanged} onOpenSourceSelector={unchanged}/>));
  await act(async()=>ref.current!.loadRemote({
   id:'yt_abcdefghijk',youtubeVideoId:'abcdefghijk',title:'Fixture Song',artist:'Singer',album:'',duration:200,
@@ -42,14 +42,19 @@ it.each([true,false])('logs a playback cut only when SponsorBlock applies it (en
  if(!enabled){expect(skips()).toHaveLength(0);return;}
  expect(timeChanged).toHaveBeenCalledWith(8);
  expect(skips()).toHaveLength(1);
- expect(skips()[0]).toMatchObject({mode:'SponsorBlock',title:'Fixture Song',videoId:'abcdefghijk',category:'Sponsor',end:8});
+ const recordingKey=videoSearchLogKey(trackChanged.mock.calls.at(-1)![0]);
+ expect(recordingKey).not.toBe('');
+ expect(skips()[0]).toMatchObject({recordingKey,mode:'SponsorBlock',title:'Fixture Song',videoId:'abcdefghijk',category:'Sponsor',end:8});
  await act(async()=>vi.advanceTimersByTime(1000));
  expect(skips()).toHaveLength(1);
- await act(async()=>root.render(<VideoSearchLogs/>));
- await act(async()=>logVideoSearch('Fixture Song Singer Music Video','Autoplay',async()=>[]));
+ await act(async()=>root.render(<VideoSearchLogs recordingKey={recordingKey}/>));
+ await act(async()=>logVideoSearch('Fixture Song Singer Music Video','Autoplay',async()=>[],undefined,recordingKey));
+ await act(async()=>logVideoSearch('Other song query','Autoplay',async()=>[],undefined,'other-song'));
+ expect(host.textContent).not.toContain('Other song query');
  const article=[...host.querySelectorAll('article')].find(row=>row.textContent?.includes('SponsorBlock'))!;
  expect(article.textContent).toContain('Skipped Sponsor');
  expect(article.textContent).toContain('8.00s');expect(article.textContent).toContain('s skipped');
  expect(article.textContent).toContain('abcdefghijk');expect(article.textContent).not.toContain('Exact API query');
  expect(host.querySelector('code')?.textContent).toBe('Fixture Song Singer Music Video');
 });
+

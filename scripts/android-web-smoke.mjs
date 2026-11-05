@@ -53,6 +53,8 @@ await page.route("https://lrclib.net/**", (route) =>
 );
 try {
   await page.goto("http://127.0.0.1:5173/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Start visualizer", exact: true }).click();
+  await page.getByRole("button", { name: "No thanks", exact: true }).click();
   await page.locator("canvas.cinematic-canvas").waitFor();
   assert.equal(await page.locator(".device-service-status").count(), 0);
   await page

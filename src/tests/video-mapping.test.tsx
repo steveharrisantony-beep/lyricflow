@@ -86,7 +86,6 @@ it('resumes the same muted background at the current song time after returning t
 
 it.each([
  {audioPaused:true},
- {youtubeBackgroundMode:'theme' as const},
  {advertisementPlaying:true},
  {videoSearchPending:true},
  {videoDelaySeconds:20},
@@ -104,6 +103,20 @@ it.each([
  const commands=send.mock.calls.map(args=>JSON.parse(String(args[0])));
  expect(commands.some(command=>command.func==='playVideo')).toBe(false);
  expect(commands.some(command=>command.func==='pauseVideo')).toBe(true);
+});
+
+it('leaves the background iframe unmounted in Themes mode after returning to the app',async()=>{
+ vi.useFakeTimers();
+ const visibility=vi.spyOn(document,'visibilityState','get').mockReturnValue('visible');
+ await act(async()=>root.render(<CinematicStage {...base} youtubeBackgroundMode="theme"/>));
+ expect(host.querySelector('iframe')).toBeNull();
+ visibility.mockReturnValue('hidden');
+ await act(async()=>document.dispatchEvent(new Event('visibilitychange')));
+ visibility.mockReturnValue('visible');
+ await act(async()=>document.dispatchEvent(new Event('visibilitychange')));
+ await act(async()=>vi.advanceTimersByTime(1500));
+ expect(host.querySelector('iframe')).toBeNull();
+ expect(host.querySelector('.cinematic-stack')?.getAttribute('data-background-state')).toBe('themes');
 });
 
 it('retries foreground recovery while the iframe is suspended and removes retries on unmount',async()=>{
@@ -539,6 +552,7 @@ it('rejects Topic channel videos at runtime before revealing them as a separate-
 it('switches to built-in themes when a YouTube background video starts late or ends early while audio continues',async()=>{
  await act(async()=>root.render(<CinematicStage {...base} playbackTime={10} videoDelaySeconds={0}/>));
  const frame=host.querySelector('iframe')!;
+ const send=vi.spyOn(frame.contentWindow!,'postMessage');
  await act(async()=>window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,data:JSON.stringify({event:'onStateChange',info:1})})));
  expect(host.querySelector('.cinematic-stack')?.getAttribute('data-background-state')).toBe('video');
 
@@ -551,11 +565,18 @@ it('switches to built-in themes when a YouTube background video starts late or e
  expect(host.querySelector('.cinematic-stack')?.getAttribute('data-background-state')).toBe('video');
 
  // Video ends early (e.g. 2:50 video clip on a 4:59 song): switches to built-in themes while audio keeps playing
+ await act(async()=>root.render(<CinematicStage {...base} playbackTime={176} videoDelaySeconds={6}/>));
  await act(async()=>window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,data:JSON.stringify({event:'infoDelivery',info:{currentTime:169.8,duration:170,playerState:0}})})));
  expect(host.querySelector('.cinematic-stack')?.getAttribute('data-background-state')).toBe('themes');
 
- // Seeking backward in the song before the video's end restores the video background
+ // Seeking backward requests playback, but themes stay until YouTube confirms it started.
+ send.mockClear();
  await act(async()=>root.render(<CinematicStage {...base} playbackTime={60} videoDelaySeconds={0}/>));
+ const commands=send.mock.calls.map(args=>JSON.parse(String(args[0])));
+ expect(commands).toContainEqual({event:'command',func:'seekTo',args:[60,true]});
+ expect(commands).toContainEqual({event:'command',func:'playVideo',args:[]});
+ expect(host.querySelector('.cinematic-stack')?.getAttribute('data-background-state')).toBe('themes');
+ await act(async()=>window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,data:JSON.stringify({event:'onStateChange',info:1})})));
  expect(host.querySelector('.cinematic-stack')?.getAttribute('data-background-state')).toBe('video');
 });
 
@@ -606,3 +627,4 @@ it('renders the supplied preloaded order and clears the list when the track chan
  await act(async()=>root.render(render('Different Song')));
  expect(host.querySelector('.video-candidate')).toBeNull();
 });
+

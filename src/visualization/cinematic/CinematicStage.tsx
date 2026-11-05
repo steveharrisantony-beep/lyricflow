@@ -1007,11 +1007,12 @@ export default function CinematicStage(props:CinematicProps){
    if(!ytId||!ytIframeRef.current||typeof props.playbackTime!=='number')return;
    const target=videoSyncTarget(props.playbackTime,props.videoDelaySeconds,Boolean(props.hasSeparateAudioStream));
    const dur=ytDurationRef.current;
-   const reachedEnd=Boolean(props.hasSeparateAudioStream)&&(ytEndedEarlyRef.current||Boolean(dur&&dur>1&&target.time>=dur-0.35));
-   if(Boolean(props.hasSeparateAudioStream)&&dur&&dur>1&&target.time<dur-1.5&&ytEndedEarlyRef.current){
+   const seekedBack=target.time<lastTargetTimeRef.current-0.75;
+   if(props.hasSeparateAudioStream&&seekedBack&&dur&&dur>1&&target.time<dur-1.5&&ytEndedEarlyRef.current){
     ytEndedEarlyRef.current=false;
     setYtVideoEnded(false);
    }
+   const reachedEnd=Boolean(props.hasSeparateAudioStream)&&(ytEndedEarlyRef.current||Boolean(dur&&dur>1&&target.time>=dur-0.35));
    const mapping=ytId+'|'+(props.hasSeparateAudioStream?props.videoDelaySeconds??0:0)+'|'+Boolean(props.hasSeparateAudioStream);
    const changed=mapping!==lastVideoMappingRef.current;
    const resumed=videoWaitingRef.current&&!target.waiting;
@@ -1214,4 +1215,5 @@ export default function CinematicStage(props:CinematicProps){
   </div>}
  </div>;
 }
+
 

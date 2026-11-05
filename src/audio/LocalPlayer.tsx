@@ -32,7 +32,7 @@ import { resolveTrackFilename } from "../metadata/metadataStore";
 import { extractYouTubeVideoId, type TrackInfo } from "../metadata/trackInfo";
 import { MUSIC_SOURCES, type PlayableSong } from "../music/providers";
 import SongSearch from "../music/SongSearch";
-import {logSponsorBlockSkip} from '../music/videoSearchHistory';
+import {logSponsorBlockSkip,videoSearchLogKey} from '../music/videoSearchHistory';
 import {
   computeLeadingNonMusicOffset,
   fetchSponsorBlockSegments,
@@ -338,6 +338,7 @@ function LocalPlayer(
     );
     logSponsorBlockSkip({
       videoId:currentTrack?.youtubeVideoId||currentTrack?.videoId,title:currentTrack?.title||'',
+      recordingKey:videoSearchLogKey(currentTrack),
       start:currentSec,end:Math.min(duration>0?duration:600,targetSec),category:formatSegmentCategory(activeSeg.category),
     });
     return targetSec;
@@ -1290,3 +1291,4 @@ function LocalPlayer(
 }
 
 export default forwardRef(LocalPlayer);
+
