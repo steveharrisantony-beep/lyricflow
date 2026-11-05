@@ -1,81 +1,101 @@
 import type {SongResult} from './providers';
+import type {TrackInfo} from '../metadata/trackInfo';
 
-type VideoSearchLog = {
- id: number;
- time: number;
- status: string;
-} & ({mode:'Autoplay'|'Search online';query:string} | {
- mode:'SponsorBlock';
- query?:never;
- videoId:string;
- title:string;
- start:number;
- end:number;
- category:string;
-} | {
- mode:'Playback recovery';
- query?:never;
- videoId:string;
-});
+/** Song-scoped log identity; duration changes must not create a new log. */
+export function videoSearchLogKey(track: (Pick<TrackInfo,'title'|'artist'> &
+ Partial<Pick<TrackInfo,'provider'|'sourceTrackId'|'externalPackageName'>>) | null | undefined): string {
+ if (!track?.title?.trim()) return '';
+ return JSON.stringify([
+  track.provider||'',track.sourceTrackId||'',track.title.trim(),
+  track.artist.trim(),track.externalPackageName||'',
+ ]);
+}
 
-let entries: VideoSearchLog[] = [];
-let nextId = 0;
-const listeners = new Set<() => void>();
+export type VideoSearchLog = {
+ id:number;
+ time:number;
+ recordingKey:string;
+ status:string;
+ mode:'Autoplay'|'Search online'|'Filter'|'Playback error'|'Playback recovery'|'Suspension'|'SponsorBlock';
+ query?:string;
+ resultCount?:number;
+ passedFilterCount?:number;
+ videoId?:string;
+ title?:string;
+ start?:number;
+ end?:number;
+ category?:string;
+};
 
-export function subscribeVideoSearchLogs(listener: () => void) {
+let entries:VideoSearchLog[]=[];
+let nextId=0;
+const listeners=new Set<() => void>();
+const MAX_LOGS=160;
+
+export function subscribeVideoSearchLogs(listener:()=>void){
  listeners.add(listener);
- return () => { listeners.delete(listener); };
+ return ()=>{listeners.delete(listener);};
+}
+export const getVideoSearchLogs=()=>entries;
+function publish(next:VideoSearchLog[]){
+ entries=next.slice(0,MAX_LOGS);
+ for(const listener of listeners)listener();
+}
+function append(entry:Omit<VideoSearchLog,'id'|'time'>){
+ publish([{...entry,id:++nextId,time:Date.now()},...entries]);
 }
 
-export const getVideoSearchLogs = () => entries;
-
-function publish(next: VideoSearchLog[]) {
- entries = next;
- for (const listener of listeners) listener();
-}
-
-export function logSponsorBlockSkip({videoId,title,start,end,category}:{
- videoId:string|undefined;
- title:string;
- start:number;
- end:number;
- category:string;
-}) {
- if(!videoId||!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<=start)return;
- const entry:VideoSearchLog={id:++nextId,time:Date.now(),mode:'SponsorBlock',
-  status:`Skipped ${category}`,videoId,title,start,end,category};
- publish([entry,...entries].slice(0,30));
-}
-
-/** Log bounded reloads and failed playback without leaking account or media URLs. */
-export function logVideoPlaybackRecovery(videoId:string,status:string):void {
- if(!videoId||!status)return;
- const entry:VideoSearchLog={id:++nextId,time:Date.now(),mode:'Playback recovery',videoId,status};
- publish([entry,...entries].slice(0,30));
-}
-
-/** Store search terms in session memory. Never record request URLs or headers. */
+/** Store results for the exact song; do not expose request URLs or auth tokens. */
 export async function logVideoSearch(
- query: string,
- mode: 'Autoplay' | 'Search online',
- run: () => Promise<SongResult[]>,
- signal?: AbortSignal,
-) {
+ query:string,mode:'Autoplay'|'Search online',run:()=>Promise<SongResult[]>,
+ signal?:AbortSignal,recordingKey=''
+):Promise<SongResult[]>{
  signal?.throwIfAborted();
- const entry = {id:++nextId, query, mode, time:Date.now(), status:'Searching…'};
- publish([entry,...entries].slice(0,30));
- const finish = (status: string) => {
-  if (entries.some(item => item.id === entry.id)) {
-   publish(entries.map(item => item.id === entry.id ? {...item,status} : item));
-  }
+ const entry:VideoSearchLog={id:++nextId,time:Date.now(),recordingKey,query,mode,status:'Searching…'};
+ publish([entry,...entries]);
+ const finish=(status:string,resultCount?:number)=>{
+  if(entries.some(item=>item.id===entry.id))
+   publish(entries.map(item=>item.id===entry.id?{...item,status,resultCount}:item));
  };
- try {
-  const results = await run();
+ try{
+  const results=await run();
   signal?.throwIfAborted();
-  finish(results.length === 1 ? '1 result returned' : `${results.length} results returned`);
+  finish(`${results.length} result${results.length===1?'':'s'} returned`,results.length);
   return results;
- } catch (error) {
-  finish(signal?.aborted ? 'Cancelled' : 'Search failed');
+ }catch(error){
+  finish(signal?.aborted?'Cancelled':'Search failed');
   throw error;
  }
+}
+
+/** Called after the existing background filtering logic has evaluated candidates. */
+export function logVideoFiltering(recordingKey:string,resultCount:number,passedFilterCount:number){
+ if(!recordingKey)return;
+ const search=entries.find(item=>item.recordingKey===recordingKey&&item.mode==='Autoplay');
+ if(search&&search.passedFilterCount!==passedFilterCount){
+  publish(entries.map(item=>item.id===search.id
+   ?{...item,resultCount,passedFilterCount,status:`${resultCount} results · ${passedFilterCount} passed filters`}:item));
+ }else if(!search && !entries.some(item=>item.mode==='Filter'&&item.recordingKey===recordingKey&&item.resultCount===resultCount&&item.passedFilterCount===passedFilterCount)){
+  append({recordingKey,mode:'Filter',status:'Cached/preloaded candidates evaluated',resultCount,passedFilterCount});
+ }
+}
+
+export function logVideoPlaybackRecovery(videoId:string,status:string,recordingKey=''){
+ if(!videoId||!status||!recordingKey)return;
+ append({recordingKey,mode:'Playback recovery',videoId,status});
+}
+export function logVideoPlaybackError(videoId:string,status:string,recordingKey=''){
+ if(!videoId||!status||!recordingKey)return;
+ append({recordingKey,mode:'Playback error',videoId,status});
+}
+export function logThemeVideoSearchSuspended(recordingKey:string){
+ if(!recordingKey||entries.some(e=>e.recordingKey===recordingKey&&e.mode==='Suspension'))return;
+ append({recordingKey,mode:'Suspension',status:'Automatic background search suspended after 3 consecutive songs in Themes mode'});
+}
+
+export function logSponsorBlockSkip({videoId,title,start,end,category,recordingKey=''}:{
+ videoId:string|undefined;title:string;start:number;end:number;category:string;recordingKey?:string;
+}){
+ if(!recordingKey||!videoId||!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<=start)return;
+ append({recordingKey,mode:'SponsorBlock',status:`Skipped ${category}`,videoId,title,start,end,category});
 }
