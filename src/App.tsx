@@ -5,6 +5,7 @@ import {evaluateBackgroundVideos} from './music/videoMatching';
 import {findYouTubeBackgrounds} from './music/backgroundVideos';
 import {musicResolverBase} from './network/backend';
 import VideoSearchLogs from './music/VideoSearchLogs';
+import RomanizationLogs from './romanization/RomanizationLogs';
 import {logSponsorBlockSkip} from './music/videoSearchHistory';
 import {isSyncedLyricsSource,lyricProviderName,normalizeLyricSource} from './lyrics/sourceLabels';
 import {selectedPaletteIds,togglePaletteSelection,enableAllPaletteSelections,enableAllPalettesForTheme,type ThemePaletteSelections} from './visualization/cinematic/themeSelection';
@@ -2636,6 +2637,9 @@ export default function App({ user = null }: { user?: User | null }) {
                 </SettingGroup>
                 <SettingGroup title="Video search logs">
                   <VideoSearchLogs/>
+                </SettingGroup>
+                <SettingGroup title="Romanization logs">
+                  <RomanizationLogs/>
                 </SettingGroup>
               </>
             ),

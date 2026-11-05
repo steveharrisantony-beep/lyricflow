@@ -9,14 +9,18 @@ import {
   getEnabledRomanizationLanguages,
   getRomanizationMasterEnabled,
   hasDistinctRomanized,
-  isLatinScript,
-  romanizeLrcTextAsync,
+  detectLanguage,
+  hasCompleteRomanization,
+  needsRomanization,
   romanizeText,
   setEnabledRomanizationLanguages,
   setRomanizationMasterEnabled,
   SUPPORTED_ROMANIZATION_LANGUAGES,
   type RomanizationLanguageCode,
 } from "../romanization/romanize";
+import { retryRomanization } from '../romanization/retryRomanization';
+import { startRomanizationLog } from '../romanization/romanizationHistory';
+import { createLyricHandoff } from './lyricHandoff';
 import {
   buildCinematicSchedule,
   byId,
@@ -387,6 +391,9 @@ export default function ManualLyrics({
 }) {
   const [raw, setRaw] = useState("");
   const [roman, setRoman] = useState("");
+  const romanRef = useRef(roman);
+  romanRef.current = roman;
+  const [romanizationRequest, setRomanizationRequest] = useState(0);
   const [plain, setPlain] = useState("");
   const [internalMode, setInternalMode] = useState<
     "original" | "romanized" | "both"
@@ -509,9 +516,7 @@ export default function ManualLyrics({
     if (!incoming) return;
     setRaw(incoming.original);
     setPlain(incoming.plain || "");
-    const nextRoman = !autoRoman
-      ? ""
-      : incoming.romanized || romanizeText(incoming.original).text;
+    const nextRoman = autoRoman ? incoming.romanized || (incoming.original === raw ? romanRef.current : "") : "";
     setRoman(nextRoman);
     const verifiedSource=normalizeLyricSource(incoming.source,incoming.sourceUrl,
       incoming.original?hasWordTiming(incoming.original):undefined);
@@ -521,31 +526,56 @@ export default function ManualLyrics({
     setMessage(`Auto-loaded from ${verifiedSource}.`);
   }, [incoming?.token]);
 
-  // Upgrade non-Latin lyrics with haroldalan/spotify-karaoke Google phonetic romanization (dt=rm)
-  // Only romanizes when Romanization is turned ON and the detected language is enabled.
+  // Keep the current lyric display while retries run and while a result waits
+  // for the captured line boundary (including simultaneous singers).
   useEffect(() => {
+    if (!autoRoman) { setRoman(""); return; }
     if (!raw || corrected) return;
-    if (!autoRoman) {
-      setRoman("");
-      return;
-    }
-    const syncRes = romanizeText(raw);
-    setRoman(syncRes.changed ? syncRes.text : "");
-    const plainBody = raw
-      .replace(/\[[^\]]*\]/g, "")
-      .replace(/<[^>]*>/g, "")
-      .trim();
-    if (!plainBody || isLatinScript(plainBody)) return;
+    if (!needsRomanization(raw, enabledRomanLangs)) { setRoman(""); return; }
     const controller = new AbortController();
-    void romanizeLrcTextAsync(raw, controller.signal)
-      .then((upgraded) => {
-        if (!controller.signal.aborted && upgraded && upgraded.trim()) {
-          setRoman(upgraded !== raw ? upgraded : "");
-        }
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [raw, autoRoman, enabledRomanLangs.join(","), corrected]);
+    const handoff = createLyricHandoff(controller.signal, romanRef.current || raw);
+    const log = startRomanizationLog(track?.title || "Imported lyrics", track?.artist || "", detectLanguage(raw));
+    let done = false, waiting = false, finished = false;
+    const publish = (text: string) => {
+      const outcome = handoff.publish(text, () => {
+        setRoman(text);
+        waiting = false;
+        finished = done;
+        log("Romanized lyrics applied");
+      });
+      if (outcome === 'pending' || waiting) {
+        waiting = true;
+        log("Romanization ready · switching after the current line ends");
+      } else if (outcome === 'unchanged' && !waiting) {
+        finished = done;
+        log("Romanized lyrics already available");
+      }
+    };
+    const local = romanizeText(raw, enabledRomanLangs);
+    const currentIsRomanized = hasCompleteRomanization(raw, romanRef.current, enabledRomanLangs);
+    if (!currentIsRomanized && hasCompleteRomanization(raw, local.text, enabledRomanLangs)) publish(local.text);
+    else if (!currentIsRomanized) {
+      setRoman("");
+      log("Original lyrics continue while romanization runs");
+    }
+
+    void retryRomanization(raw, enabledRomanLangs, controller.signal, log).then(upgraded => {
+      if (controller.signal.aborted) return;
+      done = true;
+      if (upgraded) publish(upgraded);
+      else finished = true;
+    }).catch(() => {
+      if (!controller.signal.aborted) {
+        finished = true;
+        log("Romanization failed · current lyrics continue");
+      }
+    });
+    return () => {
+      controller.abort();
+      handoff.cancel();
+      if (!finished) log("Cancelled · lyrics or romanization settings changed");
+    };
+  }, [raw, autoRoman, enabledRomanLangs.join(","), corrected, romanizationRequest]);
 
   useEffect(() => {
     if (!trackLoaded) setOffset(0);
@@ -561,14 +591,14 @@ export default function ManualLyrics({
         setSource("Custom TTML Override");
         if (converted.romanizedLrc) setRoman(converted.romanizedLrc);
         else if (autoRoman && !corrected)
-          setRoman(romanizeText(converted.lrc).text);
+          setRoman("");
         return;
       }
     }
     setRaw(value);
     setPlain("");
     setSource("Custom Edited");
-    if (autoRoman && !corrected) setRoman(romanizeText(value).text);
+    if (autoRoman && !corrected) setRoman("");
   }
 
   function autoGenerate() {
@@ -576,19 +606,10 @@ export default function ManualLyrics({
       setMessage("Add original lyrics before romanization.");
       return;
     }
-    setRoman(romanizeText(raw).text);
+    if (!autoRoman) setAutoRoman(true);
     setCorrected(false);
-    setMessage("Generating phonetic romanization…");
-    void romanizeLrcTextAsync(raw)
-      .then((upgraded) => {
-        if (upgraded && upgraded.trim()) {
-          setRoman(upgraded);
-          setMessage(
-            "Romanization generated (Spotify-Karaoke phonetic engine).",
-          );
-        }
-      })
-      .catch(() => {});
+    setRomanizationRequest(value => value + 1);
+    setMessage("Preparing romanization · current lyrics continue.");
   }
 
   async function importLocal() {
@@ -652,7 +673,7 @@ export default function ManualLyrics({
       })
       .join("\n");
     setRaw(lrc);
-    if (autoRoman && !corrected) setRoman(romanizeText(lrc).text);
+    if (autoRoman && !corrected) setRoman("");
     setPlain("");
     setSource(source + " · estimated timing");
     setMessage("Approximate line timestamps generated.");

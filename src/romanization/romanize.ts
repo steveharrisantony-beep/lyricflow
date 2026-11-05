@@ -349,7 +349,7 @@ const romanizeLineCache = new Map<string, string>();
 
 export function cacheRomanizedLine(original: string, romanized: string): void {
   const key = original.trim();
-  if (!key || !romanized.trim()) return;
+  if (!key || !isUsableRomanizedLine(original, romanized)) return;
   if (romanizeLineCache.size > 4000) {
     const firstKey = romanizeLineCache.keys().next().value;
     if (firstKey !== undefined) romanizeLineCache.delete(firstKey);
@@ -358,7 +358,8 @@ export function cacheRomanizedLine(original: string, romanized: string): void {
 }
 
 export function getCachedRomanizedLine(original: string): string | undefined {
-  return romanizeLineCache.get(original.trim());
+  const cached = romanizeLineCache.get(original.trim());
+  return cached && isUsableRomanizedLine(original, cached) ? cached : undefined;
 }
 
 // ============================================================================
@@ -1149,6 +1150,7 @@ async function googleRomanizeChunkDirect(
     'https://translate.googleapis.com/translate_a/single?client=gtx',
   ];
   for (const base of endpoints) {
+    signal?.throwIfAborted();
     try {
       const params = new URLSearchParams({ sl: sourceLang, tl: 'en', q: text });
       params.append('dt', 't');
@@ -1172,6 +1174,7 @@ async function googleRomanizeChunkDirect(
         }
       }
     } catch {
+      signal?.throwIfAborted();
       // Try next endpoint or backend proxy
     }
   }
@@ -1188,6 +1191,7 @@ export async function romanizeLinesAsync(
   signal?: AbortSignal,
   allowedCodes?: readonly string[]
 ): Promise<string[]> {
+  signal?.throwIfAborted();
   if (!lines.length || isLatinScript(lines)) {
     return [...lines];
   }
@@ -1228,47 +1232,51 @@ export async function romanizeLinesAsync(
     if (res.ok) {
       const data = (await res.json()) as { romanized?: string[] };
       if (Array.isArray(data?.romanized) && data.romanized.length === uncachedLines.length) {
+        signal?.throwIfAborted();
         uncachedIndices.forEach((origIdx, i) => {
-          const rawRom = data.romanized![i] || output[origIdx];
-          const cleaned = stripDiacritics(preserveCasing(lines[origIdx], rawRom)).trim();
-          if (cleaned) {
+          const candidate = data.romanized![i];
+          if (typeof candidate !== 'string') return;
+          const cleaned = stripDiacritics(preserveCasing(lines[origIdx], candidate)).trim();
+          if (isUsableRomanizedLine(lines[origIdx], cleaned)) {
             output[origIdx] = cleaned;
             cacheRomanizedLine(lines[origIdx], cleaned);
           }
         });
-        return output;
+        if (uncachedIndices.every(index => isUsableRomanizedLine(lines[index], output[index]))) return output;
       }
     }
   } catch {
+    signal?.throwIfAborted();
     // Fall back to direct chunked Google dt=rm calls
   }
 
   // 2. Direct chunked Google dt=rm calls (`spotify-karaoke` `googleProcess`)
-  const { chunks } = chunkByCharCount(uncachedLines, 500);
+  const pendingIndices = uncachedIndices.filter(index => !isUsableRomanizedLine(lines[index], output[index]));
+  const pendingLines = pendingIndices.map(index => lines[index]);
+  const { chunks } = chunkByCharCount(pendingLines, 500);
   const romanizedFlat: string[] = [];
   for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
-    if (signal?.aborted) break;
+    signal?.throwIfAborted();
     const chunk = chunks[cIdx];
     const joined = chunk.join('\n');
     const romText = await googleRomanizeChunkDirect(joined, sourceLang, signal);
-    if (romText && romText.trim()) {
-      const split = romText.trim().split('\n');
-      for (let i = 0; i < chunk.length; i++) {
-        romanizedFlat.push(split[i]?.trim() || romanizeLocallySync(chunk[i], allowedCodes));
-      }
-    } else {
-      for (const l of chunk) {
-        romanizedFlat.push(romanizeLocallySync(l, allowedCodes));
-      }
+    const split = romText?.trim().split(/\r?\n/);
+    for (let i = 0; i < chunk.length; i++) {
+      romanizedFlat.push(split?.length === chunk.length
+        ? split[i].trim() || romanizeLocallySync(chunk[i], allowedCodes)
+        : romanizeLocallySync(chunk[i], allowedCodes));
     }
   }
 
-  uncachedIndices.forEach((origIdx, i) => {
+  signal?.throwIfAborted();
+  pendingIndices.forEach((origIdx, i) => {
     const candidate = romanizedFlat[i];
     if (candidate) {
       const cleaned = stripDiacritics(preserveCasing(lines[origIdx], candidate)).trim();
-      output[origIdx] = cleaned;
-      cacheRomanizedLine(lines[origIdx], cleaned);
+      if (isUsableRomanizedLine(lines[origIdx], cleaned)) {
+        output[origIdx] = cleaned;
+        cacheRomanizedLine(lines[origIdx], cleaned);
+      }
     }
   });
 
@@ -1296,6 +1304,7 @@ export async function romanizeLrcTextAsync(
   );
   if (isLatinScript(plainLines)) return '';
   const romanizedPlain = await romanizeLinesAsync(plainLines, signal, allowedCodes);
+  signal?.throwIfAborted();
   return rawLines
     .map((rawLine, idx) => {
       const timeTags = (rawLine.match(/\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]/g) || []).join('');
@@ -1309,4 +1318,30 @@ export function hasDistinctRomanized(original?: string, romanized?: string): boo
   if (!original || !romanized) return false;
   const clean = (s: string) => s.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
   return Boolean(romanized.trim()) && clean(original) !== clean(romanized);
+}
+
+
+// A response containing the source script is still an unresolved line.
+export function isUsableRomanizedLine(original: string, candidate: string): boolean {
+  return hasDistinctRomanized(original, candidate) && isLatinScript(candidate.replace(/[^\p{L}\p{M}]+/gu, ''));
+}
+
+const lyricBody = (text: string) => text.replace(/\[[^\]]*\]|<[^>]*>/g, '').trim();
+
+export function needsRomanization(text: string, allowedCodes?: readonly string[]): boolean {
+  return text.split(/\r?\n/).some(line => {
+    const body = lyricBody(line);
+    return Boolean(body && !isLatinScript(body) && isLanguageAllowedForRomanization(body, allowedCodes));
+  });
+}
+
+export function hasCompleteRomanization(original: string, candidate: string, allowedCodes?: readonly string[]): boolean {
+  if (!candidate || !needsRomanization(original, allowedCodes)) return false;
+  const before = original.split(/\r?\n/), after = candidate.split(/\r?\n/);
+  if (before.length !== after.length) return false;
+  return before.every((line, index) => {
+    const body = lyricBody(line);
+    return !body || isLatinScript(body) || !isLanguageAllowedForRomanization(body, allowedCodes) ||
+      isUsableRomanizedLine(body, lyricBody(after[index]));
+  });
 }
