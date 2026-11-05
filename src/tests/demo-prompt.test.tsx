@@ -13,11 +13,15 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.useRealTimers(); });
 const click = (text:string) => [...host.querySelectorAll('button')].find(button => button.textContent?.includes(text))!.click();
 
-it('counts down for five seconds and dismisses without starting music', async () => {
+it('counts down for fifteen seconds and dismisses without starting music', async () => {
   const onClose = vi.fn(), onPlay = vi.fn();
   await act(async () => root.render(<DemoPrompt autoDismiss onClose={onClose} onPlay={onPlay} />));
-  expect(host.querySelector('.demo-countdown')?.textContent).toBe('5s');
-  await act(async () => vi.advanceTimersByTimeAsync(4999));
+  expect(host.querySelector('.demo-countdown')?.textContent).toBe('15s');
+  expect(host.querySelector<HTMLElement>('.demo-timer-track > span')?.style.width).toBe('100%');
+  await act(async () => vi.advanceTimersByTimeAsync(5000));
+  expect(host.querySelector('.demo-countdown')?.textContent).toBe('10s');
+  expect(onClose).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTimeAsync(9999));
   expect(onClose).not.toHaveBeenCalled();
   await act(async () => vi.advanceTimersByTimeAsync(1));
   expect(onClose).toHaveBeenCalledOnce(); expect(onPlay).not.toHaveBeenCalled();
@@ -29,7 +33,7 @@ it('stops the timer while loading and aborts work if the user cancels', async ()
   await act(async () => root.render(<DemoPrompt autoDismiss onClose={onClose} onPlay={onPlay} />));
   await act(async () => { click('Play demo'); click('Play demo'); });
   expect(onPlay).toHaveBeenCalledOnce();
-  await act(async () => vi.advanceTimersByTimeAsync(10000));
+  await act(async () => vi.advanceTimersByTimeAsync(20000));
   expect(onClose).not.toHaveBeenCalled();
   expect(host.textContent).toContain('Loading demo');
   await act(async () => click('Cancel'));
@@ -39,7 +43,7 @@ it('stops the timer while loading and aborts work if the user cancels', async ()
 it('keeps the settings invitation open and allows retry after a failed request', async () => {
   const onClose = vi.fn(), onPlay = vi.fn().mockRejectedValueOnce(new Error('JioSaavn unavailable')).mockResolvedValueOnce(undefined);
   await act(async () => root.render(<DemoPrompt autoDismiss={false} onClose={onClose} onPlay={onPlay} />));
-  await act(async () => vi.advanceTimersByTimeAsync(10000));
+  await act(async () => vi.advanceTimersByTimeAsync(20000));
   expect(onClose).not.toHaveBeenCalled();
   await act(async () => click('Play demo'));
   expect(host.querySelector('[role="alert"]')?.textContent).toBe('JioSaavn unavailable');

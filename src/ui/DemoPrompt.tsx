@@ -2,19 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 import { LoaderCircle, Play } from 'lucide-react';
 import './demo.css';
 
+const INVITATION_SECONDS = 15;
+
 export default function DemoPrompt({ autoDismiss, onClose, onPlay }: {
   autoDismiss: boolean;
   onClose: () => void;
   onPlay: (signal: AbortSignal) => Promise<void>;
 }) {
   const [phase, setPhase] = useState<'offer' | 'loading' | 'error'>('offer');
-  const [remaining, setRemaining] = useState(5);
+  const [remaining, setRemaining] = useState(INVITATION_SECONDS);
   const [error, setError] = useState('');
   const request = useRef<AbortController | null>(null);
   useEffect(() => () => request.current?.abort(), []);
   useEffect(() => {
     if (!autoDismiss || phase !== 'offer') return;
-    const deadline = Date.now() + 5000;
+    const deadline = Date.now() + INVITATION_SECONDS * 1000;
     const tick = () => {
       const seconds = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
       setRemaining(seconds);
@@ -44,7 +46,7 @@ export default function DemoPrompt({ autoDismiss, onClose, onPlay }: {
   };
 
   return <section className="demo-prompt" role="dialog" aria-labelledby="demo-title" aria-describedby="demo-description" aria-busy={phase === 'loading'}>
-    {autoDismiss && phase === 'offer' && <div className="demo-timer-track" aria-hidden="true"><span style={{ width: `${remaining * 20}%` }} /></div>}
+    {autoDismiss && phase === 'offer' && <div className="demo-timer-track" aria-hidden="true"><span style={{ width: `${remaining / INVITATION_SECONDS * 100}%` }} /></div>}
     <div className="demo-prompt-heading"><h2 id="demo-title">Want a quick demo?</h2>
       {autoDismiss && phase === 'offer' && <span className="demo-countdown">{remaining}s</span>}
     </div>
