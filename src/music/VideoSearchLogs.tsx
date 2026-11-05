@@ -9,7 +9,9 @@ export default function VideoSearchLogs() {
    <div>
     <strong>{entry.mode} · {new Date(entry.time).toLocaleTimeString()}</strong>
     <small>{entry.status}</small>
-    {entry.mode==='SponsorBlock'?<>
+    {entry.mode==='Playback recovery'?<>
+     <small>Video ID {entry.videoId}</small>
+    </>:entry.mode==='SponsorBlock'?<>
      <small>{entry.title||entry.videoId}</small>
      <small>{entry.start.toFixed(2)}s → {entry.end.toFixed(2)}s · {(entry.end-entry.start).toFixed(2)}s skipped</small>
      <small>Video ID {entry.videoId}</small>
