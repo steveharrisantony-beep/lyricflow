@@ -2121,10 +2121,6 @@ html.android-tv :is(button,a,input,select,textarea,summary,[tabindex]):focus {
               0 0 0 11px rgba(184, 237, 207, 0.3);
   scroll-margin: 42px;
 }
-html.android-tv :is(button,a,input,select,textarea,summary,[tabindex]):focus:not(:disabled) {
-  position: relative;
-  z-index: 2;
-}
 @media (max-width: 1050px) {
   html.android-tv .workspace {
     grid-template-columns: minmax(0, 1fr);
