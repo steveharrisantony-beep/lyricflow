@@ -844,11 +844,14 @@ export default function CinematicStage(props:CinematicProps){
     }else if(evt==='onStateChange'&&typeof data.info==='number'){
      ytPlayerStateRef.current=data.info;
      if(data.info===1){
+      videoRecoveryRef.current.progressAt=Date.now();
       setPlaybackError('');
       setPlayingVideoKey(playbackKey);
       ytEndedEarlyRef.current=false;
       setYtVideoEnded(false);
      }
+     if(data.info===2&&!latestPropsRef.current.audioPaused&&latestPropsRef.current.youtubeBackgroundMode==='video')
+      setPlayingVideoKey('');
      if(data.info===0){
       ytEndedEarlyRef.current=true;
       setYtVideoEnded(true);
@@ -888,12 +891,20 @@ export default function CinematicStage(props:CinematicProps){
      }
      if(info.adState===1||info.isAdPlaying===true)return;
      if(ct!==undefined){
+      // A nonzero seek position alone does not prove the video is playing.
+      // Only an advancing YouTube clock in PLAYING state refreshes the watchdog.
+      const recovery=videoRecoveryRef.current;
+      if(ytPlayerStateRef.current===1){
+       if(recovery.lastTime>=0&&ct>recovery.lastTime+0.05&&ct-recovery.lastTime<3)
+        recovery.progressAt=Date.now();
+       recovery.lastTime=ct;
+      }
       lastSyncTimeRef.current=ct;
       if(!latestPropsRef.current.hasSeparateAudioStream){
        setVirtualMediaTime(ct);
        latestPropsRef.current.onYoutubeTimeUpdate?.(ct,dur);
       }
-      if(ct>0.02&&!latestPropsRef.current.audioPaused&&(!dur||ct<dur-0.45)){
+      if(ct>0.02&&ytPlayerStateRef.current===1&&!latestPropsRef.current.audioPaused&&(!dur||ct<dur-0.45)){
        setPlaybackError('');
        setPlayingVideoKey(playbackKey);
        if(dur&&ct<dur-1.5&&ytEndedEarlyRef.current){
@@ -915,11 +926,14 @@ export default function CinematicStage(props:CinematicProps){
      const pState=typeof info.playerState==='number'?info.playerState:undefined;
      if(pState!==undefined)ytPlayerStateRef.current=pState;
      if(pState===1){
+      if(ytPlayerStateRef.current!==1)videoRecoveryRef.current.progressAt=Date.now();
       setPlaybackError('');
       setPlayingVideoKey(playbackKey);
       ytEndedEarlyRef.current=false;
       setYtVideoEnded(false);
      }
+     if(pState===2&&!latestPropsRef.current.audioPaused&&latestPropsRef.current.youtubeBackgroundMode==='video')
+      setPlayingVideoKey('');
      if(pState===0){
       ytEndedEarlyRef.current=true;
       setYtVideoEnded(true);
