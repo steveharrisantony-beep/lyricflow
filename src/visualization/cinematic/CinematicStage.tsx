@@ -694,6 +694,10 @@ export default function CinematicStage(props:CinematicProps){
   if(!recoveryEligible||!ytId||videoRecoveryRef.current.finished)return;
   const timer=window.setInterval(()=>{
    const state=videoRecoveryRef.current;
+   const current=latestPropsRef.current;
+   if(document.visibilityState==='hidden'||current.audioPaused||
+      current.hideVideo||current.youtubeBackgroundMode==='theme'||
+      current.videoSearchPending||current.advertisementPlaying)return;
    if(state.finished||state.identity!==[props.recordingKey||'',ytId].join('|'))return;
    const verified=playingVideoKey===playbackKey;
    const threshold=verified?AUTO_VIDEO_STALL_TIMEOUT_MS:AUTO_VIDEO_START_TIMEOUT_MS;
