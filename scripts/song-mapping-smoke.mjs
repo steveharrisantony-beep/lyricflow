@@ -77,7 +77,9 @@ const song = {
 };
 const video = {
   ...song,
-  title: "Test Song (Official Lyrics Video) | Test Author",
+  // A music-video fixture keeps overlay lyrics visible with the app's default
+  // "hide overlay lyrics on lyrical videos" preference.
+  title: "Test Song (Official Music Video) | Test Author",
   viewCount: 1000,
   id: "yt_abcdefghijk",
   provider: "resolver",
