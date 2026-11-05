@@ -2,6 +2,7 @@ package com.steveharrisantony.lyricflow;
 
 import com.getcapacitor.BridgeActivity;
 import android.os.Bundle;
+import android.content.pm.ActivityInfo;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.WebSettings;
@@ -18,6 +19,9 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(TvDevicePlugin.class);
         registerPlugin(GoogleSignInPlugin.class);
         super.onCreate(savedInstanceState);
+        boolean tv = getPackageManager().hasSystemFeature("android.software.leanback")
+                || getPackageManager().hasSystemFeature("android.hardware.type.television");
+        if (tv) setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         CookieManager cookieManager = CookieManager.getInstance();
         cookieManager.setAcceptCookie(true);
@@ -30,6 +34,7 @@ public class MainActivity extends BridgeActivity {
             settings.setMediaPlaybackRequiresUserGesture(false);
             webView.setFocusable(true);
             webView.setFocusableInTouchMode(true);
+            if (tv) webView.requestFocus();
         }
     }
 
