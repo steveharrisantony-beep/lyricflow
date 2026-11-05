@@ -2149,3 +2149,28 @@ html.android-tv :is(button,a,input,select,textarea,summary,[tabindex]):focus {
     max-height: none;
   }
 }
+
+
+/* Android 15+ draws app content edge-to-edge. Keep the normal app header
+   below the actual status bar (or CSS safe area) without moving fullscreen. */
+html:not(.android-tv) .shell:not(.performance-mode) {
+  padding-top: max(
+    calc(24px + env(safe-area-inset-top, 0px)),
+    calc(24px + var(--lyricflow-status-inset, 0px))
+  );
+}
+.video-log-current { display: grid; gap: 12px; }
+.video-log-summary {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.video-log-summary > strong { overflow-wrap: anywhere; }
+.video-log-summary > p { font-size: 12px; color: var(--muted); }
+.video-log-stats { display: flex; flex-wrap: wrap; gap: 10px 20px; }
+.video-log-stats span { font-size: 12px; color: var(--muted); }
+.video-log-stats strong { color: var(--ink); }
+.video-log-query { display: block; padding: 7px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
