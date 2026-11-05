@@ -150,6 +150,7 @@ try {
           );
       }
       if (width === 390) {
+        await page.getByRole("tab", { name: "Others", exact: true }).click();
         await page.locator(".youtube-account-control>button").click();
         if (
           await page
