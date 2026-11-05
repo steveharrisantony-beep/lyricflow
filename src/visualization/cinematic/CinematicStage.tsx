@@ -23,7 +23,7 @@ import {GraphicCompositions,type GraphicSystem} from './procedural/GraphicCompos
 import {useYouTubeAuth} from '../../music/youtubeAuth';
 import {useNativePlaybackPolicy} from '../../audio/nativePlaybackPolicy';
 import {isYouTubeTopicChannel} from '../../music/videoMatching';
-import {logVideoPlaybackRecovery} from '../../music/videoSearchHistory';
+import {logVideoPlaybackRecovery,logVideoPlaybackError} from '../../music/videoSearchHistory';
 import {AUTO_VIDEO_START_TIMEOUT_MS,AUTO_VIDEO_STALL_TIMEOUT_MS,MAX_AUTO_VIDEO_RELOADS,shouldMonitorAutoVideo} from '../../music/videoPlaybackRecovery';
 
 export type Quality='High'|'Balanced'|'Performance';
@@ -86,6 +86,8 @@ export interface CinematicProps{
  loadingAnotherVideo?:boolean;
  videoRecoveryMessage?:string;
  onRejectBackgroundVideo?:(videoId:string,reason:string)=>void;
+ onAutoPlaybackExhausted?:(videoId:string)=>void;
+ videoLogKey?:string;
  onVerifiedBackground?:(recordingKey:string,videoId:string|null)=>void;
  onBackgroundVideoMetadata?:(recordingKey:string,metadata:BackgroundVideoMetadata)=>void;
  recordingKey?:string;
@@ -675,9 +677,9 @@ export default function CinematicStage(props:CinematicProps){
 
  // A successful search result proves that a video ID matched, not that the
  // iframe actually started rendering. Retry an unstarted or stalled AUTO match
- // twice, then reject that ID so the existing chooser can try the next match.
+ // twice; after three failed attempts leave the current song without a video.
  const recoveryEligible=shouldMonitorAutoVideo({
-  hasAutoMatch:Boolean(props.onRejectBackgroundVideo),
+  hasAutoMatch:Boolean(props.onAutoPlaybackExhausted),
   videoId:ytId,
   separateAudio:Boolean(props.hasSeparateAudioStream),
   backgroundMode:props.youtubeBackgroundMode||'video',
@@ -720,16 +722,17 @@ export default function CinematicStage(props:CinematicProps){
     state.progressAt=Date.now();
     state.lastTime=-1;
     logVideoPlaybackRecovery(ytId,
-     `Video ${verified?'stalled':'did not start'} · automatic reload ${state.reloads}/${MAX_AUTO_VIDEO_RELOADS}`);
+     `Video ${verified?'stalled':'did not start'} · automatic reload ${state.reloads}/${MAX_AUTO_VIDEO_RELOADS}`,latestPropsRef.current.videoLogKey);
     setPlayingVideoKey('');
     setPlaybackError('');
     setErrorRetryNonce(n=>n+1);
    }else{
     state.finished=true;
     const reason='Auto background video failed to play after 3 attempts';
-    logVideoPlaybackRecovery(ytId,reason+' · trying next matching video');
+    logVideoPlaybackRecovery(ytId,reason+' · no other video will be selected',latestPropsRef.current.videoLogKey);
     setPlayingVideoKey('');
-    latestPropsRef.current.onRejectBackgroundVideo?.(ytId,reason);
+    setPlaybackError(reason);
+    latestPropsRef.current.onAutoPlaybackExhausted?.(ytId);
    }
   },1000);
   return()=>window.clearInterval(timer);
@@ -847,6 +850,7 @@ export default function CinematicStage(props:CinematicProps){
    }else if(evt==='onError'){
     const code=Number(data.info);
      const current=latestPropsRef.current;
+     logVideoPlaybackError(current.youtubeVideoId||mountedVideoId||'',`YouTube embed error ${Number.isFinite(code)?code:'unknown'}`,current.videoLogKey);
      if((code===101||code===150)&&current.youtubeVideoId&&current.onRejectBackgroundVideo){
       current.onRejectBackgroundVideo(current.youtubeVideoId,'Embedding blocked');
       return;
@@ -854,6 +858,7 @@ export default function CinematicStage(props:CinematicProps){
      setCanReplaceVideo(true);
      setPlaybackError(code===101||code===150?'This video does not allow embedded playback. Choose another video.':code===153?'YouTube could not verify this player. Try reloading or choose another video.':'YouTube could not play this video. Try reloading or choose another video.');
    }else if(evt==='onAutoplayBlocked'){
+     logVideoPlaybackError(latestPropsRef.current.youtubeVideoId||mountedVideoId||'','YouTube blocked automatic playback',latestPropsRef.current.videoLogKey);
      setCanReplaceVideo(false);
      setPlaybackError('YouTube blocked automatic playback. Use the player controls or reload the video.');
     }else if(evt==='onStateChange'&&typeof data.info==='number'){
