@@ -1,5 +1,6 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {getExternalSetupStatus,openExternalAppInfoSettings,openExternalNotificationSettings,watchExternalNotificationAccess,type ExternalAudioCaptureMode} from './externalPlayer';
+import {getTvCapabilities,onTvCapabilitiesChange} from '../tv/tvExperience';
 
 type Props={
  notificationAccessGranted:boolean;
@@ -18,6 +19,9 @@ export default function ExternalPlayerSetup({notificationAccessGranted,onNotific
  const [status,setStatus]=useState<{checked:boolean;androidSdk:number|null}>({checked:false,androidSdk:null});
  const [reviewed,setReviewed]=useState(false),[appInfoOpened,setAppInfoOpened]=useState(false);
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
+ const [tvCapabilities,setTvCapabilities]=useState(getTvCapabilities);
+ useEffect(()=>onTvCapabilitiesChange(setTvCapabilities),[]);
+ const microphoneUnavailable=tvCapabilities.isTelevision&&!tvCapabilities.hasMicrophone;
  const live=useRef(false),refreshId=useRef(0);
  const refresh=useCallback(async()=>{
   const id=++refreshId.current;
@@ -83,10 +87,12 @@ export default function ExternalPlayerSetup({notificationAccessGranted,onNotific
    <p>Notification listening is enabled. Choose how the visualizer reacts, then start audio capture.</p>
    <div className="source-pref-pills" role="group" aria-label="External player audio source">
     <button type="button" aria-pressed={audioMode==='internal'} disabled={audioStarting} className={audioMode==='internal'?'active':''} onClick={()=>onAudioModeChange?.('internal')}>Internal Audio</button>
-    <button type="button" aria-pressed={audioMode==='mic'} disabled={audioStarting} className={audioMode==='mic'?'active':''} onClick={()=>onAudioModeChange?.('mic')}>Microphone</button>
+    <button type="button" aria-pressed={audioMode==='mic'} disabled={audioStarting||microphoneUnavailable} className={audioMode==='mic'?'active':''} onClick={()=>onAudioModeChange?.('mic')}>Microphone</button>
    </div>
+   {tvCapabilities.isTelevision&&<p className="muted">On Android TV, external-player detection is available only when the music app exposes a local Android media session. Phone casting alone may not provide track metadata.</p>}
+   {microphoneUnavailable&&<p role="status" className="muted">No TV microphone was detected. Use internal audio capture if your TV supports it, or choose a built-in music source.</p>}
    <p>{audioMode==='internal'?'Internal Audio analyses device playback. Android may label its audio permission “Microphone”. Some devices block this mode; Microphone remains an alternative.':'Microphone analyses music around your device. Audio is processed on the device and is not saved as a recording.'}</p>
-   <button type="button" className="source-primary" disabled={audioStarting} onClick={audioActive?onStopAudio:onStartAudio}>
+   <button type="button" className="source-primary" disabled={audioStarting||(microphoneUnavailable&&audioMode==='mic')} onClick={audioActive?onStopAudio:onStartAudio}>
     {audioStarting?'Waiting for audio permission…':audioActive?'Stop audio capture':audioMode==='internal'?'Start internal audio':'Start microphone'}
    </button>
    <p className="muted">After you start audio capture, your choice resumes when you reopen LyricFlow. Stop audio capture to turn off automatic listening.</p>
