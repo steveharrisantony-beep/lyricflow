@@ -3,6 +3,11 @@ export const AUTO_VIDEO_START_TIMEOUT_MS = 8000;
 export const AUTO_VIDEO_STALL_TIMEOUT_MS = 12000;
 export const MAX_AUTO_VIDEO_RELOADS = 2;
 
+/** After the initial playback and two reloads, stop: do not choose another video. */
+export function nextAutoVideoRecoveryAction(reloads:number):'reload'|'stop'{
+ return reloads<MAX_AUTO_VIDEO_RELOADS?'reload':'stop';
+}
+
 export interface AutoVideoRecoveryConditions {
   hasAutoMatch: boolean;
   videoId: string | null | undefined;
