@@ -88,13 +88,27 @@ function onRemoteKey(event: KeyboardEvent): void {
     if (closeTvOverlay()) event.preventDefault();
     return;
   }
+  // Hardware media keys control the existing player rather than a separate TV player.
+  const mediaKeys: Record<string,string> = {
+    MediaPlayPause: '[aria-label="Pause track"],[aria-label="Play track"]',
+    MediaPlay: '[aria-label="Play track"]',
+    MediaPause: '[aria-label="Pause track"]',
+    MediaTrackNext: '[aria-label="Next track"]',
+    MediaTrackPrevious: '[aria-label="Previous track"]',
+  };
+  const mediaSelector = mediaKeys[event.key];
+  if (mediaSelector && !isEditing) {
+    const control = document.querySelector<HTMLButtonElement>(mediaSelector);
+    if (control && !control.disabled) { event.preventDefault(); control.click(); }
+    return;
+  }
   if (!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key) || isEditing) return;
   const candidates = tvTargets(activeScope());
   const next = findDirectionalFocus(active, candidates, event.key as Direction);
   if (next) {
     event.preventDefault();
     next.focus({preventScroll: true});
-    next.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'});
+    next.scrollIntoView({block:'nearest',inline:'nearest',behavior:'auto'});
   }
 }
 
