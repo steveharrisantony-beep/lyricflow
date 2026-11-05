@@ -16,7 +16,7 @@ const intro={uuid:'intro',segment:[0,7] as [number,number],category:'music_offto
 let root:Root,host:HTMLDivElement;
 function Probe({recording='one',lyrics=original,shift=0}:{recording?:string;lyrics?:string;shift?:number}){
  const sync=useVideoAutoSync(recording,'abcdefghijk',true,lyrics,shift);
- return <output data-delay={sync.delaySeconds}>{sync.status}</output>;
+ return <output data-delay={sync.delaySeconds} data-sponsor-cut={sync.sponsorBlockCutSeconds}>{sync.status}</output>;
 }
 beforeEach(()=>{
  (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
@@ -30,6 +30,7 @@ it('uses creator captions before SponsorBlock finishes and includes the correcte
  vi.mocked(fetchYouTubeSubtitlesForTrack).mockResolvedValue({lrc:captions,source:'YouTube Subtitles',hasWordSync:false,subtitleTracks:[track]});
  await act(async()=>root.render(<Probe shift={2}/>));
  expect(host.querySelector('output')?.getAttribute('data-delay')).toBe('-12');
+ expect(host.querySelector('output')?.getAttribute('data-sponsor-cut')).toBe('0');
  await act(async()=>finishSponsor([intro]));
  expect(host.querySelector('output')?.getAttribute('data-delay')).toBe('-12');
  expect(host.textContent).toContain('creator YT subtitles');
@@ -39,6 +40,7 @@ it('excludes automatic captions, ignores mute-only segments and uses the leading
  vi.mocked(fetchSponsorBlockSegments).mockResolvedValue([intro]);
  await act(async()=>root.render(<Probe/>));
  expect(host.querySelector('output')?.getAttribute('data-delay')).toBe('-7');
+ expect(host.querySelector('output')?.getAttribute('data-sponsor-cut')).toBe('7');
  expect(computeLeadingNonMusicOffset([{...intro,actionType:'mute'}])).toBe(0);
 });
 it('falls back on a language mismatch and clears stale timing immediately for the next recording',async()=>{

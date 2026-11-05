@@ -5,6 +5,7 @@ import {evaluateBackgroundVideos} from './music/videoMatching';
 import {findYouTubeBackgrounds} from './music/backgroundVideos';
 import {musicResolverBase} from './network/backend';
 import VideoSearchLogs from './music/VideoSearchLogs';
+import {logSponsorBlockSkip} from './music/videoSearchHistory';
 import {isSyncedLyricsSource,lyricProviderName,normalizeLyricSource} from './lyrics/sourceLabels';
 import {selectedPaletteIds,togglePaletteSelection,enableAllPaletteSelections,enableAllPalettesForTheme,type ThemePaletteSelections} from './visualization/cinematic/themeSelection';
 import {normalizeLyricLayout,type LyricLayoutSettings} from './lyrics/lyricLayout';
@@ -1627,6 +1628,25 @@ export default function App({ user = null }: { user?: User | null }) {
   const videoTimingStatus = hasManualVideoDelay
     ? `Manual video delay: ${videoDelaySeconds > 0 ? "+" : ""}${videoDelaySeconds}s`
     : autoVideoSyncStatus;
+
+  const sponsorBlockCutSeconds = hasSeparateAudioStream&&!hasManualVideoDelay
+    ? autoVideoDelaySeconds!==0 ? autoVideoSync.sponsorBlockCutSeconds : effectiveSponsorBlockCutSec
+    : 0;
+  const loggedSponsorBlockCut=useRef({key:'',seconds:0});
+  useEffect(()=>{
+    const cut=Math.min(300,sponsorBlockCutSeconds);
+    if(loggedSponsorBlockCut.current.key!==backgroundSyncKey||cut<=0){
+      loggedSponsorBlockCut.current={key:backgroundSyncKey,seconds:0};
+    }
+    if(cut<=0||!stageYoutubeVideoId||!localPlaying||!isYtVideoBackgroundActive||
+      verifiedBackground?.key!==recordingKey||verifiedBackground.id!==stageYoutubeVideoId||
+      loggedSponsorBlockCut.current.seconds===cut)return;
+    loggedSponsorBlockCut.current={key:backgroundSyncKey,seconds:cut};
+    logSponsorBlockSkip({videoId:stageYoutubeVideoId,title:matchedVideoCandidate?.videoTitle||matchedVideoCandidate?.title||localTrack?.title||'',
+      start:0,end:cut,category:'Leading non-music intro'});
+  },[backgroundSyncKey,sponsorBlockCutSeconds,stageYoutubeVideoId,localPlaying,isYtVideoBackgroundActive,
+    verifiedBackground?.key,verifiedBackground?.id,recordingKey,localTrack?.title,
+    matchedVideoCandidate?.videoTitle,matchedVideoCandidate?.title]);
 
   const hasLoadedLyrics=activeLyrics.recordingKey===recordingKey&&activeLyrics.hasContent;
   const lyricsLoading=Boolean(localTrack&&(

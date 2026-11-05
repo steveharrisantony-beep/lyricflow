@@ -21,13 +21,13 @@ export function useVideoAutoSync(key:string,videoId:string|null,enabled:boolean,
  },[key,videoId,enabled]);
  const current=enabled&&videoId&&state.key===key?state:null;
  return useMemo(()=>{
-  if(!enabled||!videoId)return {delaySeconds:0,status:'',captionStatus:''};
+  if(!enabled||!videoId)return {delaySeconds:0,status:'',captionStatus:'',sponsorBlockCutSeconds:0};
   const match=lyrics&&current?.tracks.length?computeVideoDelayFromSubtitles(lyrics,current.tracks):null;
   if(match?.matched){
    const delaySeconds=Number(Math.max(-300,Math.min(300,match.videoDelaySeconds+lyricPresentationShift)).toFixed(2));
-   return {delaySeconds,status:`Synced via creator YT subtitles (${match.languageCode||'same language'} · ${match.anchorCount} anchors · ${delaySeconds>0?'+':''}${delaySeconds}s)`,captionStatus:current?.captionStatus||''};
+   return {delaySeconds,status:`Synced via creator YT subtitles (${match.languageCode||'same language'} · ${match.anchorCount} anchors · ${delaySeconds>0?'+':''}${delaySeconds}s)`,captionStatus:current?.captionStatus||'',sponsorBlockCutSeconds:0};
   }
   const intro=current?.intro||0;
-  return {delaySeconds:-intro,status:intro>.25?`Cut ${intro.toFixed(1)}s leading non-music intro via SponsorBlock`:current?.pending?'Checking creator subtitles · manual video delay is available':'Direct start (0s offset · adjust manual video delay if needed)',captionStatus:current?.captionStatus||''};
+  return {delaySeconds:-intro,status:intro>.25?`Cut ${intro.toFixed(1)}s leading non-music intro via SponsorBlock`:current?.pending?'Checking creator subtitles · manual video delay is available':'Direct start (0s offset · adjust manual video delay if needed)',captionStatus:current?.captionStatus||'',sponsorBlockCutSeconds:intro};
  },[current,enabled,videoId,lyrics,lyricPresentationShift]);
 }

@@ -2,11 +2,17 @@ import type {SongResult} from './providers';
 
 type VideoSearchLog = {
  id: number;
- query: string;
- mode: 'Autoplay' | 'Search online';
  time: number;
  status: string;
-};
+} & ({mode:'Autoplay'|'Search online';query:string} | {
+ mode:'SponsorBlock';
+ query?:never;
+ videoId:string;
+ title:string;
+ start:number;
+ end:number;
+ category:string;
+});
 
 let entries: VideoSearchLog[] = [];
 let nextId = 0;
@@ -24,10 +30,23 @@ function publish(next: VideoSearchLog[]) {
  for (const listener of listeners) listener();
 }
 
+export function logSponsorBlockSkip({videoId,title,start,end,category}:{
+ videoId:string|undefined;
+ title:string;
+ start:number;
+ end:number;
+ category:string;
+}) {
+ if(!videoId||!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<=start)return;
+ const entry:VideoSearchLog={id:++nextId,time:Date.now(),mode:'SponsorBlock',
+  status:`Skipped ${category}`,videoId,title,start,end,category};
+ publish([entry,...entries].slice(0,30));
+}
+
 /** Store search terms in session memory. Never record request URLs or headers. */
 export async function logVideoSearch(
  query: string,
- mode: VideoSearchLog['mode'],
+ mode: 'Autoplay' | 'Search online',
  run: () => Promise<SongResult[]>,
  signal?: AbortSignal,
 ) {

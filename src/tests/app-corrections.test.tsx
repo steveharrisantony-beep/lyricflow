@@ -3,11 +3,12 @@ import { act, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 vi.mock('../visualization/cinematic/CinematicStage', () => ({ default: () => null, CAMERA_VIEWS: ['Front'] }));
-vi.mock('../audio/LocalPlayer', () => ({ default: (props: { onTrackChange: (track: unknown) => void; onFileChange: (loaded: boolean) => void; onOpenSourceSelector: () => void }) => <div>
+vi.mock('../audio/LocalPlayer', () => ({ default: (props: { onTrackChange: (track: unknown) => void; onFileChange: (loaded: boolean) => void; onOpenSourceSelector: () => void;onActiveChange:(active:boolean)=>void }) => <div>
   <button onClick={() => { props.onTrackChange({ title: 'Original test song', artist: 'Test artist', album: 'Studio', duration: 200, provider: 'local', source: 'manual', confidence: 1 }); props.onFileChange(true); }}>Load fixture audio</button>
   <button onClick={() => { props.onTrackChange({ title: 'Original test song', artist: 'Test artist', album: 'Studio', duration: 200, provider: 'jiosaavn', sourceTrackId: 'saavn_123', source: 'provider', audioSource: 'JioSaavn', confidence: 1 }); props.onFileChange(true); }}>Load JioSaavn fixture</button>
   <button onClick={() => { props.onTrackChange({ title: 'Next test song', artist: 'Test artist', album: 'Studio', duration: 200, provider: 'jiosaavn', sourceTrackId: 'saavn_next', source: 'provider', confidence: 1 }); props.onFileChange(true); }}>Load next JioSaavn fixture</button>
   <button onClick={props.onOpenSourceSelector}>Select source</button>
+  <button onClick={()=>props.onActiveChange(true)}>Fixture playing</button>
 </div> }));
 vi.mock('../music/providers', async importOriginal => ({
   ...await importOriginal<typeof import('../music/providers')>(),
@@ -634,6 +635,37 @@ it('keeps online search independent of a pending preload until a video is chosen
   draw.mockRestore();
   search.mockImplementation(original);
  }
+});
+
+it.each([false,true])('logs a SponsorBlock intro only when the playing background uses it (manual delay %s)',async(manual)=>{
+ const stage=await import('../visualization/cinematic/CinematicStage');
+ const sponsor=await import('../music/sponsorBlock'),captions=await import('../lyrics/appleLyrics');
+ const {getVideoSearchLogs}=await import('../music/videoSearchHistory');
+ let props:Parameters<typeof stage.default>[0]|undefined;
+ const draw=vi.spyOn(stage,'default').mockImplementation(value=>{props=value;return <></>;});
+ const segments=vi.spyOn(sponsor,'fetchSponsorBlockSegments').mockResolvedValue([
+  {uuid:'intro-log-fixture',segment:[0,7],category:'intro',actionType:'skip'},
+ ]);
+ const subtitles=vi.spyOn(captions,'fetchYouTubeSubtitlesForTrack').mockResolvedValue(null);
+ const before=getVideoSearchLogs()[0]?.id||0;
+ const cuts=()=>getVideoSearchLogs().filter(entry=>entry.id>before&&entry.mode==='SponsorBlock');
+ try{
+  await act(async()=>click('Load JioSaavn fixture'));
+  expect(props?.videoDelaySeconds).toBe(-7);
+  expect(cuts()).toHaveLength(0);
+  if(manual)await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="Increase video delay 0.5s"]')!.click());
+  await act(async()=>click('Fixture playing'));
+  expect(cuts()).toHaveLength(0);
+  await act(async()=>props!.onVerifiedBackground!(props!.recordingKey!,'abcdefghijk'));
+  if(manual){expect(cuts()).toHaveLength(0);return;}
+  expect(cuts()).toHaveLength(1);
+  expect(cuts()[0]).toMatchObject({videoId:'abcdefghijk',start:0,end:7,category:'Leading non-music intro'});
+  await act(async()=>props!.onVerifiedBackground!(props!.recordingKey!,null));
+  await act(async()=>props!.onVerifiedBackground!(props!.recordingKey!,'abcdefghijk'));
+  expect(cuts()).toHaveLength(1);
+  await act(async()=>click('Logs'));
+  expect(host.querySelector('#settings-page-logs')?.textContent).toContain('7.00s skipped');
+ }finally{draw.mockRestore();segments.mockRestore();subtitles.mockRestore();}
 });
 
 it('uses the first preloaded video when a published mapping points to a different upload', async () => {
