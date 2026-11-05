@@ -83,7 +83,19 @@ function closeTvOverlay(): boolean {
 function onRemoteKey(event: KeyboardEvent): void {
   if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
   const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  const isEditing = Boolean(active?.closest('input,textarea,select,[contenteditable="true"]'));
+  const editor = active?.closest<HTMLElement>('input,textarea,select,[contenteditable="true"]');
+  const editorType = editor instanceof HTMLInputElement ? editor.type : '';
+  const isEditing = Boolean(editor && editorType !== 'checkbox' && editorType !== 'radio');
+  // Settings tabs implement their own Arrow-key navigation and roving tabindex.
+  if (active?.closest('[role="tablist"]') && event.key.startsWith('Arrow')) return;
+  // Keep caret movement, sliders and native dropdown selection functional.
+  const horizontal = event.key === 'ArrowLeft' || event.key === 'ArrowRight';
+  const vertical = event.key === 'ArrowUp' || event.key === 'ArrowDown';
+  const nativeArrow = Boolean(editor && (
+    (horizontal && (editor.matches('textarea,[contenteditable="true"]') ||
+      (editor instanceof HTMLInputElement && editorType !== 'checkbox' && editorType !== 'radio'))) ||
+    (vertical && editor.matches('select'))
+  ));
   if ((event.key === 'Escape' || event.key === 'Backspace') && !isEditing) {
     if (closeTvOverlay()) event.preventDefault();
     return;
@@ -102,7 +114,7 @@ function onRemoteKey(event: KeyboardEvent): void {
     if (control && !control.disabled) { event.preventDefault(); control.click(); }
     return;
   }
-  if (!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key) || isEditing) return;
+  if (!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key) || nativeArrow) return;
   const candidates = tvTargets(activeScope());
   const next = findDirectionalFocus(active, candidates, event.key as Direction);
   if (next) {
