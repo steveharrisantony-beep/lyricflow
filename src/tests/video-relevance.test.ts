@@ -15,12 +15,12 @@ it('matches any complete song-title word, ignoring punctuation and case',()=>{
  expect(check(video('Siri മഴ | Visualizer'),'മഴ')).toEqual([]);
  expect(check(video('Siri മഴേ | Visualizer'),'മഴ')).toEqual(['No song-title word in the video title']);
 });
-it('uses only the five requested keywords and allows a keyword in the original title',()=>{
- for(const word of ['jukebox','cover','reaction','karaoke','reply']){
+it('rejects configured keywords unless they occur in the original song title',()=>{
+ for(const word of ['jukebox','cover','reaction','karaoke','reply','audio']){
   expect(check(video(`Road [${word.toUpperCase()}]`))).toEqual([`Rejected keyword: ${word}`]);
   expect(check(video(`Road [${word}]`),`Road ${word}`)).toEqual([]);
  }
- expect(check(video('Ocean Coverland Replies Remix Live Full Audio Visualizer Shorts'))).toEqual([]);
+ expect(check(video('Ocean Coverland Replies Remix Live Full Audiophile Visualizer Shorts'))).toEqual([]);
 });
 it('reports each structural rejection independently',()=>{
  const cases:[Partial<SongResult>,string][]=[

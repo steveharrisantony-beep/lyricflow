@@ -15,7 +15,7 @@ view counts rank below known counts. The video title must share at least one
 complete word with the song title, ignoring symbols and case. Videos with invalid IDs, explicit embedding
 blocks, static content, audio-track classifications, Topic channels, or an
 `Audio Track` album are rejected. Titles containing `jukebox`, `cover`,
-`reaction`, `karoke`, or `reply` are rejected unless the word is in the song
+`reaction`, `karoke`, `reply`, or `audio` are rejected unless the word is in the song
 title. Both preferences use these same filters. Lyrical mode does not require
 `lyric`, `lyrics`, or `lyrical` in the video title.
 
