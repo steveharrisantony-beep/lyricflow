@@ -102,6 +102,7 @@ try {
   );
   await page.getByRole("button", { name: "Pause track", exact: true }).click();
   await page.getByRole("tab", { name: "Song Mapping", exact: true }).click();
+  await page.locator(".lyrics-mapping-section > summary").click();
   await page
     .getByRole("button", { name: "Edit or import lyrics", exact: true })
     .click();
@@ -135,9 +136,9 @@ try {
       ),
     );
   }
+  await page.getByRole("button", { name: "Close editor", exact: true }).click();
   await page.setViewportSize({ width: 800, height: 1100 });
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await page.getByRole("button", { name: "Close editor", exact: true }).click();
   await page
     .getByRole("button", { name: "Close settings", exact: true })
     .last()

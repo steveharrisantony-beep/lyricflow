@@ -90,9 +90,9 @@ clip.writeUInt32LE(clip.length - 44, 40);
 let lastQuery = "",
   videoSearchRequests = 0;
 const videoQueries = [];
-let releaseApple;
-const appleReady = new Promise((resolve) => {
-  releaseApple = resolve;
+let releasePreferred;
+const preferredReady = new Promise((resolve) => {
+  releasePreferred = resolve;
 });
 await page.route("**/music/**", (r) =>
   r.fulfill({
@@ -148,22 +148,20 @@ await page.route("**/music/sponsorblock/**", (r) =>
     },
   }),
 );
-await page.route("**/music/lyrics**", async (route) => {
-  if (new URL(route.request().url()).searchParams.get("source") === "apple") {
-    await appleReady;
-    return route.fulfill({
-      json: {
-        lrc: "[00:01.00]<00:01.00>Preferred <00:02.00>Apple<00:04.50>\n[00:05.00]Next Apple line",
-        hasWordSync: true,
-        source: "Apple Library",
-        sourceUrl: "https://music.apple.com/fixture",
-      },
-    });
-  }
-  return route.fulfill({
-    status: 404,
-    json: { detail: "No fixture fallback" },
-  });
+// Exercise the current staged provider API: LRCLIB responds before lrc.red.
+await page.route("**/music/lyrics-stage**", async route => {
+  const provider = new URL(route.request().url()).searchParams.get("provider");
+  if (provider === "isrc") await preferredReady;
+  const candidate = provider === "lrclib" ? {
+    id:"lrclib:42",title:song.title,artist:song.artist,duration:200,
+    source:"LRCLIB",sourceUrl:"https://lrclib.net/api/get/42",
+    lrc:"[00:01.00]Fast library line\n[00:05.00]Next library line",
+  } : provider === "isrc" ? {
+    id:"isrc:fixture",title:song.title,artist:song.artist,duration:200,
+    source:"lrc.red",sourceUrl:"https://lrc.red/s/fixture",
+    lrc:"[00:01.00]<00:01.00>Preferred <00:02.00>synced<00:04.50>\n[00:05.00]<00:05.00>Next <00:06.00>preferred <00:07.00>line<00:09.00>",
+  } : null;
+  await route.fulfill({json:{candidates:candidate?[candidate]:[],failures:[]}});
 });
 await page.route("**/music/search**", (route) => {
   const p = new URL(route.request().url()).searchParams;
@@ -267,7 +265,7 @@ try {
     existingSearches,
     "The chooser must reuse automatic candidates",
   );
-  assert.deepEqual(videoQueries, ["Test Song Test Author video"]);
+  assert.deepEqual(videoQueries, ["Test Song Music Video"]);
   await page.getByRole("button", { name: "Use video", exact: true }).click();
   await page.waitForFunction(() =>
     document.querySelector("iframe")?.src.includes("abcdefghijk"),
@@ -281,16 +279,16 @@ try {
       .getAttribute("data-background-state"),
     "themes",
   );
-  const initialFrame = page
-    .frames()
-    .find((f) => f.url().includes("youtube.com/embed/"));
-  await initialFrame.evaluate(() => {
-    window.holdPlayback = false;
-    parent.postMessage(
-      JSON.stringify({ event: "onStateChange", info: 1 }),
-      "*",
-    );
-  });
+  const startFixtureVideo = async () => {
+    const frame = await (await page.locator("iframe").elementHandle()).contentFrame();
+    await frame.waitForFunction(() => Boolean(window.fixtureAudio));
+    await frame.evaluate(() => {
+      window.holdPlayback = false;
+      parent.postMessage(JSON.stringify({event:"onReady"}), "*");
+    });
+    await frame.waitForFunction(() => !window.fixtureAudio.paused);
+  };
+  await startFixtureVideo();
   await page.waitForFunction(
     () =>
       getComputedStyle(document.querySelector(".theme-layer")).visibility ===
@@ -315,6 +313,7 @@ try {
   assert.equal(await page.locator("audio").evaluate((a) => a.paused), false);
   await page.getByRole("tab", { name: "Background", exact: true }).click();
   await page.getByRole("button", { name: "Video", exact: true }).click();
+  await startFixtureVideo();
   await page.getByRole("tab", { name: "Song Mapping", exact: true }).click();
   await page.waitForFunction(
     () =>
@@ -329,15 +328,11 @@ try {
   await page.waitForFunction(() =>
     document.body.textContent.includes("Synced via creator YT subtitles"),
   );
-  assert.ok(
-    Object.values(
-      JSON.parse(
-        await page.evaluate(
-          () => localStorage.getItem("lyricflow.v3.guest.songMappings") || "{}",
-        ),
-      ),
-    ).some((m) => m.video?.delaySeconds === null),
+  assert.deepEqual(
+    JSON.parse(await page.evaluate(() => localStorage.getItem("lyricflow.v3.guest.songMappings") || "{}")),
+    {}, "Video selection remains temporary until Save mapping is clicked",
   );
+  await page.locator(".video-mapping-section > summary").click();
   assert.equal(await page.locator("audio").getAttribute("src"), originalAudio);
   const searchesBeforePreferenceChange = videoSearchRequests;
   await page
@@ -345,9 +340,9 @@ try {
     .selectOption("lyrics");
   assert.equal(videoSearchRequests, searchesBeforePreferenceChange, "A mapped video bypasses automatic search");
   assert.ok((await page.locator("iframe").getAttribute("src")).includes("abcdefghijk"));
-  // The fast library must render without waiting for Apple; upgrading must wait for this line's end.
+  // The fast library renders without waiting for the preferred provider; handoff waits for the line end.
   await page.waitForFunction(() =>
-    document.body.textContent.includes("LyricFlow Engine · LRC Library"),
+    document.querySelector(".lyric-provider-badge")?.textContent.includes("LRC Library"),
   );
   await page.locator("audio").evaluate(async (audio) => {
     audio.currentTime = 1.5;
@@ -359,7 +354,7 @@ try {
       .querySelector(".cinematic-canvas")
       ?.dataset.lyricText.includes("Fast library"),
   );
-  releaseApple();
+  releasePreferred();
   await page.waitForFunction(() =>
     document.body.textContent.includes(
       "switching after the current line finishes",
@@ -371,12 +366,12 @@ try {
     ).includes("Fast library"),
   );
   await page.locator("audio").evaluate((audio) => {
-    audio.currentTime = 3.6;
+    audio.currentTime = 6;
   });
   await page.waitForFunction(() =>
     document
       .querySelector(".cinematic-canvas")
-      ?.dataset.lyricText.includes("Preferred Apple"),
+      ?.dataset.lyricText.includes("Next preferred line"),
   );
   await page.waitForFunction(() =>
     document.body.textContent.includes(
@@ -389,6 +384,7 @@ try {
   await page.getByRole("button", { name: "Save delay", exact: true }).click();
   await page.getByLabel("Video delay seconds", { exact: true }).fill("-2");
   await page.getByRole("button", { name: "Save delay", exact: true }).click();
+  await page.locator(".save-song-button").click();
   await page.waitForFunction(() =>
     Object.values(
       JSON.parse(
@@ -396,6 +392,7 @@ try {
       ),
     ).some((m) => m.video?.delaySeconds === -2),
   );
+  await page.locator(".lyrics-mapping-section > summary").click();
   await page
     .getByRole("button", { name: "Edit or import lyrics", exact: true })
     .click();
@@ -413,6 +410,7 @@ try {
       .querySelector(".lyrics-editor textarea")
       ?.value.includes("Original test lyric"),
   );
+  await page.locator(".save-song-button").click();
   await page.waitForFunction(() =>
     Object.values(
       JSON.parse(
@@ -425,6 +423,7 @@ try {
     await page.getByLabel("Lyrics delay seconds", { exact: true }).inputValue(),
     "-1.25",
   );
+  await page.locator(".save-song-button").click();
   await page.waitForFunction(() =>
     Object.values(
       JSON.parse(
@@ -486,7 +485,7 @@ try {
     .locator(".song-result")
     .first()
     .getByRole("button", {
-      name: "Play now Test Song (Official Music Video)",
+      name: `Play now ${video.title}`,
       exact: true,
     })
     .click();
@@ -547,7 +546,7 @@ try {
   await primary.waitForFunction(() => !window.fixtureAudio.paused);
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: Permanent video/theme/lyrics layer order; loading themes and animated toggles retain JioSaavn audio; no themes painted onto lyrics; both exact video queries; selected video stays muted; separate signed delays and source/video mappings saved; cached video choices without another search; creator-caption video sync and SponsorBlock fallback; parallel library loading and Apple handoff at line end; YouTube is the sole audio source under themes, ignores old audio events and responds to play/pause.",
+    "PASS: Permanent video/theme/lyrics layer order; loading themes and animated toggles retain JioSaavn audio; no themes painted onto lyrics; both exact video queries; selected video stays muted; separate signed delays and source/video mappings saved; cached video choices without another search; creator-caption video sync and SponsorBlock fallback; parallel LRCLIB loading and lrc.red handoff at line end; YouTube is the sole audio source under themes, ignores old audio events and responds to play/pause.",
   );
 } catch (error) {
   console.error(
@@ -564,7 +563,7 @@ try {
   );
   throw error;
 } finally {
-  releaseApple();
+  releasePreferred();
   await browser.close();
   server.kill();
 }
