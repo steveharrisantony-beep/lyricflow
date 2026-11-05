@@ -234,6 +234,13 @@ try {
   const lyricalBackgrounds=await (await request('/music/search?'+backgroundParams)).json();
   assert.equal(youtubeSearchRequests,beforeBackgroundSearch+2,'Lyrical preference sends a separate Lyric Video query to YouTube');
   assert.deepEqual(lyricalBackgrounds.data.map(video=>video.youtubeVideoId),backgrounds.data.map(video=>video.youtubeVideoId));
+  const beforeRetry=youtubeSearchRequests;
+  await request('/music/search?'+backgroundParams);
+  assert.equal(youtubeSearchRequests,beforeRetry,'A regular background search may reuse its successful cache');
+  const retriedBackgrounds=await request('/music/search?'+backgroundParams+'&refresh=1');
+  assert.equal(retriedBackgrounds.headers.get('cache-control'),'no-store');
+  assert.equal(youtubeSearchRequests,beforeRetry+1,'A background retry must perform a fresh YouTube search');
+  assert.deepEqual((await retriedBackgrounds.json()).data.map(video=>video.youtubeVideoId),backgrounds.data.map(video=>video.youtubeVideoId));
   const resolved = await (await request('/music/resolve/saavn_fixture')).json();
   assert.equal(resolved.format, 'audio');
   assert.equal(resolved.track.primaryArtist,'Example Artist');

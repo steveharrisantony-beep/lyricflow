@@ -8,6 +8,15 @@ Featured artists are kept when present in the source title. They are not appende
 from artist metadata. The browser and embedded backend use the same query builder.
 The picker keeps the first page in the returned relevance order.
 
+If an autoplay search returns zero results, it retries immediately, then after
+1 second, then after 2 seconds (at most four attempts). Retries repeat the same
+query with a fresh YouTube search. The first nonempty response ends retries;
+filtering failures do not trigger another search. Changing songs cancels pending
+requests and retry delays. Every attempt logs its exact query, attempt number,
+retry delay and result count. If all four attempts return zero results, autoplay
+stays off and a separate search-failure entry is recorded. Manual online searches
+remain single searches.
+
 Autoplay checks the first 20 results in order, takes the first five videos that
 pass the filters, and chooses the one with the most views. If fewer than five
 pass, it chooses from those available. Ties preserve relevance order, and missing

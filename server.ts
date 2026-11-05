@@ -974,17 +974,18 @@ async function runYouTubeWebSearch(
 }
 
 const videoSearchCache = new VideoSearchCache<TrackMetadata[]>();
-async function searchBackgroundVideos(title:string,artist:string,preference:'music'|'lyrics',ytAuth?:YouTubeAuthContext){
+async function searchBackgroundVideos(title:string,artist:string,preference:'music'|'lyrics',ytAuth?:YouTubeAuthContext,refresh=false){
   const query = backgroundVideoQuery(title,artist,preference);
   const scope = createHash('sha256').update(JSON.stringify(ytAuth||{})).digest('hex');
   const region = process.env.YOUTUBE_REGION||'IN';
-  return videoSearchCache.get(JSON.stringify(['background',scope,region,query]),async()=>{
+  const load=async()=>{
     const pool = await runYouTubeWebSearch(query,Infinity,ytAuth,true);
     const firstCandidates = pool.slice(0,AUTO_VIDEO_ATTEMPT_LIMIT).filter(video=>/^[\w-]{11}$/.test(video.rawId));
     const hydrated = await hydrateVideoMetadata(firstCandidates,buildYouTubeAuthHeaders(ytAuth),scope,true);
     const details = new Map(hydrated.map(video=>[video.rawId,video]));
     return pool.map(video=>details.get(video.rawId)??video);
-  });
+  };
+  return refresh?load():videoSearchCache.get(JSON.stringify(['background',scope,region,query]),load);
 }
 async function runSingleYouTubeWebSearch(query:string,limit=40,ytAuth?:YouTubeAuthContext,{refresh=false}={}):Promise<TrackMetadata[]> {
   const scope=createHash('sha256').update(JSON.stringify(ytAuth||{})).digest('hex');
@@ -2676,7 +2677,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       } else if (provider === 'ytmusic' || provider === 'youtube') {
         if (refresh) res.setHeader('Cache-Control', 'no-store');
         results = backgroundTitle
-          ? await searchBackgroundVideos(backgroundTitle,backgroundArtist,backgroundPreference,ytAuth)
+          ? await searchBackgroundVideos(backgroundTitle,backgroundArtist,backgroundPreference,ytAuth,refresh)
           : await searchYouTubeMusic(q, provider, provider === 'youtube' ? 28 : 20, ytAuth, refresh);
       } else if (provider === 'audius') {
         results = await searchAudius(q, 12);

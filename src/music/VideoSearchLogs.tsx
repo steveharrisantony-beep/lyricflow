@@ -34,6 +34,10 @@ export default function VideoSearchLogs({recordingKey,title,suspended=false}:{
     {entries.map(entry=><article className="candidate" key={entry.id}>
      <div>
       <strong>{entry.mode} · {new Date(entry.time).toLocaleTimeString()}</strong>
+      {entry.attempt!==undefined&&<small>
+       Search attempt {entry.attempt} of {entry.maxAttempts}
+       {entry.attempt>1&&(entry.retryDelayMs?` · Retry after ${entry.retryDelayMs/1000}s`:' · Immediate retry')}
+      </small>}
       <small>{entry.status}</small>
       {(entry.mode==='Autoplay'||entry.mode==='Search online')&&<>
        <small>Exact search query</small>

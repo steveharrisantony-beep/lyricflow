@@ -16,8 +16,11 @@ export type VideoSearchLog = {
  time:number;
  recordingKey:string;
  status:string;
- mode:'Autoplay'|'Search online'|'Filter'|'Playback error'|'Playback recovery'|'Suspension'|'SponsorBlock';
+ mode:'Autoplay'|'Search online'|'Search failure'|'Filter'|'Playback error'|'Playback recovery'|'Suspension'|'SponsorBlock';
  query?:string;
+ attempt?:number;
+ maxAttempts?:number;
+ retryDelayMs?:number;
  resultCount?:number;
  passedFilterCount?:number;
  videoId?:string;
@@ -48,10 +51,10 @@ function append(entry:Omit<VideoSearchLog,'id'|'time'>){
 /** Store results for the exact song; do not expose request URLs or auth tokens. */
 export async function logVideoSearch(
  query:string,mode:'Autoplay'|'Search online',run:()=>Promise<SongResult[]>,
- signal?:AbortSignal,recordingKey=''
+ signal?:AbortSignal,recordingKey='',attemptInfo?:{attempt:number;maxAttempts:number;retryDelayMs:number}
 ):Promise<SongResult[]>{
  signal?.throwIfAborted();
- const entry:VideoSearchLog={id:++nextId,time:Date.now(),recordingKey,query,mode,status:'Searching…'};
+ const entry:VideoSearchLog={id:++nextId,time:Date.now(),recordingKey,query,mode,...attemptInfo,status:'Searching…'};
  publish([entry,...entries]);
  const finish=(status:string,resultCount?:number)=>{
   if(entries.some(item=>item.id===entry.id))
@@ -66,6 +69,12 @@ export async function logVideoSearch(
   finish(signal?.aborted?'Cancelled':'Search failed');
   throw error;
  }
+}
+
+export function logVideoSearchFailure(recordingKey:string,query:string,attempts:number){
+ if(!recordingKey)return;
+ append({recordingKey,mode:'Search failure',query,resultCount:0,
+  status:`Search failed: all ${attempts} attempts returned 0 results. No background video selected.`});
 }
 
 /** Called after the existing background filtering logic has evaluated candidates. */

@@ -77,7 +77,7 @@ it.each([
  [{title:'KALYANI (with Shreya Ghoshal) - Remix',artist:'ARJN, fifty4, Shreya Ghoshal'},
   'KALYANI (with Shreya Ghoshal) - Remix ARJN Music Video','ARJN'],
 ] as const)('preserves the source title and adds only the first primary artist when needed',async(track,query,primary)=>{
- const fetcher=mockSearch([]);
+ const fetcher=mockSearch([official]);
  await findYouTubeBackgrounds(track,'https://resolver.example');
  expect(fetcher).toHaveBeenCalledTimes(1);
  const params=new URL(fetcher.mock.calls[0][0]).searchParams;
@@ -96,7 +96,7 @@ it.each([
  ['Song | Lead Oneil','Song | Lead Oneil Music Video'],
  ['Song | Leadville','Song | Leadville Lead One Music Video'],
 ] as const)('skips the primary artist when any complete word is in the title %s',async(title,query)=>{
- const fetcher=mockSearch([]);
+ const fetcher=mockSearch([official]);
  await findYouTubeBackgrounds({title,artist:'Lead One feat. Guest One'},'https://resolver.example');
  expect(fetcher).toHaveBeenCalledTimes(1);
  const params=new URL(fetcher.mock.calls[0][0]).searchParams;
