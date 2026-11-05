@@ -2083,6 +2083,25 @@ html.android-tv .player-art-placeholder {
   width: 78px;
   height: 78px;
 }
+html.android-tv .song-result strong,
+html.android-tv .yt-queue-title,
+html.android-tv .external-detected-song strong {
+  font-size: 18px;
+}
+html.android-tv .song-result small,
+html.android-tv .yt-queue-sub,
+html.android-tv .yt-queue-index,
+html.android-tv .external-detected-song p,
+html.android-tv .external-web-notice p {
+  font-size: 15px;
+}
+html.android-tv .song-result > img,
+html.android-tv .song-result-cover,
+html.android-tv .yt-queue-cover-fallback {
+  width: 66px;
+  height: 66px;
+}
+html.android-tv .settings-page-title { font-size: 23px; }
 html.android-tv .source-backdrop {
   padding: 36px;
 }
