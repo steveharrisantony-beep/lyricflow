@@ -842,6 +842,7 @@ export default function CinematicStage(props:CinematicProps){
      setCanReplaceVideo(false);
      setPlaybackError('YouTube blocked automatic playback. Use the player controls or reload the video.');
     }else if(evt==='onStateChange'&&typeof data.info==='number'){
+     const priorState=ytPlayerStateRef.current;
      ytPlayerStateRef.current=data.info;
      if(data.info===1){
       videoRecoveryRef.current.progressAt=Date.now();
@@ -850,7 +851,7 @@ export default function CinematicStage(props:CinematicProps){
       ytEndedEarlyRef.current=false;
       setYtVideoEnded(false);
      }
-     if(data.info===2&&!latestPropsRef.current.audioPaused&&latestPropsRef.current.youtubeBackgroundMode==='video'){
+     if(data.info===2&&priorState!==2&&!latestPropsRef.current.audioPaused&&latestPropsRef.current.youtubeBackgroundMode==='video'){
       videoRecoveryRef.current.attemptAt=Date.now();
       setPlayingVideoKey('');
      }
@@ -935,7 +936,7 @@ export default function CinematicStage(props:CinematicProps){
       ytEndedEarlyRef.current=false;
       setYtVideoEnded(false);
      }
-     if(pState===2&&!latestPropsRef.current.audioPaused&&latestPropsRef.current.youtubeBackgroundMode==='video'){
+     if(pState===2&&previousPlayerState!==2&&!latestPropsRef.current.audioPaused&&latestPropsRef.current.youtubeBackgroundMode==='video'){
       videoRecoveryRef.current.attemptAt=Date.now();
       setPlayingVideoKey('');
      }
