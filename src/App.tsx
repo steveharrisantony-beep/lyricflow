@@ -40,6 +40,7 @@ import {
   type ExternalMediaState,
 } from "./audio/externalPlayer";
 import LocalPlayer, { type LocalPlayerHandle } from "./audio/LocalPlayer";
+import {usePlaybackScreenAwake} from "./audio/usePlaybackScreenAwake";
 import {
   ALL_FONT_PACKS,
   ALL_KINETIC_MOTIONS,
@@ -552,6 +553,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const [localTime, setLocalTime] = useState(0);
   const [localLoaded, setLocalLoaded] = useState(false);
   const [localTrack, setLocalTrack] = useState<TrackInfo | null>(null);
+  usePlaybackScreenAwake(Boolean(localPlaying && localTrack));
   const [songQueue,setSongQueue]=useState<TrackInfo[]>([]);
 
   const [incoming, setIncoming] = useState<IncomingLyrics | null>(null);
