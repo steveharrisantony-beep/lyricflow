@@ -23,6 +23,8 @@ import {GraphicCompositions,type GraphicSystem} from './procedural/GraphicCompos
 import {useYouTubeAuth} from '../../music/youtubeAuth';
 import {useNativePlaybackPolicy} from '../../audio/nativePlaybackPolicy';
 import {isYouTubeTopicChannel} from '../../music/videoMatching';
+import {logVideoPlaybackRecovery} from '../../music/videoSearchHistory';
+import {AUTO_VIDEO_START_TIMEOUT_MS,AUTO_VIDEO_STALL_TIMEOUT_MS,MAX_AUTO_VIDEO_RELOADS,shouldMonitorAutoVideo} from '../../music/videoPlaybackRecovery';
 
 export type Quality='High'|'Balanced'|'Performance';
 export const CAMERA_VIEWS=['Front'] as const;
@@ -600,6 +602,13 @@ export default function CinematicStage(props:CinematicProps){
  const ytDurationRef=useRef<number>(0);
  const ytEndedEarlyRef=useRef<boolean>(false);
  const ytPlayerStateRef=useRef<number|null>(null);
+ const videoRecoveryRef=useRef({identity:'',reloads:0,attemptAt:0,progressAt:0,lastTime:-1,finished:false});
+ const [videoPageVisible,setVideoPageVisible]=useState(()=>typeof document==='undefined'||document.visibilityState!=='hidden');
+ useEffect(()=>{
+  const update=()=>setVideoPageVisible(document.visibilityState!=='hidden');
+  document.addEventListener('visibilitychange',update);
+  return()=>document.removeEventListener('visibilitychange',update);
+ },[]);
  const latestPropsRef=useRef(props);
  latestPropsRef.current=props;
  const reportedVideoMetadata=useRef('');
@@ -612,13 +621,20 @@ export default function CinematicStage(props:CinematicProps){
  const nativePolicy=useNativePlaybackPolicy(Boolean(props.externalPlayer));
 
  // A background-only player can be removed; the main audio player must keep running.
- const ytId=props.hideVideo&&props.hasSeparateAudioStream?null:props.youtubeVideoId||null;
+ // Do not mount a muted background iframe when Themes are selected.
+ // Keep the YouTube iframe when it is the actual AUDIO source.
+ const ytId=props.hasSeparateAudioStream&&(props.hideVideo||props.youtubeBackgroundMode==='theme')?null:props.youtubeVideoId||null;
  const mountedVideoId=ytId;
  const reloadKey=[ytAuth.reloadNonce,errorRetryNonce,props.videoReloadNonce??0].join('|');
  const previousReloadKey=useRef(reloadKey);
  const reloadSeekTime=useRef<number|null>(null);
  const playbackKey=[props.recordingKey,ytId,Boolean(props.hasSeparateAudioStream),ytAuth.useNoCookieDomain,reloadKey].join('|');
  const [playingVideoKey,setPlayingVideoKey]=useState('');
+ useEffect(()=>{
+  const identity=[props.recordingKey||'',ytId||''].join('|');
+  if(videoRecoveryRef.current.identity!==identity)
+   videoRecoveryRef.current={identity,reloads:0,attemptAt:Date.now(),progressAt:Date.now(),lastTime:-1,finished:false};
+ },[props.recordingKey,ytId]);
  useEffect(()=>{
   reloadSeekTime.current=previousReloadKey.current!==reloadKey&&!props.hasSeparateAudioStream
    ?videoSyncTarget(props.playbackTime??0,0,false).time:null;
@@ -630,6 +646,9 @@ export default function CinematicStage(props:CinematicProps){
   ytPlayerStateRef.current=null;
   ytReadyRef.current=false;
   lastControlSigRef.current='';
+  videoRecoveryRef.current.attemptAt=Date.now();
+  videoRecoveryRef.current.progressAt=Date.now();
+  videoRecoveryRef.current.lastTime=-1;
   setYtVideoDuration(0);
   setYtVideoEnded(false);
  },[playbackKey]);
