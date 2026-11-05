@@ -32,6 +32,21 @@ public class MainActivity extends BridgeActivity {
             webView.setFocusableInTouchMode(true);
         }
     }
+
+    @Override
+    public void onBackPressed() {
+        boolean isTv = getPackageManager().hasSystemFeature("android.software.leanback")
+                || getPackageManager().hasSystemFeature("android.hardware.type.television");
+        WebView webView = this.bridge == null ? null : this.bridge.getWebView();
+        if (!isTv || webView == null) {
+            super.onBackPressed();
+            return;
+        }
+        // Let TV remotes close the topmost overlay; otherwise use normal Android Back.
+        webView.evaluateJavascript(
+            "(function(){var e=new Event('lyricflow:tv-back',{cancelable:true});return window.dispatchEvent(e);})()",
+            result -> {
+                if (!"false".equals(result)) MainActivity.super.onBackPressed();
+            });
+    }
 }
-
-
