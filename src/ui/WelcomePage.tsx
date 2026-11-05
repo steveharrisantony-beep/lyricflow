@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowDown, ArrowRight, AudioLines, Captions, Check, Languages, Layers3, Link2, Play, SlidersHorizontal, X } from 'lucide-react';
 import { SUPPORTED_ROMANIZATION_LANGUAGES } from '../romanization/romanize';
 import './welcome.css';
 
 const WELCOME_STARTED_KEY = 'lyricflow.welcomeStarted';
+export const DemoInvitationContext = createContext({ pending: false, dismiss: () => {} });
 
 const features = [
   { Icon: Layers3, title: 'Videos or a world of themes', text: 'Play music videos with lyrics on top, or switch to built-in themes that react to your music.' },
@@ -62,15 +63,18 @@ export default function WelcomePage({ onStart, onClose }: { onStart: () => void;
 }
 
 export function FirstVisit({ children }: { children: ReactNode }) {
+  const [pending, setPending] = useState(false);
+  const dismiss = useCallback(() => setPending(false), []);
   const [started, setStarted] = useState(() => {
     try { return localStorage.getItem(WELCOME_STARTED_KEY) === 'true'; } catch { return false; }
   });
   useEffect(() => { document.getElementById('app-startup')?.remove(); }, []);
   const start = () => {
     try { localStorage.setItem(WELCOME_STARTED_KEY, 'true'); } catch { /* Continue when device storage is unavailable. */ }
+    setPending(true);
     setStarted(true);
   };
-  return started ? children : <WelcomePage onStart={start} />;
+  return started ? <DemoInvitationContext.Provider value={{ pending, dismiss }}>{children}</DemoInvitationContext.Provider> : <WelcomePage onStart={start} />;
 }
 
 export function AboutDialog({ onClose }: { onClose: () => void }) {

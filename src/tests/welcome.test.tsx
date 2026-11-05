@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { act, useEffect } from 'react';
+import { act, useContext, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { FirstVisit } from '../ui/WelcomePage';
+import { DemoInvitationContext, FirstVisit } from '../ui/WelcomePage';
 
 let root: Root;
 let host: HTMLDivElement;
@@ -48,4 +48,20 @@ it('allows Start when device storage is blocked', async () => {
   const start = [...host.querySelectorAll('button')].find(button => button.textContent?.includes('Start visualizer'))!;
   await act(async () => start.click());
   expect(host.textContent).toBe('Visualizer ready');
+});
+
+it('offers the demo only after the first Start and consumes the invitation when dismissed', async () => {
+  function Invitation() {
+    const {pending,dismiss} = useContext(DemoInvitationContext);
+    return pending ? <button onClick={dismiss}>Dismiss demo</button> : <span>No invitation</span>;
+  }
+  await act(async () => root.render(<FirstVisit><Invitation /></FirstVisit>));
+  await act(async () => [...host.querySelectorAll('button')].find(button=>button.textContent?.includes('Start visualizer'))!.click());
+  expect(host.textContent).toBe('Dismiss demo');
+  await act(async () => host.querySelector('button')!.click());
+  expect(host.textContent).toBe('No invitation');
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await act(async () => root.render(<FirstVisit><Invitation /></FirstVisit>));
+  expect(host.textContent).toBe('No invitation');
 });

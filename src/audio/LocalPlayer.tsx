@@ -63,6 +63,7 @@ export interface LocalPlayerHandle {
   stop: () => void;
   play: () => Promise<void>;
   loadRemote: (song: PlayableSong) => Promise<void>;
+  playPlaylist: (songs: PlayableSong[], signal?: AbortSignal) => Promise<void>;
   addToQueue: (song: PlayableSong) => void;
   playNextFromQueue: () => boolean;
   seek: (time: number) => void;
@@ -666,6 +667,28 @@ function LocalPlayer(
       stop,
       play,
       loadRemote,
+      playPlaylist: async (songs, signal) => {
+        signal?.throwIfAborted();
+        const [first, ...remaining] = songs;
+        if (!first) return;
+        const epoch = loadEpoch.current + 1;
+        const cancel = () => { if (loadEpoch.current === epoch) stop(); };
+        signal?.addEventListener('abort', cancel, { once: true });
+        try {
+          await loadRemote(first);
+        } finally {
+          signal?.removeEventListener('abort', cancel);
+        }
+        signal?.throwIfAborted();
+        if (loadEpoch.current !== epoch) return;
+        const entries = remaining.map(song => ({
+          queueId: `${song.provider}-${song.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          song,
+        }));
+        setQueue(previous => [...entries, ...previous]);
+        shuffleEnabledRef.current = false;
+        setShuffleEnabled(false);
+      },
       addToQueue: addSongToQueue,
       playNextFromQueue,
       seek: seekPlayback,

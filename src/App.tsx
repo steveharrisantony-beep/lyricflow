@@ -18,7 +18,7 @@ import {
   SlidersHorizontal,
   Sun,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   getAudioFrequencyBands,
   setAudioSensitivity,
@@ -151,7 +151,9 @@ import SettingsPanel, {
   type SettingsPage,
 } from "./ui/SettingsPanel";
 import DataTransferSettings from './data/DataTransferSettings';
-import {AboutDialog} from './ui/WelcomePage';
+import {AboutDialog, DemoInvitationContext} from './ui/WelcomePage';
+import DemoPrompt from './ui/DemoPrompt';
+import {prepareDemoPlaylist} from './music/demoPlaylist';
 import type {SettingsBackupData} from './data/backupData';
 
 const choices = TEMPLATES;
@@ -246,6 +248,19 @@ export default function App({ user = null }: { user?: User | null }) {
 
   const [settingsPage, setSettingsPage] = useState<SettingsPage>("mapping");
   const [aboutOpen, setAboutOpen] = useState(false);
+  const demoInvitation = useContext(DemoInvitationContext);
+  const [manualDemoOpen, setManualDemoOpen] = useState(false);
+  const closeDemo = useCallback(() => {
+    demoInvitation.dismiss();
+    setManualDemoOpen(false);
+  }, [demoInvitation.dismiss]);
+  const playDemo = useCallback(async (signal: AbortSignal) => {
+    const songs = await prepareDemoPlaylist(musicResolverBase(), signal);
+    signal.throwIfAborted();
+    const player = playerRef.current;
+    if (!player) throw new Error('The player is still starting. Please try again.');
+    await player.playPlaylist(songs, signal);
+  }, []);
   const [mappingTarget, setMappingTarget] = useState<HTMLDivElement | null>(
     null,
   );
@@ -2572,9 +2587,10 @@ export default function App({ user = null }: { user?: User | null }) {
                     <Instagram size={20} aria-hidden="true" />
                   </a>
                 </footer>
-                <button type="button" className="upload-button welcome-about-button" onClick={() => setAboutOpen(true)}>
-                  About LyricFlow
-                </button>
+                <div className="about-demo-actions">
+                  <button type="button" className="upload-button" onClick={() => { closeSettings(); setManualDemoOpen(true); }}>Demo</button>
+                  <button type="button" className="upload-button welcome-about-button" onClick={() => setAboutOpen(true)}>About LyricFlow</button>
+                </div>
               </>
             ),
             logs: (
@@ -2591,6 +2607,7 @@ export default function App({ user = null }: { user?: User | null }) {
         </SettingsPanel>
         {optionPreview && <OptionPreview spec={optionPreview} onClose={closeOptionPreview} reducedMotion={reducedMotion} lyricLayout={lyricLayout}/>}
         {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
+        {(demoInvitation.pending || manualDemoOpen) && <DemoPrompt autoDismiss={demoInvitation.pending && !manualDemoOpen} onClose={closeDemo} onPlay={playDemo} />}
       </main>
       <AudioSourceHub
         ref={audioHubRef}

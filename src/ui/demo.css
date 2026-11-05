@@ -1,0 +1,44 @@
+.demo-prompt {
+  position: fixed;
+  right: max(24px, env(safe-area-inset-right, 0px));
+  bottom: max(24px, env(safe-area-inset-bottom, 0px));
+  z-index: 6000;
+  width: min(410px, calc(100vw - 32px));
+  max-height: calc(100svh - 32px);
+  padding: 24px;
+  overflow: hidden;
+  overflow-y: auto;
+  color: var(--ink);
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  border-radius: 22px;
+  box-shadow: var(--shadow), 0 16px 60px #0003;
+  backdrop-filter: blur(32px) saturate(130%);
+}
+.demo-prompt-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.demo-prompt h2 { margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -.04em; }
+.demo-prompt p { margin: 12px 0 0; font-size: 13px; color: var(--muted); line-height: 1.6; }
+.demo-countdown { flex-shrink: 0; color: var(--accent); font-size: 11px; font-variant-numeric: tabular-nums; }
+.demo-timer-track { position: absolute; inset: 0 0 auto; height: 3px; background: var(--line); }
+.demo-timer-track > span { display: block; height: 100%; background: var(--accent); transition: width .35s linear; }
+.demo-prompt-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 24px; }
+.demo-prompt button { min-height: 44px; padding: 10px 16px; font-size: 13px; border-radius: 999px; cursor: pointer; }
+.demo-decline { background: transparent; border: 1px solid transparent; color: var(--muted); }
+.demo-decline:hover { background: var(--surface-hover); color: var(--ink); }
+.demo-play { background: var(--accent); border: 1px solid var(--accent); color: var(--accent-ink); font-weight: 600; }
+.demo-play:hover { background: var(--accent); filter: brightness(1.05); }
+.demo-play:disabled { cursor: wait; opacity: .8; }
+.demo-prompt .demo-prompt-status { color: var(--accent); font-size: 12px; }
+.demo-prompt .demo-prompt-error { color: var(--danger); font-size: 12px; }
+.demo-spinner { animation: demo-spin 1s linear infinite; }
+.about-demo-actions { display: flex; gap: 10px; margin-top: 20px; }
+.about-demo-actions .upload-button { flex: 1; margin-top: 0; }
+@keyframes demo-spin { to { transform: rotate(360deg); } }
+@media (max-width: 600px) {
+  .demo-prompt { right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px)); padding: 20px; }
+  .demo-prompt h2 { font-size: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .demo-spinner { animation: none; }
+  .demo-timer-track > span { transition: none; }
+}
