@@ -917,7 +917,7 @@ export default function CinematicStage(props:CinematicProps){
       // Only an advancing YouTube clock in PLAYING state refreshes the watchdog.
       const recovery=videoRecoveryRef.current;
       if(ytPlayerStateRef.current===1){
-       if(recovery.lastTime>=0&&ct>recovery.lastTime+0.05&&ct-recovery.lastTime<3)
+       if(recovery.lastTime>=0&&ct>recovery.lastTime+0.005&&ct-recovery.lastTime<30)
         recovery.progressAt=Date.now();
        recovery.lastTime=ct;
       }
