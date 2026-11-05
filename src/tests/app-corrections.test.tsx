@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from 'react';
+import { act, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 vi.mock('../visualization/cinematic/CinematicStage', () => ({ default: () => null, CAMERA_VIEWS: ['Front'] }));
@@ -330,13 +330,13 @@ it('stages an account edit before the first cloud snapshot or debounce, without 
 it('finds a music or lyrical YouTube background for JioSaavn and saves both source mappings without changing audio', async () => {
   await act(async () => click('Load JioSaavn fixture'));
   await act(async () => click('Show preloaded videos'));
-  expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Test artist video', 'resolver', '', expect.any(AbortSignal), {background:{title:'Original test song',artist:'Test artist'}});
+  expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Music Video', 'resolver', location.origin+'/music', expect.any(AbortSignal), {background:{title:'Original test song',artist:'Test artist'}});
   const select = host.querySelector<HTMLSelectElement>('select[aria-label="Preferred YouTube background"]')!;
   expect(select.closest('[role="tabpanel"]')?.id).toBe('settings-page-mapping');
   expect(host.querySelector('#settings-page-background select[aria-label="Preferred YouTube background"]')).toBeNull();
   await act(async () => { select.value = 'lyrics'; select.dispatchEvent(new Event('change',{bubbles:true})); });
   await act(async () => click('Show preloaded videos'));
-  expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Test artist video', 'resolver', '', expect.any(AbortSignal), {background:{title:'Original test song',artist:'Test artist'}});
+  expect(searchStashCatalog).toHaveBeenCalledWith('Original test song Music Video', 'resolver', location.origin+'/music', expect.any(AbortSignal), {background:{title:'Original test song',artist:'Test artist'}});
   await act(async () => click('Use video'));
   expect(localStorage.getItem('lyricflow.lastSourceMode')).toBe('online');
   await act(async () => click('Edit or import lyrics'));
@@ -522,7 +522,7 @@ it('keeps online search independent of a pending preload until a video is chosen
  let finishOld!: (songs: Awaited<ReturnType<typeof searchStashCatalog>>) => void;
  search.mockImplementation(async (query, _provider, _base, _signal, options) => {
   if (options?.refresh) return [fresh];
-  if (query === 'Original test song Test artist video') return new Promise(resolve => {finishOld = resolve;});
+  if (query === 'Original test song Music Video') return new Promise(resolve => {finishOld = resolve;});
   return [];
  });
  try {
@@ -550,7 +550,7 @@ it('keeps online search independent of a pending preload until a video is chosen
   expect(logs.textContent).toContain('Lyrics logs');
   const videoLogs = [...logs.querySelectorAll('h3')].find(heading=>heading.textContent==='Video search logs')!.closest('section')!;
   const queries = [...videoLogs.querySelectorAll('code')].map(code=>code.textContent);
-  expect(queries).toEqual(expect.arrayContaining(['Original test song Test artist video',manualTerms]));
+  expect(queries).toEqual(expect.arrayContaining(['Original test song Music Video',manualTerms]));
  } finally {
   draw.mockRestore();
   search.mockImplementation(original);
@@ -814,6 +814,41 @@ it('requests External Player audio only after Start and stops it when notificati
   expect(stop.mock.calls.length).toBeGreaterThan(stopCount);
   expect([...host.querySelectorAll('button')].some(b=>b.textContent==='Stop audio capture')).toBe(false);
  }finally{external.setAndroidAppOverrideForTest(null);status.mockRestore();subscribe.mockRestore();capture.mockRestore();stop.mockRestore();}
+});
+
+it.each(['internal','mic'] as const)('restores %s capture on launch and remembers an explicit stop',async(mode)=>{
+ const external=await import('../audio/externalPlayer');
+ const status=vi.spyOn(external,'getExternalSetupStatus').mockResolvedValue({granted:true,androidSdk:35});
+ const subscribe=vi.spyOn(external,'subscribeExternalMedia').mockImplementation(async callback=>{callback(null,true);return()=>{};});
+ const capture=vi.spyOn(external,'startExternalAudioCapture').mockResolvedValue({ok:true,activeMode:mode,message:'Capture restored'});
+ const stop=vi.spyOn(external,'stopExternalAudioCapture').mockResolvedValue();
+ external.setAndroidAppOverrideForTest(true);
+ const remount=async()=>{
+  await act(async()=>root.unmount());root=createRoot(host);
+  await act(async()=>root.render(<StrictMode><App/></StrictMode>));
+ };
+ try{
+  localStorage.setItem('lyricflow.lastSourceMode','external');
+  localStorage.setItem('lyricflow.externalAudio.v1',JSON.stringify({mode,enabled:true}));
+  await remount();
+  expect(capture).toHaveBeenCalledExactlyOnceWith(mode);
+  await act(async()=>click('Select source'));
+  const choice=host.querySelector<HTMLButtonElement>('[aria-label="External player audio source"] button[aria-pressed="true"]');
+  expect(choice?.textContent).toBe(mode==='mic'?'Microphone':'Internal Audio');
+  await act(async()=>click('Stop audio capture'));
+  expect(JSON.parse(localStorage.getItem('lyricflow.externalAudio.v1')!)).toEqual({mode,enabled:false});
+  await remount();
+  expect(capture).toHaveBeenCalledTimes(1);
+ }finally{
+  external.setAndroidAppOverrideForTest(null);status.mockRestore();subscribe.mockRestore();capture.mockRestore();stop.mockRestore();
+ }
+});
+
+it('omits the App updates section from Other settings',async()=>{
+ await act(async()=>click('Others'));
+ expect(host.querySelector('.app-update-control')).toBeNull();
+ expect(host.textContent).not.toContain('Check for updates');
+ expect([...host.querySelectorAll('h3')].map(heading=>heading.textContent)).not.toContain('App');
 });
 
 it('supports multiple palette switches without randomization controls and restores the set after remount',async()=>{

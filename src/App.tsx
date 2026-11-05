@@ -3,6 +3,7 @@ import {LyricsSearchLogs,PreloadedLyrics,useLyricsSearchReport} from './lyrics/L
 import {lyricsFromSearchCandidate} from './lyrics/providers';
 import {evaluateBackgroundVideos} from './music/videoMatching';
 import {findYouTubeBackgrounds} from './music/backgroundVideos';
+import {musicResolverBase} from './network/backend';
 import VideoSearchLogs from './music/VideoSearchLogs';
 import {isSyncedLyricsSource,lyricProviderName,normalizeLyricSource} from './lyrics/sourceLabels';
 import {selectedPaletteIds,togglePaletteSelection,enableAllPaletteSelections,enableAllPalettesForTheme,type ThemePaletteSelections} from './visualization/cinematic/themeSelection';
@@ -128,7 +129,7 @@ import {
   type LyricsSelection,
 } from "./firebase/correctionModel";
 import { discardSongCorrections } from "./firebase/correctionStore";
-import { scopedKey, writeDevice } from "./firebase/deviceStore";
+import { readDevice, scopedKey, writeDevice } from "./firebase/deviceStore";
 import { syncGuestDataToAccount } from "./firebase/songDatabaseSync";
 import {
   useSongMapping,
@@ -149,7 +150,6 @@ import SettingsPanel, {
   SwitchSetting,
   type SettingsPage,
 } from "./ui/SettingsPanel";
-import AppUpdateControl from "./updates/AppUpdateControl";
 import DataTransferSettings from './data/DataTransferSettings';
 import type {SettingsBackupData} from './data/backupData';
 
@@ -273,8 +273,13 @@ export default function App({ user = null }: { user?: User | null }) {
     candidateCount: number;
   }>({ key: "", pending: false, candidates: [], candidateCount: 0 });
   const [selectedVideoMetadata,setSelectedVideoMetadata]=useState<SongResult|null>(null);
+  const [initialExternalAudio] = useState(()=>readDevice<{mode?:unknown;enabled?:unknown}>(
+    'lyricflow.externalAudio.v1',{},
+  ));
   const [externalAudioMode, setExternalAudioMode] =
-    useState<ExternalAudioCaptureMode>("internal");
+    useState<ExternalAudioCaptureMode>(initialExternalAudio.mode==='mic'?'mic':'internal');
+  const [externalAudioEnabled,setExternalAudioEnabled]=useState(initialExternalAudio.enabled===true);
+  const [externalAudioAttempt,retryExternalAudio]=useState(0);
   const [externalMedia, setExternalMedia] = useState<ExternalMediaState | null>(
     null,
   );
@@ -1294,10 +1299,7 @@ export default function App({ user = null }: { user?: User | null }) {
       candidates: [],
       candidateCount: 0,
     });
-    const base =
-      localStorage.getItem("lyricflow.resolver") ||
-      import.meta.env.VITE_MUSIC_RESOLVER ||
-      "";
+    const base = musicResolverBase();
     const search = mappedYoutubeVideoId
       ? findYouTubeBackgrounds(localTrack,base,controller.signal)
       : prepareSongVideo(localTrack,uid,base,controller.signal);
@@ -1409,23 +1411,31 @@ export default function App({ user = null }: { user?: User | null }) {
     };
   }, [sourceMode]);
 
-  // Selecting External Player never requests audio. Capture follows the explicit setup action.
   useEffect(()=>{
-    ++externalCaptureRequest.current;
+    try{writeDevice('lyricflow.externalAudio.v1',{mode:externalAudioMode,enabled:externalAudioEnabled});}catch{}
+  },[externalAudioMode,externalAudioEnabled]);
+
+  // Resume the listener the user previously started once notification access is available.
+  useEffect(()=>{
+    const request=++externalCaptureRequest.current;
     setExternalAudioStarting(false);setExternalAudioActive(false);setExternalAudioStatus('');
     void stopExternalAudioCapture();
+    if(sourceMode==='external'&&notificationAccessGranted&&externalAudioEnabled){
+      setExternalAudioStarting(true);setExternalAudioStatus('Starting audio capture…');
+      void startExternalAudioCapture(externalAudioMode).then(result=>{
+        if(request!==externalCaptureRequest.current)return;
+        setExternalAudioStarting(false);setExternalAudioActive(result.ok);setExternalAudioStatus(result.message);
+      });
+    }
     return()=>{++externalCaptureRequest.current;void stopExternalAudioCapture();};
-  },[sourceMode,externalAudioMode,notificationAccessGranted]);
-  const startExternalAudio=async()=>{
+  },[sourceMode,externalAudioMode,notificationAccessGranted,externalAudioEnabled,externalAudioAttempt]);
+  const startExternalAudio=()=>{
     if(sourceMode!=="external"||!notificationAccessGranted||externalAudioStarting)return;
-    const request=++externalCaptureRequest.current;
-    setExternalAudioStarting(true);setExternalAudioStatus('Waiting for Android audio permission…');
-    const result=await startExternalAudioCapture(externalAudioMode);
-    if(request!==externalCaptureRequest.current)return;
-    setExternalAudioStarting(false);setExternalAudioActive(result.ok);setExternalAudioStatus(result.message);
+    setExternalAudioEnabled(true);retryExternalAudio(attempt=>attempt+1);
   };
   const stopExternalAudio=()=>{
     ++externalCaptureRequest.current;setExternalAudioStarting(false);setExternalAudioActive(false);
+    setExternalAudioEnabled(false);
     setExternalAudioStatus('Audio capture stopped.');void stopExternalAudioCapture();
   };
 
@@ -2543,9 +2553,6 @@ export default function App({ user = null }: { user?: User | null }) {
                     </div>
                     <YouTubeAccountControl compact />
                   </div>
-                </SettingGroup>
-                <SettingGroup title="App">
-                  <AppUpdateControl />
                 </SettingGroup>
                 <footer className="developer-credit">
                   <span>Developed by <strong>Steve Harris</strong></span>

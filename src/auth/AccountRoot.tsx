@@ -18,6 +18,7 @@ export default function AccountRoot() {
     return { ready: true, user: initialUser };
   });
   useEffect(() => {
+    document.getElementById('app-startup')?.remove();
     void syncPublishedSongData().catch(()=>{});
     if (!auth) { setDeviceScope(); return; }
     const unsubscribe = onAuthStateChanged(auth, user => {

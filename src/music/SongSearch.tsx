@@ -1,4 +1,4 @@
-import { musicBackendBase } from "../network/backend";
+import { musicResolverBase } from "../network/backend";
 import { useEffect, useRef, useState } from "react";
 import {
   Search,
@@ -23,11 +23,7 @@ import { cleanYouTubeTitleForLyrics } from "../lyrics/lyricFlowEngine";
 
 const initialBase = () => {
   try {
-    return resolverBase(
-      localStorage.getItem("lyricflow.resolver") ||
-        import.meta.env.VITE_MUSIC_RESOLVER ||
-        "",
-    );
+    return resolverBase(musicResolverBase());
   } catch {
     return "";
   }
@@ -113,7 +109,7 @@ export default function SongSearch({
     setPlaying(song.id);
     setBusy(true);
     try {
-      const effectiveBase = base.trim() || musicBackendBase();
+      const effectiveBase = musicResolverBase(base);
       const resolved = await resolveSong(
         song,
         effectiveBase,
@@ -135,7 +131,7 @@ export default function SongSearch({
     if (!onAddToQueue) return;
     setQueuing(song.id);
     try {
-      const effectiveBase = base.trim() || musicBackendBase();
+      const effectiveBase = musicResolverBase(base);
       const resolved = await resolveSong(song, effectiveBase);
       onAddToQueue(resolved);
       setQueuedIds((prev) => ({ ...prev, [song.provider + song.id]: true }));

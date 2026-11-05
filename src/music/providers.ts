@@ -1,4 +1,4 @@
-import {musicBackendBase} from '../network/backend';
+import {musicResolverBase} from '../network/backend';
 import {providerRequest} from '../network/request';
 import {extractYouTubeVideoId} from '../metadata/trackInfo';
 
@@ -83,8 +83,7 @@ async function json(url:string,signal?:AbortSignal){
 }
 export async function searchSongs(query:string,provider:SongResult['provider'],base:string,signal?:AbortSignal){
  if(query.trim().length<2)return [];
- const url=provider==='audius'?'https://api.audius.co/v1/tracks/search?'+new URLSearchParams({query:query.trim(),limit:'16',app_name:'LyricFlow'}):resolverBase(base)+'/search?'+new URLSearchParams({q:query.trim(),provider:provider==='resolver'?'youtube':provider});
- if(provider!=='audius'&&!base.trim())throw Error('Connect a music resolver in Search settings first.');
+ const url=provider==='audius'?'https://api.audius.co/v1/tracks/search?'+new URLSearchParams({query:query.trim(),limit:'16',app_name:'LyricFlow'}):resolverBase(musicResolverBase(base))+'/search?'+new URLSearchParams({q:query.trim(),provider:provider==='resolver'?'youtube':provider});
  return parseSongs(await json(url,signal),provider);
 }
 export async function resolveSong(song:SongResult,base:string,signal?:AbortSignal):Promise<PlayableSong>{
@@ -93,7 +92,7 @@ export async function resolveSong(song:SongResult,base:string,signal?:AbortSigna
  if(song.provider==='resolver'&&ytId)return {...song,youtubeVideoId:ytId,streamUrl:'https://www.youtube.com/watch?v='+ytId,format:'youtube',audioSource:'YouTube Video'};
  if(song.directStreamUrl)return {...song,youtubeVideoId:ytId,streamUrl:song.directStreamUrl,format:'audio',audioSource:song.audioSource||MUSIC_SOURCES[song.provider]};
  if(song.provider==='audius'&&!song.id.startsWith('audius_'))return {...song,streamUrl:'https://api.audius.co/v1/tracks/'+encodeURIComponent(song.id)+'/stream?app_name=LyricFlow',audioSource:song.audioSource||'Audius (Direct Stream)'};
- const root=resolverBase(base);
+ const root=resolverBase(musicResolverBase(base));
  const data=await json(root+'/resolve/'+encodeURIComponent(song.id),signal);
  if(!record(data)||typeof data.streamPath!=='string'||!/^\/audio\/[\w-]+$/.test(data.streamPath))throw Error('Invalid music resolver response.');
  const meta=record(data.track)?parseSongs({data:[data.track]},song.provider)[0]:null;
@@ -127,11 +126,11 @@ export async function searchStashCatalog(
  provider:SongResult['provider'],
  base:string,
  signal?:AbortSignal,
- {refresh=false,background}: {refresh?:boolean;background?:{title:string;artist:string;featuredArtist?:string}}={}
+ {refresh=false,background}: {refresh?:boolean;background?:{title:string;artist:string}}={}
 ):Promise<SongResult[]>{
  const refreshYouTubeSearch=provider==='resolver'&&refresh;
  if(query.trim().length<(refreshYouTubeSearch?1:2))return [];
- const effectiveBase=base.trim()||musicBackendBase();
+ const effectiveBase=musicResolverBase(base);
 
  if(effectiveBase){
   try{
@@ -140,7 +139,6 @@ export async function searchStashCatalog(
    if(background){
     params.set('backgroundTitle',background.title);
     params.set('backgroundArtist',background.artist);
-    if(background.featuredArtist)params.set('backgroundFeaturedArtist',background.featuredArtist);
    }
    const res=await providerRequest(
     `${effectiveBase.replace(/\/$/,'')}/search?`+params,

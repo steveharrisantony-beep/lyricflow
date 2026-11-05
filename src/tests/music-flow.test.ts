@@ -38,8 +38,11 @@ describe('music source boundaries',()=>{
   await searchSongs('Rain & moon','resolver','https://resolver.example',signal);
   expect(mock.mock.calls[0][0]).toContain('q=Rain+%26+moon');expect(mock.mock.calls[0][1].signal.aborted).toBe(false);
  });
- it('requires a resolver connection before contacting a server',async()=>{
-  await expect(searchSongs('Rain','resolver','')).rejects.toThrow('Connect');
+ it('uses the built-in service when no custom resolver is configured',async()=>{
+  vi.stubGlobal('location',{origin:'https://lyricflow.example'});
+  const fetcher=vi.fn().mockResolvedValue(Response.json({data:[]}));vi.stubGlobal('fetch',fetcher);
+  expect(await searchSongs('Rain','resolver','')).toEqual([]);
+  expect(fetcher.mock.calls[0][0]).toBe('https://lyricflow.example/music/search?q=Rain&provider=youtube');
  });
  it('never accepts an arbitrary stream redirect from the resolver',async()=>{
   vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({streamPath:'https://untrusted.example/audio'})}));

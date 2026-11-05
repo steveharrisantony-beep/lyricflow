@@ -379,7 +379,7 @@ it('keeps preloaded choices separate from fresh, editable YouTube searches and s
  const titles=()=>[...host.querySelectorAll('.video-candidate strong')].map(e=>e.textContent);
  expect(input.value).toBe('Song');
  expect(select.value).toBe('relevance');
- expect(search).toHaveBeenCalledExactlyOnceWith('Song','resolver','',expect.any(AbortSignal),{refresh:true});
+ expect(search).toHaveBeenCalledExactlyOnceWith('Song','resolver',location.origin+'/music',expect.any(AbortSignal),{refresh:true});
  expect(titles()).toEqual(['Provider’s first result','Most viewed result']);
  await act(async()=>{select.value='views';select.dispatchEvent(new Event('change',{bubbles:true}));});
  expect(titles()).toEqual(['Most viewed result','Provider’s first result']);
@@ -388,7 +388,7 @@ it('keeps preloaded choices separate from fresh, editable YouTube searches and s
  expect(titles()).toEqual(['Provider’s first result','Most viewed result']);
  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'A different video query');input.dispatchEvent(new Event('input',{bubbles:true}));});
  await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
- expect(search).toHaveBeenLastCalledWith('A different video query','resolver','',expect.any(AbortSignal),{refresh:true});
+ expect(search).toHaveBeenLastCalledWith('A different video query','resolver',location.origin+'/music',expect.any(AbortSignal),{refresh:true});
  await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent==='Show preloaded videos')!.click());
  expect(titles()).toHaveLength(15);
  expect(host.querySelector('.yt-custom-search-row')).toBeNull();

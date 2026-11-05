@@ -1,4 +1,5 @@
 import { musicBackendBase } from '../network/backend';
+import { backendRequest } from '../network/embeddedBackend';
 
 export type LanguageCode =
   | 'en'
@@ -1218,7 +1219,7 @@ export async function romanizeLinesAsync(
 
   // 1. Try backend `/music/romanize` endpoint first (avoids browser CORS and shares server cache)
   try {
-    const res = await fetch(`${musicBackendBase()}/romanize`, {
+    const res = await backendRequest(`${musicBackendBase()}/romanize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ lines: uncachedLines, sourceLang }),

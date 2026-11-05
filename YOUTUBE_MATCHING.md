@@ -1,10 +1,11 @@
 # YouTube video matching
 
-The automatic background search submits the song title, first primary artist,
-first featured artist when credited, and the word `video` to YouTube web search
-through Innertube. A feature credit in the source title is extracted before the
-query is built. The picker keeps
-the first page in the returned relevance order.
+The automatic background search preserves the source song title and appends the
+first primary artist and `Music Video`. If any complete word of that artist
+already appears in the title, ignoring symbols and case, the artist is omitted.
+Featured artists are kept when present in the source title. They are not appended
+from artist metadata. The browser and embedded backend use the same query builder.
+The picker keeps the first page in the returned relevance order.
 
 Autoplay checks the first 20 results in order and selects the first video that
 passes. The video title must share at least one complete word with the song

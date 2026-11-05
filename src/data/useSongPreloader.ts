@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
+import {musicResolverBase} from '../network/backend';
 import type {TrackInfo} from '../metadata/trackInfo';
 import {extractYouTubeVideoId} from '../metadata/trackInfo';
 import {correctionContext} from '../firebase/correctionModel';
@@ -21,7 +22,7 @@ export function useSongPreloader(current:TrackInfo|null,queue:TrackInfo[],uid:st
   const upcoming=queue.filter(track=>correctionContext(track,'lyrics')?.recordingKey!==currentId)
    .filter(track=>Boolean(temporarySongs.get(track,uid))).slice(0,7);
   let stopped=false,index=0;
-  const base=localStorage.getItem('lyricflow.resolver')||import.meta.env.VITE_MUSIC_RESOLVER||'';
+  const base=musicResolverBase();
   const next=async()=>{
    while(!stopped&&index<upcoming.length){
     const track=upcoming[index++],controller=new AbortController();controllers.current.add(controller);

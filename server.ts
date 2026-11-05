@@ -4,6 +4,7 @@ import { LYRICS_USER_AGENT, searchLrcRedRecordings, searchLyricsStageProvider } 
 import { lyricsStageProviders, type LyricsStageProvider } from './src/lyrics/searchPlan';
 import {searchMusicVideos,mergeVideoMetadata,hydrateVideoMetadata,VideoSearchCache,youtubeViews} from './server/youtubeSearch';
 import {AUTO_VIDEO_ATTEMPT_LIMIT} from './src/music/videoMatching';
+import {backgroundVideoQuery} from './src/music/backgroundQuery';
 import {fetchYouTubeCaptions,CaptionFetchError} from './server/youtubeCaptions';
 import {buildYouTubeAuthHeaders,verifyYouTubeAccount,type YouTubeAuthContext} from './server/youtubeAuth';
 import express, { type Request, type Response } from 'express';
@@ -973,8 +974,8 @@ async function runYouTubeWebSearch(
 }
 
 const videoSearchCache = new VideoSearchCache<TrackMetadata[]>();
-async function searchBackgroundVideos(title:string,artist:string,featuredArtist:string,ytAuth?:YouTubeAuthContext){
-  const query = [title,artist,featuredArtist,"video"].filter(Boolean).join(" ");
+async function searchBackgroundVideos(title:string,artist:string,ytAuth?:YouTubeAuthContext){
+  const query = backgroundVideoQuery(title,artist);
   const scope = createHash('sha256').update(JSON.stringify(ytAuth||{})).digest('hex');
   const region = process.env.YOUTUBE_REGION||'IN';
   return videoSearchCache.get(JSON.stringify(['background',scope,region,query]),async()=>{
@@ -2656,9 +2657,8 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
               ? 'youtube'
               : 'jiosaavn';
     const refresh = provider === 'youtube' && req.query.refresh === '1';
-    const backgroundTitle = provider === 'youtube' ? String(req.query.backgroundTitle || '').trim() : '';
+    const backgroundTitle = provider === 'youtube' ? String(req.query.backgroundTitle || '') : '';
     const backgroundArtist = String(req.query.backgroundArtist || '').trim();
-    const backgroundFeaturedArtist = String(req.query.backgroundFeaturedArtist || '').trim();
     if (q.length < (refresh ? 1 : 2)) {
       res.status(400).json({ detail: refresh ? 'Enter a YouTube search query.' : 'Enter at least 2 characters.' });
       return;
@@ -2675,7 +2675,7 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
       } else if (provider === 'ytmusic' || provider === 'youtube') {
         if (refresh) res.setHeader('Cache-Control', 'no-store');
         results = backgroundTitle
-          ? await searchBackgroundVideos(backgroundTitle,backgroundArtist,backgroundFeaturedArtist,ytAuth)
+          ? await searchBackgroundVideos(backgroundTitle,backgroundArtist,ytAuth)
           : await searchYouTubeMusic(q, provider, provider === 'youtube' ? 28 : 20, ytAuth, refresh);
       } else if (provider === 'audius') {
         results = await searchAudius(q, 12);

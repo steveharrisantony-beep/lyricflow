@@ -26,7 +26,7 @@ it('sends one query with the title and primary artist and preserves the complete
  expect(fetcher).toHaveBeenCalledTimes(1);
  const params=new URL(fetcher.mock.calls[0][0]).searchParams;
  expect(Object.fromEntries(params)).toEqual({
-  q:'Apna Bana Le - Bhediya Sachin-Jigar video',provider:'youtube',
+  q:'Apna Bana Le - Bhediya Sachin-Jigar Music Video',provider:'youtube',
   backgroundTitle:'Apna Bana Le - Bhediya',backgroundArtist:'Sachin-Jigar',
  });
  expect(result.candidateCount).toBe(5);
@@ -48,34 +48,42 @@ it('keeps short and malformed results for diagnostics',async()=>{
 
 it.each([
  [{title:'Song (feat. Guest One & Guest Two) (From Film)',artist:'Lead One, Lead Two'},
-  'Song (From Film) Lead One Guest One video','Lead One','Guest One'],
+  'Song (feat. Guest One & Guest Two) (From Film) Music Video','Lead One'],
  [{title:'Song',artist:'Lead One & Lead Two [ft.Guest One; Guest Two]'},
-  'Song Lead One Guest One video','Lead One','Guest One'],
+  'Song Lead One Music Video','Lead One'],
  [{title:'Song (feat. Other Guest)',artist:'Lead & Band, Second',primaryArtist:'Lead & Band',featuredArtist:'Guest & Group'},
-  'Song Lead & Band Guest & Group video','Lead & Band','Guest & Group'],
-] as const)('includes only the first primary and featured artist in the query',async(track,query,primary,featured)=>{
+  'Song (feat. Other Guest) Lead & Band Music Video','Lead & Band'],
+ [{title:'Anirudh - Ala bolelo Remix',artist:'Anirudh Ravichandar, Sreyas'},
+  'Anirudh - Ala bolelo Remix Music Video','Anirudh Ravichandar'],
+ [{title:'Passenger - Let Her Go (Feat. Ed Sheeran - Anniversary Edition)',artist:'Passenger, Ed Sheeran'},
+  'Passenger - Let Her Go (Feat. Ed Sheeran - Anniversary Edition) Music Video','Passenger'],
+ [{title:'KALYANI (with Shreya Ghoshal) - Remix',artist:'ARJN, fifty4, Shreya Ghoshal'},
+  'KALYANI (with Shreya Ghoshal) - Remix ARJN Music Video','ARJN'],
+] as const)('preserves the source title and adds only the first primary artist when needed',async(track,query,primary)=>{
  const fetcher=mockSearch([]);
  await findYouTubeBackgrounds(track,'https://resolver.example');
  expect(fetcher).toHaveBeenCalledTimes(1);
  const params=new URL(fetcher.mock.calls[0][0]).searchParams;
  expect(params.get('q')).toBe(query);
  expect(params.get('backgroundArtist')).toBe(primary);
- expect(params.get('backgroundFeaturedArtist')).toBe(featured);
+ expect(params.get('backgroundTitle')).toBe(track.title);
+ expect(params.has('backgroundFeaturedArtist')).toBe(false);
 });
 
 it.each([
- ['Song | LEAD–ONE','Song | LEAD–ONE Guest One video','', 'Guest One'],
- ['Song | Guest One','Song | Guest One Lead One video','Lead One',null],
+ ['Song | LEAD–ONE','Song | LEAD–ONE Music Video'],
+ ['Song | Guest One','Song | Guest One Music Video'],
  ['Song | Lead One and Guest One (feat. Guest One & Guest Two)',
-  'Song | Lead One and Guest One video','',null],
- ['Song | Lead Oneil and Guest with One','Song | Lead Oneil and Guest with One Lead One Guest One video',
-  'Lead One','Guest One'],
-] as const)('skips artist names already in the query title %s',async(title,query,primary,featured)=>{
+  'Song | Lead One and Guest One (feat. Guest One & Guest Two) Music Video'],
+ ['Song | Lead Oneil and Guest with One','Song | Lead Oneil and Guest with One Music Video'],
+ ['Song | Lead Oneil','Song | Lead Oneil Music Video'],
+ ['Song | Leadville','Song | Leadville Lead One Music Video'],
+] as const)('skips the primary artist when any complete word is in the title %s',async(title,query)=>{
  const fetcher=mockSearch([]);
  await findYouTubeBackgrounds({title,artist:'Lead One feat. Guest One'},'https://resolver.example');
  expect(fetcher).toHaveBeenCalledTimes(1);
  const params=new URL(fetcher.mock.calls[0][0]).searchParams;
  expect(params.get('q')).toBe(query);
- expect(params.get('backgroundArtist')).toBe(primary);
- expect(params.get('backgroundFeaturedArtist')).toBe(featured);
+ expect(params.get('backgroundArtist')).toBe('Lead One');
+ expect(params.has('backgroundFeaturedArtist')).toBe(false);
 });

@@ -22,15 +22,14 @@ import './styles.css';
 import {initializeEmbeddedBackend} from './network/embeddedBackend';
 import {preloadLyricFonts} from './visualization/cinematic/fonts';
 
-const startup = document.createElement('p');
-startup.className = 'device-service-status';
-startup.setAttribute('role', 'status');
-startup.textContent = 'Starting LyricFlow…';
-document.body.prepend(startup);
 const fontsReadyPromise = preloadLyricFonts();
 void Promise.all([
-  initializeEmbeddedBackend().then(() => startup.remove()).catch(error => {
-    startup.textContent = (error instanceof Error ? error.message : 'On-device music service unavailable.') + ' Local audio and manual lyrics remain available.';
+  initializeEmbeddedBackend().catch(error => {
+    const status = document.createElement('p');
+    status.className = 'device-service-status';
+    status.setAttribute('role', 'alert');
+    status.textContent = (error instanceof Error ? error.message : 'On-device music service unavailable.') + ' Local audio and manual lyrics remain available.';
+    document.body.prepend(status);
   }),
   fontsReadyPromise,
 ]).finally(() => {

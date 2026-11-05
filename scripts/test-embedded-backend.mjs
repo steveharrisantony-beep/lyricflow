@@ -9,7 +9,7 @@ let youtubeSearchRequests=0;
 const backgroundTitle='Apna Bana Le - Bhediya';
 const backgroundArtist='Sachin-Jigar';
 const backgroundFeaturedArtist='Guest One';
-const backgroundQuery=`${backgroundTitle} ${backgroundArtist} ${backgroundFeaturedArtist} video`;
+const backgroundQuery=`${backgroundTitle} ${backgroundArtist} Music Video`;
 const backgroundIds=['ElZfdU54Cp8',...Array.from({length:21},(_,i)=>`bg${String(i).padStart(9,'0')}`)];
 const lookedUpBackgroundIds=[];
 let wordLyricsAvailable=false,wordLookupCount=0;
@@ -220,7 +220,7 @@ try {
     q:backgroundQuery,provider:'youtube',backgroundTitle,backgroundArtist,backgroundFeaturedArtist,
   });
   const backgrounds = await (await request('/music/search?'+backgroundParams)).json();
-  assert.equal(youtubeSearchRequests,beforeBackgroundSearch+1,'Automatic matching uses one query with both artist credits');
+  assert.equal(youtubeSearchRequests,beforeBackgroundSearch+1,'Automatic matching uses the title and primary artist without appending featured metadata');
   assert.deepEqual([...lookedUpBackgroundIds].sort(),backgroundIds.slice(0,19).sort(),'The first twenty ranks include malformed rows and later rows are not probed');
   assert.equal(backgrounds.data[0].title,'Apna malformed result');
   assert.equal(backgrounds.data[0].youtubeVideoId,undefined);

@@ -1,10 +1,32 @@
-import {Capacitor, registerPlugin, type PluginListenerHandle} from '@capacitor/core';
+import {Capacitor, CapacitorHttp, registerPlugin, type PluginListenerHandle} from '@capacitor/core';
 import {Nodejs} from '@capawesome/capacitor-nodejs';
 
 const LocalBackend = registerPlugin<{
   prepare(): Promise<{token: string; port: number}>;
   attach(options: {port: number}): Promise<void>;
 }>('LocalBackend');
+
+/** The WebView proxy handles streams, while native HTTP carries JSON request bodies. */
+export async function backendRequest(address:string,options:RequestInit):Promise<Response>{
+  if(!Capacitor.isNativePlatform()||Capacitor.getPlatform()!=='android')return fetch(address,options);
+  const url=new URL(address,location.origin);
+  if(url.origin!==location.origin||!url.pathname.startsWith('/music/'))throw new Error('Invalid on-device service address.');
+  options.signal?.throwIfAborted();
+  const {token,port}=await LocalBackend.prepare();
+  if(!Number.isInteger(port)||port<1||port>65535)throw new Error('The on-device music service is not ready.');
+  options.signal?.throwIfAborted();
+  const headers=new Headers(options.headers);
+  headers.set('X-LyricFlow-Token',token);
+  const reply=await CapacitorHttp.request({
+    url:`http://127.0.0.1:${port}${url.pathname}${url.search}`,
+    method:options.method||'POST',
+    headers:Object.fromEntries(headers),
+    data:typeof options.body==='string'?JSON.parse(options.body):undefined,
+    responseType:'json',connectTimeout:5000,readTimeout:15000,disableRedirects:true,
+  });
+  options.signal?.throwIfAborted();
+  return new Response(reply.status===204?null:JSON.stringify(reply.data),{status:reply.status,headers:reply.headers});
+}
 
 /** Start once per process, recover the existing runtime after a WebView reload. */
 export async function initializeEmbeddedBackend(): Promise<void> {

@@ -6,6 +6,7 @@ import { extractYouTubeVideoId, type TrackInfo } from "../metadata/trackInfo";
 import type { YouTubeBackgroundMode } from "../visualization/cinematic/CinematicStage";
 import { findYouTubeBackgrounds } from "./backgroundVideos";
 import { logVideoSearch } from "./videoSearchHistory";
+import { musicResolverBase } from '../network/backend';
 
 export default function YouTubeBackgroundPicker({
   track,
@@ -66,10 +67,7 @@ export default function YouTubeBackgroundPicker({
     setBusy(true);
     setMessage("Finding YouTube backgrounds…");
     try {
-      const base =
-        localStorage.getItem("lyricflow.resolver") ||
-        import.meta.env.VITE_MUSIC_RESOLVER ||
-        "";
+      const base = musicResolverBase();
       const search = query !== undefined
         ? null
         : await findYouTubeBackgrounds(

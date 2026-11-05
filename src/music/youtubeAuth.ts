@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { ExternalMedia, isAndroidApp } from '../audio/externalPlayer';
-import { musicBackendBase } from '../network/backend';
+import { musicResolverBase } from '../network/backend';
+import { backendRequest } from '../network/embeddedBackend';
 
 export interface YouTubeAuthState {
   connected: boolean;
@@ -74,9 +75,8 @@ function ensureCurrent(version: number) {
 function sendCredentials(accessToken: string, cookie: string, version: number): Promise<string | null> {
   const request = backendQueue.then(async () => {
     ensureCurrent(version);
-    const base = (typeof localStorage !== 'undefined' && localStorage.getItem('lyricflow.resolver')) ||
-      import.meta.env?.VITE_MUSIC_RESOLVER || musicBackendBase();
-    const response = await fetch(`${base.replace(/\/$/, '')}/yt-auth`, {
+    const base = musicResolverBase();
+    const response = await backendRequest(`${base.replace(/\/$/, '')}/yt-auth`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accessToken, cookie }), signal: AbortSignal.timeout(10000),
     });

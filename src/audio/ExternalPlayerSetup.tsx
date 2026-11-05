@@ -89,7 +89,7 @@ export default function ExternalPlayerSetup({notificationAccessGranted,onNotific
    <button type="button" className="source-primary" disabled={audioStarting} onClick={audioActive?onStopAudio:onStartAudio}>
     {audioStarting?'Waiting for audio permission…':audioActive?'Stop audio capture':audioMode==='internal'?'Start internal audio':'Start microphone'}
    </button>
-   <p className="muted">Song detection also works without audio capture.</p>
+   <p className="muted">After you start audio capture, your choice resumes when you reopen LyricFlow. Stop audio capture to turn off automatic listening.</p>
   </div>}
   {error&&<p role="alert">{error}</p>}
   {audioStatus&&step==='audio'&&<p className="external-audio-status" role="status">{audioStatus}</p>}

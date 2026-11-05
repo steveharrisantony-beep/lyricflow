@@ -1,1 +1,49 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/><meta name="theme-color" content="#090b10"/><meta name="description" content="LyricFlow — an immersive music visualizer."/><title>LyricFlow — Feel the sound</title></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+    <meta name="theme-color" content="#090b10"/>
+    <meta name="description" content="LyricFlow — an immersive music visualizer."/>
+    <title>LyricFlow — Feel the sound</title>
+    <style>
+      #app-startup {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        gap: 20px;
+        padding: 24px;
+        background: radial-gradient(ellipse at 50% 40%, #192337, #090b10 65%);
+        color: #f5f6fa;
+        font-family: system-ui, sans-serif;
+        text-align: center;
+      }
+      #app-startup strong { font-size: 36px; letter-spacing: -1px; }
+      #app-startup p { margin: 0; color: #b8c3d6; font-size: 14px; }
+      #app-startup .startup-spinner {
+        width: 32px;
+        height: 32px;
+        border: 2px solid #38445b;
+        border-top-color: #b5ceff;
+        border-radius: 50%;
+        animation: startup-spin 1s linear infinite;
+      }
+      @keyframes startup-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        #app-startup .startup-spinner { animation: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app-startup" role="status" aria-live="polite" aria-label="Loading LyricFlow">
+      <strong>LyricFlow</strong>
+      <span class="startup-spinner" aria-hidden="true"></span>
+      <p>Preparing your music…</p>
+    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

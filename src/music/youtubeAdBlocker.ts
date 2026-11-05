@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { musicBackendBase } from '../network/backend';
+import { musicResolverBase } from '../network/backend';
+import { backendRequest } from '../network/embeddedBackend';
 
 /**
  * Dual-Engine YouTube AdBlocker:
@@ -508,11 +509,8 @@ export async function syncBlockyListsFromBackend(): Promise<{
   syncedSources: string[];
 }> {
   try {
-    const base =
-      (typeof localStorage !== 'undefined' && localStorage.getItem('lyricflow.resolver')) ||
-      import.meta.env?.VITE_MUSIC_RESOLVER ||
-      musicBackendBase();
-    const res = await fetch(`${base.replace(/\/$/, '')}/adblock/sync`, {
+    const base = musicResolverBase();
+    const res = await backendRequest(`${base.replace(/\/$/, '')}/adblock/sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
