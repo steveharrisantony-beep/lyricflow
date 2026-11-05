@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 vi.mock('../network/embeddedBackend',()=>({backendRequest:vi.fn()}));
 import {backendRequest} from '../network/embeddedBackend';
-import {cacheRomanizedLine,getCachedRomanizedLine,romanizeLinesAsync,hasCompleteRomanization} from '../romanization/romanize';
+import {cacheRomanizedLine,getCachedRomanizedLine,romanizeLinesAsync,hasCompleteRomanization,romanizeLrcTextAsync} from '../romanization/romanize';
 afterEach(()=>{vi.unstubAllGlobals();vi.resetAllMocks();});
 
 it('does not cache unchanged or partially unconverted native text',()=>{
@@ -36,4 +36,14 @@ it('does not cache a provider response that merges multiple lines into one',asyn
   vi.stubGlobal('fetch',vi.fn(async()=>Response.json([[[null,null,'qing quan ye lin']]])));
   expect(await romanizeLinesAsync(lines,undefined,['zh'])).toEqual(lines);
   expect(lines.map(line=>getCachedRomanizedLine(line))).toEqual([undefined,undefined]);
+});
+
+it('skips English lyrics and sends only non-Latin lines from mixed lyrics', async () => {
+  expect(await romanizeLrcTextAsync('[00:01]Hello world', undefined, ['zh'])).toBe('');
+  expect(backendRequest).not.toHaveBeenCalled();
+  vi.mocked(backendRequest).mockResolvedValue(Response.json({romanized:['shan he']}));
+  const lyrics='[00:01]Hello world\n[00:05]山河';
+  expect(await romanizeLrcTextAsync(lyrics, undefined, ['zh'])).toBe('[00:01]Hello world\n[00:05]shan he');
+  const body=JSON.parse(vi.mocked(backendRequest).mock.calls[0][1]!.body as string);
+  expect(body.lines).toEqual(['山河']);
 });

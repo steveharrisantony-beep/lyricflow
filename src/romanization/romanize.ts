@@ -1292,8 +1292,8 @@ export async function romanizeLrcTextAsync(
   signal?: AbortSignal,
   allowedCodes?: readonly string[]
 ): Promise<string> {
-  if (!lrcText.trim() || isLatinScript([lrcText])) return '';
-  if (!isLanguageAllowedForRomanization(lrcText, allowedCodes)) return '';
+  signal?.throwIfAborted();
+  if (!needsRomanization(lrcText, allowedCodes)) return '';
   const rawLines = lrcText.split(/\r?\n/);
   const plainLines = rawLines.map(line =>
     line

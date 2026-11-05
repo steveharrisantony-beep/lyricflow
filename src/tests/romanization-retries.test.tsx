@@ -41,21 +41,31 @@ it('awaits a failed attempt before retrying and applies success after the active
   await act(async()=>vi.advanceTimersByTimeAsync(80));
   expect(getLyricState(2).cue?.romanized).toBe('qing kong');
   expect(getRomanizationLogs()[0].status).toBe('Romanized lyrics applied');
-  expect(getRomanizationLogs()[0].events.map(event=>event.message).join('|')).toMatch(/Attempt 1 of 3.*incomplete.*Attempt 2 of 3.*running.*succeeded/);
+  expect(getRomanizationLogs()[0].events.map(event=>event.message).join('|')).toMatch(/Attempt 1 of 5.*incomplete.*Attempt 2 of 5.*running.*succeeded/);
   await show(2);
   expect(getLyricState(2).cue?.romanized).toBe('qing kong');
   expect(romanizeLrcTextAsync).toHaveBeenCalledTimes(2);
 });
 
-it('stops at three failed attempts while original lyrics remain active',async()=>{
+it('waits one then two seconds after three failures and stops after five attempts while original lyrics remain active',async()=>{
   vi.mocked(romanizeLrcTextAsync).mockResolvedValue(original);
   await show();
   expect(romanizeLrcTextAsync).toHaveBeenCalledTimes(3);
-  await act(async()=>vi.advanceTimersByTimeAsync(60000));
+  expect(getRomanizationLogs()[0].status).toMatch(/Waiting 1s/);
+  await act(async()=>vi.advanceTimersByTimeAsync(999));
   expect(romanizeLrcTextAsync).toHaveBeenCalledTimes(3);
+  await act(async()=>vi.advanceTimersByTimeAsync(1));
+  expect(romanizeLrcTextAsync).toHaveBeenCalledTimes(4);
+  expect(getRomanizationLogs()[0].status).toMatch(/Waiting 2s/);
+  await act(async()=>vi.advanceTimersByTimeAsync(1999));
+  expect(romanizeLrcTextAsync).toHaveBeenCalledTimes(4);
+  await act(async()=>vi.advanceTimersByTimeAsync(1));
+  expect(romanizeLrcTextAsync).toHaveBeenCalledTimes(5);
+  await act(async()=>vi.advanceTimersByTimeAsync(60000));
+  expect(romanizeLrcTextAsync).toHaveBeenCalledTimes(5);
   expect(getLyricState(2).cue?.text).toBe('青空');
   expect(getLyricState(2).cue?.romanized).toBe('');
-  expect(getRomanizationLogs()[0].status).toMatch(/Stopped after 3 attempts/);
+  expect(getRomanizationLogs()[0].status).toMatch(/Stopped after 5 attempts/);
 });
 
 it('cancels a ready replacement when romanization is disabled before the line ends',async()=>{
@@ -92,5 +102,36 @@ it('bounds a stalled attempt before trying again',async()=>{
   expect(romanizeLrcTextAsync).toHaveBeenCalledOnce();
   await act(async()=>vi.advanceTimersByTimeAsync(1));
   expect(romanizeLrcTextAsync).toHaveBeenCalledTimes(2);
-  expect(getRomanizationLogs()[0].events.map(event=>event.message).join('|')).toMatch(/timed out.*Attempt 2 of 3.*succeeded/);
+  expect(getRomanizationLogs()[0].events.map(event=>event.message).join('|')).toMatch(/timed out.*Attempt 2 of 5.*succeeded/);
+});
+
+it('cancels a delayed retry when romanization is disabled', async () => {
+  vi.mocked(romanizeLrcTextAsync).mockResolvedValue(original);
+  await show();
+  expect(romanizeLrcTextAsync).toHaveBeenCalledTimes(3);
+  await show(1, false);
+  await act(async () => vi.advanceTimersByTimeAsync(10000));
+  expect(romanizeLrcTextAsync).toHaveBeenCalledTimes(3);
+});
+
+it('applies success on the fourth attempt without scheduling a fifth', async () => {
+  vi.mocked(romanizeLrcTextAsync).mockResolvedValueOnce(original).mockResolvedValueOnce(original)
+    .mockResolvedValueOnce(original).mockResolvedValueOnce(romanized);
+  await show();
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(romanizeLrcTextAsync).toHaveBeenCalledTimes(4);
+  expect(getLyricState(2).cue?.romanized).toBe('');
+  setVirtualMediaTime(getLyricState(2).cue!.end + .01);
+  await act(async () => vi.advanceTimersByTimeAsync(80));
+  expect(getLyricState(2).cue?.romanized).toBe('qing kong');
+  await act(async () => vi.advanceTimersByTimeAsync(10000));
+  expect(romanizeLrcTextAsync).toHaveBeenCalledTimes(4);
+});
+
+it('does not run attempts for English lyrics, even when called directly', async () => {
+  const { retryRomanization } = await import('../romanization/retryRomanization');
+  const report = vi.fn();
+  expect(await retryRomanization('[00:01]Hello world', ['zh'], new AbortController().signal, report)).toBe('');
+  expect(romanizeLrcTextAsync).not.toHaveBeenCalled();
+  expect(report).toHaveBeenCalledWith(expect.stringContaining('Skipped'));
 });
