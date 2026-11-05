@@ -8,12 +8,12 @@ const video=(n:number,extra:Partial<SongResult>={}):SongResult=>{
   duration:200,provider:'resolver',sourceUrl:'https://www.youtube.com/watch?v='+id,...extra};
 };
 
-it('keeps search order and does not use duration, artist or view counts for autoplay',()=>{
+it('keeps filtering in search order without using duration, artist or view counts',()=>{
  const first=video(1,{duration:10});
  const second=video(2,{duration:1500,artist:'Different Artist',viewCount:1e9});
  const result=evaluateBackgroundVideos([first,second],'Ocean Road','music');
  expect(result.map(choice=>choice.song)).toEqual([first,second]);
- expect(result.find(choice=>choice.withinLimit&&!choice.reasons.length)?.song).toBe(first);
+ expect(result.every(choice=>choice.withinLimit&&!choice.reasons.length)).toBe(true);
 });
 it('checks the first twenty rows and retains diagnostics for the rest of the page',()=>{
  const songs=Array.from({length:65},(_,i)=>video(i,{title:i<20?'Other song':'Ocean Road'}));

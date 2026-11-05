@@ -8,9 +8,11 @@ Featured artists are kept when present in the source title. They are not appende
 from artist metadata. The browser and embedded backend use the same query builder.
 The picker keeps the first page in the returned relevance order.
 
-Autoplay checks the first 20 results in order and selects the first video that
-passes. The video title must share at least one complete word with the song
-title, ignoring symbols and case. Videos with invalid IDs, explicit embedding
+Autoplay checks the first 20 results in order, takes the first five videos that
+pass the filters, and chooses the one with the most views. If fewer than five
+pass, it chooses from those available. Ties preserve relevance order, and missing
+view counts rank below known counts. The video title must share at least one
+complete word with the song title, ignoring symbols and case. Videos with invalid IDs, explicit embedding
 blocks, static content, audio-track classifications, Topic channels, or an
 `Audio Track` album are rejected. Titles containing `jukebox`, `cover`,
 `reaction`, `karoke`, or `reply` are rejected unless the word is in the song

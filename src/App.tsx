@@ -1290,7 +1290,9 @@ export default function App({ user = null }: { user?: User | null }) {
   const automaticVideo = useMemo(() => {
     if (!canSearchBackground || automaticSearchPending || !localTrack) return undefined;
     return evaluateBackgroundVideos(preloadedVideoChoices,localTrack.title,preferredVideoType,playbackRejections)
-      .find(choice => choice.withinLimit && !choice.reasons.length)?.song;
+      .filter(choice => choice.withinLimit && !choice.reasons.length)
+      .slice(0,5)
+      .sort((a,b)=>(b.song.viewCount??-1)-(a.song.viewCount??-1))[0]?.song;
   },[canSearchBackground,automaticSearchPending,localTrack,preloadedVideoChoices,preferredVideoType,playbackRejections]);
 
   // Find a background for the current recording; stale results never carry into another song.

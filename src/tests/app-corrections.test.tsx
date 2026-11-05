@@ -435,7 +435,7 @@ it('keeps external cover updates separate from song searches and cancels searche
  }
 });
 
-it('waits for the full search and switches the active video from the completed list', async () => {
+it('waits for each preference search before choosing its most-viewed eligible result', async () => {
  const stage = await import('../visualization/cinematic/CinematicStage');
  const draw = vi.spyOn(stage, 'default').mockImplementation(props =>
   <span data-testid="preloaded-stage" data-video={props.youtubeVideoId || ''} data-searching={String(props.videoSearchPending)}/>);
@@ -471,11 +471,11 @@ it('waits for the full search and switches the active video from the completed l
   expect(search.mock.lastCall?.[0]).toBe('Original test song Lyric Video');
   expect(current()?.getAttribute('data-searching')).toBe('true');
   expect(current()?.getAttribute('data-video')).toBe('');
-  await act(async () => finish([unrelated,late,early]));
+  await act(async () => finish([unrelated,late]));
   expect(current()?.getAttribute('data-searching')).toBe('false');
   expect(current()?.getAttribute('data-video')).toBe(late.youtubeVideoId);
   expect(host.querySelector('.video-candidate[aria-current=true] strong')?.textContent).toBe(late.title);
-  expect(host.querySelectorAll('.video-candidate')).toHaveLength(3);
+  expect(host.querySelectorAll('.video-candidate')).toHaveLength(2);
   await select('music');
   expect(search.mock.lastCall?.[0]).toBe('Original test song Music Video');
   expect(current()?.getAttribute('data-searching')).toBe('true');
@@ -493,7 +493,7 @@ it('waits for the full search and switches the active video from the completed l
  }
 });
 
-it('plays the first passing result by relevance and reports rejection reasons beside all results', async () => {
+it('plays the most-viewed of the first five passing results and reports all rejection reasons', async () => {
  const stage = await import('../visualization/cinematic/CinematicStage');
  let stageProps: Parameters<typeof stage.default>[0] | undefined;
  const draw = vi.spyOn(stage, 'default').mockImplementation(props => {
@@ -505,9 +505,15 @@ it('plays the first passing result by relevance and reports rejection reasons be
   id: 'yt_' + id, youtubeVideoId: id, title, sourceUrl: 'https://www.youtube.com/watch?v=' + id,
   artist: 'Uploader', album: '', duration: 200, provider: 'resolver' as const, viewCount,
  });
- const rejected=video('aaaaaaaaaaa','Original Cover');
- const first=video('bbbbbbbbbbb','Original Visualizer');
+ const rejected=video('aaaaaaaaaaa','Original Cover',2_000_000_000);
+ const first=video('bbbbbbbbbbb','Original Visualizer',100);
  const popular=video('ccccccccccc','Original Official Lyric Video',90_000_000);
+ const second=video('ddddddddddd','Original Video',300);
+ const rejectedReaction=video('eeeeeeeeeee','Original Reaction',3_000_000_000);
+ const third=video('fffffffffff','Original Music Video',200);
+ const fourth=video('ggggggggggg','Original Sing Along',400);
+ const sixth=video('hhhhhhhhhhh','Original Other Video',1_000_000_000);
+ const candidates=[rejected,first,second,rejectedReaction,third,fourth,popular,sixth];
  let finish!: (songs: Awaited<ReturnType<typeof searchStashCatalog>>) => void;
  search.mockImplementation(async () => new Promise(resolve => {finish = resolve;}));
  const before = search.mock.calls.length;
@@ -516,21 +522,42 @@ it('plays the first passing result by relevance and reports rejection reasons be
   await act(async () => click('Show preloaded videos'));
   expect(stageProps?.videoSearchPending).toBe(true);
   expect(stageProps?.youtubeVideoId).toBeNull();
-  await act(async () => finish([rejected,first,popular]));
+  await act(async () => finish(candidates));
   expect(stageProps?.videoSearchPending).toBe(false);
-  expect(stageProps?.youtubeVideoId).toBe(first.youtubeVideoId);
+  expect(stageProps?.youtubeVideoId).toBe(popular.youtubeVideoId);
   const rows = [...host.querySelectorAll('.video-candidate')];
-  expect(rows.map(row=>row.querySelector('strong')?.textContent)).toEqual([rejected.title,first.title,popular.title]);
+  expect(rows.map(row=>row.querySelector('strong')?.textContent)).toEqual(candidates.map(candidate=>candidate.title));
   expect(rows[0].textContent).toContain('Rejected keyword: cover');
   expect(host.querySelector('.youtube-background-picker')?.textContent).toContain('sorted by relevance');
-  await act(async () => stageProps!.onRejectBackgroundVideo!(first.youtubeVideoId,'Embedding blocked'));
-  expect(stageProps?.youtubeVideoId).toBe(popular.youtubeVideoId);
-  expect(host.querySelectorAll('.video-candidate')[1].textContent).toContain('Embedding blocked');
+  await act(async () => stageProps!.onRejectBackgroundVideo!(popular.youtubeVideoId,'Embedding blocked'));
+  expect(stageProps?.youtubeVideoId).toBe(sixth.youtubeVideoId);
+  expect(host.querySelectorAll('.video-candidate')[6].textContent).toContain('Embedding blocked');
   expect(search.mock.calls).toHaveLength(before+1);
  } finally {
   draw.mockRestore();
   search.mockImplementation(original);
  }
+});
+
+it.each([
+ [[undefined,undefined],0],
+ [[10,10],0],
+ [[undefined,0],1],
+ [[7,9,3],1],
+] as const)('chooses by views with fewer than five candidates and stable ties %j',async(views,expected)=>{
+ const stage=await import('../visualization/cinematic/CinematicStage');
+ const draw=vi.spyOn(stage,'default').mockImplementation(props=><span data-testid="view-count-choice" data-video={props.youtubeVideoId||''}/>);
+ const search=vi.mocked(searchStashCatalog),original=search.getMockImplementation()!;
+ const candidates=views.map((viewCount,index)=>{
+  const id=String(index+1).padStart(11,'0');
+  return {id:'yt_'+id,youtubeVideoId:id,title:'Original Video',sourceUrl:'https://www.youtube.com/watch?v='+id,
+   artist:'Uploader',album:'',duration:200,provider:'resolver' as const,viewCount};
+ });
+ search.mockResolvedValue(candidates);
+ try{
+  await act(async()=>click('Load JioSaavn fixture'));
+  expect(host.querySelector('[data-testid="view-count-choice"]')?.getAttribute('data-video')).toBe(candidates[expected].youtubeVideoId);
+ }finally{draw.mockRestore();search.mockImplementation(original);}
 });
 
 it('keeps videos after the twentieth result visible when no automatic match passes', async () => {
