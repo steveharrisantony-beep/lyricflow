@@ -687,7 +687,9 @@ export default function CinematicStage(props:CinematicProps){
   searchPending:Boolean(props.videoSearchPending),
   playerAllowed:nativePolicy.allowed,
   awaitingVideoStart:syncTarget.waiting,
-  videoEnded:videoEndedEarly,
+  // A premature end is a playback failure; only skip recovery if the audio clock
+  // already passed the embedded video's actual end.
+  videoEnded:pastVideoDuration,
   pageVisible:videoPageVisible,
  });
  useEffect(()=>{
