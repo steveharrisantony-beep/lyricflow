@@ -673,6 +673,53 @@ export default function CinematicStage(props:CinematicProps){
  const transitionMs=props.reducedMotion||props.enabledThemeTransitions?.length===0?0:TRANSITION_SECONDS*1000;
  const mustPauseVideo=(config:CinematicProps,waiting:boolean,endedEarly=false)=>Boolean(config.audioPaused||waiting||endedEarly||(config.hasSeparateAudioStream&&(config.youtubeBackgroundMode==='theme'||config.videoSearchPending||config.advertisementPlaying)));
 
+ // A successful search result proves that a video ID matched, not that the
+ // iframe actually started rendering. Retry an unstarted or stalled AUTO match
+ // twice, then reject that ID so the existing chooser can try the next match.
+ const recoveryEligible=shouldMonitorAutoVideo({
+  hasAutoMatch:Boolean(props.onRejectBackgroundVideo),
+  videoId:ytId,
+  separateAudio:Boolean(props.hasSeparateAudioStream),
+  backgroundMode:props.youtubeBackgroundMode||'video',
+  audioPaused:Boolean(props.audioPaused),
+  hiddenVideo:Boolean(props.hideVideo),
+  adPlaying:Boolean(props.advertisementPlaying),
+  searchPending:Boolean(props.videoSearchPending),
+  playerAllowed:nativePolicy.allowed,
+  awaitingVideoStart:syncTarget.waiting,
+  videoEnded:videoEndedEarly,
+  pageVisible:videoPageVisible,
+ });
+ useEffect(()=>{
+  if(!recoveryEligible||!ytId||videoRecoveryRef.current.finished)return;
+  const timer=window.setInterval(()=>{
+   const state=videoRecoveryRef.current;
+   if(state.finished||state.identity!==[props.recordingKey||'',ytId].join('|'))return;
+   const verified=playingVideoKey===playbackKey;
+   const threshold=verified?AUTO_VIDEO_STALL_TIMEOUT_MS:AUTO_VIDEO_START_TIMEOUT_MS;
+   const elapsed=Date.now()-(verified?state.progressAt:state.attemptAt);
+   if(elapsed<threshold)return;
+   if(state.reloads<MAX_AUTO_VIDEO_RELOADS){
+    state.reloads++;
+    state.attemptAt=Date.now();
+    state.progressAt=Date.now();
+    state.lastTime=-1;
+    logVideoPlaybackRecovery(ytId,
+     `Video ${verified?'stalled':'did not start'} · automatic reload ${state.reloads}/${MAX_AUTO_VIDEO_RELOADS}`);
+    setPlayingVideoKey('');
+    setPlaybackError('');
+    setErrorRetryNonce(n=>n+1);
+   }else{
+    state.finished=true;
+    const reason='Auto background video failed to play after 3 attempts';
+    logVideoPlaybackRecovery(ytId,reason+' · trying next matching video');
+    setPlayingVideoKey('');
+    latestPropsRef.current.onRejectBackgroundVideo?.(ytId,reason);
+   }
+  },1000);
+  return()=>window.clearInterval(timer);
+ },[recoveryEligible,ytId,props.recordingKey,playbackKey,playingVideoKey]);
+
  const blackOverlayOpacity=Math.max(0,Math.min(0.92,props.videoOverlayOpacity??0));
 
  // The previous iframe is removed in the same render as a recording/video change.
