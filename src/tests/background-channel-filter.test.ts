@@ -77,3 +77,53 @@ it('keeps relevance as the views tie-breaker and ranks missing views below zero'
  expect(result.selected).toBe(songs[1]);
  expect(result.choices[0].reasons).toEqual(['Blocked channel: 7clouds']);
 });
+
+it('checks the full lyrics-cleaned song title in the VIDEO TITLE, not the YouTube ID',()=>{
+ const songs=[
+  video(1,{title:'Roadside Ocean Live Session',viewCount:1200,uploaderName:'Official label'}),
+  video(2,{title:'OCEAN ROAD · Official Music Video',viewCount:900,uploaderName:'Official label'}),
+ ];
+ const result=selectAutomaticBackgroundVideo(songs,'Ocean Road (Official Video)','music');
+ expect(result.selected).toBe(songs[1]);
+ expect(result.choices[0].reasons).toContain('Filtered song title missing from video title');
+ expect(result.choices[1].reasons).toEqual([]);
+});
+
+it('uses the exact lyrics title cleaner with artist context and preserves matching versions',()=>{
+ const wrong=video(1,{title:'Ocean Road Remix by Singer',viewCount:300});
+ const correct=video(2,{title:'Singer - Ocean Road (Live) | Official Video',viewCount:200});
+ const result=selectAutomaticBackgroundVideo(
+  [wrong,correct],'Singer - Ocean Road (Live) | Official Music Video','music',{},'Singer'
+ );
+ expect(result.selected).toBe(correct);
+ expect(result.choices[0].reasons).toContain('Filtered song title missing from video title');
+});
+
+it('chooses the next passing video from the original five, without refilling from a sixth',()=>{
+ const songs=[
+  video(1,{videoTitle:'Ocean Boulevard Official',viewCount:500}),
+  video(2,{uploaderName:'7clouds',viewCount:400}),
+  video(3,{videoTitle:'Ocean Road - Official Video',viewCount:300}),
+  video(4,{title:'Road Only',viewCount:200}),
+  video(5,{title:'Ocean Road',viewCount:100}),
+  video(6,{title:'Ocean Road',viewCount:10000}),
+ ];
+ const result=selectAutomaticBackgroundVideo(songs,'Ocean Road','music');
+ expect(result.selected).toBe(songs[2]);
+ expect(result.choices[0].reasons).toContain('Filtered song title missing from video title');
+ expect(result.choices[1].reasons).toContain('Blocked channel: 7clouds');
+ expect(result.choices[5].reasons).toEqual([]);
+ const blockedFirstFive=songs.slice(0,5).map(song=>({...song,uploaderName:'7clouds'}));
+ const none=selectAutomaticBackgroundVideo([...blockedFirstFive,songs[5]],'Ocean Road','music');
+ expect(none.selected).toBeUndefined();
+});
+
+it('supports Hindi and Malayalam title words without substring false positives',()=>{
+ const hindi=video(1,{videoTitle:'मेरी दुनिया · Official Music Video'});
+ expect(selectAutomaticBackgroundVideo([hindi],'मेरी दुनिया [Official Video]','music').selected).toBe(hindi);
+ const malayalam=video(2,{videoTitle:'മഴേ | Official Video'});
+ const wrong=video(3,{videoTitle:'മഴ | Official Video'});
+ const chosen=selectAutomaticBackgroundVideo([wrong,malayalam],'മഴേ (Official Music Video)','music');
+ expect(chosen.selected).toBe(malayalam);
+ expect(chosen.choices[0].reasons).toContain('Filtered song title missing from video title');
+});
