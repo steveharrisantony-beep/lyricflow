@@ -598,6 +598,14 @@ export default function App({ user = null }: { user?: User | null }) {
     setCinemaHudVisible(false);
   }, [clearCinemaHudTimer]);
 
+  // Closing Settings dismisses only its window, returning to the fullscreen
+  // toolbar. The separate HUD hide action still preserves open windows.
+  const closeFullscreenSettings = useCallback(() => {
+    closeSettings();
+    setCinemaHudVisible(true);
+    scheduleCinemaHudHide();
+  }, [closeSettings, scheduleCinemaHudHide]);
+
   const toggleCinemaHud = useCallback(() => {
     if (cinemaHudVisible) hideCinemaHud();
     else revealCinemaHud();
@@ -1857,7 +1865,7 @@ export default function App({ user = null }: { user?: User | null }) {
                       type="button"
                       className="glass"
                       onClick={() => {
-                        if(cinemaControlsOpen)hideCinemaHud();
+                        if(cinemaControlsOpen)closeFullscreenSettings();
                         else {setFullscreenPlayerOpen(false);setCinemaHudVisible(true);openSettings();}
                       }}
                       aria-expanded={cinemaControlsOpen}
@@ -1956,7 +1964,7 @@ export default function App({ user = null }: { user?: User | null }) {
           onPageChange={setSettingsPage}
           open={cinemaControlsOpen}
           fullscreen={performance}
-          onClose={performance ? hideCinemaHud : closeSettings}
+          onClose={performance ? closeFullscreenSettings : closeSettings}
           hiddenByHud={performance && !cinemaHudVisible}
           onExitFullscreen={() => void togglePerformance()}
         >
