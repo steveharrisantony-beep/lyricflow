@@ -12,6 +12,19 @@ it.each([
  '7clouds','DopeLyrics','LatinHype','The Vibe Guide','SyrebralVibes','Vibe Music',
  'Shadow Music','Cakes & Eclairs','Unique Vibes','Taj Tracks','Dan Music','WaveMusic',
  'BangersOnly','Royal Music',
+ 'TikTokTunes','Jaeguchi','Pizza Music','Superhit Music',
+ 'NightcoreReality','Popular Music','NewMelody','RohitMix Lyrics',
+ 'LyricsZone','Cassiopeia','Unique Sound','TheGoodVibe',
+ 'Love Life Lyrics','Aureal','Hip Hop/R&B Lyrics','jostland.',
+ 'Lemoring','Mera','IndieAir','VibesOnly',
+ 'headset lyrics','GOLDY LYRICS','Zaty Farhani','Lazy Fox',
+ 'Aura Melodies','Superior Lyrics','Rap Paradise','Lyrics&Translation',
+ 'Lyrics Tube','Lovely Lyrics','Love Book','My Lyrics Editor',
+ 'Lyrical Network','Saturday Melody','Enjoy Hindi Lyrics','GHOSTIFY',
+ 'Twilight Sounds','Amazing Melody','Country Paradise','PicksRap',
+ 'Music Cavier','Steal Lyrics','Bullz Edit','Iconic Lyrics',
+ 'TheCatLadyJ','Pop Paradise','Lyrical Audio','Accelerate',
+ 'Lyrics Vibes','aw3somesauce',
 ])('rejects the entire channel phrase %s inside a longer channel name, ignoring case',name=>{
  const song=video(1,{uploaderName:`New ${name.toUpperCase()} Video`});
  const result=selectAutomaticBackgroundVideo([song],'Ocean Road','music');
@@ -190,4 +203,12 @@ it('does not backfill the initial three when all fail final full-title validatio
  expect(result.selected).toBeUndefined();
  expect(result.choices.slice(0,3).every(choice=>choice.reasons.includes('Filtered song title missing from video title'))).toBe(true);
  expect(result.choices[3].reasons).toEqual([]);
+});
+
+it('keeps the expanded blacklist limited to uploader names, without blocking manual search results',()=>{
+ const song=video(1,{uploaderName:'TikTokTunes Official',title:'Ocean Road (Live)'});
+ const choice=selectAutomaticBackgroundVideo([song],'Ocean Road','music');
+ expect(choice.selected).toBeUndefined();
+ expect(choice.choices[0].reasons).toContain('Blocked channel: TikTokTunes');
+ expect(choice.choices[0].reasons).not.toContain('Filtered song title missing from video title');
 });

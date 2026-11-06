@@ -24,6 +24,19 @@ const rejectedBackgroundChannels=[
  '7clouds','DopeLyrics','LatinHype','The Vibe Guide','SyrebralVibes','Vibe Music',
  'Shadow Music','Cakes & Eclairs','Unique Vibes','Taj Tracks','Dan Music','WaveMusic',
  'BangersOnly','Royal Music',
+ 'TikTokTunes','Jaeguchi','Pizza Music','Superhit Music',
+ 'NightcoreReality','Popular Music','NewMelody','RohitMix Lyrics',
+ 'LyricsZone','Cassiopeia','Unique Sound','TheGoodVibe',
+ 'Love Life Lyrics','Aureal','Hip Hop/R&B Lyrics','jostland.',
+ 'Lemoring','Mera','IndieAir','VibesOnly',
+ 'headset lyrics','GOLDY LYRICS','Zaty Farhani','Lazy Fox',
+ 'Aura Melodies','Superior Lyrics','Rap Paradise','Lyrics&Translation',
+ 'Lyrics Tube','Lovely Lyrics','Love Book','My Lyrics Editor',
+ 'Lyrical Network','Saturday Melody','Enjoy Hindi Lyrics','GHOSTIFY',
+ 'Twilight Sounds','Amazing Melody','Country Paradise','PicksRap',
+ 'Music Cavier','Steal Lyrics','Bullz Edit','Iconic Lyrics',
+ 'TheCatLadyJ','Pop Paradise','Lyrical Audio','Accelerate',
+ 'Lyrics Vibes','aw3somesauce',
 ];
 export function evaluateBackgroundVideos(songs:SongResult[],songTitle:string,_preference:'music'|'lyrics',playbackRejections:Readonly<Record<string,string>>={}){
  const songWords=new Set(identityWords(songTitle));
