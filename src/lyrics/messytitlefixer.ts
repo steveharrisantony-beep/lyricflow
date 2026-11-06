@@ -5,7 +5,7 @@
  * remains available to version and identity validation.
  */
 const invisible = /[\u0000-\u001F\u007F-\u009F\u200B\u200E\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g;
-const bracketPairs: Record<string,string> = {'(':')','[':']','{':'}};
+const bracketPairs: Record<string,string> = {'(':')','[':']','{':'}'};
 const closingBrackets = new Set([')',']','}']);
 
 function trimEdges(value: string): string {
