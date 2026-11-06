@@ -94,6 +94,7 @@ jobs:
           LYRICFLOW_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
           LYRICFLOW_KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
           LYRICFLOW_KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
+          LYRICFLOW_ABI_SPLITS: 'true'
         run: |
           chmod +x gradlew
           if [ -n "$LYRICFLOW_KEYSTORE" ]; then
@@ -101,23 +102,61 @@ jobs:
           else
             ./gradlew --no-daemon assembleDebug
           fi
-      - name: Name the APK
+      - name: Name universal and device-optimized APKs
+        shell: bash
         run: |
           mkdir -p artifacts
-          if [ -n "$LYRICFLOW_KEYSTORE" ]; then
-            cp android/app/build/outputs/apk/release/app-release.apk artifacts/LyricFlow-Android.apk
+          variant=debug
+          if [ -n "$LYRICFLOW_KEYSTORE" ]; then variant=release; fi
+          dir="android/app/build/outputs/apk/$variant"
+          if [ -f "$dir/app-universal-$variant.apk" ]; then
+            cp "$dir/app-universal-$variant.apk" artifacts/LyricFlow-Android.apk
           else
-            cp android/app/build/outputs/apk/debug/app-debug.apk artifacts/LyricFlow-Android.apk
+            cp "$dir/app-$variant.apk" artifacts/LyricFlow-Android.apk
           fi
+          for abi in arm64-v8a armeabi-v7a x86_64 x86; do
+            if [ -f "$dir/app-$abi-$variant.apk" ]; then
+              cp "$dir/app-$abi-$variant.apk" "artifacts/LyricFlow-Android-$abi.apk"
+            fi
+          done
+          echo "### APK sizes" >> "$GITHUB_STEP_SUMMARY"
+          for apk in artifacts/*.apk; do
+            echo "$(basename "$apk"): $(du -h "$apk" | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
+          done
       - name: Show APK signing certificate
         run: |
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs artifacts/LyricFlow-Android.apk \
             | tee -a "$GITHUB_STEP_SUMMARY"
+      # The universal APK retains the exact name expected by in-app updates.
       - uses: actions/upload-artifact@v4
         with:
           name: LyricFlow-Android
           path: artifacts/LyricFlow-Android.apk
           if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LyricFlow-Android-arm64-v8a
+          path: artifacts/LyricFlow-Android-arm64-v8a.apk
+          if-no-files-found: ignore
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LyricFlow-Android-armeabi-v7a
+          path: artifacts/LyricFlow-Android-armeabi-v7a.apk
+          if-no-files-found: ignore
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LyricFlow-Android-x86_64
+          path: artifacts/LyricFlow-Android-x86_64.apk
+          if-no-files-found: ignore
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LyricFlow-Android-x86
+          path: artifacts/LyricFlow-Android-x86.apk
+          if-no-files-found: ignore
           retention-days: 30
 
   publish-update:
