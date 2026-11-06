@@ -64,10 +64,19 @@ export function videoContainsFilteredSongTitle(songTitle:string,videoTitle:strin
  * Final title validation does not repeat the blacklist or refill the shortlist.
  */
 export function selectAutomaticBackgroundVideo(songs:SongResult[],songTitle:string,preference:'music'|'lyrics',playbackRejections:Readonly<Record<string,string>>={},artistContext=''){
- const choices=evaluateBackgroundVideos(songs,songTitle,preference,playbackRejections);
+ // Lock in the shortlist using the initial static filters. A later playback
+ // error must not refill the original first three from the fourth candidate.
+ const choices=evaluateBackgroundVideos(songs,songTitle,preference);
  const shortlist=choices.filter(choice=>choice.withinLimit&&!choice.reasons.length)
   .slice(0,AUTO_VIDEO_SHORTLIST_LIMIT).sort((a,b)=>(b.song.viewCount??-1)-(a.song.viewCount??-1));
+ for(const choice of choices){
+  if(choice.id&&Object.hasOwn(playbackRejections,choice.id)){
+   choice.reasons.push(playbackRejections[choice.id]);
+   choice.canUse=false;
+  }
+ }
  for(const choice of shortlist){
+  if(choice.reasons.length)continue;
   if(!videoContainsFilteredSongTitle(songTitle,choice.song.videoTitle||choice.song.title,artistContext))
    choice.reasons.push('Filtered song title missing from video title');
   if(choice.reasons.length)continue;
