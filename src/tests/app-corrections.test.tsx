@@ -555,14 +555,14 @@ it('plays the most-viewed of the first five passing results and reports all reje
   id: 'yt_' + id, youtubeVideoId: id, title, sourceUrl: 'https://www.youtube.com/watch?v=' + id,
   artist: 'Uploader', album: '', duration: 200, provider: 'resolver' as const, viewCount,
  });
- const rejected=video('aaaaaaaaaaa','Original Cover',2_000_000_000);
- const first=video('bbbbbbbbbbb','Original Visualizer',100);
- const popular=video('ccccccccccc','Original Official Lyric Video',90_000_000);
- const second=video('ddddddddddd','Original Video',300);
- const rejectedReaction=video('eeeeeeeeeee','Original Reaction',3_000_000_000);
- const third=video('fffffffffff','Original Music Video',200);
- const fourth=video('ggggggggggg','Original Sing Along',400);
- const sixth=video('hhhhhhhhhhh','Original Other Video',1_000_000_000);
+ const rejected=video('aaaaaaaaaaa','Original test song Cover',2_000_000_000);
+ const first=video('bbbbbbbbbbb','Original test song Visualizer',100);
+ const popular=video('ccccccccccc','Original test song Official Lyric Video',90_000_000);
+ const second=video('ddddddddddd','Original test song Video',300);
+ const rejectedReaction=video('eeeeeeeeeee','Original test song Reaction',3_000_000_000);
+ const third=video('fffffffffff','Original test song Music Video',200);
+ const fourth=video('ggggggggggg','Original test song Sing Along',400);
+ const sixth=video('hhhhhhhhhhh','Original test song Other Video',1_000_000_000);
  const candidates=[rejected,first,second,rejectedReaction,third,fourth,popular,sixth];
  let finish!: (songs: Awaited<ReturnType<typeof searchStashCatalog>>) => void;
  search.mockImplementation(async () => new Promise(resolve => {finish = resolve;}));
@@ -597,7 +597,7 @@ it.each([false,true])('applies the final channel check and shows preloaded reaso
  const channels=['7clouds rocks','Official label','Cakes & Eclairs Video','New Dan Music','Another label','Music distributor'];
  const candidates=channels.map((uploaderName,index)=>{
   const id=String(index+1).padStart(11,'0');
-  return {id:'yt_'+id,youtubeVideoId:id,title:`Original Video ${index}`,sourceUrl:'https://www.youtube.com/watch?v='+id,
+  return {id:'yt_'+id,youtubeVideoId:id,title:`Original test song Video ${index}`,sourceUrl:'https://www.youtube.com/watch?v='+id,
    artist:'Uploader',uploaderName:allBlocked&&index<5?'Royal Music':uploaderName,album:'',duration:200,
    provider:'resolver' as const,viewCount:[500,200,900,800,100,1e9][index]};
  });
@@ -635,7 +635,7 @@ it.each([
  const search=vi.mocked(searchStashCatalog),original=search.getMockImplementation()!;
  const candidates=views.map((viewCount,index)=>{
   const id=String(index+1).padStart(11,'0');
-  return {id:'yt_'+id,youtubeVideoId:id,title:'Original Video',sourceUrl:'https://www.youtube.com/watch?v='+id,
+  return {id:'yt_'+id,youtubeVideoId:id,title:'Original test song Video',sourceUrl:'https://www.youtube.com/watch?v='+id,
    artist:'Uploader',album:'',duration:200,provider:'resolver' as const,viewCount};
  });
  search.mockResolvedValue(candidates);
@@ -653,7 +653,7 @@ it('keeps videos after the twentieth result visible when no automatic match pass
  const videos = Array.from({length:21},(_,index)=>{
   const id=String(index).padStart(11,'0');
   return {id:'yt_'+id,youtubeVideoId:id,sourceUrl:'https://www.youtube.com/watch?v='+id,
-   title:index<20?'Original Reply':'Original Lyric Video',artist:'Uploader',album:'',duration:200,provider:'resolver' as const};
+   title:index<20?'Original test song Reply':'Original test song Lyric Video',artist:'Uploader',album:'',duration:200,provider:'resolver' as const};
  });
  search.mockResolvedValue(videos);
  const before = search.mock.calls.length;
