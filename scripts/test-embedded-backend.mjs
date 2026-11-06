@@ -222,10 +222,11 @@ try {
   });
   const backgrounds = await (await request('/music/search?'+backgroundParams)).json();
   assert.equal(youtubeSearchRequests,beforeBackgroundSearch+1,'Automatic matching uses the title and primary artist without appending featured metadata');
-  assert.deepEqual([...lookedUpBackgroundIds].sort(),backgroundIds.slice(0,19).sort(),'The first twenty ranks include malformed rows and later rows are not probed');
+  assert.deepEqual([...lookedUpBackgroundIds].sort(),backgroundIds.slice(0,9).sort(),'Only the nine valid IDs in the first ten relevance ranks are probed');
   assert.equal(backgrounds.data[0].title,'Apna malformed result');
   assert.equal(backgrounds.data[0].youtubeVideoId,undefined);
-  assert.deepEqual(backgrounds.data.slice(1).map(video=>video.youtubeVideoId),backgroundIds);
+  assert.equal(backgrounds.data.length,10,'Automatic background search returns only ten relevance-ranked results');
+  assert.deepEqual(backgrounds.data.slice(1).map(video=>video.youtubeVideoId),backgroundIds.slice(0,9));
   assert.equal(backgrounds.data[1].viewCount,629000000);
   assert.equal(backgrounds.data.at(-1).duration,30);
   assert.equal(backgrounds.data.at(-1).videoType,'UGC','Title words must not invent an audio-only classification');

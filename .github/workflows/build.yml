@@ -17,6 +17,12 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Bundle on-device backend without building an APK
+        run: npm run build:backend
+      - name: Test on-device backend
+        run: npm run test:backend
+      - name: Verify Capacitor Android sync (no APK)
+        run: npx cap sync android
       - run: npm run size:audit
       - uses: actions/setup-python@v5
         with:
