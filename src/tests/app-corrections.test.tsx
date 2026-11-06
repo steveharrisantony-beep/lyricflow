@@ -754,7 +754,7 @@ it.each([false,true])('logs a SponsorBlock intro only when the playing backgroun
  }finally{draw.mockRestore();segments.mockRestore();subtitles.mockRestore();}
 });
 
-it('uses the first preloaded video when a published mapping points to a different upload', async () => {
+it('plays a saved published video directly without searching or applying autoplay checks', async () => {
  const {correctionContext} = await import('../firebase/correctionModel');
  const song = {title:'Original test song', artist:'Test artist', album:'Studio', duration:200, source:'provider' as const, confidence:1};
  const context = correctionContext(song, 'video')!;
@@ -765,12 +765,14 @@ it('uses the first preloaded video when a published mapping points to a differen
  const draw = vi.spyOn(stage, 'default').mockImplementation(props =>
   <span data-testid="published-stage" data-video={props.youtubeVideoId || ''} data-delay={props.videoDelaySeconds}/>);
  try {
+  const searchCalls=vi.mocked(searchStashCatalog).mock.calls.length;
   await act(async () => click('Load JioSaavn fixture'));
   await act(async () => click('Show preloaded videos'));
   const current = host.querySelector('[data-testid="published-stage"]');
-  expect(current?.getAttribute('data-video')).toBe('abcdefghijk');
-  expect(current?.getAttribute('data-delay')).toBe('0');
-  expect(host.querySelector('.video-candidate')?.getAttribute('aria-current')).toBe('true');
+  expect(current?.getAttribute('data-video')).toBe('zzzzzzzzzzz');
+  expect(current?.getAttribute('data-delay')).toBe('5');
+  expect(host.querySelectorAll('.video-candidate')).toHaveLength(0);
+  expect(vi.mocked(searchStashCatalog).mock.calls.length).toBe(searchCalls);
  } finally {draw.mockRestore();}
 });
 

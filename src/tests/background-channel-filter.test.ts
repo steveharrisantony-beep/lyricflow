@@ -46,7 +46,7 @@ it.each(['music','lyrics'] as const)('filters blocked channels before taking fir
  expect(result.selected).toBe(songs[5]);
  expect(result.choices.map(choice=>choice.song)).toEqual(songs);
  expect(result.choices.map(choice=>choice.reasons)).toEqual([
-  ['Blocked channel: 7clouds'],['Blocked channel: Cakes & Eclairs'],[],[],[],[],
+  ['Blocked channel: 7clouds'],['Blocked channel: Cakes & Eclairs'],[],['Blocked channel: Dan Music'],[],[],
  ]);
  expect(songs.map(song=>song.viewCount)).toEqual([900,1000,600,300,100,1e9]);
 });
