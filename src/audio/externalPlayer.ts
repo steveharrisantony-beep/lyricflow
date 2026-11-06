@@ -141,27 +141,61 @@ export async function subscribeExternalMedia(
   let handle: PluginListenerHandle | null = null;
   let stopWatching: (()=>void)|null=null;
   let cancelled = false;
+  let eventVersion = 0;
+  let snapshotVersion = 0;
+  let hasReceivedTrack = false;
+  const startupTimers: ReturnType<typeof setTimeout>[] = [];
+  const deliver = (media: ExternalMediaState | null, granted: boolean) => {
+    if (cancelled) return;
+    if (media?.title?.trim()) hasReceivedTrack = true;
+    onMediaChange(media, granted);
+  };
+  // A stale startup snapshot must never overwrite a newer mediaChange event.
+  const refresh = async (allowEmpty = true) => {
+    const eventAtStart = eventVersion;
+    const request = ++snapshotVersion;
+    const latest = await getCurrentExternalMedia();
+    if (cancelled || eventAtStart !== eventVersion || request !== snapshotVersion) return;
+    if (latest.media || allowEmpty || !latest.granted) deliver(latest.media, latest.granted);
+  };
+  const onForeground = () => {
+    if (document.visibilityState !== 'hidden') void refresh();
+  };
   try {
     handle = await ExternalMedia.addListener('mediaChange', state => {
       if (cancelled) return;
-      onMediaChange(state && typeof state.title === 'string' && state.title.trim() ? state : null, true);
+      ++eventVersion;
+      // Any in-flight getCurrentMedia call is now obsolete.
+      ++snapshotVersion;
+      deliver(state && typeof state.title === 'string' && state.title.trim() ? state : null, true);
     });
-    stopWatching=await watchExternalNotificationAccess(()=>{
-      void getCurrentExternalMedia().then(result=>{if(!cancelled)onMediaChange(result.media,result.granted);});
-    });
+    stopWatching = await watchExternalNotificationAccess(() => { void refresh(); });
+    const eventAtStart = eventVersion;
     const initial = await ExternalMedia.startListening();
-    if (!cancelled) {
-      onMediaChange(
-        initial?.media && initial.media.title ? initial.media : null,
-        Boolean(initial?.granted)
-      );
+    if (!cancelled && eventAtStart === eventVersion) {
+      deliver(initial?.media && initial.media.title?.trim() ? initial.media : null, Boolean(initial?.granted));
     }
+    // Some devices only populate active sessions after the native listener is
+    // connected. Re-read the currently playing song, even if it did not change.
+    void refresh(false);
+    for (const delay of [350, 1100, 2500]) {
+      startupTimers.push(setTimeout(() => {
+        if (!cancelled && !hasReceivedTrack) void refresh(false);
+      }, delay));
+    }
+    window.addEventListener('focus', onForeground);
+    window.addEventListener('pageshow', onForeground);
+    document.addEventListener('visibilitychange', onForeground);
   } catch {
-    if (!cancelled) onMediaChange(null, false);
+    if (!cancelled && !hasReceivedTrack) deliver(null, false);
   }
 
   return () => {
     cancelled = true;
+    startupTimers.forEach(clearTimeout);
+    window.removeEventListener('focus', onForeground);
+    window.removeEventListener('pageshow', onForeground);
+    document.removeEventListener('visibilitychange', onForeground);
     void handle?.remove();
     stopWatching?.();
     void ExternalMedia.stopListening().catch(() => {});

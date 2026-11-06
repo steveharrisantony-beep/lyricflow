@@ -217,7 +217,7 @@ export default function YouTubeBackgroundPicker({
               <button
                 type="button"
                 className="upload-button"
-                disabled={!id || choice?.canUse === false}
+                disabled={!id}
                 onClick={() => {
                   if (!id) return;
                   onChoose(id,song);

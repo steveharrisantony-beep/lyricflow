@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { LYRICS_SEARCH_EVENT, TEMPORARY_SONG_EVENT, temporarySongs } from '../data/temporarySongs';
 import type { TrackInfo } from '../metadata/trackInfo';
 import { lyricProviderName } from './sourceLabels';
@@ -41,9 +41,11 @@ export function PreloadedLyrics({ report, loaded, onChoose }: {
   loaded?: { title?: string; sourceUrl?: string; source: string } | null;
   onChoose: (candidate: LyricsSearchCandidate) => void;
 }) {
+  const [selectionError, setSelectionError] = useState('');
   const stage = report?.stages.at(-1);
   const candidates = [...(stage?.candidates || [])].sort((a, b) => b.quality - a.quality || compareLyricCandidates(a, b));
   return <section className="track-candidates" aria-label="Preloaded lyrics">
+    {selectionError && <p role="status" className="quiet-status">{selectionError}</p>}
     {stage && <p className="quiet-status">Stage {stage.query.number} · {stage.query.label}</p>}
     {candidates.length === 0 && <p role="status" className="quiet-status">{statusText(report)}</p>}
     {candidates.map((candidate, index) => {
@@ -65,8 +67,15 @@ export function PreloadedLyrics({ report, loaded, onChoose }: {
             </>}
           </small>
         </div>
-        <button type="button" className="upload-button" disabled={Boolean(candidate.rejection) || active}
-          onClick={() => onChoose(candidate)}>Use this version</button>
+        <button type="button" className="upload-button" disabled={active}
+          onClick={() => {
+            if (!(candidate.lrc?.trim() || candidate.plain?.trim())) {
+              setSelectionError('The selected candidate has no available lyric text. Choose a different result.');
+              return;
+            }
+            setSelectionError('');
+            onChoose(candidate);
+          }}>Use this version</button>
       </div>;
     })}
   </section>;

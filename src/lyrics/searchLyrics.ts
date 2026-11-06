@@ -41,7 +41,9 @@ function prepareCandidate(raw: ProviderLyric, plan: LyricsSearchPlan, query: Lyr
   const text = decoded?.lrc || raw.lrc || '';
   const timed = hasValidLrcTimestamps(text) ? text : '';
   const timing = timed ? checkLyricsTiming(timed, decoded?.lrc ? decoded.primaryLineStarts : undefined) : {};
-  const lrc = timing.rejection ? '' : timing.wordTimingIssue ? stripLrcWordTiming(timed) : timed;
+  // Preserve text for explicit manual selection even if its timing is rejected
+  // for automatic playback. Quality and rejection still exclude it from auto.
+  const lrc = timing.wordTimingIssue ? stripLrcWordTiming(timed) : timed;
   const plain = raw.plain || (!timed && text.trim()) || undefined;
   const quality = timing.rejection ? 0 : lyricsQuality(lrc || plain);
   const match = validateLyricsCandidate(raw, plan, query);
