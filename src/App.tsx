@@ -1312,7 +1312,7 @@ export default function App({ user = null }: { user?: User | null }) {
   const preloadedVideoChoices = autoVideoMatch.key === videoSearchKey ? autoVideoMatch.candidates : [];
   const automaticVideo = useMemo(() => {
     if (!canSearchBackground || automaticSearchPending || !localTrack) return undefined;
-    return selectAutomaticBackgroundVideo(preloadedVideoChoices,localTrack.title,preferredVideoType,playbackRejections).selected;
+    return selectAutomaticBackgroundVideo(preloadedVideoChoices,localTrack.title,preferredVideoType,playbackRejections,localTrack.artist||localTrack.primaryArtist||'').selected;
   },[canSearchBackground,automaticSearchPending,localTrack,preloadedVideoChoices,preferredVideoType,playbackRejections]);
 
   // Find a background for the current recording; stale results never carry into another song.
@@ -1347,7 +1347,7 @@ export default function App({ user = null }: { user?: User | null }) {
       .then((result) => {
         if (controller.signal.aborted) return;
         const { candidates, candidateCount } = result ?? { candidates: [], candidateCount: 0 };
-        const passed=selectAutomaticBackgroundVideo(candidates,localTrack.title,preferredVideoType).choices
+        const passed=selectAutomaticBackgroundVideo(candidates,localTrack.title,preferredVideoType,{},localTrack.artist||localTrack.primaryArtist||'').choices
           .filter(candidate=>candidate.withinLimit&&!candidate.reasons.length).length;
         logVideoFiltering(themeRecordingIdentity,candidateCount,passed);
         setAutoVideoMatch(previous => previous.key === videoSearchKey && previous.pending
