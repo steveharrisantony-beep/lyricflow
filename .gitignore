@@ -30,3 +30,7 @@ android/keystore/
 
 # AI Studio generated plans and temporary media are not application source
 .aistudio/artifacts/
+
+# AI Studio screenshots are design references, not packaged application assets.
+# Keep references in docs/reference-images/aistudio/ instead.
+public/assets/aistudio/
