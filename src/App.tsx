@@ -579,11 +579,11 @@ export default function App({ user = null }: { user?: User | null }) {
     }
   }, []);
 
-  const scheduleCinemaHudHide = useCallback(() => {
+  const scheduleCinemaHudHide = useCallback((delayMs = 2000) => {
     clearCinemaHudTimer();
     cinemaHudTimerRef.current = window.setTimeout(() => {
       setCinemaHudVisible(false);
-    }, 2000);
+    }, delayMs);
   }, [clearCinemaHudTimer]);
 
   const revealCinemaHud = useCallback(() => {
@@ -593,24 +593,15 @@ export default function App({ user = null }: { user?: User | null }) {
 
   const hideCinemaHud = useCallback(() => {
     clearCinemaHudTimer();
+    // Keep the selected fullscreen window and its settings page intact so a
+    // tap restores it instead of mounting a fresh window.
     setCinemaHudVisible(false);
-    setFullscreenPlayerOpen(false);
-    setCinemaControlsOpen(false);
   }, [clearCinemaHudTimer]);
 
   const toggleCinemaHud = useCallback(() => {
-    if (cinemaHudVisible || fullscreenPlayerOpen || cinemaControlsOpen) {
-      hideCinemaHud();
-    } else {
-      revealCinemaHud();
-    }
-  }, [
-    cinemaHudVisible,
-    fullscreenPlayerOpen,
-    cinemaControlsOpen,
-    hideCinemaHud,
-    revealCinemaHud,
-  ]);
+    if (cinemaHudVisible) hideCinemaHud();
+    else revealCinemaHud();
+  }, [cinemaHudVisible, hideCinemaHud, revealCinemaHud]);
 
   useEffect(() => {
     if (!performance) {
@@ -619,18 +610,10 @@ export default function App({ user = null }: { user?: User | null }) {
       setFullscreenPlayerOpen(false);
       return;
     }
-    if (
-      !cinemaControlsOpen &&
-      !fullscreenPlayerOpen &&
-      !playerOverlayOpen &&
-      !sourceOpen
-    ) {
-      if (cinemaHudVisible) {
-        scheduleCinemaHudHide();
-      }
-    } else {
-      clearCinemaHudTimer();
-    }
+    if (cinemaHudVisible && !playerOverlayOpen && !sourceOpen) {
+      // Keep interactive windows usable, but retain their state on inactivity.
+      scheduleCinemaHudHide(cinemaControlsOpen || fullscreenPlayerOpen ? 10000 : 2000);
+    } else clearCinemaHudTimer();
     return () => {
       clearCinemaHudTimer();
     };
@@ -1208,6 +1191,11 @@ export default function App({ user = null }: { user?: User | null }) {
     }
   };
 
+  const handleFullscreenPanelInteraction = () => {
+    if (performance && cinemaHudVisible && (cinemaControlsOpen || fullscreenPlayerOpen))
+      scheduleCinemaHudHide(10000);
+  };
+
   const toggleSceneEnabled = (id: SceneId) => {
     setEnabledScenes((prev) => {
       if (prev.includes(id)) {
@@ -1715,15 +1703,12 @@ export default function App({ user = null }: { user?: User | null }) {
       className={
         "shell " +
         (performance ? "performance-mode " : "") +
-        (cinemaHudVisible ||
-        cinemaControlsOpen ||
-        fullscreenPlayerOpen ||
-        playerOverlayOpen ||
-        sourceOpen
-          ? "hud-visible"
-          : "hud-hidden")
+        (!performance || cinemaHudVisible ? "hud-visible" : "hud-hidden")
       }
       data-theme={resolvedTheme}
+      onPointerDownCapture={handleFullscreenPanelInteraction}
+      onKeyDownCapture={handleFullscreenPanelInteraction}
+      onScrollCapture={handleFullscreenPanelInteraction}
     >
       <header className="app-header">
         <div className="app-brand" aria-label="LyricFlow">
@@ -1831,9 +1816,8 @@ export default function App({ user = null }: { user?: User | null }) {
               {performance && (
                 <>
                   {!cinemaHudVisible &&
-                    !cinemaControlsOpen &&
-                    !fullscreenPlayerOpen &&
-                    !playerOverlayOpen && (
+                    !playerOverlayOpen &&
+                    !sourceOpen && (
                       <button
                         type="button"
                         className="cinema-touch-wake-layer"
@@ -1858,7 +1842,7 @@ export default function App({ user = null }: { user?: User | null }) {
                             setCinemaControlsOpen(false);
                             setCinemaHudVisible(true);
                           } else {
-                            revealCinemaHud();
+                            hideCinemaHud();
                           }
                           return next;
                         })
@@ -1873,7 +1857,7 @@ export default function App({ user = null }: { user?: User | null }) {
                       type="button"
                       className="glass"
                       onClick={() => {
-                        if(cinemaControlsOpen){setCinemaControlsOpen(false);revealCinemaHud();}
+                        if(cinemaControlsOpen)hideCinemaHud();
                         else {setFullscreenPlayerOpen(false);setCinemaHudVisible(true);openSettings();}
                       }}
                       aria-expanded={cinemaControlsOpen}
@@ -1972,7 +1956,8 @@ export default function App({ user = null }: { user?: User | null }) {
           onPageChange={setSettingsPage}
           open={cinemaControlsOpen}
           fullscreen={performance}
-          onClose={closeSettings}
+          onClose={performance ? hideCinemaHud : closeSettings}
+          hiddenByHud={performance && !cinemaHudVisible}
         >
           {{
             mapping: (
