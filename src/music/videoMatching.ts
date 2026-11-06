@@ -1,6 +1,7 @@
 import type {SongResult} from './providers';
 import {extractYouTubeVideoId} from '../metadata/trackInfo';
 import {identityWords} from './recordingIdentity';
+import {cleanTitleForLyrics} from '../lyrics/searchPlan';
 
 export const AUTO_VIDEO_ATTEMPT_LIMIT=20;
 export const isLyricalVideo=(song:SongResult)=>/\b(?:lyrics?|lyrical)\b/i.test(song.videoTitle||song.title);
@@ -42,15 +43,32 @@ const rejectedBackgroundChannels=[
  'BangersOnly','Royal Music',
 ];
 
-/** Apply the channel check in view order, without refilling the first-five shortlist. */
-export function selectAutomaticBackgroundVideo(songs:SongResult[],songTitle:string,preference:'music'|'lyrics',playbackRejections:Readonly<Record<string,string>>={}){
+/** Match the *whole* lyrics-cleaned song title against contiguous video-title
+ * words. Do not inspect the opaque eleven-character YouTube video ID.
+ * Token boundaries prevent accidental partial matches; Unicode marks are kept.
+ */
+export function videoContainsFilteredSongTitle(songTitle:string,videoTitle:string,artistContext=''):boolean{
+ const filtered=identityWords(cleanTitleForLyrics(songTitle,artistContext));
+ const title=identityWords(videoTitle);
+ if(!filtered.length||filtered.length>title.length)return false;
+ return title.some((_,start)=>start+filtered.length<=title.length&&
+  filtered.every((word,index)=>title[start+index]===word));
+}
+
+/** Apply restricted-channel and full cleaned-title checks in view order, without
+ * refilling the original first-five shortlist or altering manual selection.
+ */
+export function selectAutomaticBackgroundVideo(songs:SongResult[],songTitle:string,preference:'music'|'lyrics',playbackRejections:Readonly<Record<string,string>>={},artistContext=''){
  const choices=evaluateBackgroundVideos(songs,songTitle,preference,playbackRejections);
  const shortlist=choices.filter(choice=>choice.withinLimit&&!choice.reasons.length)
   .slice(0,5).sort((a,b)=>(b.song.viewCount??-1)-(a.song.viewCount??-1));
  for(const choice of shortlist){
   const channel=(choice.song.uploaderName||choice.song.artist).toLowerCase();
   const blocked=rejectedBackgroundChannels.find(name=>channel.includes(name.toLowerCase()));
-  if(blocked){choice.reasons.push(`Blocked channel: ${blocked}`);continue;}
+  if(blocked)choice.reasons.push(`Blocked channel: ${blocked}`);
+  if(!videoContainsFilteredSongTitle(songTitle,choice.song.videoTitle||choice.song.title,artistContext))
+   choice.reasons.push('Filtered song title missing from video title');
+  if(choice.reasons.length)continue;
   return {choices,selected:choice.song};
  }
  return {choices,selected:undefined};
