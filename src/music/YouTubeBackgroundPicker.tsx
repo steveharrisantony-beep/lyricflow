@@ -41,7 +41,7 @@ export default function YouTubeBackgroundPicker({
   const [searchOnlineOpen, setSearchOnlineOpen] = useState(false);
   const [sort, setSort] = useState<"relevance" | "views">("relevance");
   const preloaded = showCached
-    ? selectAutomaticBackgroundVideo(cachedCandidates ?? results,track.title,preference,playbackRejections).choices
+    ? selectAutomaticBackgroundVideo(cachedCandidates ?? results,track.title,preference,playbackRejections,track.artist||track.primaryArtist||'').choices
     : undefined;
   const visibleResults = preloaded
     ? preloaded.map(choice => ({song:choice.song,choice}))
