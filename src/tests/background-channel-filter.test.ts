@@ -33,7 +33,7 @@ it('uses the uploader name before artist metadata and never checks the song titl
   .toEqual(['Blocked channel: Dan Music']);
 });
 
-it.each(['music','lyrics'] as const)('checks channels by views within the original shortlist in %s mode',preference=>{
+it.each(['music','lyrics'] as const)('filters blocked channels before taking first three eligible videos in %s mode',preference=>{
  const songs=[
   video(1,{viewCount:900,uploaderName:'7clouds rocks'}),
   video(2,{viewCount:1000,uploaderName:'Cakes & Eclairs Video'}),
@@ -43,7 +43,7 @@ it.each(['music','lyrics'] as const)('checks channels by views within the origin
   video(6,{viewCount:1e9,uploaderName:'Another label'}),
  ];
  const result=selectAutomaticBackgroundVideo(songs,'Ocean Road',preference);
- expect(result.selected).toBe(songs[2]);
+ expect(result.selected).toBe(songs[5]);
  expect(result.choices.map(choice=>choice.song)).toEqual(songs);
  expect(result.choices.map(choice=>choice.reasons)).toEqual([
   ['Blocked channel: 7clouds'],['Blocked channel: Cakes & Eclairs'],[],[],[],[],
@@ -51,21 +51,23 @@ it.each(['music','lyrics'] as const)('checks channels by views within the origin
  expect(songs.map(song=>song.viewCount)).toEqual([900,1000,600,300,100,1e9]);
 });
 
-it('does not refill the shortlist when all five channels fail, leaving later videos available manually',()=>{
- const songs=['7clouds','DopeLyrics','LatinHype','Taj Tracks','Royal Music']
-  .map((uploaderName,index)=>video(index,{uploaderName,viewCount:index*100}));
- songs.push(video(6,{viewCount:1e9}));
+it('never checks the eleventh result even when all first ten are blocked',()=>{
+ const names=['7clouds','DopeLyrics','LatinHype','Taj Tracks','Royal Music'];
+ const songs=Array.from({length:10},(_,index)=>video(index,{
+  uploaderName:names[index%names.length],viewCount:index*100,
+ }));
+ songs.push(video(10,{viewCount:1e9}));
  const result=selectAutomaticBackgroundVideo(songs,'Ocean Road','music');
  expect(result.selected).toBeUndefined();
- expect(result.choices.slice(0,5).every(choice=>choice.reasons.length===1&&choice.canUse)).toBe(true);
- expect(result.choices[5].reasons).toEqual([]);
+ expect(result.choices.slice(0,10).every(choice=>choice.reasons.length===1&&choice.canUse)).toBe(true);
+ expect(result.choices[10]).toMatchObject({withinLimit:false,reasons:[]});
 });
 
-it('forms the shortlist after existing filters and includes no result beyond the twentieth row',()=>{
+it('forms the shortlist after initial filters and ignores results beyond the tenth row',()=>{
  const songs=[video(0,{title:'Ocean Cover',viewCount:1e9}),
   ...Array.from({length:5},(_,index)=>video(index+1,{viewCount:index})),
   video(6,{viewCount:1e9})];
- expect(selectAutomaticBackgroundVideo(songs,'Ocean Road','music').selected).toBe(songs[5]);
+ expect(selectAutomaticBackgroundVideo(songs,'Ocean Road','music').selected).toBe(songs[3]);
  const outside=[...Array.from({length:20},(_,index)=>video(index,{title:'Other song'})),video(21)];
  expect(selectAutomaticBackgroundVideo(outside,'Ocean Road','music').selected).toBeUndefined();
 });
@@ -99,7 +101,7 @@ it('matches the core title after discarding bracketed version labels',()=>{
  expect(result.choices[0].reasons).toContain('Filtered song title missing from video title');
 });
 
-it('chooses the next passing video from the original five, without refilling from a sixth',()=>{
+it('chooses from the first three passing videos and never refills after title rejection',()=>{
  const songs=[
   video(1,{videoTitle:'Ocean Boulevard Official',viewCount:500}),
   video(2,{uploaderName:'7clouds',viewCount:400}),
@@ -113,8 +115,8 @@ it('chooses the next passing video from the original five, without refilling fro
  expect(result.choices[0].reasons).toContain('Filtered song title missing from video title');
  expect(result.choices[1].reasons).toContain('Blocked channel: 7clouds');
  expect(result.choices[5].reasons).toEqual([]);
- const blockedFirstFive=songs.slice(0,5).map(song=>({...song,uploaderName:'7clouds'}));
- const none=selectAutomaticBackgroundVideo([...blockedFirstFive,songs[5]],'Ocean Road','music');
+ const blockedFirstTen=Array.from({length:10},(_,index)=>video(index,{uploaderName:'7clouds'}));
+ const none=selectAutomaticBackgroundVideo([...blockedFirstTen,video(11,{viewCount:1e9})],'Ocean Road','music');
  expect(none.selected).toBeUndefined();
 });
 
@@ -148,4 +150,44 @@ it('matches stripped title without version or credited artists',()=>{
  expect(result.selected).toBe(videos[1]);
  expect(result.choices[0].reasons).toContain('Filtered song title missing from video title');
  expect(selectAutomaticBackgroundVideo([video(3,{title:'Rathinamo Music Video'})],'Rathinamo - Female Version','lyrics').selected).toBeDefined();
+});
+
+it('picks the first three initially eligible in relevance order, then ranks only those by views',()=>{
+ const songs=[
+  video(0,{title:'Ocean Cover',viewCount:1e9}),
+  video(1,{uploaderName:'7clouds',viewCount:1e9}),
+  video(2,{embeddable:false,viewCount:1e9}),
+  video(3,{viewCount:10}),
+  video(4,{viewCount:100}),
+  video(5,{viewCount:50}),
+  video(6,{viewCount:1e9}),
+ ];
+ const selected=selectAutomaticBackgroundVideo(songs,'Ocean Road','music');
+ expect(selected.selected).toBe(songs[4]);
+ expect(selected.choices[1].reasons).toEqual(['Blocked channel: 7clouds']);
+ const rejected=selectAutomaticBackgroundVideo(songs,'Ocean Road','music',{
+  [songs[4].youtubeVideoId!]:'Playback error',
+ });
+ expect(rejected.selected).toBe(songs[5]);
+ expect(rejected.choices[4].reasons).toContain('Playback error');
+ const allRejected=selectAutomaticBackgroundVideo(songs,'Ocean Road','music',{
+  [songs[3].youtubeVideoId!]:'Playback error',
+  [songs[4].youtubeVideoId!]:'Playback error',
+  [songs[5].youtubeVideoId!]:'Playback error',
+ });
+ expect(allRejected.selected).toBeUndefined();
+ expect(allRejected.choices[6].reasons).toEqual([]);
+});
+
+it('does not backfill the initial three when all fail final full-title validation',()=>{
+ const songs=[
+  video(1,{title:'Ocean Side Path',viewCount:100}),
+  video(2,{title:'Road Alone',viewCount:80}),
+  video(3,{title:'Ocean Mist',viewCount:60}),
+  video(4,{title:'Ocean Road Music Video',viewCount:1e9}),
+ ];
+ const result=selectAutomaticBackgroundVideo(songs,'Ocean Road','music');
+ expect(result.selected).toBeUndefined();
+ expect(result.choices.slice(0,3).every(choice=>choice.reasons.includes('Filtered song title missing from video title'))).toBe(true);
+ expect(result.choices[3].reasons).toEqual([]);
 });

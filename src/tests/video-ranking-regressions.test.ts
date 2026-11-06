@@ -15,14 +15,14 @@ it('keeps filtering in search order without using duration, artist or view count
  expect(result.map(choice=>choice.song)).toEqual([first,second]);
  expect(result.every(choice=>choice.withinLimit&&!choice.reasons.length)).toBe(true);
 });
-it('checks the first twenty rows and retains diagnostics for the rest of the page',()=>{
- const songs=Array.from({length:65},(_,i)=>video(i,{title:i<20?'Other song':'Ocean Road'}));
+it('checks the first ten rows and retains diagnostics for later rows',()=>{
+ const songs=Array.from({length:65},(_,i)=>video(i,{title:i<10?'Other song':'Ocean Road'}));
  const parsed=parseSongs({data:songs},'resolver',true);
  expect(parsed).toHaveLength(65);
  const result=evaluateBackgroundVideos(parsed,'Ocean Road','music');
  expect(result.find(choice=>choice.withinLimit&&!choice.reasons.length)).toBeUndefined();
- expect(result[19].reasons).toEqual(['No song-title word in the video title']);
- expect(result[20]).toMatchObject({withinLimit:false,reasons:[]});
+ expect(result[9].reasons).toEqual(['No song-title word in the video title']);
+ expect(result[10]).toMatchObject({withinLimit:false,reasons:[]});
 });
 it('keeps manual relevance and views as independent orders',()=>{
  const first=video(1);

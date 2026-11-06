@@ -104,3 +104,14 @@ it.each([
  expect(params.get('backgroundArtist')).toBe('Lead One');
  expect(params.has('backgroundFeaturedArtist')).toBe(false);
 });
+
+it('keeps only the first ten YouTube relevance hits without sorting or replacing them with later popular videos',async()=>{
+ const rows=Array.from({length:18},(_,index)=>video(String(index).padStart(11,'0'),
+  'Apna Bana Le Official Video',index===17?1e9:index));
+ const fetcher=mockSearch(rows);
+ const result=await findYouTubeBackgrounds(track,'https://resolver.example');
+ expect(fetcher).toHaveBeenCalledTimes(1);
+ expect(result.candidateCount).toBe(10);
+ expect(result.candidates.map(item=>item.youtubeVideoId)).toEqual(rows.slice(0,10).map(item=>item.youtubeVideoId));
+ expect(result.candidates.some(item=>item.youtubeVideoId===rows[17].youtubeVideoId)).toBe(false);
+});

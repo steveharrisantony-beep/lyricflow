@@ -75,7 +75,7 @@ it('uses the playing video title for a saved background link and ignores metadat
  }finally{draw.mockRestore();}
 },20000);
 
-it('loads another matching background without changing the saved video or the audio clock',async()=>{
+it('keeps an explicitly saved background mapped even after a rejection callback',async()=>{
  const stage=await import('../visualization/cinematic/CinematicStage');
  let props:Parameters<typeof stage.default>[0]|undefined;
  const probe=vi.spyOn(stage,'default').mockImplementation(value=>{props=value;return <></>;});
@@ -93,8 +93,10 @@ it('loads another matching background without changing the saved video or the au
   await act(async()=>click('Save mapping for current song'));
   const saved=JSON.stringify(createBackup('song-mappings',null).data);
   const clock=props!.playbackTime,recording=props!.recordingKey;
+  const searchesAfterMapping=search.mock.calls.length;
   await act(async()=>props!.onLoadAnotherVideo!('aaaaaaaaaaa'));
-  expect(props?.youtubeVideoId).toBe('bbbbbbbbbbb');
+  expect(props?.youtubeVideoId).toBe('aaaaaaaaaaa');
+  expect(search.mock.calls.length).toBe(searchesAfterMapping);
   expect(props?.hasSeparateAudioStream).toBe(true);
   expect(props?.playbackTime).toBe(clock);expect(props?.recordingKey).toBe(recording);
   expect(JSON.stringify(createBackup('song-mappings',null).data)).toBe(saved);
@@ -543,7 +545,7 @@ it('waits for each preference search before choosing its most-viewed eligible re
  }
 });
 
-it('plays the most-viewed of the first five passing results and reports all rejection reasons', async () => {
+it('plays the most-viewed of the first three passing results and reports all rejection reasons', async () => {
  const stage = await import('../visualization/cinematic/CinematicStage');
  let stageProps: Parameters<typeof stage.default>[0] | undefined;
  const draw = vi.spyOn(stage, 'default').mockImplementation(props => {
@@ -574,14 +576,14 @@ it('plays the most-viewed of the first five passing results and reports all reje
   expect(stageProps?.youtubeVideoId).toBeNull();
   await act(async () => finish(candidates));
   expect(stageProps?.videoSearchPending).toBe(false);
-  expect(stageProps?.youtubeVideoId).toBe(popular.youtubeVideoId);
+  expect(stageProps?.youtubeVideoId).toBe(second.youtubeVideoId);
   const rows = [...host.querySelectorAll('.video-candidate')];
   expect(rows.map(row=>row.querySelector('strong')?.textContent)).toEqual(candidates.map(candidate=>candidate.title));
   expect(rows[0].textContent).toContain('Rejected keyword: cover');
   expect(host.querySelector('.youtube-background-picker')?.textContent).toContain('sorted by relevance');
-  await act(async () => stageProps!.onRejectBackgroundVideo!(popular.youtubeVideoId,'Embedding blocked'));
-  expect(stageProps?.youtubeVideoId).toBe(sixth.youtubeVideoId);
-  expect(host.querySelectorAll('.video-candidate')[6].textContent).toContain('Embedding blocked');
+  await act(async () => stageProps!.onRejectBackgroundVideo!(second.youtubeVideoId,'Embedding blocked'));
+  expect(stageProps?.youtubeVideoId).toBe(third.youtubeVideoId);
+  expect(host.querySelectorAll('.video-candidate')[2].textContent).toContain('Embedding blocked');
   expect(search.mock.calls).toHaveLength(before+1);
  } finally {
   draw.mockRestore();
@@ -589,7 +591,7 @@ it('plays the most-viewed of the first five passing results and reports all reje
  }
 });
 
-it.each([false,true])('applies the final channel check and shows preloaded reasons (all five blocked: %s)',async(allBlocked)=>{
+it.each([false,true])('applies channel blacklist in initial filtering (all blocked: %s)',async(allBlocked)=>{
  const stage=await import('../visualization/cinematic/CinematicStage');
  const draw=vi.spyOn(stage,'default').mockImplementation(props=>
   <span data-testid="channel-choice" data-video={props.youtubeVideoId||''} data-searching={String(props.videoSearchPending)}/>);
@@ -598,7 +600,7 @@ it.each([false,true])('applies the final channel check and shows preloaded reaso
  const candidates=channels.map((uploaderName,index)=>{
   const id=String(index+1).padStart(11,'0');
   return {id:'yt_'+id,youtubeVideoId:id,title:`Original test song Video ${index}`,sourceUrl:'https://www.youtube.com/watch?v='+id,
-   artist:'Uploader',uploaderName:allBlocked&&index<5?'Royal Music':uploaderName,album:'',duration:200,
+   artist:'Uploader',uploaderName:allBlocked?'Royal Music':uploaderName,album:'',duration:200,
    provider:'resolver' as const,viewCount:[500,200,900,800,100,1e9][index]};
  });
  search.mockResolvedValue(candidates);
@@ -607,19 +609,19 @@ it.each([false,true])('applies the final channel check and shows preloaded reaso
   await act(async()=>click('Load JioSaavn fixture'));
   const current=host.querySelector('[data-testid="channel-choice"]');
   expect(current?.getAttribute('data-searching')).toBe('false');
-  expect(current?.getAttribute('data-video')).toBe(allBlocked?'':candidates[1].youtubeVideoId);
+  expect(current?.getAttribute('data-video')).toBe(allBlocked?'':candidates[5].youtubeVideoId);
   await act(async()=>click('Show preloaded videos'));
   const rows=[...host.querySelectorAll('.video-candidate')];
   expect(rows.map(row=>row.querySelector('strong')?.textContent)).toEqual(candidates.map(song=>song.title));
   if(allBlocked){
-   expect(rows.slice(0,5).every(row=>row.textContent?.includes('Blocked channel: Royal Music'))).toBe(true);
+   expect(rows.every(row=>row.textContent?.includes('Blocked channel: Royal Music'))).toBe(true);
   }else{
    expect(rows[0].textContent).toContain('Blocked channel: 7clouds');
    expect(rows[2].textContent).toContain('Blocked channel: Cakes & Eclairs');
    expect(rows[3].textContent).toContain('Blocked channel: Dan Music');
-   expect(rows[1].getAttribute('aria-current')).toBe('true');
+   expect(rows[5].getAttribute('aria-current')).toBe('true');
   }
-  expect(rows[5].textContent).not.toContain('Blocked channel:');
+  if(!allBlocked) expect(rows[5].textContent).not.toContain('Blocked channel:');
   expect(search.mock.calls).toHaveLength(before+1);
  }finally{draw.mockRestore();search.mockImplementation(original);}
 });
@@ -645,7 +647,7 @@ it.each([
  }finally{draw.mockRestore();search.mockImplementation(original);}
 });
 
-it('keeps videos after the twentieth result visible when no automatic match passes', async () => {
+it('limits preloaded autoplay videos to ten relevance results even if the provider returns more', async () => {
  const stage = await import('../visualization/cinematic/CinematicStage');
  const draw = vi.spyOn(stage, 'default').mockImplementation(props =>
   <span data-testid="limited-stage" data-video={props.youtubeVideoId || ''} data-searching={String(props.videoSearchPending)}/>);
@@ -663,8 +665,8 @@ it('keeps videos after the twentieth result visible when no automatic match pass
   const current=host.querySelector('[data-testid="limited-stage"]');
   expect(current?.getAttribute('data-searching')).toBe('false');
   expect(current?.getAttribute('data-video')).toBe('');
-  expect(host.querySelectorAll('.video-candidate')).toHaveLength(21);
-  expect(host.querySelectorAll('.video-candidate')[20].textContent).toContain('Outside the first 20 results');
+  expect(host.querySelectorAll('.video-candidate')).toHaveLength(10);
+  expect(host.querySelector('.youtube-background-picker')?.textContent).toContain('10 search results');
   expect(search.mock.calls).toHaveLength(before+1);
  } finally {
   draw.mockRestore();
