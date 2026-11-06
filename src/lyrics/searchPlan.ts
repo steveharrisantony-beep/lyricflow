@@ -234,6 +234,9 @@ export function compareLyricCandidates(a: LyricsSearchCandidate, b: LyricsSearch
   return Number(Boolean(a.rejection)) - Number(Boolean(b.rejection)) ||
     Number(a.difference === undefined) - Number(b.difference === undefined) ||
     timingPriority(b) - timingPriority(a) || durationDelta(a) - durationDelta(b) ||
+    // Equal-quality, equally timed lyrics from the actual recording win over
+    // an alternate version admitted by the whole-second duration exception.
+    Number(Boolean(a.matchNote)) - Number(Boolean(b.matchNote)) ||
     lyricProviderPriority(a.source, a.sourceUrl) - lyricProviderPriority(b.source, b.sourceUrl) ||
     (b.difference ?? 0) - (a.difference ?? 0) || b.confidence - a.confidence;
 }
