@@ -9,11 +9,11 @@ const video=(title:string,extra:Partial<SongResult>={}):SongResult=>({
 const check=(song:SongResult,title='Ocean Road',preference:'music'|'lyrics'='music')=>
  evaluateBackgroundVideos([song],title,preference)[0].reasons;
 
-it('matches any complete song-title word, ignoring punctuation and case',()=>{
+it('does not require song-title-word overlap in initial structural screening',()=>{
  expect(check(video('ROAD / Unrelated Artist Visualizer'))).toEqual([]);
- expect(check(video('Oceanographer / Roadside'))).toEqual(['No song-title word in the video title']);
+ expect(check(video('Oceanographer / Roadside'))).toEqual([]);
  expect(check(video('Siri മഴ | Visualizer'),'മഴ')).toEqual([]);
- expect(check(video('Siri മഴേ | Visualizer'),'മഴ')).toEqual(['No song-title word in the video title']);
+ expect(check(video('Siri മഴേ | Visualizer'),'മഴ')).toEqual([]);
 });
 it('rejects configured keywords unless they occur in the original song title',()=>{
  for(const word of ['jukebox','cover','reaction','karaoke','reply','audio']){

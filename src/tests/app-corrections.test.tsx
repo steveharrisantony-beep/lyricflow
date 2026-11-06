@@ -3,12 +3,13 @@ import { act, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 vi.mock('../visualization/cinematic/CinematicStage', () => ({ default: () => null, CAMERA_VIEWS: ['Front'] }));
-vi.mock('../audio/LocalPlayer', () => ({ default: (props: { onTrackChange: (track: unknown) => void; onFileChange: (loaded: boolean) => void; onOpenSourceSelector: () => void;onActiveChange:(active:boolean)=>void }) => <div>
+vi.mock('../audio/LocalPlayer', () => ({ default: (props: { onTrackChange: (track: unknown) => void; onFileChange: (loaded: boolean) => void; onOpenSourceSelector: () => void;onActiveChange:(active:boolean)=>void;onFullscreen:()=>void }) => <div>
   <button onClick={() => { props.onTrackChange({ title: 'Original test song', artist: 'Test artist', album: 'Studio', duration: 200, provider: 'local', source: 'manual', confidence: 1 }); props.onFileChange(true); }}>Load fixture audio</button>
   <button onClick={() => { props.onTrackChange({ title: 'Original test song', artist: 'Test artist', album: 'Studio', duration: 200, provider: 'jiosaavn', sourceTrackId: 'saavn_123', source: 'provider', audioSource: 'JioSaavn', confidence: 1 }); props.onFileChange(true); }}>Load JioSaavn fixture</button>
   <button onClick={() => { props.onTrackChange({ title: 'Next test song', artist: 'Test artist', album: 'Studio', duration: 200, provider: 'jiosaavn', sourceTrackId: 'saavn_next', source: 'provider', confidence: 1 }); props.onFileChange(true); }}>Load next JioSaavn fixture</button>
   <button onClick={props.onOpenSourceSelector}>Select source</button>
   <button onClick={()=>props.onActiveChange(true)}>Fixture playing</button>
+  <button onClick={props.onFullscreen}>Enter fullscreen fixture</button>
 </div> }));
 vi.mock('../music/providers', async importOriginal => ({
   ...await importOriginal<typeof import('../music/providers')>(),
@@ -1233,3 +1234,39 @@ it('uses the active notification package and metadata for the lyrics strategy',a
   subscribe.mockRestore();find.mockRestore();draw.mockRestore();
  }
 },20000);
+
+it('restores fullscreen player and selected settings page after manual hide and a stage tap',async()=>{
+ await act(async()=>click('Enter fullscreen fixture'));
+ const shell=()=>host.querySelector('.shell')!;
+ const toolbar=()=>host.querySelector<HTMLElement>('.fullscreen-toolbar')!;
+ const player=()=>host.querySelector('#fullscreen-player-window')!;
+ const settings=()=>host.querySelector('#app-settings')!;
+ expect(shell().classList.contains('performance-mode')).toBe(true);
+
+ await act(async()=>toolbar().querySelectorAll('button')[0].click());
+ expect(player().classList.contains('player-window-open')).toBe(true);
+ await act(async()=>host.querySelector<HTMLElement>('.stage')!.click());
+ expect(shell().classList.contains('hud-hidden')).toBe(true);
+ expect(player().classList.contains('player-window-open')).toBe(true);
+ await act(async()=>host.querySelector<HTMLButtonElement>('.cinema-touch-wake-layer')!.click());
+ expect(shell().classList.contains('hud-visible')).toBe(true);
+ expect(player().classList.contains('player-window-open')).toBe(true);
+
+ await act(async()=>toolbar().querySelectorAll('button')[1].click());
+ expect(settings().classList.contains('settings-open')).toBe(true);
+ expect(player().classList.contains('player-window-open')).toBe(false);
+ await act(async()=>host.querySelector<HTMLButtonElement>('#settings-tab-lyrics')!.click());
+ expect(host.querySelector('#settings-tab-lyrics')?.getAttribute('aria-selected')).toBe('true');
+ const details=settings().querySelector<HTMLDetailsElement>('#settings-page-lyrics details');
+ if(details) details.open=true;
+ const position=settings().scrollTop;
+ await act(async()=>host.querySelector<HTMLButtonElement>('.settings-close')!.click());
+ expect(shell().classList.contains('hud-hidden')).toBe(true);
+ expect(settings().classList.contains('settings-open')).toBe(true);
+ await act(async()=>host.querySelector<HTMLButtonElement>('.cinema-touch-wake-layer')!.click());
+ expect(shell().classList.contains('hud-visible')).toBe(true);
+ expect(settings().classList.contains('settings-open')).toBe(true);
+ expect(host.querySelector('#settings-tab-lyrics')?.getAttribute('aria-selected')).toBe('true');
+ if(details) expect(details.open).toBe(true);
+ expect(settings().scrollTop).toBe(position);
+});

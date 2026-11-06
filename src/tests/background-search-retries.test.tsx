@@ -69,7 +69,9 @@ it('waits 1s and 2s after the immediate retry and leaves a visible failure when 
   expect(host.textContent).toContain('Immediate retry');
   expect(host.textContent).toContain('Retry after 1s');
   expect(host.textContent).toContain('Retry after 2s');
-  expect(host.querySelectorAll('article code')).toHaveLength(4);
+  // The current query is shown once in the summary, not on every retry.
+  expect(host.querySelectorAll('.video-log-summary code')).toHaveLength(1);
+  expect(host.querySelectorAll('article code')).toHaveLength(0);
  }finally{await act(async()=>root.unmount());}
  await vi.advanceTimersByTimeAsync(20000);expect(fetcher).toHaveBeenCalledTimes(4);
 });

@@ -20,8 +20,9 @@ it('checks the first ten rows and retains diagnostics for later rows',()=>{
  const parsed=parseSongs({data:songs},'resolver',true);
  expect(parsed).toHaveLength(65);
  const result=evaluateBackgroundVideos(parsed,'Ocean Road','music');
- expect(result.find(choice=>choice.withinLimit&&!choice.reasons.length)).toBeUndefined();
- expect(result[9].reasons).toEqual(['No song-title word in the video title']);
+ // Initial filtering no longer imposes a one-word song-title gate.
+ expect(result.filter(choice=>choice.withinLimit&&!choice.reasons.length)).toHaveLength(10);
+ expect(result[9].reasons).toEqual([]);
  expect(result[10]).toMatchObject({withinLimit:false,reasons:[]});
 });
 it('keeps manual relevance and views as independent orders',()=>{
