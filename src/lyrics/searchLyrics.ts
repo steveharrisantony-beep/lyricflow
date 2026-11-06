@@ -46,7 +46,7 @@ function prepareCandidate(raw: ProviderLyric, plan: LyricsSearchPlan, query: Lyr
   const lrc = timing.wordTimingIssue ? stripLrcWordTiming(timed) : timed;
   const plain = raw.plain || (!timed && text.trim()) || undefined;
   const quality = timing.rejection ? 0 : lyricsQuality(lrc || plain);
-  const match = validateLyricsCandidate(raw, plan, query);
+  const match = validateLyricsCandidate(raw, plan, query, quality);
   return {
     ...metadata, lrc, plain, romanized: lrc ? decoded?.romanizedLrc : undefined,
     source: timing.wordTimingIssue ? normalizeLyricSource(raw.source, raw.sourceUrl, false) : raw.source,
@@ -130,6 +130,7 @@ export async function executeLyricsSearchPlan(
         winner.quality === 3 ? 'Word timing' : winner.quality === 2 ? 'Line timing' : 'Plain lyrics',
         winner.difference === undefined ? 'recording duration unavailable' : Math.abs(winner.difference).toFixed(1) + 's from playback duration',
         winner.quality === 3 && !isPreferredWordSync(winner) ? 'outside the preferred word timing window' : '',
+        winner.matchNote || '',
         winner === selected ? 'used for playback' : 'earlier match retained',
       ].filter(Boolean).join(' · ') : undefined,
     };
