@@ -2664,7 +2664,7 @@ export default function App({ user = null }: { user?: User | null }) {
                   <LyricsSearchLogs report={lyricsSearchReport}/>
                 </SettingGroup>
                 <SettingGroup title="Video search logs">
-                  <VideoSearchLogs recordingKey={themeRecordingIdentity} title={localTrack?.title} suspended={themeVideoSearchSuspended}/>
+                  <VideoSearchLogs recordingKey={themeRecordingIdentity} title={localTrack?.title} artist={localTrack?.artist} suspended={themeVideoSearchSuspended}/>
                 </SettingGroup>
                 <SettingGroup title="Romanization logs">
                   <RomanizationLogs title={localTrack?.title} artist={localTrack?.artist}/>
