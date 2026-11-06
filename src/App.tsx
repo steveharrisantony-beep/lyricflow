@@ -2,7 +2,6 @@ import {hasWordTiming} from './lyrics/lyricsQuality';
 import {LyricsSearchLogs,PreloadedLyrics,useLyricsSearchReport} from './lyrics/LyricsSearchDetails';
 import {lyricsFromSearchCandidate} from './lyrics/providers';
 import {selectAutomaticBackgroundVideo} from './music/videoMatching';
-import {findYouTubeBackgrounds} from './music/backgroundVideos';
 import {musicResolverBase} from './network/backend';
 import VideoSearchLogs from './music/VideoSearchLogs';
 import RomanizationLogs from './romanization/RomanizationLogs';
