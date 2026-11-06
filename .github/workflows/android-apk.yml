@@ -86,6 +86,8 @@ jobs:
         run: npm test
       - name: Build and copy bundled web application
         run: npm run android:sync
+      - name: Audit packaged web and local backend size
+        run: npm run size:audit
       - name: Test bundled on-device backend
         run: npm run test:backend
       - name: Build installable APK
