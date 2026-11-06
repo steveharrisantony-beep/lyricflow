@@ -1,7 +1,7 @@
 import type {SongResult} from './providers';
 import {extractYouTubeVideoId} from '../metadata/trackInfo';
 import {identityWords} from './recordingIdentity';
-import {cleanTitleForLyrics} from '../lyrics/searchPlan';
+import {messytitlefixer} from '../lyrics/messytitlefixer';
 
 export const AUTO_VIDEO_ATTEMPT_LIMIT=20;
 export const isLyricalVideo=(song:SongResult)=>/\b(?:lyrics?|lyrical)\b/i.test(song.videoTitle||song.title);
@@ -48,7 +48,7 @@ const rejectedBackgroundChannels=[
  * Token boundaries prevent accidental partial matches; Unicode marks are kept.
  */
 export function videoContainsFilteredSongTitle(songTitle:string,videoTitle:string,artistContext=''):boolean{
- const filtered=identityWords(cleanTitleForLyrics(songTitle,artistContext));
+ const filtered=identityWords(messytitlefixer(songTitle,artistContext));
  const title=identityWords(videoTitle);
  if(!filtered.length||filtered.length>title.length)return false;
  return title.some((_,start)=>start+filtered.length<=title.length&&

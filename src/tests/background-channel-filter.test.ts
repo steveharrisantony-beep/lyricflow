@@ -89,8 +89,8 @@ it('checks the full lyrics-cleaned song title in the VIDEO TITLE, not the YouTub
  expect(result.choices[1].reasons).toEqual([]);
 });
 
-it('uses the exact lyrics title cleaner with artist context and preserves matching versions',()=>{
- const wrong=video(1,{title:'Ocean Road Remix by Singer',viewCount:300});
+it('matches the core title after discarding bracketed version labels',()=>{
+ const wrong=video(1,{title:'Ocean Boulevard Remix by Singer',viewCount:300});
  const correct=video(2,{title:'Singer - Ocean Road (Live) | Official Video',viewCount:200});
  const result=selectAutomaticBackgroundVideo(
   [wrong,correct],'Singer - Ocean Road (Live) | Official Music Video','music',{},'Singer'
@@ -126,4 +126,26 @@ it('supports Hindi and Malayalam title words without substring false positives',
  const chosen=selectAutomaticBackgroundVideo([wrong,malayalam],'മഴേ (Official Music Video)','music');
  expect(chosen.selected).toBe(malayalam);
  expect(chosen.choices[0].reasons).toContain('Filtered song title missing from video title');
+});
+
+
+it('rejects a misleading soundtrack candidate after cleaning Popular',()=>{
+ const songs=[
+  video(1,{title:'From The Idol Vol. 1 - Madonna Official Video',viewCount:5000}),
+  video(2,{title:'The Weeknd - Popular (Official Music Video)',viewCount:4000}),
+ ];
+ const raw='Popular (with Playboi Carti & Madonna) - From The Idol Vol. 1 (Music from the HBO Original Series)';
+ const result=selectAutomaticBackgroundVideo(songs,raw,'music',{},'The Weeknd, Playboi Carti, Madonna');
+ expect(result.selected).toBe(songs[1]);
+ expect(result.choices[0].reasons).toContain('Filtered song title missing from video title');
+});
+
+it('matches stripped title without version or credited artists',()=>{
+ const track='Vizhi Veekura Abhyankar (Music Video)| Saanve Megghana| Sai Smrit';
+ const videos=[video(1,{title:'Saanve Megghana Song Lyrics',viewCount:400}),
+  video(2,{title:'Vizhi Veekura Official Music Video',viewCount:100})];
+ const result=selectAutomaticBackgroundVideo(videos,track,'music',{},'Abhyankar');
+ expect(result.selected).toBe(videos[1]);
+ expect(result.choices[0].reasons).toContain('Filtered song title missing from video title');
+ expect(selectAutomaticBackgroundVideo([video(3,{title:'Rathinamo Music Video'})],'Rathinamo - Female Version','lyrics').selected).toBeDefined();
 });

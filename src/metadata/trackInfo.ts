@@ -1,4 +1,4 @@
-import { cleanYouTubeTitleForLyrics } from '../lyrics/lyricFlowEngine';
+import { messytitlefixer } from '../lyrics/messytitlefixer';
 
 /** Pure, replaceable track matching. Never treats a filename as verified metadata. */
 export interface TrackInfo {
@@ -152,7 +152,7 @@ export function normalizeTrackForLyricsLookup(track: TrackInfo, rawOverride = fa
   }
   const isYt = isYouTubeAudioTrack(track);
   const rawOriginalTitle = isYt ? (track.videoTitle || track.title) : track.title;
-  const cleanedTitle = cleanYouTubeTitleForLyrics(rawOriginalTitle, isYt ? channelHint : '');
+  const cleanedTitle = messytitlefixer(rawOriginalTitle, isYt ? channelHint : '');
   if (isYt) {
     return {
       ...track,
@@ -222,11 +222,11 @@ export interface SearchRecord {
 export function rankCandidate(track: TrackInfo, candidate: SearchRecord, rawOverride = false): TrackCandidate {
   const isYt = !rawOverride && (isYouTubeAudioTrack(track));
   const artistHint = (track.channelHint || track.artist || '').trim();
-  const t = normalizeTrack(rawOverride ? track.title : cleanYouTubeTitleForLyrics(track.title, artistHint));
+  const t = normalizeTrack(rawOverride ? track.title : messytitlefixer(track.title, artistHint));
   const c = normalizeTrack(
     rawOverride
       ? candidate.trackName
-      : cleanYouTubeTitleForLyrics(candidate.trackName, candidate.artistName || artistHint) || candidate.trackName
+      : messytitlefixer(candidate.trackName, candidate.artistName || artistHint) || candidate.trackName
   );
   const a = isYt ? '' : normalizeTrack(track.artist);
   const ca = normalizeTrack(candidate.artistName);

@@ -1,5 +1,6 @@
 import type { TrackInfo } from '../metadata/trackInfo';
 import { lyricProviderPriority } from './sourceLabels';
+import { messytitlefixer } from './messytitlefixer';
 
 export const lyricsStageProviders = ['isrc', 'paxsenix', 'lrclib'] as const;
 export type LyricsStageProvider = typeof lyricsStageProviders[number];
@@ -71,7 +72,6 @@ export interface LyricsSearchReport {
 }
 
 const invisibleFormatting = /[\u0000-\u001F\u007F-\u009F\u200B\u200E\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g;
-const uploadDescriptor = /\b(?:official\s+(?:(?:music|lyric)\s+)?(?:video|audio)|music\s+video|(?:lyrics?|lyrical)\s+(?:video|song)|full\s+(?:video|song)|(?:video|audio)\s+song|visuali[sz]er|karaoke(?:\s+version)?|sing\s+along|teaser|trailer|promo|jukebox|[48]k|hd|hq|featuring|feat\.?|ft\.?|by)\b/i;
 const versionWords = /\b(?:live|remix(?:ed)?|acoustic|unplugged|instrumental|karaoke|cover|sped\s+up|slowed|reverb|extended|radio\s+edit|demo|remaster(?:ed)?|reprise)\b/gi;
 const versions = (value: string) => [...new Set((value.toLowerCase().match(versionWords) || []).map(word =>
   word.startsWith('remix') ? 'remix' : word.startsWith('remaster') ? 'remaster' : word
@@ -90,21 +90,6 @@ function hasArtistWord(artist: string, context: string): boolean {
   return artistWords(artist).some(word => words.has(word));
 }
 
-function nearArtistWord(left: string, right: string): boolean {
-  const [shorter, longer] = left.length <= right.length ? [left, right] : [right, left];
-  if (shorter.length < 5 || longer.length - shorter.length > 1) return false;
-  const firstDifference = [...shorter].findIndex((letter, index) => letter !== longer[index]);
-  if (firstDifference < 0) return true;
-  const skipped = shorter.length === longer.length ? 1 : 0;
-  return shorter.slice(firstDifference + skipped) === longer.slice(firstDifference + 1);
-}
-
-function matchesArtistPrefix(prefix: string, context: string): boolean {
-  if (hasArtistWord(prefix, context)) return true;
-  const hints = artistWords(context);
-  return artistWords(prefix).some(word => hints.some(hint => nearArtistWord(word, hint)));
-}
-
 function cleanArtist(value: string): string {
   const credit=value.replace(/\s*[-–—]\s*Topic\s*$/i, '').trim();
   return /^(?:unknown(?: artist)?|youtube|-+)$/i.test(credit)?'':credit;
@@ -119,27 +104,6 @@ export function firstArtistWord(credit: string): string | undefined {
   const words = primary.match(/[\p{L}\p{M}\p{N}]+/gu) || [];
   // Initials like A. R. Rahman are not artist search terms.
   return words.find(word => word.length > 1) || (words.length === 1 && !primary.includes('.') ? words[0] : undefined);
-}
-
-/** Remove upload packaging without touching the playback title or writing metadata. */
-export function cleanTitleForLyrics(rawTitle: string, artistContext = ''): string {
-  const visible = rawTitle.replace(invisibleFormatting, '').replace(/(?:^|\s)@[\p{L}\p{M}\p{N}_.-]+/gu, ' ').trim();
-  const sections = visible.split(/\s*(?:\||\/\/)\s*|\s+[-–—]\s+/);
-  const first = sections[0]?.trim() || '';
-  const titleSection = sections[1] && matchesArtistPrefix(first, artistContext) ? sections[1] : first;
-  const bracket = titleSection.search(/[([{]/);
-  const descriptor = titleSection.search(uploadDescriptor);
-  const cut = Math.min(bracket < 0 ? titleSection.length : bracket, descriptor < 0 ? titleSection.length : descriptor);
-  let title = titleSection.slice(0, cut).replace(/^\s*[-–—]\s+/, '').replace(/[\s\-–—:|]+$/, '').trim();
-
-  // Preserve explicit recording versions while stripping soundtrack/upload credits.
-  if (bracket >= 0 && bracket === cut) {
-    const version = titleSection.slice(bracket).match(/^[([{]([^\])}]+)[\])}]/);
-    if (version && versions(version[1]) && !/\bkaraoke\b/i.test(version[1])) {
-      title = [title, version[0]].filter(Boolean).join(' ');
-    }
-  }
-  return title || visible || rawTitle.trim();
 }
 
 export function buildLyricsSearchPlan(track: TrackInfo): LyricsSearchPlan {
@@ -162,7 +126,7 @@ export function buildLyricsSearchPlan(track: TrackInfo): LyricsSearchPlan {
     ? artistCredit + ' feat. ' + featured : artistCredit;
   const audioSource = youtube ? 'youtube' : local ? 'local' : track.provider === 'external' ? 'external' : 'stream';
   const queryArtist = originalArtist || artistHint;
-  const filteredTitle = cleanTitleForLyrics(originalTitle, [track.artist, youtube ? track.channelHint : ''].filter(Boolean).join(' '));
+  const filteredTitle = messytitlefixer(originalTitle, [track.artist, youtube ? track.channelHint : ''].filter(Boolean).join(' '));
   const firstName = firstArtistWord(track.primaryArtist || queryArtist || '');
   const stages: LyricsQuery[] = [];
   const seen = new Set<string>();
@@ -201,7 +165,7 @@ export function validateLyricsCandidate(
   if (versions(plan.originalTitle) !== versions(candidate.title)) return reject('Different recording version');
 
   const title = comparable(candidate.title);
-  const cleaned = comparable(cleanTitleForLyrics(candidate.title, candidate.artist));
+  const cleaned = comparable(messytitlefixer(candidate.title, candidate.artist));
   if (title !== comparable(plan.originalTitle) && cleaned !== comparable(plan.filteredTitle)) {
     return reject('Different song title');
   }

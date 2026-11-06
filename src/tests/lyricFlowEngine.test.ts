@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import {messytitlefixer} from '../lyrics/messytitlefixer';
 import {
-  cleanYouTubeTitleForLyrics,
   alignAppleWordSyncWithYouTubeSubtitles,
   computeVideoDelayFromSubtitles,
   LYRIC_ENGINE_OPTIONS,
@@ -41,26 +41,26 @@ describe('YouTube metadata cleaning & 4-Engine LyricFlow Engine', () => {
   it('deletes @handles, everything from the first bracket onwards, pipes, and leading dashes', () => {
     const raw =
       '\u202a@SaiAbhyankkar\u202c - Aasa Kooda (Music Video) | Thejo Bharathwaj | Preity Mukhundhan | Sai Smriti';
-    expect(cleanYouTubeTitleForLyrics(raw)).toBe('Aasa Kooda');
+    expect(messytitlefixer(raw)).toBe('Aasa Kooda');
   });
 
   it('extracts the true song title for Punchiri, Sing Along, and Veezha Veera Lyrical YouTube titles', () => {
     expect(
-      cleanYouTubeTitleForLyrics(
+      messytitlefixer(
         'Punchiri - Eechuu | Suhas | Chris Wayne | Steel | Loopd | Official Music Video',
         'Divo Music'
       )
     ).toBe('Punchiri');
 
     expect(
-      cleanYouTubeTitleForLyrics(
+      messytitlefixer(
         'Punchiri - Sing Along | Eechuu | Suhas | Chris Wayne | Steel | Loopd | Malayalam Song',
         'Divo Music'
       )
     ).toBe('Punchiri');
 
     expect(
-      cleanYouTubeTitleForLyrics(
+      messytitlefixer(
         'Veezha Veera Lyrical (Tamil) | OM | Dhanush | Mammootty | Sai Pallavi | Rajkumar | Sai Abhyankkar',
         'Think Music India'
       )

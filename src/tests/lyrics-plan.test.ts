@@ -1,7 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import type { TrackInfo } from '../metadata/trackInfo';
 import { resolveStashLyricsChain } from '../lyrics/providers';
-import { buildLyricsSearchPlan, cleanTitleForLyrics, firstArtistWord, lyricsStageProviders, type LyricsSearchReport, type ProviderLyric } from '../lyrics/searchPlan';
+import { buildLyricsSearchPlan, firstArtistWord, lyricsStageProviders, type LyricsSearchReport, type ProviderLyric } from '../lyrics/searchPlan';
+import {messytitlefixer} from '../lyrics/messytitlefixer';
 
 const track: TrackInfo = {
   title: 'Apna Bana Le (From "Bhediya")', artist: 'Arijit Singh, Sachin-Jigar',
@@ -58,11 +59,11 @@ it.each([
   ['தமிழ் [Lyrics Video]', '', 'தமிழ்'],
   ['हिन्दी (Official Music Video)', '', 'हिन्दी'],
   ['Bengali-বাংলা', '', 'Bengali-বাংলা'],
-  ['A-Team (Live) | Tour', '', 'A-Team (Live)'],
+  ['A-Team (Live) | Tour', '', 'A-Team'],
   ['AC/DC', '', 'AC/DC'],
-  ['(Song)', '', '(Song)'],
+  ['(Song)', '', ''],
 ])('cleans %s without corrupting recording text', (title, artist, expected) => {
-  expect(cleanTitleForLyrics(title, artist)).toBe(expected);
+  expect(messytitlefixer(title, artist)).toBe(expected);
 });
 
 it.each([['A. R. Rahman', 'Rahman'], ['Shreya Ghoshal, Armaan Malik', 'Shreya'], ['Ed Sheeran', 'Ed'], ['', undefined]])(
