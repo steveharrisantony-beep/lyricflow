@@ -962,7 +962,7 @@ async function runYouTubeWebSearch(
       });
       if (!ytRes.ok) continue;
       const rawJson = await ytRes.json();
-      const tracks = parseYouTubeSearchTree(rawJson, Math.max(limit, 20), preserveCandidates);
+      const tracks = parseYouTubeSearchTree(rawJson, preserveCandidates ? limit : Math.max(limit, 20), preserveCandidates);
       if (tracks.length > 0) return tracks;
     } catch {
       // Try next Innertube client
@@ -970,7 +970,7 @@ async function runYouTubeWebSearch(
   }
 
   // 3. Fallback to Piped / Invidious public video search mirrors if YouTube Innertube is rate-limited
-  return fetchPipedOrInvidiousVideos(upstreamQuery, Math.max(limit, 20),deadline,preserveCandidates);
+  return fetchPipedOrInvidiousVideos(upstreamQuery, preserveCandidates ? limit : Math.max(limit, 20),deadline,preserveCandidates);
 }
 
 const videoSearchCache = new VideoSearchCache<TrackMetadata[]>();
@@ -979,8 +979,8 @@ async function searchBackgroundVideos(title:string,artist:string,preference:'mus
   const scope = createHash('sha256').update(JSON.stringify(ytAuth||{})).digest('hex');
   const region = process.env.YOUTUBE_REGION||'IN';
   const load=async()=>{
-    const pool = await runYouTubeWebSearch(query,Infinity,ytAuth,true);
-    const firstCandidates = pool.slice(0,AUTO_VIDEO_ATTEMPT_LIMIT).filter(video=>/^[\w-]{11}$/.test(video.rawId));
+    const pool = (await runYouTubeWebSearch(query,AUTO_VIDEO_ATTEMPT_LIMIT,ytAuth,true)).slice(0,AUTO_VIDEO_ATTEMPT_LIMIT);
+    const firstCandidates = pool.filter(video=>/^[\w-]{11}$/.test(video.rawId));
     const hydrated = await hydrateVideoMetadata(firstCandidates,buildYouTubeAuthHeaders(ytAuth),scope,true);
     const details = new Map(hydrated.map(video=>[video.rawId,video]));
     return pool.map(video=>details.get(video.rawId)??video);

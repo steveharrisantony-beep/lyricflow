@@ -3,7 +3,8 @@ import {extractYouTubeVideoId} from '../metadata/trackInfo';
 import {identityWords} from './recordingIdentity';
 import {messytitlefixer} from '../lyrics/messytitlefixer';
 
-export const AUTO_VIDEO_ATTEMPT_LIMIT=20;
+export const AUTO_VIDEO_ATTEMPT_LIMIT=10;
+export const AUTO_VIDEO_SHORTLIST_LIMIT=3;
 export const isLyricalVideo=(song:SongResult)=>/\b(?:lyrics?|lyrical)\b/i.test(song.videoTitle||song.title);
 export const isYouTubeTopicChannel=(name:string)=>/\s*[-–—]\s*Topic\s*$/i.test(name);
 
@@ -19,6 +20,11 @@ export function videoAvailabilityRejections(song:SongResult):string[]{
 }
 
 const rejectedKeywords=['jukebox','cover','reaction','karaoke','reply','audio'];
+const rejectedBackgroundChannels=[
+ '7clouds','DopeLyrics','LatinHype','The Vibe Guide','SyrebralVibes','Vibe Music',
+ 'Shadow Music','Cakes & Eclairs','Unique Vibes','Taj Tracks','Dan Music','WaveMusic',
+ 'BangersOnly','Royal Music',
+];
 export function evaluateBackgroundVideos(songs:SongResult[],songTitle:string,_preference:'music'|'lyrics',playbackRejections:Readonly<Record<string,string>>={}){
  const songWords=new Set(identityWords(songTitle));
  return songs.map((song,index)=>{
@@ -30,6 +36,9 @@ export function evaluateBackgroundVideos(songs:SongResult[],songTitle:string,_pr
   for(const keyword of rejectedKeywords){
    if(words.has(keyword)&&!songWords.has(keyword))reasons.push(`Rejected keyword: ${keyword}`);
   }
+  const channel=(song.uploaderName||song.artist).toLowerCase();
+  const blocked=rejectedBackgroundChannels.find(name=>channel.includes(name.toLowerCase()));
+  if(blocked)reasons.push(`Blocked channel: ${blocked}`);
   const playbackRejection=id&&Object.hasOwn(playbackRejections,id)?playbackRejections[id]:undefined;
   if(playbackRejection)reasons.push(playbackRejection);
   return {song,id,reasons,withinLimit:index<AUTO_VIDEO_ATTEMPT_LIMIT,canUse:!availability.length&&!playbackRejection};
@@ -37,11 +46,6 @@ export function evaluateBackgroundVideos(songs:SongResult[],songTitle:string,_pr
 }
 export type BackgroundVideoChoice=ReturnType<typeof evaluateBackgroundVideos>[number];
 
-const rejectedBackgroundChannels=[
- '7clouds','DopeLyrics','LatinHype','The Vibe Guide','SyrebralVibes','Vibe Music',
- 'Shadow Music','Cakes & Eclairs','Unique Vibes','Taj Tracks','Dan Music','WaveMusic',
- 'BangersOnly','Royal Music',
-];
 
 /** Match the *whole* lyrics-cleaned song title against contiguous video-title
  * words. Do not inspect the opaque eleven-character YouTube video ID.
@@ -55,17 +59,15 @@ export function videoContainsFilteredSongTitle(songTitle:string,videoTitle:strin
   filtered.every((word,index)=>title[start+index]===word));
 }
 
-/** Apply restricted-channel and full cleaned-title checks in view order, without
- * refilling the original first-five shortlist or altering manual selection.
+/** Screen ten relevance results, shortlist the first three passing all initial
+ * checks (including channel restrictions), then rank only those three by views.
+ * Final title validation does not repeat the blacklist or refill the shortlist.
  */
 export function selectAutomaticBackgroundVideo(songs:SongResult[],songTitle:string,preference:'music'|'lyrics',playbackRejections:Readonly<Record<string,string>>={},artistContext=''){
  const choices=evaluateBackgroundVideos(songs,songTitle,preference,playbackRejections);
  const shortlist=choices.filter(choice=>choice.withinLimit&&!choice.reasons.length)
-  .slice(0,5).sort((a,b)=>(b.song.viewCount??-1)-(a.song.viewCount??-1));
+  .slice(0,AUTO_VIDEO_SHORTLIST_LIMIT).sort((a,b)=>(b.song.viewCount??-1)-(a.song.viewCount??-1));
  for(const choice of shortlist){
-  const channel=(choice.song.uploaderName||choice.song.artist).toLowerCase();
-  const blocked=rejectedBackgroundChannels.find(name=>channel.includes(name.toLowerCase()));
-  if(blocked)choice.reasons.push(`Blocked channel: ${blocked}`);
   if(!videoContainsFilteredSongTitle(songTitle,choice.song.videoTitle||choice.song.title,artistContext))
    choice.reasons.push('Filtered song title missing from video title');
   if(choice.reasons.length)continue;

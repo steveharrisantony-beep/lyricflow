@@ -1,5 +1,6 @@
 import type {TrackInfo} from '../metadata/trackInfo';
 import {searchStashCatalog} from './providers';
+import {AUTO_VIDEO_ATTEMPT_LIMIT} from './videoMatching';
 import {backgroundVideoQuery} from './backgroundQuery';
 import {logVideoSearch,logVideoSearchFailure,videoSearchLogKey} from './videoSearchHistory';
 
@@ -34,10 +35,11 @@ export async function findYouTubeBackgrounds(track:VideoTarget,base:string,signa
  for(const [index,delay] of delays.entries()){
   signal?.throwIfAborted();
   if(delay)await waitForVideoRetry(delay,signal);
-  const candidates=await logVideoSearch(query,mode,()=>searchStashCatalog(query,'resolver',base,signal,{
-   ...(index>0?{refresh:true}:{}),
-   background:{title,artist,...(preference==='lyrics'?{preference}:{})},
-  }),signal,recordingKey,mode==='Autoplay'
+  const candidates=await logVideoSearch(query,mode,async()=>
+   (await searchStashCatalog(query,'resolver',base,signal,{
+    ...(index>0?{refresh:true}:{}),
+    background:{title,artist,...(preference==='lyrics'?{preference}:{})},
+   })).slice(0,AUTO_VIDEO_ATTEMPT_LIMIT),signal,recordingKey,mode==='Autoplay'
    ?{attempt:index+1,maxAttempts:delays.length,retryDelayMs:delay}:undefined);
   signal?.throwIfAborted();
   if(candidates.length)return {candidates,candidateCount:candidates.length};

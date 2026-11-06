@@ -1280,16 +1280,15 @@ export default function App({ user = null }: { user?: User | null }) {
 
   const personalVideoMapping = songMapping.personal?.video;
   const personalVideoCorrection = videoFix.source === "personal" ? videoFix.correction : null;
+  // Explicit mapped video IDs bypass all automatic candidate rejection checks.
+  // Hidden-video and advertisement modes still determine stage visibility.
   const mappedYoutubeVideoId = hasSeparateAudioStream
-    ? personalVideoMapping?.youtubeVideoId || personalVideoCorrection?.youtubeVideoId || null
+    ? songMapping.video?.youtubeVideoId || personalVideoCorrection?.youtubeVideoId || null
     : null;
   const activeYoutubeVideoId = isAdPlaying
     ? null
     : hasSeparateAudioStream
-      ? mappedYoutubeVideoId &&
-        !Object.hasOwn(playbackRejections,mappedYoutubeVideoId)
-        ? mappedYoutubeVideoId
-        : null
+      ? mappedYoutubeVideoId
       : extractYouTubeVideoId(localTrack);
 
   const videoSearchKey = localTrack
@@ -1340,9 +1339,7 @@ export default function App({ user = null }: { user?: User | null }) {
       candidateCount: 0,
     });
     const base = musicResolverBase();
-    const search = mappedYoutubeVideoId
-      ? findYouTubeBackgrounds(localTrack,base,controller.signal,preferredVideoType)
-      : prepareSongVideo(localTrack,uid,base,controller.signal,preferredVideoType);
+    const search = prepareSongVideo(localTrack,uid,base,controller.signal,preferredVideoType);
     void search
       .then((result) => {
         if (controller.signal.aborted) return;
