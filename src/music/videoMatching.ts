@@ -45,7 +45,6 @@ export function evaluateBackgroundVideos(songs:SongResult[],songTitle:string,_pr
   const availability=videoAvailabilityRejections(song);
   const words=new Set(identityWords(song.videoTitle||song.title));
   const reasons=[...availability];
-  if(![...songWords].some(word=>words.has(word)))reasons.push('No song-title word in the video title');
   for(const keyword of rejectedKeywords){
    if(words.has(keyword)&&!songWords.has(keyword))reasons.push(`Rejected keyword: ${keyword}`);
   }
