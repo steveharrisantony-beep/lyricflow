@@ -1269,4 +1269,6 @@ it('restores fullscreen player and selected settings page after manual hide and 
  expect(host.querySelector('#settings-tab-lyrics')?.getAttribute('aria-selected')).toBe('true');
  if(details) expect(details.open).toBe(true);
  expect(settings().scrollTop).toBe(position);
+ await act(async()=>settings().querySelector<HTMLButtonElement>('.settings-fullscreen-exit')!.click());
+ expect(shell().classList.contains('performance-mode')).toBe(false);
 });

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Link2, Layers, Type, Gauge, Settings2, List, X } from "lucide-react";
+import { Link2, Layers, Type, Gauge, Settings2, List, X, LogOut } from "lucide-react";
 
 export type SettingsPage =
   | "mapping"
@@ -107,6 +107,7 @@ export default function SettingsPanel({
   fullscreen,
   hiddenByHud = false,
   onClose,
+  onExitFullscreen,
   children,
 }: {
   page: SettingsPage;
@@ -115,6 +116,7 @@ export default function SettingsPanel({
   fullscreen: boolean;
   hiddenByHud?: boolean;
   onClose: () => void;
+  onExitFullscreen?: () => void;
   children: Record<SettingsPage, ReactNode>;
 }) {
   const panel = useRef<HTMLElement>(null);
@@ -203,14 +205,22 @@ export default function SettingsPanel({
       >
         <div className="settings-heading">
           <h2>Settings</h2>
-          <button
-            type="button"
-            className="icon-button settings-close"
-            aria-label="Close settings"
-            onClick={onClose}
-          >
-            <X size={19} />
-          </button>
+          <div className="settings-heading-actions">
+            {fullscreen && onExitFullscreen && (
+              <button type="button" className="icon-button settings-fullscreen-exit"
+                aria-label="Exit fullscreen" title="Exit fullscreen" onClick={onExitFullscreen}>
+                <LogOut size={19} />
+              </button>
+            )}
+            <button
+              type="button"
+              className="icon-button settings-close"
+              aria-label="Close settings"
+              onClick={onClose}
+            >
+              <X size={19} />
+            </button>
+          </div>
         </div>
         <div
           className="settings-nav"

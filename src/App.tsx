@@ -1958,6 +1958,7 @@ export default function App({ user = null }: { user?: User | null }) {
           fullscreen={performance}
           onClose={performance ? hideCinemaHud : closeSettings}
           hiddenByHud={performance && !cinemaHudVisible}
+          onExitFullscreen={() => void togglePerformance()}
         >
           {{
             mapping: (

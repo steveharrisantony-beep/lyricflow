@@ -1565,6 +1565,11 @@ summary > span {
 .performance-mode .settings-close {
   display: inline-flex;
 }
+.settings-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 @media (min-width: 1101px) {
   .settings-scrim:not(.performance-mode .settings-scrim) {
     display: none;

@@ -310,9 +310,11 @@ try {
   await page.getByLabel("Show FPS on visualizer").check();
   assert.equal(await page.locator(".fps-badge").count(), 1);
   await closeSettings();
-  await page
-    .getByRole("button", { name: "Exit fullscreen", exact: true })
-    .click();
+  // The close action hides the HUD, but fullscreen settings remain selected.
+  await page.locator(".cinema-touch-wake-layer").click();
+  await page.locator(".performance-mode.hud-visible .settings-panel.settings-open").waitFor();
+  assert.equal(await page.getByRole("tab", { name: "Others", exact: true }).getAttribute("aria-selected"), "true");
+  await page.locator("#app-settings").getByRole("button", { name: "Exit fullscreen", exact: true }).click();
   await page.locator(".shell:not(.performance-mode)").waitFor();
   await assertFits("fullscreen exit");
   assert.deepEqual(errors, []);
