@@ -1,6 +1,8 @@
 apply plugin: 'com.android.application'
 
 def releaseKeystore = System.getenv('LYRICFLOW_KEYSTORE')
+// Optional per-CPU APKs, while retaining the universal APK used for in-app updates.
+def buildAbiSplits = (System.getenv('LYRICFLOW_ABI_SPLITS') ?: 'false').toBoolean()
 
 android {
     ndkVersion = '27.2.12479018'
@@ -19,6 +21,18 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Native Node.js ships one runtime per CPU architecture. Single-ABI APKs
+    // avoid shipping the other architectures to each device.
+    splits {
+        abi {
+            enable buildAbiSplits
+            if (buildAbiSplits) {
+                reset()
+                include 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+            }
+            universalApk true
+        }
+    }
     if (releaseKeystore) {
         signingConfigs {
             persistentRelease {
@@ -32,8 +46,11 @@ android {
     buildTypes {
         release {
             if (releaseKeystore) signingConfig signingConfigs.persistentRelease
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Capacitor 8.6 supports the R8 optimizer. Keep all registered
+            // native plugins through the explicit ProGuard keep rules.
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }
