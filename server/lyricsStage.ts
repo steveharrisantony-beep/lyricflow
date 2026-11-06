@@ -1,4 +1,5 @@
-import { cleanTitleForLyrics, type ProviderLyric, type LyricsStageProvider } from '../src/lyrics/searchPlan';
+import { type ProviderLyric, type LyricsStageProvider } from '../src/lyrics/searchPlan';
+import { messytitlefixer } from '../src/lyrics/messytitlefixer';
 export interface StageQuery { title: string; artist?: string; duration: number }
 type Row = Record<string, unknown>;
 const row = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
@@ -48,8 +49,8 @@ export async function searchLrcRedRecordings(title: string, artist: string | und
 function catalogOrder(items: ProviderLyric[], query: StageQuery) {
   // The catalog query remains untouched. Rank records before the bounded file downloads.
   const comparable=(text:string)=>text.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu,' ').trim();
-  const target=comparable(cleanTitleForLyrics(query.title,query.artist));
-  const titleMatch=(item:ProviderLyric)=>item.title&&comparable(cleanTitleForLyrics(item.title,item.artist))===target;
+  const target=comparable(messytitlefixer(query.title,query.artist));
+  const titleMatch=(item:ProviderLyric)=>item.title&&comparable(messytitlefixer(item.title,item.artist))===target;
   return items.sort((a, b) => {
     const distance = (item: ProviderLyric) => !query.duration || !item.duration ? Infinity : Math.abs(item.duration - query.duration);
     return Number(Boolean(titleMatch(b)))-Number(Boolean(titleMatch(a))) || distance(a) - distance(b);
