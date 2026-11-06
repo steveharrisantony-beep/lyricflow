@@ -47,6 +47,7 @@ export interface ProviderLyric {
 export interface LyricsSearchCandidate extends Omit<ProviderLyric, 'ttml'> {
   romanized?: string;
   timingNote?: string;
+  matchNote?: string;
   quality: number;
   confidence: number;
   difference?: number;
@@ -153,16 +154,31 @@ export function buildLyricsSearchPlan(track: TrackInfo): LyricsSearchPlan {
     duration: track.duration, sourceTrackId, stages };
 }
 
+/** An alternative recording must agree with the playback duration after rounding
+ * both values to whole seconds. Missing durations never count as a match. */
+export function hasExactSecondDurationMatch(recordingDuration?:number, playbackDuration?:number):boolean {
+  return typeof recordingDuration === 'number' && Number.isFinite(recordingDuration) && recordingDuration > 0 &&
+    typeof playbackDuration === 'number' && Number.isFinite(playbackDuration) && playbackDuration > 0 &&
+    Math.round(recordingDuration) === Math.round(playbackDuration);
+}
+
 export function validateLyricsCandidate(
   candidate: ProviderLyric,
   plan: LyricsSearchPlan,
   query: LyricsQuery,
-): { confidence: number; difference?: number; rejection?: string } {
+  quality = 0,
+): { confidence: number; difference?: number; rejection?: string; matchNote?: string } {
   const difference = candidate.duration && plan.duration > 0 ? candidate.duration - plan.duration : undefined;
   const reject = (rejection: string) => ({ confidence: 0, difference, rejection });
   if (candidate.instrumental) return reject('Instrumental recording');
   if (!candidate.title?.trim()) return reject('Provider did not identify the recording title');
-  if (versions(plan.originalTitle) !== versions(candidate.title)) return reject('Different recording version');
+
+  // A synced alternate version or artist is allowed when the *song title* still
+  // matches and its duration matches to the whole second, not the millisecond.
+  // Plain/unsynced lyrics cannot bypass the original recording checks.
+  const exactSecondSynced = quality >= 2 && hasExactSecondDurationMatch(candidate.duration, plan.duration);
+  const differentVersion = versions(plan.originalTitle) !== versions(candidate.title);
+  if (differentVersion && !exactSecondSynced) return reject('Different recording version');
 
   const title = comparable(candidate.title);
   const cleaned = comparable(messytitlefixer(candidate.title, candidate.artist));
@@ -179,19 +195,27 @@ export function validateLyricsCandidate(
     ? hasArtistWord(artist, expectedArtist || '')
     : verifiedCredits.some(credit => artistCredits(artist).some(name => comparable(name) === credit));
   const artistInTitle = hasArtistWord(artist, plan.originalTitle);
-  if (plan.audioSource !== 'youtube' && expectedArtist && !matchingArtist) return reject('Different recording artist');
+  const differentArtist = Boolean(plan.audioSource !== 'youtube' && expectedArtist && !matchingArtist);
+  if (differentArtist && !exactSecondSynced) return reject('Different recording artist');
   if (!query.artist && plan.strategy === 'B' && plan.duration > 0 && difference === undefined) {
     return reject('Title-only result has no verifiable duration');
   }
-  if (plan.strategy === 'A' && !query.artist && !artistInTitle) {
+  const unmatchedStrategyArtist = plan.strategy === 'A' && !query.artist && !artistInTitle;
+  if (unmatchedStrategyArtist && !exactSecondSynced) {
     return reject('No candidate artist word appears in the original title');
   }
-  if (!matchingArtist && !artistInTitle && (query.artist || difference === undefined || Math.abs(difference) > 2)) {
+  const unverifiedArtistOrDuration = !matchingArtist && !artistInTitle &&
+    (Boolean(query.artist) || difference === undefined || Math.abs(difference) > 2);
+  if (unverifiedArtistOrDuration && !exactSecondSynced) {
     return reject('Artist or recording length could not be verified');
   }
 
   const confidence = matchingArtist && difference !== undefined ? 1 : matchingArtist || artistInTitle ? 0.9 : 0.75;
-  return { confidence, difference };
+  const alternateRecording = exactSecondSynced &&
+    (differentVersion || differentArtist || unmatchedStrategyArtist || unverifiedArtistOrDuration);
+  return { confidence, difference,
+    ...(alternateRecording ? { matchNote: 'Alternate recording accepted: duration matches to the whole second' } : {}),
+  };
 }
 
 export function isPreferredWordSync(candidate: LyricsSearchCandidate): boolean {
