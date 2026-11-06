@@ -19,7 +19,7 @@ import {
   type PlayableSong,
 } from "./providers";
 import { isLyricVideoTrack } from "../metadata/trackInfo";
-import { cleanYouTubeTitleForLyrics } from "../lyrics/lyricFlowEngine";
+import { messytitlefixer } from "../lyrics/messytitlefixer";
 
 const initialBase = () => {
   try {
@@ -136,7 +136,7 @@ export default function SongSearch({
       onAddToQueue(resolved);
       setQueuedIds((prev) => ({ ...prev, [song.provider + song.id]: true }));
       setMessage(
-        `Added "${cleanYouTubeTitleForLyrics(song.title) || song.title}" to Queue (Q).`,
+        `Added "${messytitlefixer(song.title) || song.title}" to Queue (Q).`,
       );
     } catch (e) {
       setMessage(
@@ -292,7 +292,7 @@ export default function SongSearch({
             song.provider === "resolver" && isLyricVideoTrack(song);
           const cleanedTitle =
             song.provider === "resolver"
-              ? cleanYouTubeTitleForLyrics(song.title, song.artist)
+              ? messytitlefixer(song.title, song.artist)
               : "";
           const isAdded = Boolean(queuedIds[song.provider + song.id]);
           return (
