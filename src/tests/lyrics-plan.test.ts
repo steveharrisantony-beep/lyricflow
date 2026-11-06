@@ -147,8 +147,8 @@ it('shows the first valid line while providers finish and upgrades only after a 
     if (query.get('provider') === 'lrclib' && query.get('artist') === track.artist) return reply([candidate]);
     if (query.get('provider') === 'isrc' && query.get('artist') === 'Arijit') return reply([
       { ...candidate, source: 'lrc.red', id: 'bad-title', title: 'Apna Other Song', lrc: words },
-      { ...candidate, source: 'lrc.red', id: 'bad-artist', artist: 'Arijit Another', lrc: words },
-      { ...candidate, source: 'lrc.red', id: 'bad-version', title: 'Apna Bana Le (Live)', lrc: words },
+      { ...candidate, source: 'lrc.red', id: 'alt-artist', artist: 'Arijit Another', lrc: words },
+      { ...candidate, source: 'lrc.red', id: 'alt-version', title: 'Apna Bana Le (Live)', lrc: words },
       { ...candidate, source: 'lrc.red', id: 'word', lrc: words },
     ]);
     return reply();
@@ -158,7 +158,10 @@ it('shows the first valid line while providers finish and upgrades only after a 
   expect(result).toMatchObject({ original: words, hasWordSync: true, searchComplete: true });
   expect(calls).toHaveLength(2 * lyricsStageProviders.length);
   const last = (report.mock.calls.at(-1)![0] as LyricsSearchReport).stages.at(-1)!;
-  expect(last.candidates.filter(item => item.rejection)).toHaveLength(3);
+  // A different recording with the same whole-second duration can now provide
+  // timed lyrics, but an exact recording remains preferred when both are found.
+  expect(last.candidates.filter(item => item.rejection).map(item => item.id)).toEqual(['bad-title']);
+  expect(last.candidates.filter(item => item.matchNote).map(item => item.id)).toEqual(['alt-artist', 'alt-version']);
   expect(last.selectedId).toBe('word');
 });
 
