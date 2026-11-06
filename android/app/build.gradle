@@ -3,6 +3,8 @@ apply plugin: 'com.android.application'
 def releaseKeystore = System.getenv('LYRICFLOW_KEYSTORE')
 // Optional per-CPU APKs, while retaining the universal APK used for in-app updates.
 def buildAbiSplits = (System.getenv('LYRICFLOW_ABI_SPLITS') ?: 'false').toBoolean()
+def optimizeRelease = (System.getenv('LYRICFLOW_OPTIMIZE_RELEASE') ?: 'true').toBoolean()
+def optimizeDebug = (System.getenv('LYRICFLOW_OPTIMIZE_DEBUG') ?: 'false').toBoolean()
 
 android {
     ndkVersion = '27.2.12479018'
@@ -44,12 +46,19 @@ android {
         }
     }
     buildTypes {
+        // Keep routine development/emulator tests unminified. The optional
+        // GitHub debug APK can use the same shrinking as release.
+        debug {
+            minifyEnabled optimizeDebug
+            shrinkResources optimizeDebug
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
         release {
             if (releaseKeystore) signingConfig signingConfigs.persistentRelease
             // Capacitor 8.6 supports the R8 optimizer. Keep all registered
             // native plugins through the explicit ProGuard keep rules.
-            minifyEnabled true
-            shrinkResources true
+            minifyEnabled optimizeRelease
+            shrinkResources optimizeRelease
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
