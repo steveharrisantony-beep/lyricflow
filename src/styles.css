@@ -1557,6 +1557,11 @@ summary > span {
   width: min(680px, calc(100% - 24px));
   max-height: none;
 }
+.performance-mode.hud-hidden .settings-panel.settings-open {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
 .performance-mode .settings-close {
   display: inline-flex;
 }

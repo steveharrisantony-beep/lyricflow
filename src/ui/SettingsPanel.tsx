@@ -105,6 +105,7 @@ export default function SettingsPanel({
   onPageChange,
   open,
   fullscreen,
+  hiddenByHud = false,
   onClose,
   children,
 }: {
@@ -112,6 +113,7 @@ export default function SettingsPanel({
   onPageChange: (page: SettingsPage) => void;
   open: boolean;
   fullscreen: boolean;
+  hiddenByHud?: boolean;
   onClose: () => void;
   children: Record<SettingsPage, ReactNode>;
 }) {
@@ -127,7 +129,7 @@ export default function SettingsPanel({
     query.addEventListener?.("change", update);
     return () => query.removeEventListener?.("change", update);
   }, []);
-  const modal = open && (compact || fullscreen);
+  const modal = open && !hiddenByHud && (compact || fullscreen);
   useEffect(() => {
     panel.current?.querySelectorAll<HTMLDetailsElement>('details[open]').forEach(details => { details.open = false; });
     if (panel.current) {
@@ -197,6 +199,7 @@ export default function SettingsPanel({
         role={modal ? "dialog" : undefined}
         aria-modal={modal || undefined}
         aria-label="Settings"
+        aria-hidden={hiddenByHud || undefined}
       >
         <div className="settings-heading">
           <h2>Settings</h2>
