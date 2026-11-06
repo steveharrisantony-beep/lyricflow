@@ -97,6 +97,7 @@ jobs:
           LYRICFLOW_KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
           LYRICFLOW_KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
           LYRICFLOW_ABI_SPLITS: 'true'
+          LYRICFLOW_OPTIMIZE_DEBUG: 'true'
         run: |
           chmod +x gradlew
           if [ -n "$LYRICFLOW_KEYSTORE" ]; then
