@@ -1235,7 +1235,7 @@ it('uses the active notification package and metadata for the lyrics strategy',a
  }
 },20000);
 
-it('restores fullscreen player and selected settings page after manual hide and a stage tap',async()=>{
+it('preserves fullscreen panels on HUD hide but closes Settings X back to the toolbar',async()=>{
  await act(async()=>click('Enter fullscreen fixture'));
  const shell=()=>host.querySelector('.shell')!;
  const toolbar=()=>host.querySelector<HTMLElement>('.fullscreen-toolbar')!;
@@ -1260,7 +1260,8 @@ it('restores fullscreen player and selected settings page after manual hide and 
  const details=settings().querySelector<HTMLDetailsElement>('#settings-page-lyrics details');
  if(details) details.open=true;
  const position=settings().scrollTop;
- await act(async()=>host.querySelector<HTMLButtonElement>('.settings-close')!.click());
+ // Hiding the HUD still preserves the open Settings window and selected page.
+ await act(async()=>host.querySelector<HTMLElement>('.stage')!.click());
  expect(shell().classList.contains('hud-hidden')).toBe(true);
  expect(settings().classList.contains('settings-open')).toBe(true);
  await act(async()=>host.querySelector<HTMLButtonElement>('.cinema-touch-wake-layer')!.click());
@@ -1269,6 +1270,24 @@ it('restores fullscreen player and selected settings page after manual hide and 
  expect(host.querySelector('#settings-tab-lyrics')?.getAttribute('aria-selected')).toBe('true');
  if(details) expect(details.open).toBe(true);
  expect(settings().scrollTop).toBe(position);
- await act(async()=>settings().querySelector<HTMLButtonElement>('.settings-fullscreen-exit')!.click());
+
+ // The Settings X is a real close, not a HUD hide. Fullscreen remains active.
+ await act(async()=>host.querySelector<HTMLButtonElement>('.settings-close')!.click());
+ expect(shell().classList.contains('performance-mode')).toBe(true);
+ expect(shell().classList.contains('hud-visible')).toBe(true);
+ expect(settings().classList.contains('settings-open')).toBe(false);
+ expect(player().classList.contains('player-window-open')).toBe(false);
+ expect([...toolbar().querySelectorAll('button')].map(button=>button.textContent?.trim())).toEqual([
+   'Player', 'Settings', 'Exit fullscreen',
+ ]);
+
+ // The fullscreen toolbar also closes Settings instead of hiding the HUD.
+ await act(async()=>toolbar().querySelectorAll('button')[1].click());
+ expect(settings().classList.contains('settings-open')).toBe(true);
+ expect(host.querySelector('#settings-tab-mapping')?.getAttribute('aria-selected')).toBe('true');
+ await act(async()=>toolbar().querySelectorAll('button')[1].click());
+ expect(shell().classList.contains('hud-visible')).toBe(true);
+ expect(settings().classList.contains('settings-open')).toBe(false);
+ await act(async()=>toolbar().querySelectorAll('button')[2].click());
  expect(shell().classList.contains('performance-mode')).toBe(false);
 });
