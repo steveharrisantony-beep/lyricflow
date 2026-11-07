@@ -310,10 +310,17 @@ try {
   await page.getByLabel("Show FPS on visualizer").check();
   assert.equal(await page.locator(".fps-badge").count(), 1);
   await closeSettings();
-  // The close action hides the HUD, but fullscreen settings remain selected.
-  await page.locator(".cinema-touch-wake-layer").click();
+  // X dismisses Settings but leaves fullscreen and its top toolbar active.
+  await page.locator(".performance-mode .settings-panel.settings-open").waitFor({ state: "hidden" });
+  assert.equal(await page.locator(".performance-mode.hud-visible").count(), 1);
+  const fullscreenToolbar = page.locator(".fullscreen-toolbar");
+  for (const label of ["Player", "Settings", "Exit fullscreen"]) {
+    assert.equal(await fullscreenToolbar.getByRole("button", { name: label, exact: true }).count(), 1);
+  }
+  // Reopening Settings via the toolbar is a new session (Song Mapping first).
+  await fullscreenToolbar.getByRole("button", { name: "Settings", exact: true }).click();
   await page.locator(".performance-mode.hud-visible .settings-panel.settings-open").waitFor();
-  assert.equal(await page.getByRole("tab", { name: "Others", exact: true }).getAttribute("aria-selected"), "true");
+  assert.equal(await page.getByRole("tab", { name: "Song Mapping", exact: true }).getAttribute("aria-selected"), "true");
   await page.locator("#app-settings").getByRole("button", { name: "Exit fullscreen", exact: true }).click();
   await page.locator(".shell:not(.performance-mode)").waitFor();
   await assertFits("fullscreen exit");
