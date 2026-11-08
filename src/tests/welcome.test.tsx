@@ -66,19 +66,15 @@ it('offers the demo only after the first Start and consumes the invitation when 
   expect(host.textContent).toBe('No invitation');
 });
 
-it('renders the Buy Me a Coffee button and script in the top-right header', async () => {
+it('renders a safe, self-contained support link in the top-right header', async () => {
   await act(async () => root.render(<FirstVisit><Visualizer /></FirstVisit>));
   const link = host.querySelector<HTMLAnchorElement>('.welcome-header .bmc-btn');
-  const script = host.querySelector<HTMLScriptElement>('.welcome-header script[data-name="bmc-button"]');
   expect(link).not.toBeNull();
   expect(link?.getAttribute('href')).toBe('https://www.buymeacoffee.com/steveharris');
-  expect(link?.getAttribute('data-slug')).toBe('steveharris');
-  expect(link?.getAttribute('data-color')).toBe('#FFDD00');
-  expect(link?.getAttribute('data-emoji')).toBe('☕');
-  expect(link?.getAttribute('data-font')).toBe('Comic');
-  expect(link?.getAttribute('data-text')).toBe('Buy me a coffee');
-  expect(link?.getAttribute('data-outline-color')).toBe('#000000');
-  expect(link?.getAttribute('data-font-color')).toBe('#000000');
-  expect(link?.getAttribute('data-coffee-color')).toBe('#ffffff');
-  expect(script?.getAttribute('src')).toBe('https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js');
+  expect(link?.getAttribute('target')).toBe('_blank');
+  expect(link?.getAttribute('rel')).toContain('noopener');
+  expect(link?.getAttribute('aria-label')).toContain('Buy me a coffee');
+  expect(host.querySelector('.welcome-header .bmc-btn-text')?.textContent).toBe('Buy me a coffee');
+  // The support link must not inject remote JavaScript or change document.write.
+  expect(host.querySelector('.welcome-header script')).toBeNull();
 });
