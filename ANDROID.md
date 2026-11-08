@@ -79,12 +79,13 @@ The same provider logic is reused from `server.ts`; no provider was replaced wit
 sample results or silently removed. The optional Python developer resolver is
 not needed by this built-in Express path and is not bundled.
 
-Music catalogs, online lyrics, YouTube playback and optional Firebase cloud sync
-still use their external internet services. Running the backend locally does not
-make those services offline, remove their restrictions, or guarantee that every
-provider will respond. Local audio, imported lyrics, romanization and bundled
-visuals remain local. Existing cloud authentication still needs device validation;
-this change does not introduce a native Google sign-in integration.
+Music catalogs, online lyrics, YouTube playback and some romanization requests
+still use external internet services. Running the backend locally does not make
+those services offline, bypass provider restrictions or guarantee availability.
+Local audio, imported lyrics and bundled visuals can work without those services.
+User preferences and song mappings are stored locally; **Firebase account sign-in
+and cloud synchronization have been removed**. Optional YouTube account settings
+are separate and do not require Firebase.
 
 Internally, Express binds only to `127.0.0.1` on a dynamically assigned port and
 requires a random per-process token. A native WebView client forwards only the
@@ -136,24 +137,25 @@ assets, SDK paths, build output, or private signing material.
 
 ## Packaging scope and verification
 
-This Android version retains the existing UI and backend provider code. It adds no external
-player listener, notification access, background playback service, or audio capture.
-The manifest requests internet and microphone access for the existing app; the
-microphone is only used after the existing Start Listening action and Android's
-permission grant. Local file selection uses Android's file picker.
+The Android app includes a native notification listener for the **External Player**
+source, audio capture support, media playback controls and the embedded backend.
+It requests internet access, audio capture permission when enabled, and Android
+notification access through an explicit setup flow. Local file selection uses
+the Android file picker. Audio capture does not start merely by selecting the
+External Player source.
 
 Before treating the APK as device-verified, test on your Xiaomi Pad 8: launch,
 local-file playback, demo visuals, lyric import and timing, full screen, rotation,
 file selection, microphone grant/denial and stop, and online catalog/lyrics/video features with internet access. The workflow also runs an Android emulator test of WebView → native proxy → embedded Express startup and checks that unauthenticated loopback requests are rejected. Fixture tests cover search, resolution, Range streaming and timed lyrics without contacting live providers. These checks do not prove Xiaomi hardware performance or live provider availability.
 
-Upstream source snapshot: `steveharrisantony-beep/lyricflow` at
-`736facf6753bde219aa7b8aad8a9cb4c16b7e510`.
+LyricFlow Android originated from the browser-based LyricFlow project.
+This repository now contains its own subsequent features and fixes.
 
 The automatic browser workflow checks the current production UI, local audio,
 lyric import and signed delay, bundled fonts, portrait layout and page errors.
-Older `smoke:*` scripts contain assertions for the previous 40-scene interface;
-they are retained in the separate **Legacy visual smoke (manual)** workflow and
-are not represented as passing checks of the current 23-theme UI.
+Older `smoke:*` scripts may contain assertions for previous visual interfaces;
+they are retained in a separate **Legacy visual smoke (manual)** workflow.
+The actively maintained browser workflow verifies the current 28-theme UI.
 
 ## Updates from inside the app
 
