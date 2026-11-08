@@ -1,17 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
-  android: false, configured: true,
-  status: vi.fn(), nativeSignIn: vi.fn(), nativeSignOut: vi.fn(), oauth: vi.fn(), credential: vi.fn(),
+  android: false,
+  status: vi.fn(), nativeSignIn: vi.fn(), nativeSignOut: vi.fn(),
 }));
 vi.mock('../audio/externalPlayer', () => ({
   isAndroidApp: () => mocks.android,
   ExternalMedia: { getYouTubeAuthStatus: mocks.status, openYouTubeSignIn: mocks.nativeSignIn, signOutYouTube: mocks.nativeSignOut },
-}));
-vi.mock('../firebase/firebaseClient', () => ({ get isFirebaseConfigured() { return mocks.configured; }, auth: {} }));
-vi.mock('firebase/auth', () => ({
-  GoogleAuthProvider: class { addScope() {} setCustomParameters() {} static credentialFromResult = mocks.credential; },
-  signInWithPopup: mocks.oauth,
 }));
 let auth: typeof import('../music/youtubeAuth');
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -24,10 +19,8 @@ function credentialsRequest() {
 }
 beforeEach(async () => {
   vi.resetModules(); vi.clearAllMocks(); localStorage.clear();
-  mocks.android = false; mocks.configured = true;
+  mocks.android = false;
   mocks.nativeSignOut.mockResolvedValue({ signedIn: false });
-  mocks.oauth.mockResolvedValue({ user: { displayName: 'Fixture Google user' } });
-  mocks.credential.mockReturnValue({ accessToken: 'fixture-token' });
   fetchMock = vi.fn().mockImplementation(async (_url, init) => {
     const body = JSON.parse(init.body);
     return body.accessToken || body.cookie ? verified() : Response.json({ authenticated: false, verified: false });
@@ -96,22 +89,6 @@ it('keeps a timed-out browser popup disconnected', async () => {
   const result = expect(auth.signInToYouTubeAccount('browser-popup')).rejects.toThrow('could not be verified');
   await vi.advanceTimersByTimeAsync(45000); await result;
   expect(auth.getYouTubeAuthState().connected).toBe(false);
-});
-it('does not fall back to a browser popup after OAuth cancellation', async () => {
-  const open = vi.spyOn(window, 'open');
-  mocks.oauth.mockRejectedValue(new Error('Popup closed by user'));
-  await expect(auth.signInToYouTubeAccount()).rejects.toThrow('Popup closed');
-  expect(open).not.toHaveBeenCalled();
-  expect(auth.getYouTubeAuthState().connected).toBe(false);
-});
-it('requires an OAuth access token, not just a Firebase user', async () => {
-  mocks.credential.mockReturnValue(null);
-  await expect(auth.signInToYouTubeAccount()).rejects.toThrow('did not return');
-  expect(auth.getYouTubeAuthState().connected).toBe(false);
-});
-it('verifies OAuth credentials with YouTube before reporting connected', async () => {
-  expect(await auth.signInToYouTubeAccount()).toMatchObject({ connected: true, method: 'google-oauth', accountLabel: 'Fixture account' });
-  expect(auth.getYouTubeRequestHeaders()).toEqual({ 'X-YouTube-Token': 'fixture-token' });
 });
 it('rejects a presence-only response from an old resolver', async () => {
   fetchMock.mockImplementation(async (_url, init) => JSON.parse(init.body).cookie

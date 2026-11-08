@@ -1,94 +1,18 @@
 import {enableAllPaletteSelections,normalizePaletteSelections,type ThemePaletteSelections} from '../visualization/cinematic/themeSelection';
-import { Capacitor, registerPlugin } from '@capacitor/core';
-import { initializeApp } from 'firebase/app';
-import {
-  getAuth, GoogleAuthProvider, signInWithPopup, signInWithCredential, signInWithEmailAndPassword,
-  createUserWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification,
-  signOut, onAuthStateChanged, linkWithCredential, EmailAuthProvider, connectAuthEmulator, type User,
-} from 'firebase/auth';
-import {
-  initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache,
-  doc, onSnapshot, setDoc, serverTimestamp, connectFirestoreEmulator, type Firestore,
-} from 'firebase/firestore';
 import { TEMPLATES, type FontPack, type SceneId } from '../visualization/cinematic/catalog';
 import { FONT_SHOWCASE } from '../visualization/cinematic/fonts';
 import { ALL_PLACEMENT_MODES, LYRIC_MOTIONS, normalizeMotionPool, normalizeLyricMotion, type LyricMotion, type LyricPlacementMode } from '../visualization/cinematic/kineticTypography';
 import { CAMERA_VIEWS, type Quality, type CameraMode, type CameraView } from '../visualization/cinematic/CinematicStage';
 import { readDevice, writeDevice, scopedKey } from './deviceStore';
-import firebaseAppletConfig from '../../firebase-applet-config.json';
 
-const env = import.meta.env || {};
-export const firebaseConfig = {
-  apiKey: env.VITE_FIREBASE_API_KEY || firebaseAppletConfig.apiKey || '',
-  projectId: env.VITE_FIREBASE_PROJECT_ID || firebaseAppletConfig.projectId || '',
-  appId: env.VITE_FIREBASE_APP_ID || firebaseAppletConfig.appId || '',
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || firebaseAppletConfig.authDomain || '',
-  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || firebaseAppletConfig.storageBucket || '',
-  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseAppletConfig.messagingSenderId || '',
-};
-export const firebaseDatabaseId = env.VITE_FIREBASE_DATABASE_ID || firebaseAppletConfig.firestoreDatabaseId || '(default)';
-const isUnitTestWithoutEmulator = Boolean(env.VITEST || env.MODE === 'test') && env.VITE_FIREBASE_EMULATORS !== 'true';
-export const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId);
-const app = isFirebaseConfigured && !isUnitTestWithoutEmulator ? initializeApp(firebaseConfig) : null;
-export const auth = app ? getAuth(app) : null;
-let firestore: Firestore | null = null;
-if (app) {
-  try {
-    firestore = initializeFirestore(app, {
-      localCache: typeof indexedDB !== 'undefined'
-        ? persistentLocalCache({ tabManager: persistentMultipleTabManager() }) : memoryLocalCache(),
-    }, firebaseDatabaseId);
-  } catch {
-    firestore = initializeFirestore(app, { localCache: memoryLocalCache() }, firebaseDatabaseId);
-  }
+export interface User {
+  uid: string;
+  email?: string | null;
+  emailVerified?: boolean;
 }
-export const db = firestore;
-// Explicit, demo-project-only switch for automated tests. Production never redirects.
-if (env.VITE_FIREBASE_EMULATORS === 'true' && firebaseConfig.projectId.startsWith('demo-') && auth && db) {
-  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
-  connectFirestoreEmulator(db, '127.0.0.1', 8080);
-}
-export { onAuthStateChanged, type User };
+
 export const isNativeApp = () => Boolean((window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.());
-const AndroidGoogleSignIn = registerPlugin<{
-  signIn(options: { webClientId: string }): Promise<{ idToken?: string }>;
-}>('LyricFlowGoogleSignIn');
 
-export async function signInWithGoogle() {
-  if (!auth) throw new Error('Cloud sync is not configured yet. Your device settings still work.');
-  if (Capacitor.getPlatform() === 'android') {
-    const webClientId = env.VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID?.trim()
-      || (firebaseConfig.projectId === firebaseAppletConfig.projectId ? firebaseAppletConfig.oAuthClientId : '');
-    if (!webClientId.endsWith('.apps.googleusercontent.com')) {
-      throw new Error('Google sign-in needs the Firebase project’s Web OAuth client ID in this APK.');
-    }
-    const { idToken } = await AndroidGoogleSignIn.signIn({ webClientId });
-    if (!idToken) return null;
-    return (await signInWithCredential(auth, GoogleAuthProvider.credential(idToken))).user;
-  }
-  const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: 'select_account' });
-  return (await signInWithPopup(auth, provider)).user;
-}
-export async function emailSignIn(email: string, password: string, create = false) {
-  if (!auth) throw new Error('Cloud sync is not configured yet.');
-  const result = create ? await createUserWithEmailAndPassword(auth, email, password)
-    : await signInWithEmailAndPassword(auth, email, password);
-  if (create) await sendEmailVerification(result.user);
-  return result.user;
-}
-export async function addAccountPassword(password: string) {
-  const user = auth?.currentUser;
-  if (!user?.email) throw new Error('Sign in first.');
-  if (password.length < 6) throw new Error('Use a password with at least 6 characters.');
-  await linkWithCredential(user, EmailAuthProvider.credential(user.email, password));
-}
-export async function resetPassword(email: string) {
-  if (!auth || !email.trim()) throw new Error('Enter your account email first.');
-  await sendPasswordResetEmail(auth, email.trim());
-}
-export async function verifyEmail() { if (auth?.currentUser) await sendEmailVerification(auth.currentUser); }
-export async function signOutUser() { if (auth) await signOut(auth); }
 export interface DisplayPreferences {
   preferredVideoType: 'music' | 'lyrics';
   scene: SceneId; reducedMotion: boolean; youtubeBackgroundMode: 'video' | 'theme';
@@ -99,7 +23,7 @@ export interface DisplayPreferences {
 }
 export const DEFAULT_DISPLAY_PREFERENCES: DisplayPreferences = {
   preferredVideoType: 'music', scene: 'holographic-tide', reducedMotion: false, youtubeBackgroundMode: 'video', videoOverlayOpacity: 0,
-  autoHideYoutubeLyrics: true, playerVolume: 100, sponsorBlockEnabled: true, lyricPlacementMode: 'auto',
+  autoHideYoutubeLyrics: false, playerVolume: 100, sponsorBlockEnabled: true, lyricPlacementMode: 'auto',
   lyricColorMode: 'auto', lyricFillPaceMode: 'letter', lyricDisplayMode: 'both',
 };
 export interface UserPreferencesData {
@@ -292,33 +216,9 @@ export function cloudPreferencesPayload(prefs:UserPreferencesData){
 }
 export async function saveCloudPreferences(user: User, prefs: UserPreferencesData): Promise<void> {
   saveLocalPreferences(prefs, user.uid);
-  if (!db) return;
-  const clean=sanitizePreferences(prefs);
-  const cloudPayload=cloudPreferencesPayload(clean);
-  const pendingKey = scopedKey('preferencesPending', user.uid);
-  writeDevice(pendingKey, clean);
-  await setDoc(doc(db, 'profiles', user.uid), { preferences: cloudPayload, updatedAt: serverTimestamp() });
-  if (JSON.stringify(readDevice(pendingKey, null)) === JSON.stringify(clean)) localStorage.removeItem(pendingKey);
 }
-export function watchCloudPreferences(user: User, next: (prefs: UserPreferencesData) => void, status: (message: string) => void) {
-  if (!db) return () => {};
-  const pendingKey = scopedKey('preferencesPending', user.uid);
-  const pending = readDevice<UserPreferencesData | null>(pendingKey, null);
-  if (pending) void saveCloudPreferences(user, pending).catch(() => status('Saved on device · cloud sync needs attention'));
-  return onSnapshot(doc(db, 'profiles', user.uid), { includeMetadataChanges: true }, snapshot => {
-    if (readDevice(pendingKey, null) && !snapshot.metadata.hasPendingWrites) return;
-    if (snapshot.exists()) {
-      const prefs = sanitizePreferences(snapshot.data().preferences);
-      saveLocalPreferences(prefs, user.uid);
-      next(prefs);
-    } else if (!snapshot.metadata.fromCache) {
-      const local = loadLocalPreferences(user.uid);
-      next(local);
-      void saveCloudPreferences(user, local).catch(() => status('Saved on device · cloud sync needs attention'));
-    }
-    status(snapshot.metadata.hasPendingWrites ? 'Saved on device · waiting to sync'
-      : snapshot.metadata.fromCache ? 'Offline · using saved settings' : 'Account settings synced');
-  }, () => status('Saved on device · cloud sync unavailable'));
+export function watchCloudPreferences(_user: User, _next: (prefs: UserPreferencesData) => void, _status: (message: string) => void) {
+  return () => {};
 }
 
 

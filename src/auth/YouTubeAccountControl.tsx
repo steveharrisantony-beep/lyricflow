@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   Video,
 } from "lucide-react";
-import { isFirebaseConfigured, isNativeApp } from "../firebase/firebaseClient";
+import { isNativeApp } from "../firebase/firebaseClient";
 import {
   getYouTubeAccessToken,
   getYouTubeCookieHeader,
@@ -48,7 +48,7 @@ export default function YouTubeAccountControl({
   );
 
   const handlePrimarySignIn = async (
-    mode: "auto" | "browser-popup" | "google-oauth" = "auto",
+    mode: "auto" | "browser-popup" = "auto",
   ) => {
     setBusy(true);
     setStatusMsg("");
@@ -236,18 +236,6 @@ export default function YouTubeAccountControl({
                     ? "Switch account"
                     : "Continue to YouTube"}
             </button>
-
-            {!isNativeApp() && isFirebaseConfigured && (
-              <button
-                type="button"
-                className="upload-button"
-                disabled={busy}
-                onClick={() => void handlePrimarySignIn("browser-popup")}
-                style={{ fontSize: 12, padding: "7px 10px" }}
-              >
-                Sign in on YouTube.com Popup
-              </button>
-            )}
 
             <button
               type="button"

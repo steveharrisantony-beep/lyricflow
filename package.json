@@ -23,8 +23,7 @@
     "android:apk:release": "npm run android:keystore && npm run android:sync && node scripts/android-apk.mjs --release",
     "build:backend": "node scripts/build-embedded-backend.mjs",
     "size:audit": "node scripts/inspect-android-size.mjs",
-    "test:backend": "node scripts/test-embedded-backend.mjs",
-    "test:rules": "node scripts/firestore-rules-check.mjs"
+    "test:backend": "node scripts/test-embedded-backend.mjs"
   },
   "dependencies": {
     "@capacitor/android": "8.6.0",
@@ -47,7 +46,6 @@
     "@fontsource/unbounded": "^5.2.0",
     "@vitejs/plugin-react": "latest",
     "express": "^5.3.0",
-    "firebase": "^13.1.0",
     "hls.js": "^1.7.3",
     "jsdom": "^30.1.3",
     "lucide-react": "^0.468.0",
@@ -64,8 +62,7 @@
     "esbuild": "0.28.2",
     "playwright": "^1.58.0",
     "tsx": "^4.23.15",
-    "vitest": "^5.0.4",
-    "@firebase/rules-unit-testing": "^6.0.0"
+    "vitest": "^5.0.4"
   },
   "engines": {
     "node": ">=22"

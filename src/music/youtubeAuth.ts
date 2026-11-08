@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
-import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { ExternalMedia, isAndroidApp } from '../audio/externalPlayer';
 import { musicResolverBase } from '../network/backend';
 import { backendRequest } from '../network/embeddedBackend';
 
 export interface YouTubeAuthState {
   connected: boolean;
-  method: 'android-webview' | 'google-oauth' | 'browser-session' | 'custom-credentials' | null;
+  method: 'android-webview' | 'browser-session' | 'custom-credentials' | null;
   accountLabel: string;
   interactivePlayer: boolean;
   useNoCookieDomain: boolean;
@@ -140,30 +139,16 @@ export async function refreshNativeYouTubeAuthStatus(): Promise<YouTubeAuthState
 
 /** A popup closing or a WebView receiving guest cookies is not sign-in confirmation. */
 export async function signInToYouTubeAccount(
-  mode: 'auto' | 'browser-popup' | 'google-oauth' = 'auto',
+  _mode: 'auto' | 'browser-popup' = 'auto',
 ): Promise<YouTubeAuthState> {
   const version = beginAttempt();
   activeSignIn = version;
   try {
-    if (isAndroidApp() && mode !== 'google-oauth') {
+    if (isAndroidApp()) {
       const result = await ExternalMedia.openYouTubeSignIn();
       ensureCurrent(version);
       if (result?.signedIn !== true) return currentState;
       return await connectVerified(version, 'android-webview', '', result.cookie?.trim() || '');
-    }
-    if ((mode === 'auto' || mode === 'google-oauth') && !isAndroidApp()) {
-      const fb = await import('../firebase/firebaseClient');
-      if (fb.isFirebaseConfigured && fb.auth) {
-        const provider = new GoogleAuthProvider();
-        provider.addScope('https://www.googleapis.com/auth/youtube.readonly');
-        provider.setCustomParameters({ prompt: 'select_account' });
-        const result = await signInWithPopup(fb.auth, provider);
-        ensureCurrent(version);
-        const token = GoogleAuthProvider.credentialFromResult(result)?.accessToken;
-        // OAuth errors/cancellation must not fall through to a browser-only success path.
-        return await connectVerified(version, 'google-oauth', token?.trim() || '', '');
-      }
-      if (mode === 'google-oauth') throw new Error('Google sign-in is not configured.');
     }
     if (typeof window === 'undefined') throw new Error('YouTube sign-in is unavailable here.');
     const popup = window.open(

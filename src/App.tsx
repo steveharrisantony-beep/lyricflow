@@ -125,7 +125,6 @@ import {
   type VoxelVerseFamily,
 } from "./visualization/cinematic/kineticTypography";
 
-import AccountControls from "./auth/AccountControls";
 import YouTubeAccountControl from "./auth/YouTubeAccountControl";
 import CorrectionControls from "./firebase/CorrectionControls";
 import {
@@ -170,7 +169,7 @@ export default function App({ user = null }: { user?: User | null }) {
     if (uid) syncGuestDataToAccount(uid);
     return loadLocalPreferences(uid);
   });
-  const [syncStatus, setSyncStatus] = useState(
+  const [, setSyncStatus] = useState(
     user ? "Connecting account sync…" : "Guest · saved on this device",
   );
   const [cloudReady, setCloudReady] = useState(!user);
@@ -2613,18 +2612,6 @@ export default function App({ user = null }: { user?: User | null }) {
                   />
                 </SettingGroup>
                 <SettingGroup title="Accounts">
-                  <div className="account-row">
-                    <div>
-                      <strong>LyricFlow</strong>
-                      <small>
-                        {user?.email || "Sync settings across devices"}
-                      </small>
-                    </div>
-                    <AccountControls
-                      user={user}
-                      syncStatus={syncStatus}
-                    />
-                  </div>
                   <div className="account-row">
                     <div>
                       <strong>YouTube</strong>

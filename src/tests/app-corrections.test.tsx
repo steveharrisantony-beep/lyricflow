@@ -43,10 +43,10 @@ it('hides overlay lyrics for a manually selected Lyric Video outside the preload
   await act(async()=>click('Search online'));
   await act(async()=>click('Use video'));
   expect(stageProps?.youtubeVideoId).toBe('bbbbbbbbbbb');
-  expect(stageProps?.hideStageLyrics).toBe(true);
+  expect(stageProps?.hideStageLyrics).toBe(false);
   const toggle=host.querySelector<HTMLInputElement>('[aria-label="Hide overlay lyrics on lyrical videos"]')!;
-  await act(async()=>toggle.click());expect(stageProps?.hideStageLyrics).toBe(false);
   await act(async()=>toggle.click());expect(stageProps?.hideStageLyrics).toBe(true);
+  await act(async()=>toggle.click());expect(stageProps?.hideStageLyrics).toBe(false);
  }finally{draw.mockRestore();search.mockImplementation(original);}
 },20000);
 
@@ -56,6 +56,7 @@ it('uses the playing video title for a saved background link and ignores metadat
  const draw=vi.spyOn(stage,'default').mockImplementation(value=>{stageProps=value;return <></>;});
  try{
   await act(async()=>click('Load JioSaavn fixture'));
+  await act(async()=>host.querySelector<HTMLInputElement>('[aria-label="Hide overlay lyrics on lyrical videos"]')!.click());
   const input=host.querySelector<HTMLInputElement>('[aria-label="Background video URL"]')!;
   await act(async()=>{
    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'bbbbbbbbbbb');
@@ -215,8 +216,7 @@ it('saves visibility in the respective song mapping sections and restores it per
  const output=()=>host.querySelector('[data-testid="visibility-stage"]')!;
  try{
   expect(flag('Hide lyrics for this song').disabled).toBe(true);
-  expect(flag('Hide overlay lyrics on lyrical videos').checked).toBe(true);
-  await act(async()=>flag('Hide overlay lyrics on lyrical videos').click());
+  expect(flag('Hide overlay lyrics on lyrical videos').checked).toBe(false);
   await act(async()=>click('Load JioSaavn fixture'));
   expect(flag('Hide lyrics for this song').closest('.lyrics-mapping-section')).not.toBeNull();
   expect(flag('Hide video for this song').closest('.video-mapping-section')).not.toBeNull();
@@ -250,23 +250,12 @@ beforeEach(async () => {
   await act(async () => root.render(<App />));
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
-it('keeps guest mode available, shows only Google sign-in, and syncs previous guest settings and mapped data on sign-in', async () => {
-  const firebaseAppletConfig = (await import('../../firebase-applet-config.json')).default;
-  const { firebaseConfig, firebaseDatabaseId, isFirebaseConfigured } = await import('../firebase/firebaseClient');
-  expect(isFirebaseConfigured).toBe(true);
-  expect(firebaseConfig.projectId).toBe(firebaseAppletConfig.projectId);
-  expect(firebaseConfig.apiKey).toBeTruthy();
-  expect(firebaseConfig.appId).toBeTruthy();
-  expect(firebaseDatabaseId).toBe(firebaseAppletConfig.firestoreDatabaseId);
-  await act(async () => click('Sign in / sync'));
-  expect(host.textContent).toContain('Guest · saved on this device');
-  expect(host.textContent).toContain('Keep your settings across devices');
-  expect([...host.querySelectorAll('button')].some(b => b.textContent === 'Sign in with Google')).toBe(true);
+it('omits Google sign-in and Firebase sync controls while keeping settings and mapped data on device', async () => {
+  await act(async () => click('Others'));
+  expect([...host.querySelectorAll('button')].some(b => b.textContent === 'Sign in / sync')).toBe(false);
+  expect([...host.querySelectorAll('button')].some(b => b.textContent === 'Sign in with Google')).toBe(false);
   expect(host.querySelector('input[type="email"]')).toBeNull();
-  expect(host.querySelector('input[type="password"]')).toBeNull();
-  expect([...host.querySelectorAll('button')].some(b => b.textContent === 'Create account')).toBe(false);
 
-  // Customize guest settings and save a song mapping before signing in
   const slider = [...host.querySelectorAll('label')].find(label => label.textContent?.includes('Visual intensity'))?.querySelector<HTMLInputElement>('input')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(slider, '64');
@@ -282,16 +271,10 @@ it('keeps guest mode available, shows only Google sign-in, and syncs previous gu
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Increase lyric delay 0.5s"]')!.click());
   await act(async () => host.querySelector<HTMLButtonElement>('button.save-song-button')!.click());
 
-  // Sign in as accountA and verify previous guest settings and mapped data are migrated and staged for Firebase sync
-  await act(async () => root.unmount());
-  root = createRoot(host);
-  const user = { uid: 'accountA', email: 'a@example.com', emailVerified: true, providerData: [] } as never;
-  await act(async () => root.render(<App user={user} />));
-  expect(JSON.parse(localStorage.getItem('lyricflow.v3.user:accountA.preferences') || 'null')?.intensity).toBe(64);
-  expect(JSON.parse(localStorage.getItem('lyricflow.v3.user:accountA.preferencesPending') || 'null')?.intensity).toBe(64);
-  expect(localStorage.getItem('lyricflow.v3.user:accountA.songMappings')).toContain('"delaySeconds":0.5');
-  expect(localStorage.getItem('lyricflow.v3.user:accountA.customLyrics')).toContain('Guest mapped lyrics');
-  expect(localStorage.getItem('lyricflow.v3.user:accountA.corrections')).toContain('"delaySeconds":0.5');
+  expect(JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences') || 'null')?.intensity).toBe(64);
+  expect(localStorage.getItem('lyricflow.v3.guest.songMappings')).toContain('"delaySeconds":0.5');
+  expect(localStorage.getItem('lyricflow.v3.guest.customLyrics')).toContain('Guest mapped lyrics');
+  expect(localStorage.getItem('lyricflow.v3.guest.corrections')).toContain('"delaySeconds":0.5');
 });
 it('stores manual-lyrics delay on device and restores it after remount', async () => {
   await act(async () => click('Load fixture audio'));
@@ -1115,9 +1098,9 @@ it('starts with the requested video, placement, lyric, rendering and language de
  expect([...host.querySelectorAll('button')].find(b=>b.textContent==='Fill')?.getAttribute('aria-pressed')).toBe('true');
  expect(host.querySelector<HTMLSelectElement>('[aria-label="Lyric fill pace"]')?.value).toBe('letter');
  expect(input('Show FPS on visualizer').checked).toBe(true);
- expect(input('Hide overlay lyrics on lyrical videos').checked).toBe(true);
+ expect(input('Hide overlay lyrics on lyrical videos').checked).toBe(false);
  expect(JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!).display.playerVolume).toBe(100);
- expect(JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!).display.autoHideYoutubeLyrics).toBe(true);
+ expect(JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!).display.autoHideYoutubeLyrics).toBe(false);
  expect(Object.keys(JSON.parse(localStorage.getItem('lyricflow.v3.guest.preferences')!).themePalettes).length).toBe(28);
  const paletteInputs=[...host.querySelectorAll<HTMLInputElement>('.theme-selection details input[type="checkbox"]')];
  expect(paletteInputs.length).toBeGreaterThan(0);

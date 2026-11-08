@@ -1,22 +1,12 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { correctionContext, correctionKey, makeCorrection, lyricFingerprint, validCorrection, chooseCorrection } from '../firebase/correctionModel';
 import type { TrackInfo } from '../metadata/trackInfo';
 import { scopedKey } from '../firebase/deviceStore';
 import {temporarySongs} from '../data/temporarySongs';
 import {saveSongMapping} from '../data/saveSongMapping';
 
-const fake = vi.hoisted(() => ({ listeners: new Map<string, (snap: unknown) => void>(), set: vi.fn().mockResolvedValue(undefined), remove: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('../firebase/firebaseClient', () => ({ db: {} }));
-vi.mock('firebase/firestore', () => ({
-  doc: (_db: unknown, ...parts: string[]) => parts.join('/'),
-  onSnapshot: (path: string, options: unknown, callback?: (snap: unknown) => void) => {
-    fake.listeners.set(path, (typeof options === 'function' ? options : callback) as (snap: unknown) => void);
-    return () => fake.listeners.delete(path);
-  },
-  setDoc: (...args: unknown[]) => fake.set(...args), deleteDoc: (...args: unknown[]) => fake.remove(...args), serverTimestamp: () => 'SERVER_TIME',
-}));
-import { watchCorrection, savePersonalCorrection, removePersonalCorrection, submitCorrection,discardSongCorrections } from '../firebase/correctionStore';
+import { watchCorrection, savePersonalCorrection, removePersonalCorrection, submitCorrection, discardSongCorrections } from '../firebase/correctionStore';
 const track: TrackInfo = { title: 'Song', artist: 'Artist', album: 'Studio', duration: 200, provider: 'local', source: 'manual', confidence: 1 };
 const ctx = correctionContext(track, 'delay', lyricFingerprint('[00:01]Original test words'))!;
 const approved = makeCorrection(ctx, { delaySeconds: 2 });
@@ -26,7 +16,7 @@ function publish(value:unknown){
  window.dispatchEvent(new Event('lyricflow:corrections'));
 }
 
-beforeEach(() => { localStorage.clear(); temporarySongs.clear(); fake.listeners.clear(); fake.set.mockReset().mockResolvedValue(undefined); fake.remove.mockReset().mockResolvedValue(undefined); });
+beforeEach(() => { localStorage.clear(); temporarySongs.clear(); });
 it('removes old lyric selections and timing fixes while preserving the video and other songs',async()=>{
  const selectionContext=correctionContext(track,'lyrics')!,videoContext=correctionContext(track,'video')!;
  await savePersonalCorrection(null,personal);
@@ -66,8 +56,7 @@ describe('personal and public storage', () => {
     const stop = watchCorrection(ctx, null, value => results.push(value), () => {});
     publish(approved);
     expect(results.at(-1)).toMatchObject({ source: 'approved', correction: { delaySeconds: 2 } });
-    expect([...fake.listeners.keys()].some(p => p.startsWith('profiles/'))).toBe(false);
-    stop(); expect(fake.listeners.size).toBe(0);
+    stop();
   });
   it('retains a personal zero offset when the community changes and restores public defaults on reset', async () => {
     await savePersonalCorrection(null, personal);
@@ -81,12 +70,10 @@ describe('personal and public storage', () => {
     expect(result).toMatchObject({ source: 'automatic', correction: null });
     stop();
   });
-  it('keeps queued offline edits ahead of stale cloud snapshots and isolates account B', async () => {
-    fake.set.mockImplementation(() => new Promise(() => {}));
+  it('keeps personal edits isolated between scopes', async () => {
     void savePersonalCorrection('accountA', personal);
     let result: unknown;
     const stop = watchCorrection(ctx, 'accountA', value => { result = value; }, () => {});
-    expect(fake.listeners.size).toBe(0);
     expect(result).toMatchObject({ source: 'personal', correction: { delaySeconds: 0 } });
     expect(JSON.parse(localStorage.getItem(scopedKey('corrections', 'accountA'))!)[correctionKey(ctx)].dirty).toBe(true);
     stop();
@@ -102,13 +89,8 @@ describe('personal and public storage', () => {
     publish(null);
     expect(result).toMatchObject({ source: 'automatic', correction: null }); stopAgain();
   });
-  it('requires verified sign-in and submits metadata only as pending', async () => {
-    await expect(submitCorrection(null, personal)).rejects.toThrow('Sign in');
-    await expect(submitCorrection({ uid: 'accountA', emailVerified: false } as never, personal)).rejects.toThrow('Verify');
-    await submitCorrection({ uid: 'accountA', emailVerified: true, email: 'private@example.com' } as never, personal);
-    const [path, payload] = fake.set.mock.calls.at(-1)!;
-    expect(path).toMatch(new RegExp(`^correctionSubmissions/accountA/items/${correctionKey(ctx)}_[a-f0-9]{16}$`));
-    expect(payload.status).toBe('pending'); expect(payload).not.toHaveProperty('email'); expect(payload).not.toHaveProperty('original');
+  it('reports community submissions as not configured while preserving local fixes', async () => {
+    await expect(submitCorrection(null, personal)).rejects.toThrow('not configured');
   });
 });
 
