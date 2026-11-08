@@ -258,6 +258,7 @@ select:disabled {
   align-items: center;
   gap: 10px;
   margin-left: auto;
+  min-width: 0;
 }
 .bmc-btn-container {
   display: inline-flex;
@@ -276,7 +277,7 @@ select:disabled {
   border: 1.5px solid #000000;
   background-color: #FFDD00 !important;
   color: #000000 !important;
-  font-family: "Comic Neue", "Comic Sans MS", cursive !important;
+  font-family: "Space Grotesk", system-ui, sans-serif;
   font-size: 15px;
   font-weight: 700;
   line-height: 1;
@@ -302,9 +303,17 @@ select:disabled {
 }
 .bmc-btn-text {
   display: inline-block;
-  font-family: "Comic Neue", "Comic Sans MS", cursive !important;
+  font-family: "Space Grotesk", system-ui, sans-serif;
   line-height: 1;
   white-space: nowrap;
+}
+@media (max-width: 440px) {
+  /* Keep the main header and welcome header within narrow phone widths. */
+  .app-header .bmc-btn-text,
+  .welcome-header .bmc-btn-text { display: none; }
+  .app-header .bmc-btn,
+  .welcome-header .bmc-btn { width: 34px; padding: 0; }
+  .app-header .app-brand { flex-shrink: 1; min-width: 0; }
 }
 .settings-trigger {
   display: none;
