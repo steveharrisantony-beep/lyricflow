@@ -1,175 +1,299 @@
-# LyricFlow
+<div align="center">
 
-**See the music. Feel every word.**
+# lyricflow.
 
-LyricFlow puts **music, synchronized lyrics and animated visuals** on the same screen. Play a song, watch the background react to the sound, and follow the lyrics as they appear in time with the music.
+### See the music. Feel every word.
 
-It works in a web browser and as an Android app. You can use built-in visual themes or show a YouTube video behind the lyrics.
+**Music, synchronized lyrics and motion — together on one stage.**
 
-## About LyricFlow
+[![Latest release](https://img.shields.io/github/v/release/steveharrisantony-beep/lyricsflow-android?style=for-the-badge&label=Android%20release&labelColor=203a31&color=3b8565)](https://github.com/steveharrisantony-beep/lyricsflow-android/releases/latest)
+[![GitHub stars](https://img.shields.io/github/stars/steveharrisantony-beep/lyricsflow-android?style=for-the-badge&labelColor=203a31&color=3b8565)](https://github.com/steveharrisantony-beep/lyricsflow-android/stargazers)
+[![Android + Web](https://img.shields.io/badge/Platforms-Android%20%2B%20Web-3b8565?style=for-the-badge&labelColor=203a31)](#install)
 
-LyricFlow is a customizable music visualizer and synchronized-lyrics experience for Android and the web. It combines beat-responsive animated themes, optional YouTube video backgrounds, word- and line-synced lyrics, romanization, and song-specific preferences in one fullscreen interface. Explore the visuals with a demo, or connect your own music.
+[**Download APK**](https://github.com/steveharrisantony-beep/lyricsflow-android/releases) · [**Try the live demo**](https://lyricflowdemo.ai.studio/) · [**Features**](#what-it-does) · [**Screenshots**](#screenshots) · [**Setup**](#first-time-setup) · [**FAQ**](#faq)
 
-**[Try the interactive LyricFlow demo](https://lyricflowdemo.ai.studio/)**
+</div>
 
-![LyricFlow showing synchronized lyrics over a music video, with the player and Song Mapping settings](docs/lyricflow-preview.webp)
+<p align="center">
+  <img src="docs/readme/lyricflow-hero.svg" alt="LyricFlow interface illustration showing a lyric visualizer, music player and Song Mapping settings" width="100%">
+</p>
 
-The demo is a browser preview; Android-only features such as External Player notification access require the Android app.
+LyricFlow turns a song into a visual experience: **video or beat-reactive backgrounds, lyrics in time with the music, and customizable letter-by-letter effects.** Enjoy it fullscreen, or open the player and settings whenever you need them.
 
-> **Quick facts:** No LyricFlow account is required. Your settings and custom song mappings are stored on your device. Android includes a local backend, so you do not need to host your own server to use the APK. Online music, video and lyric sources still require an internet connection.
+No LyricFlow account required. Your preferences and saved song mappings stay on your device.
 
-## What can it do?
+> **[Launch the interactive web demo](https://lyricflowdemo.ai.studio/)** — Explore LyricFlow in your browser before installing Android.
 
-| Feature | In simple terms |
-| --- | --- |
-| **Music-reactive backgrounds** | Choose from 28 built-in visual themes with animated colors, shapes and spectrum effects that respond to sound. |
-| **Video backgrounds** | Show a matching YouTube music or lyric video behind your lyrics. Videos paired with a separate audio source stay muted. |
-| **Synced lyrics** | Show line-by-line lyrics or highlight individual words when word timing is available. Word-synced lyrics are preferred where a suitable match exists. |
-| **Automatic lyric search** | Try multiple lyric sources, use available results while searching, and switch to a better timed version after the current line ends. |
-| **Romanization** | Display supported non-Latin lyrics in Latin letters when enabled, so you can read along with unfamiliar scripts. |
-| **Lyric effects** | Customize fonts, colors, placement, size, animations and current-word highlight styles. |
-| **Song Mapping** | Save a preferred lyrics file, background video, timing correction or hide preference for a particular song. |
-| **Fullscreen mode** | Enjoy an immersive visualizer with an optional player and settings overlay. |
-| **Personal backups** | Export and import settings and song mappings as JSON files. No cloud account needed. |
+---
 
-### Choose how to listen
+## What it does
 
-| Source | What you can do | Availability |
-| --- | --- | --- |
-| **Online music** | Search and play music using the supported YouTube and JioSaavn integrations. | Web and Android; depends on provider availability |
-| **Local audio** | Choose a music file already on your device. | Web and Android |
-| **External Player** | Follow playback metadata from another Android media app (for example, Spotify or YouTube Music) and look up matching lyrics/video. | Android only; notification access required |
-| **Audio-reactive capture** | Drive visualizations using supported microphone or Android internal-audio capture modes. | Depends on platform, permissions and device capabilities |
+<table>
+  <tr>
+    <td width="50%" valign="top">
 
-**Important:** LyricFlow is a visualizer and playback interface, not a music subscription service. It does not include a licensed catalog of downloadable songs or lyrics. Some videos cannot be embedded, and third-party searches may fail or change without notice.
+### 🎨 Visuals that move with music
 
-## Getting started
+- **28 built-in themes** with music-reactive patterns, waves and spectrum effects.
+- Switch from themes to a **matching YouTube video background**.
+- Adjust quality, sensitivity, intensity, motion, dimming and colors.
 
-### On Android
+</td>
+    <td width="50%" valign="top">
 
-1. Get a compatible APK from [Releases](https://github.com/steveharrisantony-beep/lyricsflow-android/releases) if one is published. Developers can also download a manually built test APK from GitHub Actions.
-2. Install the APK and open **LyricFlow**. Review any Android installation or permission prompts before granting access.
-3. Tap **Start visualizer**. You can try the optional short demo or choose your own song.
-4. Open **Select Source** and pick online music, a local audio file or **External Player**.
-5. Play music. LyricFlow will look for matching lyrics and a video background when those features are enabled.
-6. Tap **Settings** to customize the visualizer, lyrics and song mapping.
+### 🎤 Lyrics that follow every word
 
-**Using another music app?** In Android's **External Player** setup, follow the prompts for notification access and—if you want reactive audio capture—select **Internal Audio** or **Microphone** and press **Start**. The app cannot grant these permissions for you. Internal-audio capture is not supported by every device.
+- **Word-by-word highlighting** when accurate word timing exists.
+- Line-synced lyrics as a fallback.
+- Customize animated lettering, fonts, layout, color and word styles.
+- Optional **romanization** for supported non-Latin scripts.
 
-For step-by-step installation, Android TV notes, permissions and signing, read [ANDROID.md](ANDROID.md).
+</td>
+  </tr>
+  <tr>
+    <td valign="top">
 
-### In a browser
+### 🎵 Listen your way
 
-You'll need **Node.js 22 or newer** and npm. Clone this repository, then run:
+- Built-in **YouTube and JioSaavn** music search.
+- Open **local audio files** on your device.
+- Android **External Player** can follow active tracks in other media apps through media-session notifications.
+- Optional microphone/internal-audio reactive capture, depending on device support.
+
+</td>
+    <td valign="top">
+
+### 🛠️ Your song, your settings
+
+- Prefer a particular lyrics version or video.
+- Fix timing with song-specific delays.
+- **Save Song Mapping** so your selection is reused.
+- Hide lyrics or video for an individual song.
+- Export/import backups; no Firebase account or cloud sync.
+
+</td>
+  </tr>
+</table>
+
+**Built for Android and the browser.** The APK includes its own on-device backend for supported online search and matching; you don't have to rent or host a separate server. Third-party music, videos and online lyrics still need internet access.
+
+---
+
+## Screenshots
+
+The hero above is an **interface illustration**. These are actual LyricFlow development screenshots from the repository; some screens may have changed in newer builds.
+
+<p align="center">
+  <img src="docs/reference-images/aistudio/Screenshot_2026-11-02-20-56-34-705_com.android.chrome-edit_dff6b034.jpg" width="30%" alt="LyricFlow visualizer, music video, overlay lyrics and player on a phone">
+  &nbsp;
+  <img src="docs/reference-images/aistudio/Screenshot_2026-11-02-20-17-17-687_com.android.chrome_4c6bda3e.jpg" width="30%" alt="LyricFlow Song Mapping window with video and lyric selections">
+  &nbsp;
+  <img src="docs/reference-images/aistudio/Screenshot_2026-11-02-20-18-03-450_com.android.chrome_456bb15e.jpg" width="30%" alt="LyricFlow lyrics mapping search and candidate list">
+</p>
+
+<details>
+<summary><b>More: themes and background video selection</b></summary>
+
+<p align="center">
+  <img src="docs/reference-images/aistudio/Screenshot_2026-11-03-04-11-40-017_com.android.chrome-edit_b0711074.jpg" width="47%" alt="Music reactive pastel visualizer theme">
+  &nbsp;
+  <img src="docs/reference-images/aistudio/Screenshot_2026-11-02-18-20-06-870_com.android.chrome-edit_fb21ed9f.jpg" width="47%" alt="Background video candidate selection screen">
+</p>
+
+</details>
+
+For the current interface, [try the demo](https://lyricflowdemo.ai.studio/).
+
+---
+
+## Install
+
+### Android
+
+1. Go to [**GitHub Releases**](https://github.com/steveharrisantony-beep/lyricsflow-android/releases).
+2. Open the latest Android release that includes an APK and download **LyricFlow-Android.apk**.
+3. Install it on your Android device. Review and approve the installation request if Android asks.
+4. Launch **LyricFlow**, select **Start visualizer**, and choose a music source.
+
+> **Already installed another build?** APK updates must use a compatible signing key. If Android refuses an update because of a signature mismatch, back up your LyricFlow data before removing the older app.
+
+The Android app is also designed to support Android TV, but features that depend on audio capture or notification permissions vary by device. See [ANDROID.md](ANDROID.md) for detailed setup, permissions, Android TV and builds.
+
+### Web browser
+
+**Try it without installing:** [lyricflowdemo.ai.studio](https://lyricflowdemo.ai.studio/)
+
+For a local development copy, use **Node.js 22+** and npm:
 
 ```bash
+git clone https://github.com/steveharrisantony-beep/lyricsflow-android.git
+cd lyricsflow-android
 npm ci
 npm run dev
 ```
 
-Open **http://localhost:3000** in your browser. The development command serves both the web interface and the local music/lyrics API. You do not need Firebase or an API-key configuration file for the default setup.
+Open **http://localhost:3000**. This runs the app and its development backend locally; Firebase and a hosted server are not required.
 
-For security, the development backend listens on `127.0.0.1` by default. Only if you intentionally need access from another device on your network, launch it with `HOST=0.0.0.0 npm run dev` and protect that network—these development endpoints are not designed as a public internet service.
+<details>
+<summary><b>Build Android from source</b></summary>
 
-The browser supports local audio and its available online features. Android-specific notification listening and native playback controls are not available in the browser.
+You need a compatible JDK, Android SDK and the checked-in Gradle toolchain. The repository also provides a **manual** GitHub Actions APK workflow; ordinary commits do not start APK builds.
 
-## How LyricFlow works
-
-```text
-Choose a song
-    |
-    +-- Read its title, artist and playback position
-    |
-    +-- Look for a saved Song Mapping
-    |      |
-    |      +-- Found? Use your selected lyrics/video and delays
-    |      +-- Not found? Search available online sources
-    |
-    +-- Choose timed lyrics (prefer accurate word sync)
-    |      |
-    |      +-- Optional romanization and lyric effects
-    |
-    +-- Show a muted video OR an audio-reactive theme
-    |
-    +-- Keep the visuals and lyrics in sync with playback
+```bash
+npm ci
+npm run typecheck
+npm test
+npm run android:sync
+npm run android:apk
 ```
 
-LyricFlow uses **separate search systems for lyrics and video**. That means a missing video does not prevent lyric playback, and a video can be replaced without replacing the song. Your manually saved Song Mapping takes priority over automatic choices.
+The local debug APK is written under `android/app/build/outputs/apk/debug/`. Read [ANDROID.md](ANDROID.md) and [ANDROID_UPDATES.md](ANDROID_UPDATES.md) for toolchain and release-signing details.
 
-For synced lyrics, the application checks candidate titles, artists, duration and usable timestamps. It can also accept a line-synced or word-synced *alternative recording* when the song title matches and both recording durations match to the nearest whole second. Once a preferred word-synced match is found, later automatic search stages can stop. Some songs have no accurate timed lyrics; in that case, try a different candidate or import your own LRC/TTML file.
+</details>
 
-When playing another audio source, video backgrounds are **muted** so the app does not play two soundtracks at once. During ads or unavailable video playback, it can show the built-in visual themes instead.
+---
 
-## Make it yours: Settings
+## First-time setup
 
-| Section | Useful controls |
-| --- | --- |
-| **Song Mapping** | See the current lyric and video matches, change them manually, correct timing, save mappings, or hide lyrics/video for one recording. |
-| **Background** | Switch between video and themes; choose preferred video type, theme selection, colors, transitions and video fit/dimming. |
-| **Lyrics** | Choose original or romanized display, fonts, size, colors, positions, animations and word styles. |
-| **Render Engine** | Adjust visual quality, audio sensitivity, intensity, camera movement and related effects. |
-| **Others** | Light/dark appearance, data export/import, reset options and information about the app. |
-| **Logs** | Inspect lyrics search, video search and romanization activity to understand why a match was selected or rejected. |
+1. Open LyricFlow and tap **Start visualizer**.
+2. Select a source: **Online Music**, **Local Audio**, or **External Player** (Android).
+3. Pick a song. LyricFlow searches for matching lyrics and a background video when enabled.
+4. Use **Settings → Background** to choose between videos and audio-reactive themes.
+5. Use **Settings → Lyrics** to customize positions, fonts, animations, colors, and romanization.
+6. If a lyric/video match is wrong, open **Settings → Song Mapping**, choose another result and tap **Save mapping for current song**.
 
-**If lyrics or video are wrong:** Open **Settings → Song Mapping**, inspect the preloaded candidates, choose another version or search manually, adjust the delay if needed, then select **Save mapping for current song**. That choice is remembered locally for the recording.
+### External Player on Android
 
-## Your data and privacy
+Allow **notification access** when prompted so LyricFlow can read track metadata from active media sessions. Optionally start **Internal Audio** or **Microphone** capture for beat-reactive visuals. LyricFlow does **not** need access to your ordinary messages to identify the current song, and permissions must be granted manually in Android settings.
 
-- **Local by default:** Preferences, custom lyric content, saved song mappings and corrections are stored in this browser/app's local data. Use **Others → Import & export data** to make a backup before clearing data or uninstalling.
-- **No Firebase sign-in or cloud synchronization:** The current version does not require a Firebase project or a LyricFlow account. Some source files still use the historical `src/firebase/` folder name for *local storage and mapping utilities*; this is not an active Firebase SDK dependency.
-- **Online features contact external services:** When searching online music, lyrics, videos or romanization, requests and relevant track metadata may be sent to the corresponding providers. Provider terms and availability apply.
-- **YouTube account options are separate:** Advanced YouTube session or cookie settings, if used, are not Firebase authentication. Treat those credentials as sensitive; never post them in issues or commit them.
-- **No packaged credentials required:** Do not put private API keys, signing keystores, passwords or session cookies in the repository. Values prefixed with `VITE_` should always be treated as browser-visible build configuration.
+---
 
-## Development and Android builds
-
-The app uses **React, TypeScript, Vite, Web Audio, Canvas 2D** and an **Express** backend. Android packaging uses **Capacitor** and an embedded Node.js runtime.
-
-| Command | Purpose |
-| --- | --- |
-| `npm ci` | Install the exact dependencies from `package-lock.json` |
-| `npm run dev` | Run the development web application and backend |
-| `npm run typecheck` | Check TypeScript |
-| `npm test` | Run unit and integration tests |
-| `npm run build` | Create the production web bundle |
-| `npm run build:backend` | Package the local backend for Android |
-| `npm run test:backend` | Verify the embedded backend |
-| `npm run android:sync` | Build and copy the web/backend assets into Capacitor Android |
-
-You can also build a test APK manually from **Actions → Build Android APK → Run workflow**. Ordinary pushes do **not** start APK builds. GitHub Actions may produce an unsigned-for-release/debug-signed test build when permanent release-signing secrets are not configured.
-
-For building from source locally you will also need the Android SDK and a compatible JDK. See [Android installation and build instructions](ANDROID.md) and [app update/signing notes](ANDROID_UPDATES.md).
-
-### Repository layout
+## How it works
 
 ```text
-src/                 Web app, audio, lyrics, settings and visual effects
-src/firebase/        Legacy folder name: local data and mapping helpers
-server.ts            Express web API and developer server
-server/              Lyrics, YouTube and supporting service adapters
-android/             Capacitor Android project and native plugins
-node-runtime/        Bundled Android backend entry point
-scripts/             Build, size audit and test utilities
-docs/                Technical notes, credits and research
-.github/workflows/   Automatic checks and manually triggered APK jobs
+     PLAY A SONG
+          │
+          ├─ Track title + artist + position
+          │
+          ├─ Saved Song Mapping?
+          │    ├─ Yes → reuse your lyric/video choices
+          │    └─ No  → search supported lyric and video providers
+          │
+          ├─ Select the most suitable synced lyrics
+          │    └─ optional romanization + lyric animations
+          │
+          └─ Show an audio-reactive theme or matching video
+                       │
+                SYNCHRONIZED STAGE
 ```
 
-The [song mapping guide](SONG_MAPPING_DATA.md), [video matching notes](YOUTUBE_MATCHING.md) and [theme/animation references](docs/lyric-animation-references.md) explain individual systems in more depth.
+**Lyrics and video searches run independently.** If no usable lyrics are available, the music and background can keep playing. If a video fails to embed, choose another one or switch to themes. Background YouTube videos paired with audio from another source remain muted.
 
-## Credits and acknowledgements
+**Song Mapping** stores your manual selections locally. Temporary candidate lists and prepared upcoming tracks are not permanent backups. Use **Settings → Others → Import & export** to preserve your settings and mappings before clearing data.
 
-Developed by **Steve Harris** · [Instagram](https://www.instagram.com/ig.steve_edits) · [Support the project](https://www.buymeacoffee.com/steveharris)
+Learn more in [Song Mapping](SONG_MAPPING_DATA.md) and [Video Matching](YOUTUBE_MATCHING.md).
 
-LyricFlow is built using open-source libraries and draws on the work of many developers. **Thank you to the maintainers and contributors of these projects.** The groups below distinguish software used directly from projects consulted for ideas and technical approaches.
+---
 
-**Libraries and development tools used directly:** [React](https://github.com/facebook/react), [TypeScript](https://github.com/microsoft/TypeScript), [Vite](https://github.com/vitejs/vite), [Capacitor](https://github.com/ionic-team/capacitor), [Capawesome Node.js plugin](https://github.com/capawesome-team/capacitor-plugins), [Node.js](https://github.com/nodejs/node), [Express](https://github.com/expressjs/express), [hls.js](https://github.com/video-dev/hls.js), [Lucide](https://github.com/lucide-icons/lucide), [Fontsource](https://github.com/fontsource/fontsource), [Vitest](https://github.com/vitest-dev/vitest), [Playwright](https://github.com/microsoft/playwright), [jsdom](https://github.com/jsdom/jsdom), [esbuild](https://github.com/evanw/esbuild) and [tsx](https://github.com/privatenumber/tsx).
+## FAQ
 
-**Optional Python development resolver:** [FastAPI](https://github.com/fastapi/fastapi), [Uvicorn](https://github.com/encode/uvicorn), [HTTPX](https://github.com/encode/httpx), [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [ytmusicapi](https://github.com/sigma67/ytmusicapi).
+<details>
+<summary><b>Does LyricFlow require a Firebase account or API key?</b></summary>
 
-**Music, lyrics, subtitle and video references:** [Stash](https://github.com/rawnaldclark/Stash), [youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api), [SponsorBlockServer](https://github.com/ajayyy/SponsorBlockServer), [Piped](https://github.com/TeamPiped/Piped), [Invidious](https://github.com/iv-org/invidious) and the [ytmusicapi](https://github.com/sigma67/ytmusicapi) search approach.
+No. The current app uses local storage for preferences and custom mappings. Its supported default music/lyrics integrations do not require you to configure Firebase. Some internal folders retain historical names for compatibility.
 
-**Lyric animation and cinematic motion references:** [Codrops LetterEffects](https://github.com/Codrops/LetterEffects), [Anime.js](https://github.com/juliangarnier/anime), [Splitting](https://github.com/shshaw/Splitting), [baseline](https://github.com/Tunai-0511/baseline) and [pdoom-video](https://github.com/mexicat/pdoom-video).
+</details>
 
-**Music-reactive visual references:** [audioMotion-analyzer](https://github.com/hvianna/audioMotion-analyzer), [CAVA](https://github.com/karlstav/cava), [WebAudioSpectrum](https://github.com/deftio/WebAudioSpectrum), [audio-analyzer](https://github.com/fagci/audio-analyzer), [Butterchurn](https://github.com/jberg/butterchurn), [Party Mode](https://github.com/preziotte/party-mode), [Visual Audio](https://github.com/josephyu12/visual-audio) and [Void Visualizer](https://github.com/TheOmegaFett/void-visualizer).
+<details>
+<summary><b>Why can't LyricFlow find lyrics for a song?</b></summary>
 
-**[Read the full credits and attribution details](CREDITS.md)** for the role of each repository, bundled fonts, optional tools and links to the detailed research documents. Reference projects are credited for their influence; they are not all installed dependencies or bundled source code. This independent project is not endorsed by the projects or service providers listed.
+The provider may not have lyrics, the metadata may be different, or no suitable timed result may exist. Try **Settings → Song Mapping → Lyrics mapping**, search manually, import your own synced lyrics or adjust the timing.
+
+</details>
+
+<details>
+<summary><b>Can I use Spotify or other apps with LyricFlow?</b></summary>
+
+On Android, **External Player** can follow supported playback notifications and media sessions. LyricFlow uses the track information to find lyrics/video; it does not extract another app's protected audio stream. Audio-reactive capture depends on Android and device permissions.
+
+</details>
+
+<details>
+<summary><b>Will it work offline?</b></summary>
+
+Bundled visual themes, local audio and previously saved/imported lyrics can work without online providers. Searching for new lyrics, music or YouTube videos generally needs internet.
+
+</details>
+
+<details>
+<summary><b>Why is a background video missing or muted?</b></summary>
+
+Some YouTube videos disallow embedding or fail to load. Select another candidate or use a theme. When a different source supplies the music, the background video is intentionally muted so you don't hear two tracks.
+
+</details>
+
+<details>
+<summary><b>Is there an Android TV version?</b></summary>
+
+LyricFlow is designed to open on supported Android TV devices as well as phones/tablets, but hardware performance, controls, codecs and notification/audio permissions vary. Not every device is fully tested.
+
+</details>
+
+<details>
+<summary><b>Where can I report an issue or suggest a feature?</b></summary>
+
+Use [GitHub Issues](https://github.com/steveharrisantony-beep/lyricsflow-android/issues). Include the app version, device, what happened, and relevant logs. Remove any account cookies or private data before sharing logs publicly.
+
+</details>
+
+---
+
+## Behind the scenes
+
+Built with **React, TypeScript, Vite, Canvas 2D, Web Audio, Express and Capacitor**. The Android package includes an embedded on-device Node.js backend and native media integration.
+
+**Useful developer commands:** `npm run typecheck` · `npm test` · `npm run build` · `npm run build:backend` · `npm run test:backend`
+
+<details>
+<summary><b>Project layout</b></summary>
+
+```text
+src/                  UI, music, lyrics and visualizer
+src/firebase/         Legacy folder: local storage and mapping utilities
+server.ts             Web API and development server
+server/               Provider adapters and server helpers
+android/              Capacitor project and native Android plugins
+node-runtime/         Android embedded backend
+docs/                 References and technical notes
+.github/workflows/    CI checks and manually triggered APK build
+```
+
+</details>
+
+---
+
+## Credits and thanks
+
+LyricFlow depends on many open-source tools and draws ideas from music visualization and lyric synchronization projects.
+
+**Core stack:** [React](https://github.com/facebook/react) · [Vite](https://github.com/vitejs/vite) · [Capacitor](https://github.com/ionic-team/capacitor) · [Lucide](https://github.com/lucide-icons/lucide)
+
+**Music and lyrics research:** [Stash](https://github.com/rawnaldclark/Stash) · [yt-dlp](https://github.com/yt-dlp/yt-dlp) · [ytmusicapi](https://github.com/sigma67/ytmusicapi) · [youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api) · [SponsorBlock](https://github.com/ajayyy/SponsorBlockServer)
+
+**Motion and visual inspiration:** [Codrops LetterEffects](https://github.com/Codrops/LetterEffects) · [audioMotion-analyzer](https://github.com/hvianna/audioMotion-analyzer) · [CAVA](https://github.com/karlstav/cava) · [Butterchurn](https://github.com/jberg/butterchurn)
+
+**[Full credits, repositories and attribution details →](CREDITS.md)**
+
+---
+
+## Support LyricFlow
+
+Developed by **Steve Harris**.
+
+If you like LyricFlow, a GitHub star, feedback or bug report helps the project grow.
+
+[**☕ Buy me a coffee**](https://www.buymeacoffee.com/steveharris) · [**Instagram**](https://www.instagram.com/ig.steve_edits) · [**Live demo**](https://lyricflowdemo.ai.studio/)
+
+---
+
+<sub>LyricFlow is an independent project and is not affiliated with or endorsed by YouTube, Google, Spotify, JioSaavn or any lyrics/video service. Third-party media and services remain subject to their respective rights and terms.</sub>
