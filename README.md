@@ -146,8 +146,20 @@ docs/                Technical notes, credits and research
 
 The [song mapping guide](SONG_MAPPING_DATA.md), [video matching notes](YOUTUBE_MATCHING.md) and [theme/animation references](docs/lyric-animation-references.md) explain individual systems in more depth.
 
-## Credits
+## Credits and acknowledgements
 
 Developed by **Steve Harris** · [Instagram](https://www.instagram.com/ig.steve_edits) · [Support the project](https://www.buymeacoffee.com/steveharris)
 
-Research and inspiration include [Codrops LetterEffects](https://github.com/Codrops/LetterEffects), [audioMotion-analyzer](https://github.com/hvianna/audioMotion-analyzer), [youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api), [SponsorBlock](https://github.com/ajayyy/SponsorBlockServer) and other references documented under [docs/](docs/). They are not endorsements of LyricFlow.
+LyricFlow is built using open-source libraries and draws on the work of many developers. **Thank you to the maintainers and contributors of these projects.** The groups below distinguish software used directly from projects consulted for ideas and technical approaches.
+
+**Libraries and development tools used directly:** [React](https://github.com/facebook/react), [TypeScript](https://github.com/microsoft/TypeScript), [Vite](https://github.com/vitejs/vite), [Capacitor](https://github.com/ionic-team/capacitor), [Capawesome Node.js plugin](https://github.com/capawesome-team/capacitor-plugins), [Node.js](https://github.com/nodejs/node), [Express](https://github.com/expressjs/express), [hls.js](https://github.com/video-dev/hls.js), [Lucide](https://github.com/lucide-icons/lucide), [Fontsource](https://github.com/fontsource/fontsource), [Vitest](https://github.com/vitest-dev/vitest), [Playwright](https://github.com/microsoft/playwright), [jsdom](https://github.com/jsdom/jsdom), [esbuild](https://github.com/evanw/esbuild) and [tsx](https://github.com/privatenumber/tsx).
+
+**Optional Python development resolver:** [FastAPI](https://github.com/fastapi/fastapi), [Uvicorn](https://github.com/encode/uvicorn), [HTTPX](https://github.com/encode/httpx), [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [ytmusicapi](https://github.com/sigma67/ytmusicapi).
+
+**Music, lyrics, subtitle and video references:** [Stash](https://github.com/rawnaldclark/Stash), [youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api), [SponsorBlockServer](https://github.com/ajayyy/SponsorBlockServer), [Piped](https://github.com/TeamPiped/Piped), [Invidious](https://github.com/iv-org/invidious) and the [ytmusicapi](https://github.com/sigma67/ytmusicapi) search approach.
+
+**Lyric animation and cinematic motion references:** [Codrops LetterEffects](https://github.com/Codrops/LetterEffects), [Anime.js](https://github.com/juliangarnier/anime), [Splitting](https://github.com/shshaw/Splitting), [baseline](https://github.com/Tunai-0511/baseline) and [pdoom-video](https://github.com/mexicat/pdoom-video).
+
+**Music-reactive visual references:** [audioMotion-analyzer](https://github.com/hvianna/audioMotion-analyzer), [CAVA](https://github.com/karlstav/cava), [WebAudioSpectrum](https://github.com/deftio/WebAudioSpectrum), [audio-analyzer](https://github.com/fagci/audio-analyzer), [Butterchurn](https://github.com/jberg/butterchurn), [Party Mode](https://github.com/preziotte/party-mode), [Visual Audio](https://github.com/josephyu12/visual-audio) and [Void Visualizer](https://github.com/TheOmegaFett/void-visualizer).
+
+**[Read the full credits and attribution details](CREDITS.md)** for the role of each repository, bundled fonts, optional tools and links to the detailed research documents. Reference projects are credited for their influence; they are not all installed dependencies or bundled source code. This independent project is not endorsed by the projects or service providers listed.
