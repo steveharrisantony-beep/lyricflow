@@ -5,6 +5,17 @@ dist/
 .env.*
 !.env.example
 
+# Public-repo safety: keep local credentials and obsolete cloud configs out of Git
+google-services.json
+firebase-applet-config.json
+service-account*.json
+*-firebase-adminsdk-*.json
+.npmrc
+*.p8
+*.p12
+*.pem
+*.key
+
 __pycache__/
 *.pyc
 lyricflow-smoke-failure.png
