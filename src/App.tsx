@@ -1094,22 +1094,9 @@ export default function App({ user = null }: { user?: User | null }) {
     return () => document.removeEventListener("fullscreenchange", onFullscreen);
   }, []);
 
-  const [audioReadout, setAudioReadout] = useState({
-    source: "IDLE",
-    level: 0,
-    bass: 0,
-    mids: 0,
-    treble: 0,
-    beat: 0,
-    bpm: 0,
-    tempoConfidence: 0,
-    onset: 0,
-    downbeat: 0,
-    section: "unknown",
-    beatCount: 0,
-    flux: 0,
-    threshold: 0,
-  });
+  // Only BPM is rendered by React; other audio metrics stay on the canvas.
+  // Avoid forcing the entire app to re-render every 260ms for unused fields.
+  const [audioBpm, setAudioBpm] = useState(0);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -1146,22 +1133,8 @@ export default function App({ user = null }: { user?: User | null }) {
           }
         }
       }
-      setAudioReadout({
-        source: canvas.dataset.audioSource || "IDLE",
-        level: numeric("audioLevel"),
-        bass: numeric("audioBass"),
-        mids: numeric("audioMids"),
-        treble: numeric("audioTreble"),
-        beat: numeric("audioBeat"),
-        bpm: numeric("audioBpm"),
-        tempoConfidence: numeric("audioTempoConfidence"),
-        onset: numeric("audioOnset"),
-        downbeat: numeric("audioDownbeat"),
-        section: canvas.dataset.audioSection || "unknown",
-        beatCount: numeric("audioBeatCount"),
-        flux: numeric("audioFlux"),
-        threshold: numeric("audioThreshold"),
-      });
+      const bpm = numeric("audioBpm");
+      setAudioBpm(previous => previous === bpm ? previous : bpm);
     }, 260);
     return () => clearInterval(id);
   }, []);
@@ -1171,7 +1144,10 @@ export default function App({ user = null }: { user?: User | null }) {
       const v =
         document.querySelector<HTMLCanvasElement>(".visual-canvas")?.dataset
           .fps;
-      if (v) setFps(Number(v));
+      if (v) {
+        const next = Number(v);
+        if (Number.isFinite(next)) setFps(previous => previous === next ? previous : next);
+      }
     }, 1000);
     return () => clearInterval(id);
   }, []);
@@ -2468,7 +2444,7 @@ export default function App({ user = null }: { user?: User | null }) {
                   onMinFontSizeChange={handleMinFontSizeChange}
                   onMaxFontSizeChange={handleMaxFontSizeChange}
                   onFontScaleChange={handleLyricFontScaleChange}
-                  bpm={audioReadout.bpm}
+                  bpm={audioBpm}
                   romanizationEnabled={romanizationEnabled}
                   onRomanizationEnabledChange={setRomanizationEnabled}
                   enabledRomanizationLanguages={enabledRomanizationLanguages}
