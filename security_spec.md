@@ -1,4 +1,10 @@
-# Firestore Security Specification — LyricFlow
+# Archived Firestore Security Design — LyricFlow
+
+> **Historical document — not an active security configuration.** LyricFlow no
+> longer uses Firebase authentication or Firestore. The rules and examples below
+> describe an abandoned design; there is no current Firestore deployment or
+> account-sync feature associated with this repository. For present-day public
+> release guidance, see [the release checklist](docs/PUBLIC_RELEASE_CHECKLIST.md).
 
 ## 1. Data Invariants
 1. **Identity Ownership**: Every `/userPreferences/{userId}` document and `/userPreferences/{userId}/songDelays/{songId}` document can only be read, created, updated, or deleted by the authenticated user whose `request.auth.uid == userId` and `request.auth.token.email_verified == true`.
