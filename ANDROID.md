@@ -56,11 +56,24 @@ The setup above happens **after installation** and cannot remove a Play Protect
 installation block. Google documents region-dependent blocking of internet-sideloaded
 apps that request sensitive access, including notification listeners. An APK's
 signing key is important for update continuity, but does not exempt it from these
-checks. If Google offers an app scan, let the scan finish. Review any exact harmful-app
-warning before proceeding; if the app is incorrectly classified after reviewing
-permissions, SDKs and Google's policies, use Google's developer appeal process.
-Keep Play Protect enabled.
+checks. If Google offers an app scan, let the scan finish.
 
+**If Play Protect blocks the GitHub APK:** First verify the file came from the
+project's official release and review the warning. Some users may choose to
+**temporarily pause Google Play Protect scanning** for a trusted APK:
+
+1. Open the **Google Play Store** and tap your **profile picture**.
+2. Open **Play Protect → Settings** (gear icon).
+3. Turn **Scan apps with Play Protect** off only if you accept the temporary risk.
+4. Retry installation, then **immediately turn Scan apps with Play Protect back on**.
+
+This is **not a requirement for everyone** and may not bypass all blocks. Turning
+protection off reduces your device's malware protection. Do not ignore a specific
+harmful-app finding without checking the APK and its source. Google recommends
+keeping Play Protect enabled; if LyricFlow is misclassified, the project owner
+should check its permissions and request a Play Protect appeal.
+
+- [Google's Play Protect user guide](https://support.google.com/android/answer/2812853)
 - [Google's Play Protect developer guidance](https://developers.google.com/android/play-protect/warning-dev-guidance)
 - [Google's app-verification appeal](https://support.google.com/android/answer/2992033)
 - [Android restricted settings](https://support.google.com/android/answer/12623953)
