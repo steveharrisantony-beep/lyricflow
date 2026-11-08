@@ -41,6 +41,7 @@ import {
 import LocalPlayer, { type LocalPlayerHandle } from "./audio/LocalPlayer";
 import {usePlaybackScreenAwake} from "./audio/usePlaybackScreenAwake";
 import {useAndroidDisplayChrome} from "./ui/useAndroidDisplayChrome";
+import BuyMeACoffeeButton from "./ui/BuyMeACoffeeButton";
 import {
   ALL_FONT_PACKS,
   ALL_KINETIC_MOTIONS,
@@ -1724,16 +1725,19 @@ export default function App({ user = null }: { user?: User | null }) {
           </span>
           lyricflow<span className="brand-dot">.</span>
         </div>
-        <button
-          type="button"
-          className="settings-trigger"
-          aria-controls="app-settings"
-          aria-expanded={cinemaControlsOpen}
-          onClick={openSettings}
-        >
-          <SlidersHorizontal size={17} />
-          Settings
-        </button>
+        <div className="app-header-actions">
+          <BuyMeACoffeeButton />
+          <button
+            type="button"
+            className="settings-trigger"
+            aria-controls="app-settings"
+            aria-expanded={cinemaControlsOpen}
+            onClick={openSettings}
+          >
+            <SlidersHorizontal size={17} />
+            Settings
+          </button>
+        </div>
       </header>
       <main className="workspace">
         <div className="listening-column">

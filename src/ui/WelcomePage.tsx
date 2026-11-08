@@ -1,6 +1,7 @@
 import { createContext, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowDown, ArrowRight, AudioLines, Captions, Check, Languages, Layers3, Link2, Play, SlidersHorizontal, X } from 'lucide-react';
 import { SUPPORTED_ROMANIZATION_LANGUAGES } from '../romanization/romanize';
+import BuyMeACoffeeButton from './BuyMeACoffeeButton';
 import './welcome.css';
 
 const WELCOME_STARTED_KEY = 'lyricflow.welcomeStarted';
@@ -21,7 +22,7 @@ export default function WelcomePage({ onStart, onClose }: { onStart: () => void;
     <header className="welcome-header">
       <span className="welcome-brand"><AudioLines aria-hidden="true" size={25} /> LyricFlow<span className="welcome-brand-dot">.</span></span>
       {onClose ? <button type="button" className="welcome-close" onClick={onClose} aria-label="Close About"><X size={21} aria-hidden="true" /></button>
-        : <span className="welcome-platforms">Web & Android</span>}
+        : <div className="welcome-header-actions"><span className="welcome-platforms">Web & Android</span><BuyMeACoffeeButton /></div>}
     </header>
 
     <section className="welcome-hero" aria-labelledby="welcome-title">

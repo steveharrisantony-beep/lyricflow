@@ -253,6 +253,59 @@ select:disabled {
   color: var(--accent);
   margin-left: -8px;
 }
+.app-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.bmc-btn-container {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.bmc-btn {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 38px;
+  min-width: 0;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1.5px solid #000000;
+  background-color: #FFDD00 !important;
+  color: #000000 !important;
+  font-family: "Comic Neue", "Comic Sans MS", cursive !important;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none !important;
+  white-space: nowrap;
+  box-sizing: border-box !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+  cursor: pointer;
+}
+.bmc-btn:hover,
+.bmc-btn:active,
+.bmc-btn:focus {
+  text-decoration: none !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.24);
+}
+.bmc-btn-emoji {
+  display: inline-flex;
+  align-items: center;
+  font-size: 17px;
+  line-height: 1;
+}
+.bmc-btn-text {
+  display: inline-block;
+  font-family: "Comic Neue", "Comic Sans MS", cursive !important;
+  line-height: 1;
+  white-space: nowrap;
+}
 .settings-trigger {
   display: none;
 }
@@ -1653,19 +1706,35 @@ summary > span {
   }
   .app-header {
     margin-bottom: 22px;
+    gap: 6px;
   }
   .app-brand {
-    font-size: 22px;
+    font-size: 19px;
+    gap: 6px;
   }
   .brand-mark {
-    width: 34px;
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+  }
+  .app-header-actions {
+    gap: 6px;
+  }
+  .bmc-btn {
     height: 34px;
-    border-radius: 12px;
+    padding: 0 9px;
+    gap: 4px;
+    font-size: 11px;
+    border-radius: 9px;
+  }
+  .bmc-btn-emoji {
+    font-size: 13px;
   }
   .settings-trigger {
-    min-height: 36px;
+    min-height: 34px;
     font-size: 11px;
-    padding: 7px 10px;
+    padding: 6px 9px;
+    gap: 5px;
   }
   .section-caption {
     margin-bottom: 10px;
