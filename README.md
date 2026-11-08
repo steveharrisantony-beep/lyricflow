@@ -59,6 +59,8 @@ npm run dev
 
 Open **http://localhost:3000** in your browser. The development command serves both the web interface and the local music/lyrics API. You do not need Firebase or an API-key configuration file for the default setup.
 
+For security, the development backend listens on `127.0.0.1` by default. Only if you intentionally need access from another device on your network, launch it with `HOST=0.0.0.0 npm run dev` and protect that network—these development endpoints are not designed as a public internet service.
+
 The browser supports local audio and its available online features. Android-specific notification listening and native playback controls are not available in the browser.
 
 ## How LyricFlow works
