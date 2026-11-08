@@ -12,6 +12,8 @@ LyricFlow is a customizable music visualizer and synchronized-lyrics experience 
 
 **[Try the interactive LyricFlow demo](https://lyricflowdemo.ai.studio/)**
 
+![LyricFlow showing synchronized lyrics over a music video, with the player and Song Mapping settings](docs/lyricflow-preview.webp)
+
 The demo is a browser preview; Android-only features such as External Player notification access require the Android app.
 
 > **Quick facts:** No LyricFlow account is required. Your settings and custom song mappings are stored on your device. Android includes a local backend, so you do not need to host your own server to use the APK. Online music, video and lyric sources still require an internet connection.
