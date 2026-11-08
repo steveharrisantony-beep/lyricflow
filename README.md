@@ -104,6 +104,8 @@ Explore LyricFlow's interface in these original Android screenshots. Select any 
 3. Install it on your Android device. Review and approve the installation request if Android asks.
 4. Launch **LyricFlow**, select **Start visualizer**, and choose a music source.
 
+> **Google Play Protect warning:** On some devices, Play Protect may warn about or block the GitHub APK, particularly because LyricFlow requests notification access for External Player. If you have verified the APK comes from this project's GitHub release and decide to temporarily pause scanning, open **Play Store → Profile → Play Protect → Settings → Scan apps with Play Protect (off)**. **Turn it back on immediately afterward.** This is not required on every device, reduces device security while disabled, and may not override every installation block. Prefer accepting an offered security scan; do not bypass a harmful-app warning for an unverified APK. See [Android installation guidance](ANDROID.md#play-protect-installation-warnings) and [Google's Play Protect help](https://support.google.com/android/answer/2812853).
+
 > **Already installed another build?** APK updates must use a compatible signing key. If Android refuses an update because of a signature mismatch, back up your LyricFlow data before removing the older app.
 
 The Android app is also designed to support Android TV, but features that depend on audio capture or notification permissions vary by device. See [ANDROID.md](ANDROID.md) for detailed setup, permissions, Android TV and builds.
