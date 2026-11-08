@@ -10,13 +10,9 @@
 [![GitHub stars](https://img.shields.io/github/stars/steveharrisantony-beep/lyricsflow-android?style=for-the-badge&labelColor=203a31&color=3b8565)](https://github.com/steveharrisantony-beep/lyricsflow-android/stargazers)
 [![Android + Web](https://img.shields.io/badge/Platforms-Android%20%2B%20Web-3b8565?style=for-the-badge&labelColor=203a31)](#install)
 
-[**Download APK**](https://github.com/steveharrisantony-beep/lyricsflow-android/releases) · [**Try the live demo**](https://lyricflowdemo.ai.studio/) · [**Features**](#what-it-does) · [**Screenshots**](#screenshots) · [**Setup**](#first-time-setup) · [**FAQ**](#faq)
+[**Download APK**](https://github.com/steveharrisantony-beep/lyricsflow-android/releases) · [**Try the live demo**](https://lyricflowdemo.ai.studio/) · [**Features**](#what-it-does) · [**Setup**](#first-time-setup) · [**FAQ**](#faq)
 
 </div>
-
-<p align="center">
-  <img src="docs/readme/lyricflow-hero.svg" alt="LyricFlow interface illustration showing a lyric visualizer, music player and Song Mapping settings" width="100%">
-</p>
 
 LyricFlow turns a song into a visual experience: **video or beat-reactive backgrounds, lyrics in time with the music, and customizable letter-by-letter effects.** Enjoy it fullscreen, or open the player and settings whenever you need them.
 
@@ -76,33 +72,6 @@ No LyricFlow account required. Your preferences and saved song mappings stay on 
 </table>
 
 **Built for Android and the browser.** The APK includes its own on-device backend for supported online search and matching; you don't have to rent or host a separate server. Third-party music, videos and online lyrics still need internet access.
-
----
-
-## Screenshots
-
-The hero above is an **interface illustration**. These are actual LyricFlow development screenshots from the repository; some screens may have changed in newer builds.
-
-<p align="center">
-  <img src="docs/reference-images/aistudio/Screenshot_2026-11-02-20-56-34-705_com.android.chrome-edit_dff6b034.jpg" width="30%" alt="LyricFlow visualizer, music video, overlay lyrics and player on a phone">
-  &nbsp;
-  <img src="docs/reference-images/aistudio/Screenshot_2026-11-02-20-17-17-687_com.android.chrome_4c6bda3e.jpg" width="30%" alt="LyricFlow Song Mapping window with video and lyric selections">
-  &nbsp;
-  <img src="docs/reference-images/aistudio/Screenshot_2026-11-02-20-18-03-450_com.android.chrome_456bb15e.jpg" width="30%" alt="LyricFlow lyrics mapping search and candidate list">
-</p>
-
-<details>
-<summary><b>More: themes and background video selection</b></summary>
-
-<p align="center">
-  <img src="docs/reference-images/aistudio/Screenshot_2026-11-03-04-11-40-017_com.android.chrome-edit_b0711074.jpg" width="47%" alt="Music reactive pastel visualizer theme">
-  &nbsp;
-  <img src="docs/reference-images/aistudio/Screenshot_2026-11-02-18-20-06-870_com.android.chrome-edit_fb21ed9f.jpg" width="47%" alt="Background video candidate selection screen">
-</p>
-
-</details>
-
-For the current interface, [try the demo](https://lyricflowdemo.ai.studio/).
 
 ---
 
