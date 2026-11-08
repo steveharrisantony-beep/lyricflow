@@ -10,9 +10,13 @@
 [![GitHub stars](https://img.shields.io/github/stars/steveharrisantony-beep/lyricsflow-android?style=for-the-badge&labelColor=203a31&color=3b8565)](https://github.com/steveharrisantony-beep/lyricsflow-android/stargazers)
 [![Android + Web](https://img.shields.io/badge/Platforms-Android%20%2B%20Web-3b8565?style=for-the-badge&labelColor=203a31)](#install)
 
-[**Download APK**](https://github.com/steveharrisantony-beep/lyricsflow-android/releases) · [**Try the live demo**](https://lyricflowdemo.ai.studio/) · [**Features**](#what-it-does) · [**Setup**](#first-time-setup) · [**FAQ**](#faq)
+[**Download APK**](https://github.com/steveharrisantony-beep/lyricsflow-android/releases) · [**Try the live demo**](https://lyricflowdemo.ai.studio/) · [**Features**](#what-it-does) · [**Screenshots**](#screenshots) · [**Setup**](#first-time-setup) · [**FAQ**](#faq)
 
 </div>
+
+<p align="center">
+  <a href="docs/Screenshot_2026-11-08-18-53-31-201_com.steveharrisantony.lyricflow.jpg"><img src="docs/Screenshot_2026-11-08-18-53-31-201_com.steveharrisantony.lyricflow.jpg" alt="LyricFlow Android app fullscreen music visualizer with synchronized lyrics" width="100%"></a>
+</p>
 
 LyricFlow turns a song into a visual experience: **video or beat-reactive backgrounds, lyrics in time with the music, and customizable letter-by-letter effects.** Enjoy it fullscreen, or open the player and settings whenever you need them.
 
@@ -72,6 +76,22 @@ No LyricFlow account required. Your preferences and saved song mappings stay on 
 </table>
 
 **Built for Android and the browser.** The APK includes its own on-device backend for supported online search and matching; you don't have to rent or host a separate server. Third-party music, videos and online lyrics still need internet access.
+
+---
+
+## Screenshots
+
+Explore LyricFlow's interface in these original Android screenshots. Select any image to view it at full resolution.
+
+<p align="center">
+  <a href="docs/Screenshot_2026-11-08-18-54-53-744_com.steveharrisantony.lyricflow.jpg"><img src="docs/Screenshot_2026-11-08-18-54-53-744_com.steveharrisantony.lyricflow.jpg" width="48%" alt="LyricFlow app screenshot 1"></a>
+  <a href="docs/Screenshot_2026-11-08-18-55-13-177_com.steveharrisantony.lyricflow.jpg"><img src="docs/Screenshot_2026-11-08-18-55-13-177_com.steveharrisantony.lyricflow.jpg" width="48%" alt="LyricFlow app screenshot 2"></a>
+</p>
+
+<p align="center">
+  <a href="docs/Screenshot_2026-11-08-18-55-36-928_com.steveharrisantony.lyricflow.jpg"><img src="docs/Screenshot_2026-11-08-18-55-36-928_com.steveharrisantony.lyricflow.jpg" width="48%" alt="LyricFlow app screenshot 3"></a>
+  <a href="docs/Screenshot_2026-11-08-18-55-46-747_com.steveharrisantony.lyricflow.jpg"><img src="docs/Screenshot_2026-11-08-18-55-46-747_com.steveharrisantony.lyricflow.jpg" width="48%" alt="LyricFlow app screenshot 4"></a>
+</p>
 
 ---
 
