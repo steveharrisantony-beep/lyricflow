@@ -6,6 +6,14 @@ LyricFlow puts **music, synchronized lyrics and animated visuals** on the same s
 
 It works in a web browser and as an Android app. You can use built-in visual themes or show a YouTube video behind the lyrics.
 
+## About LyricFlow
+
+LyricFlow is a customizable music visualizer and synchronized-lyrics experience for Android and the web. It combines beat-responsive animated themes, optional YouTube video backgrounds, word- and line-synced lyrics, romanization, and song-specific preferences in one fullscreen interface. Explore the visuals with a demo, or connect your own music.
+
+**[Try the interactive LyricFlow demo](https://lyricflowdemo.ai.studio/)**
+
+The demo is a browser preview; Android-only features such as External Player notification access require the Android app.
+
 > **Quick facts:** No LyricFlow account is required. Your settings and custom song mappings are stored on your device. Android includes a local backend, so you do not need to host your own server to use the APK. Online music, video and lyric sources still require an internet connection.
 
 ## What can it do?
