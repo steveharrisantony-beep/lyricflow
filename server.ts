@@ -3059,7 +3059,9 @@ export async function startServer(options: BackendOptions = {}): Promise<Server>
   }
 
   const port = options.port ?? Number(process.env.PORT || 3000);
-  const host = options.host ?? '0.0.0.0';
+  // Local development should not expose audio/search endpoints to the LAN
+  // without an explicit opt-in. Embedded Android already supplies loopback.
+  const host = options.host ?? (process.env.HOST?.trim() || '127.0.0.1');
   return new Promise((resolve, reject) => {
     const server = app.listen(port, host, () => resolve(server));
     server.once('error', reject);
