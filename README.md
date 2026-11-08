@@ -146,14 +146,6 @@ docs/                Technical notes, credits and research
 
 The [song mapping guide](SONG_MAPPING_DATA.md), [video matching notes](YOUTUBE_MATCHING.md) and [theme/animation references](docs/lyric-animation-references.md) explain individual systems in more depth.
 
-## Before publishing or contributing
-
-This project was developed for personal experimentation. **Please review the [public release checklist](docs/PUBLIC_RELEASE_CHECKLIST.md) before changing the repository to public.** Deleting a credential from the latest commit does **not** remove it from Git history. Review historical configuration files, rotate any credentials that may have been exposed, and review update-signing and provider policies.
-
-**License:** There is currently **no repository LICENSE file**. Public visibility alone does not grant reuse or redistribution rights. The project owner should choose and add an appropriate license before inviting contributions or describing the code as open-source.
-
-This is an independent project, not an official product of YouTube, Google, Spotify, JioSaavn or any lyric provider. Please respect the rights and terms governing music, lyrics, videos, fonts and third-party code.
-
 ## Credits
 
 Developed by **Steve Harris** · [Instagram](https://www.instagram.com/ig.steve_edits) · [Support the project](https://www.buymeacoffee.com/steveharris)
