@@ -1,0 +1,53 @@
+name: One-time purge of uploaded images from Git history
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-time-purge-uploaded-images.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Rewrite historical image paths, including release tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ORIGINAL_MAIN="$(git rev-parse HEAD)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -B main "$ORIGINAL_MAIN"
+          echo "Rewriting all fetched branch and release-tag history."
+          python3 -m pip install --user git-filter-repo==2.47.0
+          export PATH="$HOME/.local/bin:$PATH"
+          git filter-repo --force --invert-paths \
+            --path-regex '^(public/assets/aistudio/|docs/reference-images/aistudio/|\.aistudio/.*/\.tempmediaStorage/|docs/readme/lyricflow-hero\.svg$|docs/lyricflow-preview\.webp$|.*/Screenshot_[^/]+\.(jpg|jpeg|png|webp)$)'
+
+          echo "Verifying the rewritten main branch and every local tag."
+          for ref in main $(git for-each-ref --format='%(refname)' refs/tags/); do
+            if git ls-tree -r --name-only "$ref" | grep -E '^(public/assets/aistudio/|docs/reference-images/aistudio/|\.aistudio/.*/\.tempmediaStorage/|docs/readme/lyricflow-hero\.svg$|docs/lyricflow-preview\.webp$|.*/Screenshot_[^/]+\.(jpg|jpeg|png|webp)$)'; then
+              echo "::error::Uploaded image path survived in $ref"
+              exit 1
+            fi
+          done
+
+          echo "Removing this temporary workflow before updating GitHub."
+          git rm -- .github/workflows/one-time-purge-uploaded-images.yml
+          git commit -m 'Remove one-time history scrub workflow'
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git" || git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          gh auth setup-git
+          git push --force-with-lease="refs/heads/main:$ORIGINAL_MAIN" origin main
+          git push --force --tags origin
+          echo "Branch and release-tag refs updated; GitHub caches and unreachable objects may require separate cleanup."
